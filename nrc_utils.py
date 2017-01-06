@@ -248,7 +248,6 @@ def read_filter(filter, pupil=None, mask=None, module=None, ND_acq=False, **kwar
 			
 			# CV3 data shows OD needs to be multiplied by 0.93 
 			# compared to Barr measurements
-			# Does this get picked up?
 			odata *= 0.93
 			
 			otemp = np.interp(wtemp, wdata, odata, left=0, right=0)
