@@ -228,11 +228,30 @@ def read_filter(filter, pupil=None, mask=None, module=None, ND_acq=False, **kwar
 		
 		# Did we explicitly set the ND acquisition square?
 		# This is a special case and doesn't necessarily need to be set.
-		# WebbPSF has a provision to include this in the field, but we include
+		# WebbPSF has a provision to include ND filters in the field, but we include
 		# this option if the user doesn't want to figure out offset positions.
 		if ND_acq:
-			# This is actually wavelength dependent, but for now we just assume OD3
-			ttemp *= 1e-3
+			from astropy.io import ascii
+			
+			fname = 'NDspot_ODvsWavelength.txt'
+			path_ND = conf.PYNRC_PATH + 'throughputs/' + fname
+			data = ascii.read(path_ND)
+			
+			wdata = data[data.colnames[0]].data # Wavelength (um)
+			odata = data[data.colnames[1]].data # Optical Density
+			# Estimates for w<1.5um
+			wdata = np.insert(wdata, 0, [0.5])
+			odata = np.insert(odata, 0, [3.8])
+			# Estimates for w>5.0um
+			wdata = np.append(wdata, [6.00])
+			odata = np.append(odata, [2.97])
+			
+			# CV3 data shows OD needs to be multiplied by 0.93 
+			# compared to Barr measurements
+			odata *= 0.93
+			
+			otemp = np.interp(wtemp, wdata, odata, left=0, right=0)
+			ttemp *= 10**(-1*otemp)
 		
 		# Interpolate substrate transmission onto filter wavelength grid and multiply
 		th_coron_sub = np.interp(bp.wave/1e4, wtemp, ttemp, left=0, right=0)		
