@@ -3,21 +3,23 @@ pyNRC - Python ETC and Simulator for JWST NIRCam
 
 Modification History:
 
-v0.1 - 16 Aug 2016 - J.M. Leisenring, UA/Steward
- - Rewrite of SimNRC
-
+v0.1 - Aug 2016 - J.M. Leisenring, UA/Steward
+  - Rewrite of SimNRC
+  - Object oriented Multiaccum, Detector, and NIRCam classes
+  - Create a detector property instance for each detector
+v0.2 - Sep 2016 - J.M. Leisenring, UA/Steward
+  - Add support for LW slitless grism
+  - Add support for extended sources
+v0.3 - Jan 2017 - J.M. Leisenring, UA/Steward
+  - Observations subclass for coronagraphs and direct imaging
 
 To Be Completed:
- - Add simple functions for quickly getting SNR or required int time
+ - Function to determine optimal ramp settings for required SNR 
+   - Requires function for realistic ramp overheads
+ - Support for SW DHS
  - Validate detector array sizes compared to WebbPSF sizes
- - Specify xy positions of subarray/stripe
- - Create a detector property instance for each detector
-    - Will eventually want full maps of RN, dark current, linearity, etc.
+   - Is there an issue if WebbPSF image is larger than detector size?
  - Create simulated ramps
- - Add support for LW slitless grism
- - Add support for SW DHS
- - Add support for extended sources
- - Function to calculate overheads
 """
 
 from __future__ import division, print_function, unicode_literals
@@ -47,8 +49,6 @@ class multiaccum(object):
 				'MEDIUM2', 'MEDIUM8', 'DEEP2', 'DEEP8']
 		nf_arr   = [1, 1, 2, 2, 4, 2, 8,  2,  8] # Averaged frames per group
 		nd2_arr  = [0, 1, 0, 3, 1, 8, 2, 18, 12] # Dropped frames per group (group gap)
-
-
 	"""
 
 	def __init__(self, read_mode='RAPID', nint=1, ngroup=1, nf=1, nd1=0, nd2=0, nd3=0, 
