@@ -938,7 +938,7 @@ class NIRCam(object):
 	def ND_acq(self, value):
 		"""Set whether or not we're placed on an ND acquisition square"""
 		check_list(value, [True, False], 'ND_acq')
-		vold = self._ND_acq; self._ND_acq = ND_acq
+		vold = self._ND_acq; self._ND_acq = value
 		if vold != self._ND_acq:
 			self._update_bp()
 		self._validate_wheels()
@@ -1154,7 +1154,7 @@ class NIRCam(object):
 			warn_flag = True
 
 		# ND_acq and coronagraphic mask are mutually exclusive
-		if self.ND_acq and (mask is not None):
+		if self.ND_acq and (mask != ''):
 			_log.warning('ND_acq = True not a valid setting with mask != None.')
 			warn_flag = True
 		
