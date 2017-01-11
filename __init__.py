@@ -27,9 +27,13 @@ class Conf(_config.ConfigNamespace):
 	import os
 	path = os.getenv('PYNRC_PATH')
 	if path is None:
-		path = '/Volumes/NIRData/pynrc_data/'
+		#export PYNRC_PATH='/Volumes/NIRData/pynrc_data'
+		raise EnvironmentError("Environment variable $PYNRC_PATH is not set!")
+	if not os.path.isdir(path):
+		raise IOError("PYNRC_PATH ({}) is not a valid directory path!".format(path))
 	# Make sure there is a '/' at the end of the path name
-	if '/' not in path[-1]: path += '/'
+	if '/' not in path[-1]: 
+		path += '/'
 	PYNRC_PATH = _config.ConfigItem(path, 'Directory path to data files required for pynrc calculations.')
 
 	logging_level = _config.ConfigItem(
