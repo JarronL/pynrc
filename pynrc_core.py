@@ -25,6 +25,7 @@ To Be Completed:
 from __future__ import division, print_function, unicode_literals
 
 from astropy.convolution import convolve_fft
+from astropy.table import Table
 from scipy import fftpack
 
 # Import libraries
@@ -59,7 +60,8 @@ class multiaccum(object):
 		patterns = ['RAPID', 'BRIGHT1', 'BRIGHT2', 'SHALLOW2', 'SHALLOW4', 'MEDIUM2', 'MEDIUM8', 'DEEP2', 'DEEP8']
 		nf_arr   = [1,1,2,2,4,2,8, 2, 8]
 		nd2_arr  = [0,1,0,3,1,8,2,18,12]
-		self._pattern_settings = dict(zip(patterns, zip(nf_arr, nd2_arr)))
+		ng_max   = [10,10,10,10,10,10,10,20,20]
+		self._pattern_settings = dict(zip(patterns, zip(nf_arr, nd2_arr,ng_max)))
 	
 		#self.nexp = nexp # Don't need multiple exposures. Just increase nint
 		self.nint = nint
@@ -163,14 +165,9 @@ class multiaccum(object):
 		plist = sorted(list(self._pattern_settings.keys()))
 		return ['CUSTOM'] + plist
 
-	#def to_dict(self):
-	#    """Export ramp settings to a dictionary."""
-	#    return {'read_mode':self.read_mode, 'nint':self.nint, 'ngroup':self.ngroup, 
-	#            'nf':self.nf, 'nd1':self.nd1, 'nd2':self.nd2, 'nd3':self.nd3}
 
 	def to_dict(self, verbose=False):
 		"""Export ramp settings to a dictionary."""
-
 		p = [('read_mode',self.read_mode), ('nint',self.nint), ('ngroup',self.ngroup), \
 			 ('nf',self.nf), ('nd1',self.nd1), ('nd2',self.nd2), ('nd3',self.nd3)]
 		return tuples_to_dict(p, verbose)
@@ -193,7 +190,7 @@ class multiaccum(object):
 						 % (self.ngroup, self.nf, self.nd1, self.nd2, self.nd3))
 		else:
 			_log.info('%s readout mode selected.' % self.read_mode)
-			nf, nd2 = self._pattern_settings.get(self.read_mode)
+			nf, nd2, _ = self._pattern_settings.get(self.read_mode)
 			self._nf  = nf
 			self._nd1 = 0
 			self._nd2 = nd2
@@ -272,7 +269,8 @@ class DetectorOps(object):
 				self.detid = detector
 			except ValueError: # If neither work, raise ValueError exception
 				raise ValueError("Invalid detector: {0} \n\tValid names are: {1},\n\t{2}" \
-					  .format(detector, ', '.join(self.detid_list), ', '.join(str(e) for e in self.scaid_list)))
+					  .format(detector, ', '.join(self.detid_list), \
+					  ', '.join(str(e) for e in self.scaid_list)))
 	
 		self._detector_pixels = 2048
 		self.wind_mode = wind_mode.upper()
@@ -1377,7 +1375,6 @@ class NIRCam(object):
 		
 		Parameters
 		==========
-		These are all pass through the **kwargs parameter
 		sp    : A pysynphot spectral object to calculate sensitivity 
 			    (default: Flat spectrum in photlam)
 		nsig  : Desired nsigma sensitivity (default 10)
@@ -1385,8 +1382,10 @@ class NIRCam(object):
 		
 		**kwargs
 		==========
-		forwardSNR : Find the SNR of the input spectrum instead of determining sensitivity.
-		zfact      : Factor to scale Zodiacal spectrum (default 2.5)
+		These are all pass through the **kwargs parameter
+		forwardSNR    : Find the SNR of the input spectrum instead of sensitivity.
+		zfact         : Factor to scale Zodiacal spectrum (default 2.5)
+		ideal_Poisson : Use MULTIACCUM equation or total signal for noise estimate?
 
 		Representative values for zfact:
 			0.0 - No zodiacal emission
@@ -1413,6 +1412,8 @@ class NIRCam(object):
 		kw2 = self._psf_info_bg
 		kw3 = {'rn':rn, 'ktc':ktc, 'idark':idark, 'p_excess':p_excess}
 		kwargs = merge_dicts(kwargs,kw1,kw2,kw3)
+		if 'ideal_Poisson' not in kwargs.keys():
+			kwargs['ideal_Poisson'] = True
 		
 		bglim = bg_sensitivity(self.bandpass, self.pupil, self.mask, self.module,
 			pix_scale=pix_scale, sp=sp, units=units, nsig=nsig, tf=tf, quiet=quiet, 
@@ -1444,6 +1445,337 @@ class NIRCam(object):
 		
 		return fzodi_pix
 
+
+	# Input minimum desired SNR per resolution element
+	# Output ramp settings that minimize acq time per SNR
+
+	# Define input spectrum
+
+	def ramp_optimize(self, sp, sp_bright=None, is_extended=False, patterns=None,
+		well_frac_max=0.8, nint_min=1, nint_max=1000, ng_min=2, ng_max=None,
+		snr_min=10, snr_frac=0.02, tacq_max=0, tacq_frac=0.1,
+		return_full_table=None, verbose=False, **kwargs):
+		"""
+		Find the optimal ramp settings to observe spectrum based input constraints.
+		This function quickly runs through each detector readout pattern and 
+		calculates the acquisition time and SNR for all possible settings of NINT
+		and NGROUP that fulfill the SNR requirement (and other constraints). 
+		
+		The final output table is then filtered, removing those exposure settings
+		that have the same exact acquisition times but worse SNR. Further "obvious"
+		comparisons are done that exclude settings where there is another setting
+		that has both better SNR and less acquisition time. The best results are
+		then sorted by an efficiency metric (SNR / sqrt(acq_time)). To skip filtering
+		of results, set return_full_table=True.
+		
+		The result is an AstroPy Table.
+		
+		Parameters
+		==========
+		sp          : A pysynphot spectral object to calculate SNR.
+		sp_bright   : Same as sp, but optionaly used to calculate the saturation limit
+					  (treated as brightest source in field). If a coronagraphic mask 
+					  observation, then this source is assumed to be occulted and 
+					  sp is unocculted.
+		is_extended : Treat source(s) as extended objects, then in units/arcsec^2
+
+		patterns      : List of a subset of MULTIACCUM patterns to check, otherwise check all.
+		well_frac_max : Maximum level that the pixel well is allowed to be filled. 
+					    Fractions greater than 1 imply hard saturation, but the reported 
+					    SNR will not be aware of any saturation that may occur to sp.
+		snr_min       : Minimum required SNR for source. For grism, this is the average
+					    SNR for all wavelength.
+		snr_frac      : Give fractional buffer room rather than strict SNR cut-off.
+		nint_min/max  : Min/max number of desired integrations.
+		ng_min/max    : Min/max number of desired groups in a ramp.
+		
+		return_full_table : Don't filter or sort the final results.
+		verbose           : Print out top 10 results.
+
+		Example
+		----------
+		# What are the optimal exposure settings to obtain SNR~1000 spectral data
+		# for an M2V star (K=10 mags) in the F444W filter?
+		#
+		# Initiate a NIRCam observation
+		nrc = pynrc.NIRCam('F430M', pupil='GRISM0', wind_mode='STRIPE', ypix=64)
+		
+		# Set up M2V stellar spectrum normalized to K=10 mags
+		bp_k = S.ObsBandpass('johnson,k')
+		sp_M2V = pynrc.stellar_spectrum('M2V', 10, 'vegamag', bp_k)
+		
+		# Find optimal settings with the only constraint on the SNR
+		out = ramp_optimize(sp_M2V, snr_min=1000, verbose=True)
+		
+		# In this case, the best case is DEEP2, ngroup=7, nint=33
+		# Update nrc settings and print out sensitivities to verify
+		nrc.update_detectors(read_mode='DEEP2', ngroup=7, nint=33)
+		_ = nrc.sensitivity(sp=sp_M2V, forwardSNR=True, units='mJy', verbose=True)
+		
+		# Which should print out:		
+		F444W SNR for M2V source:
+		Wave       SNR      Flux (mJy)
+		3.90    1284.2     29.77
+		4.00    1350.9     28.36
+		4.10    1295.9     27.05
+		4.20    1238.8     26.16
+		4.30    1132.4     23.23
+		4.40    1068.9     22.47
+		4.50     980.4     20.82
+		4.60     862.3     17.73
+		4.70     791.8     17.17
+		4.80     711.1     15.41
+		4.90     727.6     19.49
+		5.00     411.9     17.06
+		"""
+	
+		def parse_snr(snr, grism_obs, ind_snr):
+			if grism_obs:
+				res = snr['snr']
+				return np.mean(res)
+			else:
+				return snr[ind_snr]['snr']            
+		
+
+		pupil = self.pupil
+		grism_obs = (pupil is not None) and ('GRISM' in pupil)
+		dhs_obs   = (pupil is not None) and ('DHS'   in pupil)
+		coron_obs = (pupil is not None) and ('LYOT'   in pupil)
+	
+		det_params_orig = self.det_info.copy()
+	
+		if dhs_obs:
+			raise NotImplementedError('DHS has yet to be fully included.')
+		if grism_obs and is_extended:
+			raise NotImplementedError('Extended objects not implemented for grism observations.')
+
+		# Brightest source in field
+		if sp_bright is None:
+			sp_bright = sp
+   
+		# Generate PSFs for faint and bright objects and get max pixel flux
+		# Only necessary for point sources
+		if is_extended:
+			ind_snr = 1
+			obs = S.Observation(sp, self.bandpass, binset=self.bandpass.wave)
+			pix_count_rate = obs.countrate() * self.pix_scale**2
+		else:
+			ind_snr = 0
+		
+			if grism_obs:
+				_, psf_bright = self.gen_psf(sp_bright, use_bg_psf=False)
+				_, psf_faint  = self.gen_psf(sp, use_bg_psf=True)
+			else:
+				psf_bright = self.gen_psf(sp_bright, use_bg_psf=False)
+				psf_faint  = self.gen_psf(sp, use_bg_psf=True)
+			pix_count_rate = np.max([psf_bright.max(), psf_faint.max()])
+		
+		image = self.sensitivity(sp=sp, forwardSNR=True, return_image=True)
+
+		# Cycle through each readout pattern
+		pattern_settings = self.multiaccum._pattern_settings
+		if patterns is None:
+			patterns = pattern_settings.keys()
+			
+		m = np.zeros(len(patterns))
+		s = np.zeros(len(patterns))
+		for i,patt in enumerate(patterns):
+			v1,v2,v3 = pattern_settings.get(patt)
+			m[i] = v1
+			s[i] = v2
+		# Sort by nf (m+s) then by m
+		isort = np.lexsort((m,m+s))
+		patterns = list(np.array(patterns)[isort])
+			
+		patterns.sort()
+		
+		# If tacq_max is set, do a first round that finds the max possible SNR
+		# Set this as snr_min
+		if tacq_max > 0:
+			snr_min = 0
+			for read_mode in patterns:
+				# Maximum allowed groups for given readout pattern
+				if ng_max is None:
+					_,_,ng_max = pattern_settings.get(read_mode)
+				for ng in range(ng_min,ng_max+1):
+					self.update_detectors(read_mode=read_mode, ngroup=ng, nint=1)
+					mtimes = self.multiaccum_times
+
+					# Get saturation level of observation
+					well_frac = pix_count_rate * mtimes['t_int'] / self.well_level
+					# If above well_frac_max, then this setting is invalid
+					if well_frac > well_frac_max:
+						continue
+					
+					# Approximate integrations needed to obtain required t_acq
+					nint = int(tacq_max / mtimes['t_acq'])
+					nint = np.max([nint_min,nint])
+					if nint>nint_max:
+						continue
+
+					# Find NINT with t_acq > 0.95 tacq_max
+					self.update_detectors(nint=nint)
+					mtimes = self.multiaccum_times
+					while (mtimes['t_acq']<((1-tacq_frac)*tacq_max)) and (nint<=nint_max):
+						nint += 1
+						self.update_detectors(nint=nint)
+						mtimes = self.multiaccum_times
+					if nint>nint_max:
+						continue
+						
+					# This becomes the SNR goal
+					sen = self.sensitivity(sp=sp, forwardSNR=True, image=image, **kwargs)
+					snr = parse_snr(sen, grism_obs, ind_snr)
+					snr_min = np.max([snr_min,snr])
+
+		rows = []
+		for read_mode in patterns:
+			if verbose: print(read_mode)
+			# Maximum allowed groups for given readout pattern
+			if ng_max is None:
+				_,_,ng_max = pattern_settings.get(read_mode)
+			for ng in range(ng_min,ng_max+1):
+				self.update_detectors(read_mode=read_mode, ngroup=ng, nint=1)
+				mtimes = self.multiaccum_times
+
+				# Get saturation level of observation
+				well_frac = pix_count_rate * mtimes['t_int'] / self.well_level
+				# If above well_frac_max, then this setting is invalid
+				if well_frac > well_frac_max:
+					continue
+
+				# Get SNR (assumes no saturation)
+				sen = self.sensitivity(sp=sp, forwardSNR=True, image=image, **kwargs)
+				snr = parse_snr(sen, grism_obs, ind_snr)
+
+				# Approximate integrations needed to get to required SNR
+				nint = int((snr_min / snr)**2)
+				nint = np.max([nint_min,nint])
+				if nint>nint_max:
+					continue
+			
+				# Find NINT with SNR > 0.95 snr_min
+				self.update_detectors(nint=nint)
+				sen = self.sensitivity(sp=sp, forwardSNR=True, image=image, **kwargs)
+				snr = parse_snr(sen, grism_obs, ind_snr)
+				while (snr<((1-snr_frac)*snr_min)) and (nint<=nint_max):
+					nint += 1
+					self.update_detectors(nint=nint)
+					mtimes = self.multiaccum_times
+					sen = self.sensitivity(sp=sp, forwardSNR=True, image=image, **kwargs)
+					snr = parse_snr(sen, grism_obs, ind_snr)
+				if nint>nint_max:
+					continue
+
+				mtimes = self.multiaccum_times
+				rows.append((read_mode, ng, nint, mtimes['t_int'], mtimes['t_exp'], \
+					mtimes['t_acq'], snr, well_frac))
+			
+				# Increment NINT until SNR > 1.05 snr_min
+				# Add each NINT to table output
+				while snr < ((1+snr_frac)*snr_min):
+					nint += 1
+					self.update_detectors(nint=nint)
+					sen = self.sensitivity(sp=sp, forwardSNR=True, image=image, **kwargs)
+					snr = parse_snr(sen, grism_obs, ind_snr)
+					if nint > nint_max:
+						continue
+					mtimes = self.multiaccum_times
+					rows.append((read_mode, ng, nint, mtimes['t_int'], mtimes['t_exp'], \
+						mtimes['t_acq'], snr, well_frac))
+						
+		# Return to original values
+		self.update_detectors(**det_params_orig)
+	
+		if len(rows)==0:
+			_log.warning('No ramp settings allowed within constraints! Reduce constraints.')
+			return
+	
+		# Place rows into a
+		t_all = Table(rows=rows, \
+			names=('Pattern', 'NGRP', 'NINT', 't_int', 't_exp', 't_acq', 'SNR', 'Well'))
+		t_all['Pattern'].format = '<10'
+		t_all['t_int'].format = '9.2f'
+		t_all['t_exp'].format = '9.2f'
+		t_all['t_acq'].format = '9.2f'
+		t_all['SNR'].format = '8.1f'
+		t_all['Well'].format = '8.3f'
+		
+		t_all['eff'] = t_all['SNR'] / np.sqrt(t_all['t_acq'])
+		# Round to 3 sig digits
+		t_all['eff'] = (1000*t_all['eff']).astype(int) / 1000.
+		t_all['eff'].format = '8.3f'
+		
+		# Filter table?
+		if return_full_table:
+			# Sort by efficiency, then acq time
+			ind_sort = np.lexsort((t_all['t_acq'],1/t_all['eff']))
+			t_all = t_all[ind_sort]
+			if verbose: 
+				print("Top 10 results sorted by 'efficiency' (SNR/t_acq):")
+				print(t_all[0:10])
+		else:
+			t_all = table_filter(t_all, None)
+			if verbose: print(t_all)
+		
+		return t_all
+
+		
+def table_filter(t, topx=2):
+    """
+
+    """
+    
+    if topx is None: topx = len(t)
+
+    temp = multiaccum()
+    pattern_settings = temp._pattern_settings
+    
+    patterns = np.unique(t['Pattern'])
+
+    m = np.zeros(len(patterns))
+    s = np.zeros(len(patterns))
+    for i,patt in enumerate(patterns):
+        v1,v2,v3 = pattern_settings.get(patt)
+        m[i] = v1
+        s[i] = v2
+    # Sort by nf (m+s) then by m
+    isort = np.lexsort((m,m+s))
+    patterns = list(np.array(patterns)[isort])
+    
+    tnew = t.copy()
+    tnew.remove_rows(np.arange(len(t)))
+
+    for pattern in patterns:
+        rows = t[t['Pattern']==pattern]
+        rows['eff'] = (1000*rows['eff']).astype(int) / 1000.
+
+        # For equivalent acquisition times, remove worse SNR
+        t_uniq = np.unique(rows['t_acq'])
+        ind_good = []
+        for tacq in t_uniq:
+            ind = np.where(rows['t_acq']==tacq)[0]
+            ind_snr_best = rows['SNR'][ind]==rows['SNR'][ind].max()
+            ind_good.append(ind[ind_snr_best][0])
+        rows = rows[ind_good]
+
+        # For each remaining row, exlude those that take longer with worse SNR than any other row
+        ind_bad = []
+        ind_bad_comp = []
+        for i,row in enumerate(rows):
+            for j,row_compare in enumerate(rows):
+                if i==j: continue
+                if (row['t_acq']>row_compare['t_acq']) and (row['SNR']<=(row_compare['SNR'])):
+                    ind_bad.append(i)
+                    ind_bad_comp.append(j)
+                    break
+        rows.remove_rows(ind_bad)
+
+        isort = np.lexsort((rows['t_acq'],1/rows['eff']))
+        for row in rows[isort][0:topx]:
+            tnew.add_row(row)
+
+    return tnew
 
 
 
