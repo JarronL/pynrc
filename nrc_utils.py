@@ -712,7 +712,7 @@ def gen_image_coeff(filter_or_bp, pupil=None, mask=None, module='A',
 				im = psf_fit[:,:,i]
 				spec_over[:,intx:intx+fov_pix_over] += im*(1.-fracx) + np.roll(im,1,axis=1)*fracx
 				
-			spec_over[spec_over<__epsilon] = __epsilon
+			spec_over[spec_over<__epsilon] = 0 #__epsilon
 
 			# Rebin ovesampled spectral image to real pixels
 			spec_list.append(poppy.utils.krebin(spec_over, (fov_pix,npix_spec)))
@@ -724,6 +724,8 @@ def gen_image_coeff(filter_or_bp, pupil=None, mask=None, module='A',
 		wspec = wspec_over.reshape((npix_spec,-1)).mean(axis=1)
 	
 		if nspec == 1: spec_list = spec_list[0]
+		# Return list of wavelengths for each horizontal pixel
+		# as well as spectral image
 		if return_oversample:
 			return (wspec, spec_list), (wspec_over, spec_over)
 		else:
@@ -731,7 +733,7 @@ def gen_image_coeff(filter_or_bp, pupil=None, mask=None, module='A',
 		
 	# DHS spectroscopy
 	elif (pupil is not None) and ('DHS' in pupil):
-		raise NotImplementedError
+		raise NotImplementedError('DHS has yet to be fully included')
 
 	# Imaging
 	else:
@@ -988,7 +990,7 @@ def get_SNR(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=None,
 	sp=None, tf=10.737, ngroup=2, nf=1, nd2=0, nint=1,
 	coeff=None, fov_pix=11, oversample=4, quiet=True, **kwargs):
 	"""
-	Obtain the SNR of an input spectrum and a specified instrument setup.
+	Obtain the SNR of an input source spectrum with specified instrument setup.
 	This is simply a wrapper for bg_sensitivity(forwardSNR=True).
 
 	Parameters
@@ -1074,7 +1076,8 @@ def _mlim_helper(sub_im, mag_norm=10, mag_arr=np.arange(5,35,1),
 def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=None,
 	sp=None, units=None, nsig=10, tf=10.737, ngroup=2, nf=1, nd2=0, nint=1,
 	coeff=None, fov_pix=11, oversample=4, quiet=True, forwardSNR=False, 
-	offset_r=0, offset_theta=0, **kwargs):
+	offset_r=0, offset_theta=0, 
+	return_image=False, image=None, dw_bin=None, **kwargs):
 	"""
 	Estimates the point source sensitivity for a set of instrument parameters.
 	By default, a flat spectrum is convolved with the specified bandpass.
@@ -1135,6 +1138,12 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
 	fov_pix : Number of detector pixels in the image coefficient and PSF.
 	oversample : Factor of oversampling of detector pixels.
 	
+	Misc.
+	-------------------
+	image        : Explicitly pass image data rather than calculating from coeff.
+	return_image : Instead of calculating sensitivity, return the image calced from coeff.
+	dw_bin       : Delta wavelength to calculate spectral sensitivities (grisms & DHS).
+	
 	Keyword Args
 	-------------------
 	**kwargs : Allows the user to pass additional (optional) arguments to
@@ -1187,13 +1196,18 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
 	oversample = int(oversample)
 	# Generate the PSF image for analysis
 	t0 = time.time()
-	data = gen_image_coeff(bp, pupil, mask, module, sp_norm, coeff, fov_pix, oversample, 
-		offset_r=offset_r, offset_theta=offset_theta, **kwargs)
+	# This process can take a while if being done over and over again. 
+	# Let's provide the option to skip this with a pre-generated image.
+	# Remember, this is for a very specific NORMALIZED spectrum
+	if image is None:
+		image = gen_image_coeff(bp, pupil, mask, module, sp_norm, coeff, fov_pix, oversample, 
+			offset_r=offset_r, offset_theta=offset_theta, **kwargs)
 	t1 = time.time()
 	_log.debug('fov_pix={0}, oversample={1}'.format(fov_pix,oversample))
 	_log.debug('Took %.2f seconds to generate images' % (t1-t0))
-
-		
+	if return_image:
+		return image
+				
 	# Cosmic Ray Loss (JWST-STScI-001721)
 	# SNR with cosmic ray events depends directly on ramp integration time
 	tint = (ngroup*nf + (ngroup-1)*nd2) * tf
@@ -1204,15 +1218,15 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
 		center = None
 	else:
 		xp, yp = rtheta_to_xy(offset_r/pix_scale, offset_theta)
-		xp += data.shape[1] / 2.0 # x value in pixel position
-		yp += data.shape[0] / 2.0 # y value in pixel position
+		xp += image.shape[1] / 2.0 # x value in pixel position
+		yp += image.shape[0] / 2.0 # y value in pixel position
 		center = (xp, yp)
 
 	# If grism spectroscopy
 	if grism_obs:
 	
 		if units is None: units = 'uJy'
-		wspec, spec = data
+		wspec, spec = image
 		
 		# Wavelengths to grab sensitivity values
 		igood2 = bp.throughput > (bp.throughput.max()/4)
@@ -1237,7 +1251,11 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
 		#print(ap_spat)
 
 		# Get spectral indices on the spectral image
-		ap_spec = 2
+		if dw_bin is None:
+			ap_spec = 2
+		else:
+			ap_spec = wspec.size * dw_bin / (wpsec.max() - wpsec.min())
+			ap_spec = int(ap_spec+0.5)
 		diff = abs(wspec.reshape(wspec.size,1) - wsen_arr)
 		ind_wave = []
 		for i in np.arange(wsen_arr.size):
@@ -1287,11 +1305,11 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
 
 			if quiet == False:
 				print('{0} SNR for {1} source:'.format(bp.name,sp.name))
-				print('{:<7} {:<7} Flux ({})'.format('Wave','SNR',units))
+				print('{:<4}{:>10}{:>10} ({})'.format('Wave','SNR','Flux',units))
 				lim_arr = np.array([wsen_arr,bglim_arr, fvals]).T
 				matrix = lim_arr.tolist()
 				for row in matrix:
-					print('{:<6.2f}{:>7.2f}{:>8.2f}'.format(row[0],row[1],row[2]))
+					print('{:4.2f}{: >10.2f}{: >10.2f}'.format(row[0],row[1],row[2]))
 
 		else:
 			out = {'wave':wsen_arr.tolist(), 'sensitivity':bglim_arr.tolist(), 
@@ -1300,11 +1318,11 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
 			if quiet == False:
 				print('{} Background Sensitivity ({}-sigma) for {} source:'.\
 					format(bp.name,nsig,sp.name))
-				print('{:<7}Limit ({:<})'.format('Wave',units))
+				print('{:<7} Limit ({:<})'.format('Wave',units))
 				lim_arr = np.array([wsen_arr,bglim_arr]).T
 				matrix = lim_arr.tolist()
 				for row in matrix:
-					print('{:<7.2f}{:>7.2f}'.format(row[0],row[1]))
+					print('{:<7.2f}{: >7.2f}'.format(row[0],row[1]))
 
 		return out
 
@@ -1326,7 +1344,7 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
 		efflam = obs.efflam()*1e-4 # microns
 
 		# Create HDU list to pass to radial_profile()
-		flux_hdu = fits.PrimaryHDU(data)
+		flux_hdu = fits.PrimaryHDU(image)
 		flux_hdu.header.append(('PIXELSCL', pix_scale))
 		flux_hdu_list = fits.HDUList(flux_hdu)
 		radius, _, EE_flux = radial_profile(flux_hdu_list, EE=True, center=center)
@@ -1334,7 +1352,6 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
 
 		# How many pixels do we want?
 		fwhm_pix = 1.2 * efflam * 0.206265 / 6.5 / pix_scale
-		print(measure_fwhm(flux_hdu_list, center=center) / pix_scale, fwhm_pix)
 		rad_EE = np.max([fwhm_pix,2.5])
 		npix_EE = np.pi * rad_EE**2
 	
@@ -1358,11 +1375,11 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
 		# Assume the fiducial (sp_norm) to be in terms of mag/arcsec^2
 		# Multiply countrate() by pix_scale^2 to get in terms of per pixel (area)
 		# This is the count rate per pixel for the fiducial starting point
-		data_ext = obs.countrate() * pix_scale**2 # e-/sec/pixel
+		image_ext = obs.countrate() * pix_scale**2 # e-/sec/pixel
 		
 		if forwardSNR:
 			im_var = pix_noise(ngroup=ngroup, nf=nf, nd2=nd2, tf=tf, 
-				fzodi=fzodi_pix, fsrc=data, **kwargs)**2
+				fzodi=fzodi_pix, fsrc=image, **kwargs)**2
 			# Create HDU list to pass to radial_profile()
 			var_hdu = fits.PrimaryHDU(im_var)
 			var_hdu.header.append(('PIXELSCL', pix_scale))
@@ -1378,10 +1395,10 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
 			
 			# Extended object surfrace brightness
 			im_var = pix_noise(ngroup=ngroup, nf=nf, nd2=nd2, tf=tf, 
-				fzodi=fzodi_pix, fsrc=data_ext, **kwargs)**2
+				fzodi=fzodi_pix, fsrc=image_ext, **kwargs)**2
 			im_sig = np.sqrt(im_var*npix_EE / nint)
 			# Total number of pixels within r=fwhm or 2.5 pixels
-			fsum2 = data_ext * npix_EE
+			fsum2 = image_ext * npix_EE
 			snr2 = snr_fact * fsum2 / im_sig # SNR per "resolution element"ish
 			out2 = {'type':'Surface Brightness', 'snr':snr2, 'Spectrum':sp.name,
 				'flux':flux_val, 'flux_units':units+'/arcsec^2'}
@@ -1401,10 +1418,10 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
 				fact_arr = 10**((mag_arr-mag_norm)/2.5)
 				snr_arr = []
 				for f in fact_arr:
-	 				#im_var = data/f/tint + var_const
+	 				#im_var = image/f/tint + var_const
 
 					im_var = pix_noise(ngroup=ngroup, nf=nf, nd2=nd2, tf=tf, 
-						fzodi=fzodi_pix, fsrc=data/f, **kwargs)**2
+						fzodi=fzodi_pix, fsrc=image/f, **kwargs)**2
 
 					# Create HDU list to pass to radial_profile()
 					var_hdu = fits.PrimaryHDU(im_var)
@@ -1440,10 +1457,10 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
 				snr_arr = []
 				for f in fact_arr:
 					im_var = pix_noise(ngroup=ngroup, nf=nf, nd2=nd2, tf=tf, 
-						fzodi=fzodi_pix, fsrc=data_ext/f, **kwargs)**2
+						fzodi=fzodi_pix, fsrc=image_ext/f, **kwargs)**2
 
 					im_sig = np.sqrt(im_var*npix_EE / nint)
-					fsum2 = data_ext * npix_EE / f
+					fsum2 = image_ext * npix_EE / f
 					snr2 = snr_fact * fsum2 / im_sig
 					#print('{:.5f} {:.5f} {:.2f}'.format(fsum2,im_sig,snr2))
 
@@ -1665,7 +1682,7 @@ def sat_limit_webbpsf(filter_or_bp, pupil=None, mask=None, module='A',
 
 
 def pix_noise(ngroup=2, nf=1, nd2=0, tf=10.737, rn=15.0, ktc=29.0, p_excess=(0,0),
-	fsrc=0.0, idark=0.003, fzodi=0, fbg=0, **kwargs):
+	fsrc=0.0, idark=0.003, fzodi=0, fbg=0, ideal_Poisson=False, **kwargs):
 	"""
 	Theoretical noise calculation of a generalized MULTIACCUM ramp in terms of e-/sec.
 	Includes flat field errors from JWST-CALC-003894
@@ -1687,6 +1704,8 @@ def pix_noise(ngroup=2, nf=1, nd2=0, tf=10.737, rn=15.0, ktc=29.0, p_excess=(0,0
 	idark (float) : Dark current in e-/sec/pix
 	fzodi (float) : Zodiacal light emission in e-/sec/pix
 	fbg   (float) : Any additional background (telescope emission or scattered light?)
+	
+	ideal_Poisson (bool) : Use the MULTIACCUM formula or the ideal form?
 
 	Various parameters can either be single values or numpy arrays.
 	If multiple inputs are arrays, make sure their array sizes match.
@@ -1714,7 +1733,7 @@ def pix_noise(ngroup=2, nf=1, nd2=0, tf=10.737, rn=15.0, ktc=29.0, p_excess=(0,0
 		# Results is a (20x20)x50 showing the noise in e-/sec/pix at each group
 		noise = pix_noise(ngroup=n, rn=rn, fsrc=fsrc) 
 	"""
-
+	
 	n = np.array(ngroup)
 	m = np.array(nf)
 	s = np.array(nd2)
@@ -1745,21 +1764,33 @@ def pix_noise(ngroup=2, nf=1, nd2=0, tf=10.737, rn=15.0, ktc=29.0, p_excess=(0,0
 
 	# Group time
 	tg = tf * (m + s)
+	# Effective integration time
+	tint = tg * (n - 1)
 
 	# Read noise, group time, and frame time variances
-	var_rn = rn**2      * 12.               * (n - 1.) / (m * n * (n + 1.))
-	var_gp = ftot  * tg * 6. * (n**2. + 1.) * (n - 1.) / (5 * n * (n + 1.))
-	var_fm = ftot  * tf * 2. * (m**2. - 1.) * (n - 1.) / (m * n * (n + 1.))
+	# This is the MULTIACCUM eq from Rauscher et al. (2007).
+	# This equation assumes that the slope-fitting routine uses
+	# incorrect covariance matrix that doesn't take into account
+	# the correlated Poisson noise up the ramp.
+	var_rn = rn**2       * 12.               * (n - 1.) / (m * n * (n + 1.))
+	var_gp = ftot * tint * 6. * (n**2. + 1.) / (5 * n * (n + 1.))
+	var_fm = ftot   * tf * 2. * (m**2. - 1.) * (n - 1.) / (m * n * (n + 1.))
 
 	# Functional form for excess variance above theoretical
+	# Empirically measured formulation
 	var_ex = 12. * (n - 1.)/(n + 1.) * p_excess[0]**2 - p_excess[1] / m**0.5
 
 	# Variance of total signal
-	var = var_rn + var_gp - var_fm + var_ex
+	if ideal_Poisson:
+		var_poisson = ftot * tint
+	else:
+		var_poisson = var_gp - var_fm
+
+	var = var_rn + var_poisson + var_ex
 	sig = np.sqrt(var)
 
 	# Noise in e-/sec
-	noise = sig / (tg * (n - 1))
+	noise = sig / tint
 	#print(ind_n1_all.shape,noise.shape,noise_n1.shape)
 	if (n==1).any():
 		noise[ind_n1_all] = noise_n1[ind_n1_all]
@@ -2338,9 +2369,16 @@ def stellar_spectrum(sptype, *renorm_args):
 	# Generate list of spectral types
 	sptype_list = list(lookuptable.keys())
 
-	# Check if sptype already exists in dictionary
-	if sptype in sptype_list:
+	# First test if the user wants a flat spectrum (in photlam)
+	if 'flat' in sptype.lower():
+		waveset = S.refs._default_waveset
+		sp = S.ArraySpectrum(waveset, 0*waveset + 10.)
+		sp.name = 'Flat spectrum in photlam'
+	elif sptype in sptype_list:
 		v0,v1,v2 = lookuptable[sptype]
+		
+		sp = S.Icat(catname, v0, v1, v2)
+		sp.name = sptype
 	else: # Interpolate values for undefined sptype
 		# Sort the list and return their rank values
 		sptype_list.sort(key=sort_sptype)
@@ -2354,12 +2392,16 @@ def stellar_spectrum(sptype, *renorm_args):
 		v0 = np.interp(rank, rank_list, tup_list0)
 		v1 = np.interp(rank, rank_list, tup_list1)
 		v2 = np.interp(rank, rank_list, tup_list2)
+		
+		sp = S.Icat(catname, v0, v1, v2)
+		sp.name = sptype
 
-	sp = S.Icat(catname, v0, v1, v2)
-	if len(renorm_args) > 0: 
-		sp = sp.renorm(*renorm_args)
+	# Renormalize if those args exist
+	if len(renorm_args) > 0:
+		sp_norm = sp.renorm(*renorm_args)
+		sp_norm.name = sp.name
+		sp = sp_norm
 	
-	sp.name = sptype
 	return sp
 
 	        
