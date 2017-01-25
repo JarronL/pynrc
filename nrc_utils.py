@@ -516,11 +516,6 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
 	npsf = int(npsf)
 	waves = np.linspace(w1, w2, npsf)
 
-	# Take into account reduced beam factor for grism data
-	# Account for the circular pupil that does not allow all grism grooves to have their 
-	# full length illuminated (Erickson & Rabanus 2000), effectively broadening the FWHM
-	if grism_obs: waves /= 0.87
-
 	# How many processors to split into?
 	nproc = nproc_use(fov_pix, oversample, npsf) if poppy.conf.use_multiprocessing else 1
 	_log.debug('nprocessors: %.0f; npsf: %.0f' % (nproc, npsf))
@@ -529,7 +524,8 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
 	# Setup the multiprocessing pool and arguments to pass to each pool
 	t0 = time.time()
 	worker_arguments = [(inst, wlen, fov_pix, oversample) for wlen in waves]
-	
+
+
 	if nproc > 1: 
 		pool = mp.Pool(nproc)
 		# Pass arguments to the helper function
@@ -537,12 +533,24 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
 		pool.close()
 	else:
 		# Pass arguments to the helper function
-		images = map(_wrap_coeff_for_mp, worker_arguments)
+		images = map(_wrap_coeff_for_mp, worker_arguments)	
 
 	t1 = time.time()
 	# Reset to original log levels
 	setup_logging(log_prev, verbose=False)
-	_log.debug('Took %.2f seconds to generate coefficients' % (t1-t0))
+	_log.debug('Took %.2f seconds to generate WebbPSF images' % (t1-t0))
+
+	# Take into account reduced beam factor for grism data
+	# Account for the circular pupil that does not allow all grism grooves to have their 
+	# full length illuminated (Erickson & Rabanus 2000), effectively broadening the FWHM.
+	# It's actually a hexagonal pupil, so the factor is 1.07, not 1.15.
+	wfact = 1.07
+	# We want to stretch the PSF in the dispersion direction
+	if grism_obs:
+		scale = (1,wfact) if 'GRISM0' in pupil else (wfact,1)
+		for i,im in enumerate(images):
+			im_scale = frebin(im, scale=scale)
+			images[i] = pad_or_cut_to_size(im_scale, im.shape)
 		
 	# Turn results into an numpy array (npsf,nx,ny)
 	#   Or is it (npsf,ny,nx)? Depends on WebbPSF's coord system...
@@ -1889,8 +1897,11 @@ def pad_or_cut_to_size(array, new_shape):
 	"""
 	
 	ny, nx = array.shape
-	if len(new_shape) < 2:
-		ny_new, nx_new = new_shape
+	if isinstance(new_shape, float) or isinstance(new_shape, int):
+		ny_new = nx_new = int(round(new_shape))
+		new_shape = (ny_new, nx_new)
+	elif len(new_shape) < 2:
+		ny_new = nx_new = new_shape[0]
 		new_shape = (ny_new, nx_new)
 	else:
 		ny_new = new_shape[0]
@@ -1919,16 +1930,16 @@ def pad_or_cut_to_size(array, new_shape):
 	m0 = int(round(m0))
 	m1 = int(round(m1))
 	
-	if (nx_new>nx) and (ny_new>ny):
+	if (nx_new>=nx) and (ny_new>=ny):
 		#print('Case 1')
 		output[m0:m1,n0:n1] = array
-	elif (nx_new<nx) and (ny_new<ny):
+	elif (nx_new<=nx) and (ny_new<=ny):
 		#print('Case 2')
 		output = array[m0:m1,n0:n1]
-	elif (nx_new<nx) and (ny_new>ny):
+	elif (nx_new<=nx) and (ny_new>=ny):
 		#print('Case 3')
 		output[m0:m1,:] = array[:,n0:n1]
-	elif (nx_new>nx) and (ny_new<ny):
+	elif (nx_new>=nx) and (ny_new<=ny):
 		#print('Case 4')
 		output[:,n0:n1] = array[m0:m1,:]
 		
@@ -2041,12 +2052,14 @@ def frebin(image, dimensions=None, scale=None, total=True):
 		elif isinstance(dimensions, int):
 			dimensions = [dimensions] * len(image.shape)
 		elif len(dimensions) != len(image.shape):
-			raise RuntimeError('')
+			raise RuntimeError("The number of input dimensions don't match the image shape.")
 	elif scale is not None:
 		if isinstance(scale, float) or isinstance(scale, int):
 			dimensions = map(int, map(round, map(lambda x: x*scale, image.shape)))
 		elif len(scale) != len(image.shape):
-			raise RuntimeError('')
+			raise RuntimeError("The number of input dimensions don't match the image shape.")
+		else:
+			dimensions = [scale[i]*image.shape[i] for i in range(len(scale))]
 	else:
 		raise RuntimeError('Incorrect parameters to rebin.\n\frebin(image, dimensions=(x,y))\n\frebin(image, scale=a')
 	#print(dimensions)
@@ -2056,10 +2069,16 @@ def frebin(image, dimensions=None, scale=None, total=True):
 	if len(shape)==1:
 		nlout = 1
 		nsout = dimensions[0]
+		nsout = int(round(nsout))
+		dimensions = [nsout]
 	elif len(shape)==2:
 		nlout, nsout = dimensions
+		nlout = int(round(nlout))
+		nsout = int(round(nsout))
+		dimensions = [nlout, nsout]
 	if len(shape) > 2:
 		raise ValueError('Input image can only have 1 or 2 dimensions. Found {} dimensions.'.format(len(shape)))
+		
 
 	if nlout != 1:
 		nl = shape[0]
