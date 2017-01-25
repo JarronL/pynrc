@@ -1446,11 +1446,6 @@ class NIRCam(object):
 		return fzodi_pix
 
 
-	# Input minimum desired SNR per resolution element
-	# Output ramp settings that minimize acq time per SNR
-
-	# Define input spectrum
-
 	def ramp_optimize(self, sp, sp_bright=None, is_extended=False, patterns=None,
 		well_frac_max=0.8, nint_min=1, nint_max=1000, ng_min=2, ng_max=None,
 		snr_min=10, snr_frac=0.02, tacq_max=0, tacq_frac=0.1,
@@ -1476,7 +1471,7 @@ class NIRCam(object):
 		sp_bright   : Same as sp, but optionaly used to calculate the saturation limit
 					  (treated as brightest source in field). If a coronagraphic mask 
 					  observation, then this source is assumed to be occulted and 
-					  sp is unocculted.
+					  sp is not occulted.
 		is_extended : Treat source(s) as extended objects, then in units/arcsec^2
 
 		patterns      : List of a subset of MULTIACCUM patterns to check, otherwise check all.
@@ -1492,41 +1487,6 @@ class NIRCam(object):
 		return_full_table : Don't filter or sort the final results.
 		verbose           : Print out top 10 results.
 
-		Example
-		----------
-		# What are the optimal exposure settings to obtain SNR~1000 spectral data
-		# for an M2V star (K=10 mags) in the F444W filter?
-		#
-		# Initiate a NIRCam observation
-		nrc = pynrc.NIRCam('F430M', pupil='GRISM0', wind_mode='STRIPE', ypix=64)
-		
-		# Set up M2V stellar spectrum normalized to K=10 mags
-		bp_k = S.ObsBandpass('johnson,k')
-		sp_M2V = pynrc.stellar_spectrum('M2V', 10, 'vegamag', bp_k)
-		
-		# Find optimal settings with the only constraint on the SNR
-		out = ramp_optimize(sp_M2V, snr_min=1000, verbose=True)
-		
-		# In this case, the best case is DEEP2, ngroup=7, nint=33
-		# Update nrc settings and print out sensitivities to verify
-		nrc.update_detectors(read_mode='DEEP2', ngroup=7, nint=33)
-		_ = nrc.sensitivity(sp=sp_M2V, forwardSNR=True, units='mJy', verbose=True)
-		
-		# Which should print out:		
-		F444W SNR for M2V source:
-		Wave       SNR      Flux (mJy)
-		3.90    1284.2     29.77
-		4.00    1350.9     28.36
-		4.10    1295.9     27.05
-		4.20    1238.8     26.16
-		4.30    1132.4     23.23
-		4.40    1068.9     22.47
-		4.50     980.4     20.82
-		4.60     862.3     17.73
-		4.70     791.8     17.17
-		4.80     711.1     15.41
-		4.90     727.6     19.49
-		5.00     411.9     17.06
 		"""
 	
 		def parse_snr(snr, grism_obs, ind_snr):
@@ -1591,13 +1551,17 @@ class NIRCam(object):
 		
 		# If tacq_max is set, do a first round that finds the max possible SNR
 		# Set this as snr_min
+		rows = []
 		if tacq_max > 0:
-			snr_min = 0
+			snr_min_list = []
 			for read_mode in patterns:
+				if verbose: print(read_mode)
+
 				# Maximum allowed groups for given readout pattern
-				if ng_max is None:
-					_,_,ng_max = pattern_settings.get(read_mode)
-				for ng in range(ng_min,ng_max+1):
+				_,_,ngroup_max = pattern_settings.get(read_mode)
+				if ng_max is not None:
+					ngroup_max = np.min([ng_max,ngroup_max])
+				for ng in range(ng_min,ngroup_max+1):
 					self.update_detectors(read_mode=read_mode, ngroup=ng, nint=1)
 					mtimes = self.multiaccum_times
 
@@ -1608,81 +1572,89 @@ class NIRCam(object):
 						continue
 					
 					# Approximate integrations needed to obtain required t_acq
-					nint = int(tacq_max / mtimes['t_acq'])
+					nint1 = int(((1-tacq_frac)*tacq_max) / mtimes['t_acq'])
+					nint2 = int(((1+tacq_frac)*tacq_max) / mtimes['t_acq'] + 0.5)
+					
+					nint1 = np.max([nint1,nint_min])
+					nint2 = np.min([nint2,nint_max])
+					
+					nint_all = range(nint1, nint2+1)
+					narr = len(nint_all)
+					# Sometimes there are a lot of nint values to check
+					# Let's pair down to <5 per ng
+					if narr>5:
+						i1 = int(narr/2-2)
+						i2 = i1 + 5
+						nint_all = nint_all[i1:i2]
+						
+					
+					print(len(nint_all))
+					for nint in nint_all:
+						if nint > nint_max:
+							break
+						self.update_detectors(nint=nint)
+						mtimes = self.multiaccum_times
+						sen = self.sensitivity(sp=sp, forwardSNR=True, image=image, **kwargs)
+						snr = parse_snr(sen, grism_obs, ind_snr)
+						
+						rows.append((read_mode, ng, nint, mtimes['t_int'], mtimes['t_exp'], \
+							mtimes['t_acq'], snr, well_frac))
+
+		else:
+			for i,read_mode in enumerate(patterns):
+				if verbose: print(read_mode)
+
+				# Maximum allowed groups for given readout pattern
+				_,_,ngroup_max = pattern_settings.get(read_mode)
+				if ng_max is not None:
+					ngroup_max = np.min([ng_max,ngroup_max])
+				for ng in range(ng_min,ngroup_max+1):
+					self.update_detectors(read_mode=read_mode, ngroup=ng, nint=1)
+					mtimes = self.multiaccum_times
+
+					# Get saturation level of observation
+					well_frac = pix_count_rate * mtimes['t_int'] / self.well_level
+					# If above well_frac_max, then this setting is invalid
+					if well_frac > well_frac_max:
+						continue
+
+					# Get SNR (assumes no saturation)
+					sen = self.sensitivity(sp=sp, forwardSNR=True, image=image, **kwargs)
+					snr = parse_snr(sen, grism_obs, ind_snr)
+
+					# Approximate integrations needed to get to required SNR
+					nint = int((snr_min / snr)**2)
 					nint = np.max([nint_min,nint])
 					if nint>nint_max:
 						continue
-
-					# Find NINT with t_acq > 0.95 tacq_max
+			
+					# Find NINT with SNR > 0.95 snr_min
 					self.update_detectors(nint=nint)
 					mtimes = self.multiaccum_times
-					while (mtimes['t_acq']<((1-tacq_frac)*tacq_max)) and (nint<=nint_max):
+					sen = self.sensitivity(sp=sp, forwardSNR=True, image=image, **kwargs)
+					snr = parse_snr(sen, grism_obs, ind_snr)
+					while (snr<((1-snr_frac)*snr_min)) and (nint<=nint_max):
 						nint += 1
 						self.update_detectors(nint=nint)
 						mtimes = self.multiaccum_times
+						sen = self.sensitivity(sp=sp, forwardSNR=True, image=image, **kwargs)
+						snr = parse_snr(sen, grism_obs, ind_snr)
 					if nint>nint_max:
 						continue
-						
-					# This becomes the SNR goal
-					sen = self.sensitivity(sp=sp, forwardSNR=True, image=image, **kwargs)
-					snr = parse_snr(sen, grism_obs, ind_snr)
-					snr_min = np.max([snr_min,snr])
 
-		rows = []
-		for read_mode in patterns:
-			if verbose: print(read_mode)
-			# Maximum allowed groups for given readout pattern
-			if ng_max is None:
-				_,_,ng_max = pattern_settings.get(read_mode)
-			for ng in range(ng_min,ng_max+1):
-				self.update_detectors(read_mode=read_mode, ngroup=ng, nint=1)
-				mtimes = self.multiaccum_times
-
-				# Get saturation level of observation
-				well_frac = pix_count_rate * mtimes['t_int'] / self.well_level
-				# If above well_frac_max, then this setting is invalid
-				if well_frac > well_frac_max:
-					continue
-
-				# Get SNR (assumes no saturation)
-				sen = self.sensitivity(sp=sp, forwardSNR=True, image=image, **kwargs)
-				snr = parse_snr(sen, grism_obs, ind_snr)
-
-				# Approximate integrations needed to get to required SNR
-				nint = int((snr_min / snr)**2)
-				nint = np.max([nint_min,nint])
-				if nint>nint_max:
-					continue
-			
-				# Find NINT with SNR > 0.95 snr_min
-				self.update_detectors(nint=nint)
-				sen = self.sensitivity(sp=sp, forwardSNR=True, image=image, **kwargs)
-				snr = parse_snr(sen, grism_obs, ind_snr)
-				while (snr<((1-snr_frac)*snr_min)) and (nint<=nint_max):
-					nint += 1
-					self.update_detectors(nint=nint)
-					mtimes = self.multiaccum_times
-					sen = self.sensitivity(sp=sp, forwardSNR=True, image=image, **kwargs)
-					snr = parse_snr(sen, grism_obs, ind_snr)
-				if nint>nint_max:
-					continue
-
-				mtimes = self.multiaccum_times
-				rows.append((read_mode, ng, nint, mtimes['t_int'], mtimes['t_exp'], \
-					mtimes['t_acq'], snr, well_frac))
-			
-				# Increment NINT until SNR > 1.05 snr_min
-				# Add each NINT to table output
-				while snr < ((1+snr_frac)*snr_min):
-					nint += 1
-					self.update_detectors(nint=nint)
-					sen = self.sensitivity(sp=sp, forwardSNR=True, image=image, **kwargs)
-					snr = parse_snr(sen, grism_obs, ind_snr)
-					if nint > nint_max:
-						continue
-					mtimes = self.multiaccum_times
 					rows.append((read_mode, ng, nint, mtimes['t_int'], mtimes['t_exp'], \
 						mtimes['t_acq'], snr, well_frac))
+			
+					# Increment NINT until SNR > 1.05 snr_min
+					# Add each NINT to table output
+					while (snr < ((1+snr_frac)*snr_min)) and (nint<=nint_max):
+						nint += 1
+						self.update_detectors(nint=nint)
+						sen = self.sensitivity(sp=sp, forwardSNR=True, image=image, **kwargs)
+						snr = parse_snr(sen, grism_obs, ind_snr)
+						mtimes = self.multiaccum_times
+						rows.append((read_mode, ng, nint, mtimes['t_int'], mtimes['t_exp'], \
+							mtimes['t_acq'], snr, well_frac))
 						
 		# Return to original values
 		self.update_detectors(**det_params_orig)
@@ -1716,17 +1688,23 @@ class NIRCam(object):
 				print(t_all[0:10])
 		else:
 			t_all = table_filter(t_all, None)
+			ind_sort = np.lexsort((t_all['t_acq'],1/t_all['eff']))
+			t_all = t_all[ind_sort]
 			if verbose: print(t_all)
 		
 		return t_all
 
 		
-def table_filter(t, topx=2):
+def table_filter(t, topn=2):
     """
-
+    Filter a resulting ramp table to exclude those with worse SNR for the same
+    or larger tacq. This is performed on a pattern-specific basis and returns
+    the Top N rows for each readout patten. The rows are ranked by an efficiency
+    metric, which is simply SNR / sqrt(tacq). If topn is set to None, then all
+    values that make the cut are returned (sorted by the efficiency metric.
     """
     
-    if topx is None: topx = len(t)
+    if topn is None: topn = len(t)
 
     temp = multiaccum()
     pattern_settings = temp._pattern_settings
@@ -1748,7 +1726,6 @@ def table_filter(t, topx=2):
 
     for pattern in patterns:
         rows = t[t['Pattern']==pattern]
-        rows['eff'] = (1000*rows['eff']).astype(int) / 1000.
 
         # For equivalent acquisition times, remove worse SNR
         t_uniq = np.unique(rows['t_acq'])
@@ -1772,7 +1749,7 @@ def table_filter(t, topx=2):
         rows.remove_rows(ind_bad)
 
         isort = np.lexsort((rows['t_acq'],1/rows['eff']))
-        for row in rows[isort][0:topx]:
+        for row in rows[isort][0:topn]:
             tnew.add_row(row)
 
     return tnew
