@@ -1588,7 +1588,7 @@ class NIRCam(object):
 						nint_all = nint_all[i1:i2]
 						
 					
-					print(len(nint_all))
+					#print(len(nint_all))
 					for nint in nint_all:
 						if nint > nint_max:
 							break
