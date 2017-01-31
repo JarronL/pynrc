@@ -1687,7 +1687,7 @@ class NIRCam(object):
 				print("Top 10 results sorted by 'efficiency' (SNR/t_acq):")
 				print(t_all[0:10])
 		else:
-			t_all = table_filter(t_all, None)
+			t_all = table_filter(t_all, **kwargs)
 			ind_sort = np.lexsort((t_all['t_acq'],1/t_all['eff']))
 			t_all = t_all[ind_sort]
 			if verbose: print(t_all)
@@ -1695,7 +1695,7 @@ class NIRCam(object):
 		return t_all
 
 		
-def table_filter(t, topn=2):
+def table_filter(t, topn=None, **kwargs):
     """
     Filter a resulting ramp table to exclude those with worse SNR for the same
     or larger tacq. This is performed on a pattern-specific basis and returns
