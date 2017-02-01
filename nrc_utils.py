@@ -25,6 +25,7 @@ import yaml, re, os
 import sys, platform
 import multiprocessing as mp
 
+from astropy.table import Table
 
 from . import conf
 from .logging_utils import setup_logging
@@ -1240,7 +1241,7 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
 		igood2 = bp.throughput > (bp.throughput.max()/4)
 		wgood2 = waveset[igood2] / 1e4
 		wsen_arr = np.unique((wgood2*10 + 0.5).astype('int')) / 10
-		wdel = wsen_arr[1] - wsen_arr[0]
+		#wdel = wsen_arr[1] - wsen_arr[0]
 		
 		# FWHM at each pixel position
 		fwhm_pix_arr = np.ceil(wsen_arr * 0.206265 / 6.5 / pix_scale)
@@ -1256,13 +1257,12 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
 		# Indices with spectral image
 		ispat1 = (fov_pix - ap_spat) // 2
 		ispat2 = ispat1 + ap_spat
-		#print(ap_spat)
 
 		# Get spectral indices on the spectral image
 		if dw_bin is None:
 			ap_spec = 2
 		else:
-			ap_spec = wspec.size * dw_bin / (wpsec.max() - wpsec.min())
+			ap_spec = wspec.size * dw_bin / (wspec.max() - wspec.min())
 			ap_spec = int(ap_spec+0.5)
 		diff = abs(wspec.reshape(wspec.size,1) - wsen_arr)
 		ind_wave = []
@@ -1312,25 +1312,26 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
 				   'flux_units':units, 'flux':fvals.tolist(), 'Spectrum':sp.name}			
 
 			if quiet == False:
-				print('{0} SNR for {1} source:'.format(bp.name,sp.name))
-				print('{:<4}{:>10}{:>10} ({})'.format('Wave','SNR','Flux',units))
-				lim_arr = np.array([wsen_arr,bglim_arr, fvals]).T
-				matrix = lim_arr.tolist()
-				for row in matrix:
-					print('{:4.2f}{: >10.2f}{: >10.2f}'.format(row[0],row[1],row[2]))
-
+				print('{0} SNR for {1} source'.format(bp.name,sp.name))
+				names = ('Wave','SNR','Flux ({})'.format(units))
+				tbl = Table([wsen_arr,bglim_arr, fvals], names=names)
+				for k in tbl.keys():
+					tbl[k].format = '9.2f'
+				print(tbl)
+				
 		else:
 			out = {'wave':wsen_arr.tolist(), 'sensitivity':bglim_arr.tolist(), 
 				   'units':units, 'nsig':nsig, 'Spectrum':sp.name}
 
 			if quiet == False:
-				print('{} Background Sensitivity ({}-sigma) for {} source:'.\
+				print('{} Background Sensitivity ({}-sigma) for {} source'.\
 					format(bp.name,nsig,sp.name))
-				print('{:<7} Limit ({:<})'.format('Wave',units))
-				lim_arr = np.array([wsen_arr,bglim_arr]).T
-				matrix = lim_arr.tolist()
-				for row in matrix:
-					print('{:<7.2f}{: >7.2f}'.format(row[0],row[1]))
+				
+				names = ('Wave','Limit ({})'.format(units))
+				tbl = Table([wsen_arr,bglim_arr], names=names)
+				for k in tbl.keys():
+					tbl[k].format = '9.2f'
+				print(tbl)
 
 		return out
 
@@ -1338,12 +1339,7 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
 	elif dhs_obs:
 		raise NotImplementedError('DHS has yet to be fully included')
 
-	# Coronagraphic Imaging
-	#elif (pupil is not None) and ('LYOT' in pupil):
-	#	raise NotImplementedError
-	#	fzodi_pix *= 0.19
-
-	# Imaging
+	# Imaging (includes coronagraphy)
 	else:
 		if units is None: units = 'nJy'
 
@@ -1644,11 +1640,12 @@ def sat_limit_webbpsf(filter_or_bp, pupil=None, mask=None, module='A',
 				print('{0} Saturation Limit for {1} assuming {2} source:'.\
 					format(bp_lim.name,bp.name,sp.name))
 
-			print('{:<7} Sat Lim ({:<})'.format('Wave',units))
-			sat_arr = np.array([wsat_arr,msat_arr]).T
-			matrix = sat_arr.tolist()
-			for row in matrix:
-				print('{:<.2f}{:>9.2f}'.format(row[0],row[1]))
+			names = ('Wave','Sat Limit ({})'.format(units))
+			tbl = Table([wsat_arr,msat_arr], names=names)
+			for k in tbl.keys():
+				tbl[k].format = '9.2f'
+			print(tbl)
+
 
 		# Return saturation list along with corresponding wavelengths to dictionary	
 		return {'wave':wsat_arr.tolist(), 'satmag':msat_arr.tolist(),

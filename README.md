@@ -14,6 +14,10 @@ and weak lens imaging.
 All PSFs are generated via WebbPSF (https://pythonhosted.org/webbpsf/) to reproduce 
 realistic JWST images and spectra.
 
+**Note**: pyNRC allows for more modes than are officially allowed by the Observatory,
+(ie., filter + coronagraphic combinations, subarray sizes, etc.). 
+Just because you can do something with pyNRC does not mean it will be supported.
+
 ## Installation
 
 At the moment, the quickest way to install pyNRC into your existing Python installation 

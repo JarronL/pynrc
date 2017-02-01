@@ -538,7 +538,7 @@ class DetectorOps(object):
 	
 		times = [('t_frame',self.time_frame), ('t_group',self.time_group), \
 				 ('t_int',self.time_int), ('t_exp',self.time_exp), \
-				 ('t_acq',self.time_total)]
+				 ('t_acq',self.time_total), ('t_int_tot',self.time_total_int)]
 		return tuples_to_dict(times, verbose)
 
 	def pixel_noise(self, fsrc=0.0, fzodi=0.0, fbg=0.0, verbose=False):
@@ -1354,7 +1354,8 @@ class NIRCam(object):
 		quiet = False if verbose else True
 		
 		well_level = self.Detectors[0].well_level
-		int_time = self.multiaccum_times['t_int']
+		# Total time spent integrating minus the reset frame
+		int_time = self.multiaccum_times['t_int_tot'] - self.multiaccum_times['t_frame']
 		
 		kwargs = merge_dicts(kwargs, self._psf_info)
 		satlim = sat_limit_webbpsf(self.bandpass, pupil=self.pupil, mask=self.mask,
@@ -1448,7 +1449,7 @@ class NIRCam(object):
 
 	def ramp_optimize(self, sp, sp_bright=None, is_extended=False, patterns=None,
 		well_frac_max=0.8, nint_min=1, nint_max=1000, ng_min=2, ng_max=None,
-		snr_min=10, snr_frac=0.02, tacq_max=0, tacq_frac=0.1,
+		snr_goal=None, snr_frac=0.02, tacq_max=None, tacq_frac=0.1,
 		return_full_table=None, verbose=False, **kwargs):
 		"""
 		Find the optimal ramp settings to observe spectrum based input constraints.
@@ -1478,7 +1479,7 @@ class NIRCam(object):
 		well_frac_max : Maximum level that the pixel well is allowed to be filled. 
 					    Fractions greater than 1 imply hard saturation, but the reported 
 					    SNR will not be aware of any saturation that may occur to sp.
-		snr_min       : Minimum required SNR for source. For grism, this is the average
+		snr_goal      : Minimum required SNR for source. For grism, this is the average
 					    SNR for all wavelength.
 		snr_frac      : Give fractional buffer room rather than strict SNR cut-off.
 		nint_min/max  : Min/max number of desired integrations.
@@ -1492,7 +1493,7 @@ class NIRCam(object):
 		def parse_snr(snr, grism_obs, ind_snr):
 			if grism_obs:
 				res = snr['snr']
-				return np.mean(res)
+				return np.median(res)
 			else:
 				return snr[ind_snr]['snr']            
 		
@@ -1508,6 +1509,11 @@ class NIRCam(object):
 			raise NotImplementedError('DHS has yet to be fully included.')
 		if grism_obs and is_extended:
 			raise NotImplementedError('Extended objects not implemented for grism observations.')
+			
+		if (snr_goal is not None) and (tacq_max is not None):
+			raise ValueError('Keywords snr_goal and tacq_max are mutually exclusive.')
+		if (snr_goal is None) and (tacq_max is None):
+			raise ValueError('Must set either snr_goal or tacq_max.')
 
 		# Brightest source in field
 		if sp_bright is None:
@@ -1549,24 +1555,25 @@ class NIRCam(object):
 			
 		patterns.sort()
 		
-		# If tacq_max is set, do a first round that finds the max possible SNR
-		# Set this as snr_min
 		rows = []
-		if tacq_max > 0:
-			snr_min_list = []
+		if tacq_max is not None:
+			snr_goal_list = []
 			for read_mode in patterns:
 				if verbose: print(read_mode)
 
 				# Maximum allowed groups for given readout pattern
 				_,_,ngroup_max = pattern_settings.get(read_mode)
 				if ng_max is not None:
-					ngroup_max = np.min([ng_max,ngroup_max])
+					ngroup_max = ng_max
 				for ng in range(ng_min,ngroup_max+1):
 					self.update_detectors(read_mode=read_mode, ngroup=ng, nint=1)
 					mtimes = self.multiaccum_times
 
 					# Get saturation level of observation
-					well_frac = pix_count_rate * mtimes['t_int'] / self.well_level
+					# Total time spent integrating minus the reset frame
+					int_time = mtimes['t_int_tot'] - mtimes['t_frame']
+
+					well_frac = pix_count_rate * int_time / self.well_level
 					# If above well_frac_max, then this setting is invalid
 					if well_frac > well_frac_max:
 						continue
@@ -1600,20 +1607,22 @@ class NIRCam(object):
 						rows.append((read_mode, ng, nint, mtimes['t_int'], mtimes['t_exp'], \
 							mtimes['t_acq'], snr, well_frac))
 
-		else:
+		elif snr_goal is not None:
 			for i,read_mode in enumerate(patterns):
 				if verbose: print(read_mode)
 
 				# Maximum allowed groups for given readout pattern
 				_,_,ngroup_max = pattern_settings.get(read_mode)
 				if ng_max is not None:
-					ngroup_max = np.min([ng_max,ngroup_max])
+					ngroup_max = ng_max #np.min([ng_max,ngroup_max])
 				for ng in range(ng_min,ngroup_max+1):
 					self.update_detectors(read_mode=read_mode, ngroup=ng, nint=1)
 					mtimes = self.multiaccum_times
 
 					# Get saturation level of observation
-					well_frac = pix_count_rate * mtimes['t_int'] / self.well_level
+					# Total time spent integrating minus the reset frame
+					int_time = mtimes['t_int_tot'] - mtimes['t_frame']
+					well_frac = pix_count_rate * int_time / self.well_level
 					# If above well_frac_max, then this setting is invalid
 					if well_frac > well_frac_max:
 						continue
@@ -1623,31 +1632,33 @@ class NIRCam(object):
 					snr = parse_snr(sen, grism_obs, ind_snr)
 
 					# Approximate integrations needed to get to required SNR
-					nint = int((snr_min / snr)**2)
+					nint = int((snr_goal / snr)**2)
 					nint = np.max([nint_min,nint])
 					if nint>nint_max:
 						continue
 			
-					# Find NINT with SNR > 0.95 snr_min
+					# Find NINT with SNR > 0.95 snr_goal
 					self.update_detectors(nint=nint)
 					mtimes = self.multiaccum_times
 					sen = self.sensitivity(sp=sp, forwardSNR=True, image=image, **kwargs)
 					snr = parse_snr(sen, grism_obs, ind_snr)
-					while (snr<((1-snr_frac)*snr_min)) and (nint<=nint_max):
+					while (snr<((1-snr_frac)*snr_goal)) and (nint<=nint_max):
 						nint += 1
 						self.update_detectors(nint=nint)
 						mtimes = self.multiaccum_times
 						sen = self.sensitivity(sp=sp, forwardSNR=True, image=image, **kwargs)
 						snr = parse_snr(sen, grism_obs, ind_snr)
-					if nint>nint_max:
+						
+					# Skip if NINT or SNR are out of bounds
+					if (nint > nint_max) or (snr > ((1+snr_frac)*snr_goal)):
 						continue
 
 					rows.append((read_mode, ng, nint, mtimes['t_int'], mtimes['t_exp'], \
 						mtimes['t_acq'], snr, well_frac))
 			
-					# Increment NINT until SNR > 1.05 snr_min
+					# Increment NINT until SNR > 1.05 snr_goal
 					# Add each NINT to table output
-					while (snr < ((1+snr_frac)*snr_min)) and (nint<=nint_max):
+					while (snr < ((1+snr_frac)*snr_goal)) and (nint<=nint_max):
 						nint += 1
 						self.update_detectors(nint=nint)
 						sen = self.sensitivity(sp=sp, forwardSNR=True, image=image, **kwargs)
@@ -1656,7 +1667,7 @@ class NIRCam(object):
 						rows.append((read_mode, ng, nint, mtimes['t_int'], mtimes['t_exp'], \
 							mtimes['t_acq'], snr, well_frac))
 						
-		# Return to original values
+		# Return to detector mode to original parameters
 		self.update_detectors(**det_params_orig)
 	
 		if len(rows)==0:
