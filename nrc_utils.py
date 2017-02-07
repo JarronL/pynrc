@@ -1238,19 +1238,25 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
 		wspec, spec = image
 		
 		# Wavelengths to grab sensitivity values
-		igood2 = bp.throughput > (bp.throughput.max()/4)
+		#igood2 = bp.throughput > (bp.throughput.max()/4)
+		igood2 = bp_igood(bp, min_trans=bp.throughput.max()/3, fext=0)
 		wgood2 = waveset[igood2] / 1e4
 		wsen_arr = np.unique((wgood2*10 + 0.5).astype('int')) / 10
+		
+		# Add an addition 0.1 on either side
+		dw = 0.1
+		wsen_arr = np.concatenate(([wsen_arr.min()-dw],wsen_arr,[wsen_arr.max()+dw]))
+		
 		#wdel = wsen_arr[1] - wsen_arr[0]
 		
 		# FWHM at each pixel position
-		fwhm_pix_arr = np.ceil(wsen_arr * 0.206265 / 6.5 / pix_scale)
+		#fwhm_pix_arr = np.ceil(wsen_arr * 0.206265 / 6.5 / pix_scale)
 		# Make sure there's at least 5 total pixels in spatial dimension
-		temp = fwhm_pix_arr.repeat(2).reshape([fwhm_pix_arr.size,2])
-		temp[:,0] = 2
-		rad_arr = temp.max(axis=1)
-		# Doing a 5x2 [spatial x spectral] aperture
-		rad_arr[:] = 2
+		#temp = fwhm_pix_arr.repeat(2).reshape([fwhm_pix_arr.size,2])
+		#temp[:,0] = 2
+		#rad_arr = temp.max(axis=1)
+		# Ignore the above, let's always do a 5pix spatial aperture
+		rad_arr = np.zeros(wsen_arr.size) + 2 # (2*2+1)
 
 		# Spatial aperture size at each wavelength
 		ap_spat = (2*rad_arr+1).astype('int')
@@ -1786,11 +1792,9 @@ def pix_noise(ngroup=2, nf=1, nd2=0, tf=10.737, rn=15.0, ktc=29.0, p_excess=(0,0
 	var_ex = 12. * (n - 1.)/(n + 1.) * p_excess[0]**2 - p_excess[1] / m**0.5
 
 	# Variance of total signal
-	if ideal_Poisson:
-		var_poisson = ftot * tint
-	else:
-		var_poisson = var_gp - var_fm
-
+	var_poisson = (ftot * tint) if ideal_Poisson else (var_gp - var_fm)
+		
+	# Noise floor
 	var = var_rn + var_poisson + var_ex
 	sig = np.sqrt(var)
 
@@ -2421,7 +2425,7 @@ def stellar_spectrum(sptype, *renorm_args):
 	return sp
 
 	        
-def zodi_spec(zfact=None, **kwargs):
+def zodi_spec(zfact=None, locstr=None, year=None, day=None, **kwargs):
 	"""
 	Create a spectrum of the zodiacal light emission in order to estimate the
 	in-band sky background flux. This is simply the addition of two blackbodies
@@ -2436,6 +2440,10 @@ def zodi_spec(zfact=None, **kwargs):
 	then the each component gets scaled where T=5300K corresponds to the first
 	elements and T=282K is the second element of the array.
 	
+	Output is a Pysynphot spectrum with default units of flam (erg/s/cm^2/A/sr).
+	Note: Pysynphot doesn't recognize that it's per steradian, but we must keep 
+	that in mind when integrating the flux per pixel.
+	
 	Representative values for zfact:
 		0.0 - No zodiacal emission
 		1.0 - Minimum zodiacal emission from JWST-CALC-003894 (Figure 2-2)
@@ -2443,6 +2451,11 @@ def zodi_spec(zfact=None, **kwargs):
 		2.5 - Average (default)
 		5.0 - High
 		10. - Maximum
+		
+	Added the ability to query the Euclid background model for a specific
+	location and observing time. The two blackbodies will be scaled to the
+	1.0 and 5.5 um emission. See the help website for more details:
+		http://irsa.ipac.caltech.edu/applications/BackgroundModel/docs/dustProgramInterface.html
 	"""
 	
 	if zfact is None: zfact = 2.5
@@ -2452,21 +2465,96 @@ def zodi_spec(zfact=None, **kwargs):
 		f1, f2 = zfact
 	else: 
 		f1 = f2 = zfact
-	f1 *= 2.5e7; f2 *= 17.5e12
+	# These values have been scaled to match JWST-CALC-003894 values
+	# in order to work with Pysynphot's blackbody function.
+	# Pysynphot's BB function is normalized to 1Rsun at 1kpc by default.
+	f1 *= 4.0e7
+	f2 *= 2.0e13
 
 	bb1 = f1 * S.BlackBody(5300.0)
 	bb2 = f2 * S.BlackBody(282.0)
+
+	
+	# Query Euclid Background Model
+	if (locstr is not None) and (year is not None) and (day is not None):
+	
+		# Wavelengths in um and values in MJy
+		waves = np.array([1.0,5.5])
+		vals = zodi_euclid(locstr, year, day, waves, **kwargs)		
+		
+		bb1.convert('Jy')
+		bb2.convert('Jy')
+		
+		# MJy at wavelength locations
+		f_bb1 = bb1.sample(waves*1e4) / 1e6
+		f_bb2 = bb2.sample(waves*1e4) / 1e6
+		
+		bb1 *= (vals[0]-f_bb2[0])/f_bb1[0]
+		bb2 *= (vals[1]-f_bb1[1])/f_bb2[1]
 	
 	sp_zodi = bb1 + bb2
 	sp_zodi.convert('flam')
 	sp_zodi.name = 'Zodiacal Light'
 
-# 	bb1 = S.BlackBody(5800.); bb2 = S.BlackBody(300.)
-# 	sp_zodi = (1.7e7*bb1 + 2.3e13*bb2) * 3.73
-# 	sp_zodi.convert('flam')
-# 	sp_zodi.name = 'Zodiacal Light'
 
 	return sp_zodi
+	
+def zodi_euclid(locstr, year, day, wavelengths=[1,5.5], ido_viewin=0, **kwargs):
+	"""
+	Queries the IPAC Euclid Background Model at
+	http://irsa.ipac.caltech.edu/applications/BackgroundModel/
+	in order to get date and position-specific zodiacal dust emission.
+	
+	The program relies on urllib2 to download the page in XML format.
+	However, the website only allows single wavelength queries, so
+	this program implements a multithreaded procedure to query
+	multiple wavelengths simultaneously. However, due to the nature
+	of urllib2 library, only so many requests are allowed to go out
+	at a time, so this process can take some time to complete.
+	Testing shows about 500 wavelengths in 10 seconds as a rough
+	ballpark.
+	"""
+
+	from urllib2 import urlopen
+	import xmltodict
+	from multiprocessing.pool import ThreadPool
+
+	def fetch_url(url):
+		"""
+		Need to add error handling.
+		"""
+		response = urlopen(url)
+		response = response.read()
+		d = xmltodict.parse(response, xml_attribs=True)
+		fl_str = d['results']['result']['statistics']['zody']
+		return float(fl_str.split(' ')[0])
+
+
+	#locstr="17:26:44 -73:19:56"
+	locstr = locstr.replace(' ', '+')
+	#year=2019 
+	#day=1
+	#obslocin=0
+	#ido_viewin=1
+	#wavelengths=None
+
+	req_list = []
+	for w in wavelengths:
+		url = 'http://irsa.ipac.caltech.edu/cgi-bin/BackgroundModel/nph-bgmodel?'
+		req = "{}&locstr={}&wavelength={:.2f}&year={}&day={}&obslocin=0&ido_viewin={}"\
+			.format(url, locstr, w, year, day, ido_viewin)
+		req_list.append(req)
+
+	nthread = np.min([50,len(wavelengths)])
+	pool = ThreadPool(nthread)
+	results = pool.imap(fetch_url, req_list)
+
+	res = []
+	for r in results: res.append(r)
+	pool.close()
+
+	return np.array(res)
+
 
 def _zodi_spec_old(level=2):
 	"""
