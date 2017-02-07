@@ -1287,8 +1287,8 @@ class NIRCam(object):
 
 		If no spectral dispersers (grisms or DHS), then this returns a single
 		image or list of images if sp is a list of spectra. By default, it returns
-		only the detector-sampled, PSF, but setting return_oversample=True will
-		also return a set of oversampled images as a second output
+		only the detector-sampled PSF, but setting return_oversample=True will
+		also return a set of oversampled images as a second output.
 
 		Parameters
 		==========
@@ -1299,7 +1299,8 @@ class NIRCam(object):
 			Coronagraphic PSFs will further decrease this due to the smaller pupil
 			size and coronagraphic spot. DHS and grism observations do no yet have
 			pupil size reductions accounted for.
-		return_oversample: If True, then also returns the oversampled version of the PSF
+		return_oversample : If True, then also returns the oversampled version of the PSF
+		use_bg_psf : If a coronagraphic observation, off-center PSF is different.
 
 		"""
 		
@@ -1501,7 +1502,7 @@ class NIRCam(object):
 		pupil = self.pupil
 		grism_obs = (pupil is not None) and ('GRISM' in pupil)
 		dhs_obs   = (pupil is not None) and ('DHS'   in pupil)
-		coron_obs = (pupil is not None) and ('LYOT'   in pupil)
+		coron_obs = (pupil is not None) and ('LYOT'  in pupil)
 	
 		det_params_orig = self.det_info.copy()
 	
