@@ -2312,6 +2312,8 @@ def stellar_spectrum(sptype, *renorm_args):
 	You can also specify renormalization arguments to pass to sp.renorm. The
 	order (after `sptype`) should be (value, units, bandpass):
 		ie., sp = stellar_spectrum('G2V', 10, 'vegamag', bp)
+		
+	Flat spectrum (in photlam) are also allowed via the 'flat' string.
 	"""
 
 
