@@ -1566,6 +1566,10 @@ class NIRCam(object):
 				_,_,ngroup_max = pattern_settings.get(read_mode)
 				if ng_max is not None:
 					ngroup_max = ng_max
+				nng = ngroup_max - ng_min + 1
+				if nng>20:
+					_log.warning('Cycling through {} NGRPs. This may take a while!'\
+						.format(nng))
 				for ng in range(ng_min,ngroup_max+1):
 					self.update_detectors(read_mode=read_mode, ngroup=ng, nint=1)
 					mtimes = self.multiaccum_times
@@ -1616,6 +1620,9 @@ class NIRCam(object):
 				_,_,ngroup_max = pattern_settings.get(read_mode)
 				if ng_max is not None:
 					ngroup_max = ng_max #np.min([ng_max,ngroup_max])
+				if nng>20:
+					_log.warning('Cycling through {} NGRPs. This may take a while!'\
+						.format(nng))
 				for ng in range(ng_min,ngroup_max+1):
 					self.update_detectors(read_mode=read_mode, ngroup=ng, nint=1)
 					mtimes = self.multiaccum_times
@@ -1671,13 +1678,13 @@ class NIRCam(object):
 		# Return to detector mode to original parameters
 		self.update_detectors(**det_params_orig)
 	
+		names = ('Pattern', 'NGRP', 'NINT', 't_int', 't_exp', 't_acq', 'SNR', 'Well')
 		if len(rows)==0:
 			_log.warning('No ramp settings allowed within constraints! Reduce constraints.')
-			return
+			return Table(names=names)
 	
-		# Place rows into a
-		t_all = Table(rows=rows, \
-			names=('Pattern', 'NGRP', 'NINT', 't_int', 't_exp', 't_acq', 'SNR', 'Well'))
+		# Place rows into a AstroPy Table
+		t_all = Table(rows=rows, names=names)
 		t_all['Pattern'].format = '<10'
 		t_all['t_int'].format = '9.2f'
 		t_all['t_exp'].format = '9.2f'
