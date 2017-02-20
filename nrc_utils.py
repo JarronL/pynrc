@@ -660,6 +660,8 @@ def gen_image_coeff(filter_or_bp, pupil=None, mask=None, module='A',
 		#mag_norm = 10
 		#sp_norm = sp_flat.renorm(mag_norm, 'vegamag', bp)
 
+		# Bandpass unit response is the flux (in flam) of a star that 
+		# produces a response of one count per second in that bandpass
 		sp_norm = sp_flat.renorm(bp.unit_response(), 'flam', bp)
 		
 
@@ -1386,6 +1388,7 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
 		# Multiply countrate() by pix_scale^2 to get in terms of per pixel (area)
 		# This is the count rate per pixel for the fiducial starting point
 		image_ext = obs.countrate() * pix_scale**2 # e-/sec/pixel
+		#print(image_ext)
 		
 		if forwardSNR:
 			im_var = pix_noise(ngroup=ngroup, nf=nf, nd2=nd2, tf=tf, 
@@ -1953,9 +1956,10 @@ def fshift(image, delx=0, dely=0, pad=False):
 
 	INPUTS:
 		image - 2D image to be shifted
-		delx - shift in x (same direction as IDL SHIFT function)
-		dely - shift in y
-		pad - Should we pad the array before shifting, then truncate?
+		delx  - shift in x (same direction as IDL SHIFT function)
+		dely  - shift in y
+		pad   - Should we pad the array before shifting, then truncate?
+		        Otherwise, the image is wrapped.
 	OUTPUTS:
 		shifted image is returned as the function results
 
@@ -2012,17 +2016,34 @@ def fshift(image, delx=0, dely=0, pad=False):
 
 		# shift by integer portion
 		x = np.roll(np.roll(x, intx, axis=1), inty, axis=0)
-
+		
+		# Check if fracx and fracy are effectively 0
+		fxis0 = np.isclose(fracx,0, atol=1e-5)
+		fyis0 = np.isclose(fracy,0, atol=1e-5)
 		# If fractional shifts are significant
 		# use bi-linear interpolation between four pixels
-		if not np.allclose([fracx,fracy], 0, atol=1e-5):
-			x = x * ((1-fracx)*(1-fracy)) + \
-				np.roll(x,1,axis=0) * ((1-fracx)*fracy) + \
-				np.roll(x,1,axis=1) * (fracx*(1-fracy)) + \
-				np.roll(np.roll(x, 1, axis=1), 1, axis=0) * fracx*fracy
-
+		if not (fxis0 and fyis0):
+			# Break bi-linear interpolation into four parts
+			# to avoid NaNs unnecessarily affecting integer shifted dimensions
+			x1 = x * ((1-fracx)*(1-fracy))
+			x2 = 0 if fyis0 else np.roll(x,1,axis=0)*((1-fracx)*fracy)
+			x3 = 0 if fxis0 else np.roll(x,1,axis=1)*((1-fracy)*fracx)
+			x4 = 0 if (fxis0 or fyis0) else np.roll(np.roll(x, 1, axis=1), 1, axis=0) * fracx*fracy
+		
+			x = x1 + x2 + x3 + x4
+		
 		x = x[pady:pady+image.shape[0], padx:padx+image.shape[1]]
 		return x
+				
+
+		#if not np.allclose([fracx,fracy], 0, atol=1e-5):
+		#	x = x * ((1-fracx)*(1-fracy)) + \
+		#		np.roll(x,1,axis=0) * ((1-fracx)*fracy) + \
+		#		np.roll(x,1,axis=1) * (fracx*(1-fracy)) + \
+		#		np.roll(np.roll(x, 1, axis=1), 1, axis=0) * fracx*fracy
+
+		#x = x[pady:pady+image.shape[0], padx:padx+image.shape[1]]
+		#return x
 
 
 	else:
