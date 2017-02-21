@@ -1080,7 +1080,7 @@ class NIRCam(object):
 			
 			print('New Ramp Times')
 			ma = self.multiaccum_times
-			keys = ['t_group', 't_frame', 't_int', 't_exp', 't_acq']
+			keys = ['t_group', 't_frame', 't_int', 't_int_tot', 't_exp', 't_acq']
 			for k in keys:
 				print('  {:<9} : {:>8.3f}'.format(k, ma[k]))
 
@@ -1387,7 +1387,8 @@ class NIRCam(object):
 		These are all pass through the **kwargs parameter
 		forwardSNR    : Find the SNR of the input spectrum instead of sensitivity.
 		zfact         : Factor to scale Zodiacal spectrum (default 2.5)
-		ideal_Poisson : Use MULTIACCUM equation or total signal for noise estimate?
+		ideal_Poisson : If set to True, use total signal for noise estimate,
+						otherwise MULTIACCUM equation is used?
 
 		Representative values for zfact:
 			0.0 - No zodiacal emission
@@ -1485,9 +1486,14 @@ class NIRCam(object):
 		snr_frac      : Give fractional buffer room rather than strict SNR cut-off.
 		nint_min/max  : Min/max number of desired integrations.
 		ng_min/max    : Min/max number of desired groups in a ramp.
-		
+
+		ideal_Poisson : If set to True, use total signal for noise estimate,
+						otherwise MULTIACCUM equation is used?
+	
 		return_full_table : Don't filter or sort the final results.
-		verbose           : Print out top 10 results.
+		verbose           : Prints out top 10 results.
+
+
 
 		"""
 	

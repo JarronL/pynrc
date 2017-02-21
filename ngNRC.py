@@ -25,24 +25,28 @@ import datetime
 import os
 
 # HxRG Noise Generator
-import nghxrg as ng
+from pynrc import nghxrg as ng
 
 from nrc_utils import nrc_header
 from pynrc_core import DetectorOps
+from . import conf
 
-# Set log output levels
-# webbpsf and poppy have too many unnecessary warnings
+# # Set log output levels
+# # webbpsf and poppy have too many unnecessary warnings
+# import logging
+# logging.getLogger('nghxrg').setLevel(logging.ERROR)
+# 
+# _log = logging.getLogger('ngNRC')
+# #_log.setLevel(logging.DEBUG)
+# #_log.setLevel(logging.INFO)
+# _log.setLevel(logging.WARNING)
+# #_log.setLevel(logging.ERROR)
+# logging.basicConfig(level=logging.WARNING,format='%(name)-10s: %(levelname)-8s %(message)s')
+
 import logging
-logging.getLogger('nghxrg').setLevel(logging.ERROR)
+_log = logging.getLogger('pynrc')
 
-_log = logging.getLogger('ngNRC')
-#_log.setLevel(logging.DEBUG)
-#_log.setLevel(logging.INFO)
-_log.setLevel(logging.WARNING)
-#_log.setLevel(logging.ERROR)
-logging.basicConfig(level=logging.WARNING,format='%(name)-10s: %(levelname)-8s %(message)s')
-
-def SCAnoise(det=None, scaid=None, params=None, file_out=None, caldir=None, 
+def SCAnoise(det=None, scaid=None, params=None, caldir=None, file_out=None, 
 	dark=True, bias=True, out_ADU=False, verbose=False, use_fftw=False, ncores=None):
 	"""
 	Create a data cube consisting of realistic NIRCam detector noise.
@@ -108,7 +112,7 @@ def SCAnoise(det=None, scaid=None, params=None, file_out=None, caldir=None,
 		y0 = params.pop('y0', 0)
 		det = DetectorOps(scaid, wind_mode, xpix, ypix, x0, y0, params)
 	else:
-		sca = det.scaid
+		scaid = det.scaid
 	
 
 	# Line and frame overheads
@@ -124,11 +128,9 @@ def SCAnoise(det=None, scaid=None, params=None, file_out=None, caldir=None,
 	# Set bias and dark files
 	sca_str = np.str(scaid)
 	if caldir is None:
-		base_dir  = '/Volumes/NIRData/sca_images/'
-	else:
-		base_dir = caldir
-	bias_file = base_dir + 'SUPER_BIAS_'+sca_str+'.FITS' if bias else None
-	dark_file = base_dir + 'SUPER_DARK_'+sca_str+'.FITS' if dark else None
+		caldir  = conf.PYNRC_PATH + 'sca_images/'
+	bias_file = caldir + 'SUPER_BIAS_'+sca_str+'.FITS' if bias else None
+	dark_file = caldir + 'SUPER_DARK_'+sca_str+'.FITS' if dark else None
 
 	# Instantiate a noise generator object
 	ng_h2rg = ng.HXRGNoise(naxis1=det.xpix, naxis2=det.ypix, naxis3=naxis3, 

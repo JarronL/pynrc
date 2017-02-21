@@ -1719,7 +1719,8 @@ def pix_noise(ngroup=2, nf=1, nd2=0, tf=10.737, rn=15.0, ktc=29.0, p_excess=(0,0
 	fzodi (float) : Zodiacal light emission in e-/sec/pix
 	fbg   (float) : Any additional background (telescope emission or scattered light?)
 	
-	ideal_Poisson (bool) : Use the MULTIACCUM formula or the ideal form?
+	ideal_Poisson : If set to True, use total signal for noise estimate,
+					otherwise MULTIACCUM equation is used?
 
 	Various parameters can either be single values or numpy arrays.
 	If multiple inputs are arrays, make sure their array sizes match.
