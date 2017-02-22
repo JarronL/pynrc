@@ -43,13 +43,12 @@ class nrc_diskobs(NIRCam):
 
 		# Offsets positions to build PSFs
 		if self.mask is None:
+			# if no coronagraphic mask, then only 1 PSF
 			self.offset_list = [0.0]
 			if offset_list is not None:
 				print('No coronagraph, so offset_list automatically set to [0.0].')
 		elif offset_list is None:
-			# if no coronagraphic mask, then only 1 PSF
 			self.offset_list = [0.0, 0.1, 0.2, 0.5, 1.0, 2.0, 4.0]
-			#self.offset_list = [0.0, 0.1, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
 		else:
 			self.offset_list = offset_list
 		
@@ -124,9 +123,10 @@ class nrc_diskobs(NIRCam):
 		#offset_list = [0.0] if self.mask is None else self.offset_list
 		psf_dir = conf.PYNRC_PATH + 'disk_psfs/'
 		
-		# Generate PSFs and shift to center
+		# Generate PSFs from coefficients and shift to center
 		for offset in self.offset_list:		
-			# Generate filename and check if it exsits
+			# Generate filename and check if it exists
+			# Saving the padded PSFs is much faster than generating new ones each time
 			f = self.filter
 			m = 'none' if self.mask is None else self.mask
 			p = 'none' if self.pupil is None else self.pupil
@@ -145,7 +145,7 @@ class nrc_diskobs(NIRCam):
 									offset_r=offset)
 				_, psf_over = nrc_inst.gen_psf(return_oversample=True)
 				np.save(psf_path, psf_over)
-				
+
 			# Shift to center
 			offset_pix = -offset / self.image_scale
 			#psf_over = fshift(psf_over, dely=offset_pix, pad=True)            
@@ -212,22 +212,26 @@ class nrc_diskobs(NIRCam):
 		"""
 	
 		star_count = self.hdu_image.max()
-		if 'count' in fluxunit: 
+		if 'counts' in fluxunit: 
 			return star_count
 
 		# Create pysynphot observation
 		bp = self.bandpass
 		waveset = bp.wave
 		
-		sp_flat = S.ArraySpectrum(waveset, 0*waveset + 10.)
+		#sp_flat = S.ArraySpectrum(waveset, 0*waveset + 10.)
 		# Normalize to spectrum to return stellar count rate
-		sp_norm = sp_flat.renorm(bp.unit_response()*star_count, 'flam', bp)
+		#sp_norm = sp_flat.renorm(bp.unit_response()*star_count, 'flam', bp)
+		# Bandpass unit response is the flux (in flam) of a star that 
+		# produces a response of one count per second in that bandpass
+		norm = bp.unit_response()*star_count
+		sp_norm = stellar_spectrum('flat', norm, 'flam', bp)
 		# Convert to an observation
 		obs = S.Observation(sp_norm, bp, binset=waveset)
 
 		return obs.effstim(fluxunit)
 		
-	def planet_flux(self, Av=0, **kwargs):
+	def planet_flux(self, fluxunit='counts', Av=0, **kwargs):
 		"""
 		Return the planet flux rate for spectrum from Spiegel & Burrows (2011). 
 		Parameters:
@@ -251,7 +255,7 @@ class nrc_diskobs(NIRCam):
 		sp *= S.Extinction(Av/Rv,name='mwrv4')
 		obs = S.Observation(sp, self.bandpass, binset=self.bandpass.wave)
 		
-		return obs.countrate()
+		return obs.effstim(fluxunit)
 		
 		
 	def add_planet(self, loc=(100,100), loc_units='AU', Av=0, **kwargs):
@@ -354,6 +358,10 @@ class nrc_diskobs(NIRCam):
 		# Create HDUList of observations and grab radial stdev
 		hdulist = self.obs_images(wfe_drift=wfe_drift, zfact=zfact)
 		rr, stds = radial_profile(hdulist, ext='NOISE', center=cen)
+		xsize = hdulist['NOISE'].header['PIXELSCL'] * hdulist['NOISE'].data.shape[0] / 2
+		mask = rr<xsize
+		rr = rr[mask]
+		stds = stds[mask]
 		
 		# Normalized PSF radial standard deviation
 		stds = nsig * stds / star_flux 
@@ -388,14 +396,15 @@ class nrc_diskobs(NIRCam):
 		# This is really only valid when we've hit the bg limit
 		# Test bg limit by checking if last two elements are equal
 		# Only currently only valid for direct imaging
-		if self.mask is None:
-			sens_mag, _ = self.sensitivity(units='vegamag', nsig=nsig)
-			sig_lim_true = sens_mag['sensitivity']
-			diff = sig_lim_true - sig_lim
+		#if self.mask is None:
+		sens_mag, _ = self.sensitivity(units='vegamag', nsig=nsig, ideal_Poisson=True)
+		sig_lim_true = sens_mag['sensitivity']
+		#diff = sig_lim_true - sig_lim.max()
+		#print(diff.min(), sig_lim_true, sig_lim.max())
 		
-			if diff.min() < 0:
-				sig_lim += diff.min()
-				contrast = 10**((star_mag-sig_lim)/2.5)
+		#if diff < 0:
+			#sig_lim += diff
+			#contrast = 10**((star_mag-sig_lim)/2.5)
 		
 		if maglim:
 			return rr, sig_lim
@@ -544,8 +553,8 @@ class nrc_diskobs(NIRCam):
 		rho_sqr = rho**2 if scaled else np.ones(immodel.shape)
 
 		# SNR Image
-		tot_noise = convolve_fft(tot_noise, Gaussian2DKernel(3), 
-			fftn=fftpack.fftn, ifftn=fftpack.ifftn, allow_huge=True)
+		#tot_noise = convolve_fft(tot_noise, Gaussian2DKernel(3), 
+		#	fftn=fftpack.fftn, ifftn=fftpack.ifftn, allow_huge=True)
 		snr = imsub / tot_noise
 
 		# If saturated, then set SNR=0, im_final=0
@@ -776,7 +785,7 @@ def observe_star(args_inst, dist_out=140, subsize=None,
              sptype='G2V', star_kmag=None, **kwargs):
     
 	"""
-	Perform observation of a disk model.
+	Perform observation of a single star (no disk).
 
 	Parameters
 	============
