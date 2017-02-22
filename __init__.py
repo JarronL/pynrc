@@ -63,4 +63,6 @@ from .pynrc_core import (multiaccum, DetectorOps, NIRCam, planets_sb11)
 
 from .obs_nircam import (nrc_diskobs, observe_disk, observe_star)
 
+#from .ngNRC import slope_to_ramp, nproc_use_ng
+
 import robust, ngNRC

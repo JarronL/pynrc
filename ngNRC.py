@@ -20,14 +20,13 @@ Modification History:
 from __future__ import division, print_function
 
 import numpy as np
+import datetime, os
 from astropy.io import fits
-import datetime
-import os
 
 # HxRG Noise Generator
 from pynrc import nghxrg as ng
-
 from nrc_utils import nrc_header
+
 from pynrc_core import DetectorOps
 from . import conf
 
@@ -58,7 +57,7 @@ def SCAnoise(det=None, scaid=None, params=None, caldir=None, file_out=None,
 	Parameters
 	----------
 	det    : Option to specify already existing NIRCam detector object class
-		     Otherwise, use scaid and params
+			 Otherwise, use scaid and params
 	scaid  : NIRCam SCA number (481, 482, ..., 490)
 	params : A set of MULTIACCUM parameters such as:
 		params = {'ngroup': 2, 'wind_mode': 'FULL', 
@@ -73,7 +72,7 @@ def SCAnoise(det=None, scaid=None, params=None, caldir=None, file_out=None,
 		gives the option of converting to ADU (True) or keeping in term of e- (False).
 		ADU values are converted to 16-bit UINT. Keep in e- if applying to a ramp
 		observation then convert combined data to ADU later.
-	
+
 	Returns 
 	----------
 	Primary HDU with noise ramp in hud.data and header info in hdu.header.
@@ -83,7 +82,7 @@ def SCAnoise(det=None, scaid=None, params=None, caldir=None, file_out=None,
 	import ngNRC
 	params = {'ngroup': 108, 'wind_mode': 'FULL', 
 			'xpix': 2048, 'ypix': 2048, 'x0':0, 'y0':0}
-			
+		
 	# Output to a file
 	scaid = 481
 	caldir = '/data/darks_sim/nghxrg/sca_images/'
@@ -98,7 +97,7 @@ def SCAnoise(det=None, scaid=None, params=None, caldir=None, file_out=None,
 		dark=True, bias=True, out_ADU=False, use_fftw=False, ncores=None, verbose=False)
 
 	"""
-	
+
 	# Extensive testing on both Python 2 & 3 shows that 4 cores is optimal for FFTW
 	# Beyond four cores, the speed improvement is small. Those other processors are
 	# are better used elsewhere.
@@ -113,7 +112,7 @@ def SCAnoise(det=None, scaid=None, params=None, caldir=None, file_out=None,
 		det = DetectorOps(scaid, wind_mode, xpix, ypix, x0, y0, params)
 	else:
 		scaid = det.scaid
-	
+
 
 	# Line and frame overheads
 	nroh     = det._line_overhead
@@ -138,8 +137,8 @@ def SCAnoise(det=None, scaid=None, params=None, caldir=None, file_out=None,
 				 dark_file=dark_file, bias_file=bias_file,
 				 wind_mode=det.wind_mode, x0=det.x0, y0=det.y0,
 				 use_fftw=use_fftw, ncores=ncores, verbose=verbose)
-		 
-	
+	 
+
 	# Lists of each SCA and their corresponding noise info
 	sca_arr = range(481,491)
 
@@ -162,8 +161,8 @@ def SCAnoise(det=None, scaid=None, params=None, caldir=None, file_out=None,
 			   [1.0,1.3,1.0,1.1],
 			   [1.0,0.9,1.0,1.0], [0.9,0.9,1.1,1.0], [1.0,1.0,1.0,0.9], [1.1,1.1,0.8,0.9],
 			   [1.1,1.1,1.0,1.0]]
-		   
-		   
+	   
+	   
 	# Offset Values (ADU)
 	bias_avg_arr = [5900, 5400, 6400, 6150, 11650, 
 					7300, 7500, 6700, 7500, 11500]
@@ -223,7 +222,7 @@ def SCAnoise(det=None, scaid=None, params=None, caldir=None, file_out=None,
 		ch_off = ch_off[0]
 		ref_f2f_ucorr = ref_f2f_ucorr[0]
 		aco_a = aco_a[0]; aco_b = aco_b[0]
-	
+
 	# Run noise generator
 	hdu = ng_h2rg.mknoise(None, gain=gn, rd_noise=rd_noise, c_pink=c_pink, u_pink=u_pink, 
 			reference_pixel_noise_ratio=ref_rat, ktc_noise=ktc_noise,
@@ -231,7 +230,7 @@ def SCAnoise(det=None, scaid=None, params=None, caldir=None, file_out=None,
 			ch_off=ch_off, ref_f2f_corr=ref_f2f_corr, ref_f2f_ucorr=ref_f2f_ucorr, 
 			aco_a=aco_a, aco_b=aco_b, ref_inst=ref_inst, out_ADU=out_ADU)
 
-	hdu.header = nrc_header(det, header=hdu.header)
+	hdu.header = nrc_header(det)#, header=hdu.header)
 	hdu.header['UNITS'] = 'ADU' if out_ADU else 'e-'
 
 	# Write the result to a FITS file
@@ -242,7 +241,7 @@ def SCAnoise(det=None, scaid=None, params=None, caldir=None, file_out=None,
 			file_out = file_out[:-5]
 		if file_out[-1:] == '_':
 			file_out = file_out[:-1]
-		
+	
 # 		file_now = now
 # 		file_now = file_now.replace(':', 'h', 1)
 # 		file_now = file_now.replace(':', 'm', 1)
@@ -251,6 +250,112 @@ def SCAnoise(det=None, scaid=None, params=None, caldir=None, file_out=None,
 
 		hdu.header['FILENAME'] = os.path.split(file_out)[1]
 		hdu.writeto(file_out, clobber='True')
-	
+
 	return hdu
 
+def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None, 
+				  filter=None, pupil=None, obs_time=None):
+	"""
+	For a given detector operations class and slope image, create a
+	ramp integration using Poisson noise and detector noise. 
+
+	Currently, this image simulator does not take into account:
+		- QE variations across a pixel's surface
+		- Intrapixel Capacitance (IPC)
+		- Post-pixel Coupling (PPC) due to ADC "smearing"
+		- Pixel non-linearity
+		- Persistence/latent image
+
+	Parameters
+	===========
+	det      : Detector operations object
+	im_slope : Idealized slope image
+
+	out_ADU  : If true, divide by gain and convert to 16-bit UINT.
+	file_out : Name (including directory) to save FITS file
+
+	filter   : Name of filter element for header
+	pupil    : Name of pupil element for header
+	obs_time : Specifies when the observation was considered to be executed.
+		If not specified, then it will choose the current time.
+		This must be a datetime object:
+			datetime.datetime(2016, 5, 9, 11, 57, 5, 796686)
+		This information is added to the header.
+
+	"""
+
+	#import ngNRC
+	# MULTIACCUM ramp information
+	ma  = det.multiaccum
+
+	xpix = det.xpix
+	ypix = det.ypix
+
+	nd1     = ma.nd1
+	nd2     = ma.nd2
+	nf      = ma.nf
+	ngroup  = ma.ngroup
+	t_frame = det.time_frame
+
+	# Number of total frames up the ramp (including drops)
+	naxis3 = nd1 + ngroup*nf + (ngroup-1)*nd2
+
+	if im_slope is not None:
+		# Count accumulation for a single frame
+		frame = im_slope * t_frame
+		# Add Poisson noise at each frame step
+		sh0, sh1 = im_slope.shape
+		new_shape = (naxis3, sh0,sh1)
+		ramp = np.random.poisson(lam=frame, size=new_shape)#.astype(np.float64)
+		# Perform cumulative sum in place
+		np.cumsum(ramp, axis=0, out=ramp)
+	else:
+		ramp = 0
+
+	# Create dark ramp with read noise and 1/f noise
+	hdu = SCAnoise(det)
+	# Update header information
+	hdu.header = det.make_header(filter, pupil, obs_time)
+	hdu.data += ramp # Add signal ramp to dark ramp
+	data = hdu.data
+
+	#### Add in IPC (TBI)
+
+	# Get rid of any drops at the beginning (nd1)
+	if nd1>0: data = data[nd1:,:,:]
+
+	# Remove drops and average grouped data
+	if nf>1 or nd2>0:
+		# Trailing drop frames already excluded, so need to pull off last group of avg'ed frames
+		data_end = data[-nf:,:,:].mean(axis=0) if nf>1 else data[-1:,:,:]
+		data_end = data_end.reshape([1,ypix,xpix])
+	
+		# Only care about first (n-1) groups 
+		data = data[:-nf,:,:]
+	
+		# Reshape for easy group manipulation
+		data = data.reshape([-1,nf+nd2,ypix,xpix])
+	
+		# Trim off the dropped frames (nd2)
+		if nd2>0: data = data[:,:nf,:,:]
+
+		# Average the frames within groups
+		data = data.reshape([-1,ypix,xpix]) if nf==1 else data.mean(axis=0)
+
+		# Add back the last group (already averaged)
+		data = np.append(data,data_end,axis=0)
+	
+	# Convert to ADU (16-bit UINT)
+	if out_ADU:
+		gain = det.gain
+		data /= gain
+		data[data < 0] = 0
+		data[data >= 2**16] = 2**16 - 1
+		data = data.astype('uint16')
+		hdu.header['UNITS'] = 'ADU'
+	
+	hdu.data = data
+	hdu.header['FILENAME'] = os.path.split(file_out)[1]
+	hdu.writeto(file_out, clobber='True')
+
+	return hdu
