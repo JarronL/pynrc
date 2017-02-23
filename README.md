@@ -32,7 +32,7 @@ file ``/Users/Bob/anaconda/lib/python2.7/site-packages/somefile.pth`` with the G
 folder path as context (``/Users/Bob/GitHub/``).
 This method will add the GitHub directory to your Python path so that pynrc can be imported.
 
-### Data files
+#### Data files
 
 In addition, you must create a data directory that will hold cached information 
 about the PSFs. Nominally, this is called ``pynrc_data`` and can be placed anywhere 
