@@ -49,3 +49,7 @@ You can grab the required data files at: http://mips.as.arizona.edu/~jleisenring
 + WebbPSF >=0.5.0 (https://pythonhosted.org/webbpsf/)
 + Astropy >=1.2.0 (http://www.astropy.org/)
 + Pysynphot >=0.9.8.2 (https://pysynphot.readthedocs.io)
++ Others???
+
+#### Recommended
++ Seaborn >=0.7.0 (https://seaborn.pydata.org/)
