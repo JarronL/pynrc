@@ -31,12 +31,16 @@ file ``/Users/Bob/anaconda/lib/python2.7/site-packages/somefile.pth`` with the G
 folder path as context (``/Users/Bob/GitHub/``).
 This method will add the GitHub directory to your Python path so that pynrc can be imported.
 
+### Data files
+
 In addition, you must create a data directory that will hold cached information 
 about the PSFs. Nominally, this is called ``pynrc_data`` and can be placed anywhere 
 on your local machine. Create an environment variable ``PYNRC_PATH`` in your shell 
 startup file, such as ``.bashrc``:
 
 - ``export PYNRC_PATH="/Users/Bob/pynrc_data/"``
+
+You can grab the required data files at: http://mips.as.arizona.edu/~jleisenring/pynrc/pynrc_data_0.5.0.tar. One of the directories includes speckle maps for computing contrasts. These files can either be computed directly via the generate_speckle_maps.ipynb or downloaded at http://mips.as.arizona.edu/~jleisenring/pynrc/speckle_maps.tar.
 
 ## Requirements
 
