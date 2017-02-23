@@ -1440,6 +1440,10 @@ class NIRCam(object):
 			5.0 - High
 			10. - Maximum
 		"""
+		
+		# Dark image
+		if ('FLAT' in self.pupil):
+			return 0
 
 		bp = self.bandpass
 		waveset = bp.wave
@@ -1448,31 +1452,63 @@ class NIRCam(object):
 		fzodi_pix = obs_zodi.countrate() * (self.pix_scale/206265.0)**2
 	
 		# Don't forget about Lyot mask attenuation (not in bandpass throughput)
-		if (self.pupil is not None) and ('LYOT' in self.pupil):
+		if ('LYOT' in self.pupil):
 			fzodi_pix *= 0.19
 	
 		return fzodi_pix
 	
-	def gen_exposures(self, sp, file_out):
+	def gen_exposures(self, sp=None, file_out=None, return_results=None):
 		"""
+		Create a series of ramp integration saved to FITS files based on
+		the current NIRCam settings. 
+	
+		Currently, this image simulator does NOT take into account:
+			- QE variations across a pixel's surface
+			- Intrapixel Capacitance (IPC)
+			- Post-pixel Coupling (PPC) due to ADC "smearing"
+			- Pixel non-linearity
+			- Persistence/latent image
+			- Optical distortions
+			- Zodiacal background roll off for grism edges
+
+	
+		Parameters
+		==========
+		sp : A pysynphot spectral object. If not specified, then
+			assumed that we're looking at blank sky.
+		file_out : Path and name of output FITs files. Time stamps will
+			be automatically inserted for unique file names.
+		return_results : By default, we return results if if file_out is
+			not set. The results are not returned by this function if
+			file_out is set. This is because return a massive amount of
+			data can lead to large memory usage. Save the FITs files to
+			disk if NINTs is large. We include the return_results keyword
+			if the user the user would like to do both (or neither??).
 		"""
+	
 		filter = self.filter
 		pupil = self.pupil
-	
+		xpix = self.det_info['xpix']
+		ypix = self.det_info['ypix']
+
+
+		# No visible source
+		if ('FLAT' in pupil) or (sp is None):
+			im_slope = np.zeros([ypix,xpix])
 		# Grism spec
-		if (pupil is not None) and ('GRISM' in pupil):
+		elif ('GRISM' in pupil):
 			w, im_slope = self.gen_psf(sp)
 		# DHS spectroscopy
-		elif (pupil is not None) and ('DHS' in pupil):
+		elif ('DHS' in pupil):
 			raise NotImplementedError('DHS has yet to be fully included')
 		# Imaging+Coronagraphy
 		else:
 			im_slope = self.gen_psf(sp)[0]
+		
+		# Add in Zodi emission
+		im_slope += self.bg_zodi()
 	
-		# The current image size is only as large as the dispersed spectrum
-		# Expand image to the larger detector size
-		xpix = self.det_info['xpix']
-		ypix = self.det_info['ypix']
+		# Expand or cut to detector size
 		im_slope = pad_or_cut_to_size(im_slope, (ypix,xpix))
 		im_slope[im_slope==0] = im_slope[im_slope>0].min()
 
@@ -1483,18 +1519,23 @@ class NIRCam(object):
 		time_list = [t0 + datetime.timedelta(seconds=i*dt) for i in range(nint)]
 
 		# Create list of file names for each INT
-		file_list = []
-		#file_out = '/Volumes/NIRData/grism_sim/grism_sim.fits'
-		if file_out.lower()[-5:] == '.fits':
-			file_out = file_out[:-5]
-		if file_out[-1:] == '_':
-			file_out = file_out[:-1]
+		if file_out is None:
+			if return_results is None: return_results=True
+			file_list = [None]*nint
+		else:
+			if return_results is None: return_results=False
+			file_list = []
+			#file_out = '/Volumes/NIRData/grism_sim/grism_sim.fits'
+			if file_out.lower()[-5:] == '.fits':
+				file_out = file_out[:-5]
+			if file_out[-1:] == '_':
+				file_out = file_out[:-1]
 
-		for t in time_list:
-			file_time = t.isoformat()[:-7]
-			file_time = file_time.replace(':', 'h', 1)
-			file_time = file_time.replace(':', 'm', 1)
-			file_list.append(file_out + '_' + file_time + '.fits')
+			for t in time_list:
+				file_time = t.isoformat()[:-7]
+				file_time = file_time.replace(':', 'h', 1)
+				file_time = file_time.replace(':', 'm', 1)
+				file_list.append(file_out + '_' + file_time + '.fits')
 
 		# Create a list of arguments to pass
 		# For now, we're only doing the first detector. This will need to get more
@@ -1504,13 +1545,14 @@ class NIRCam(object):
 							for fout,otime in zip(file_list, time_list)]
 
 		nproc = nproc_use_ng(det)
-		print(nproc)
 		if nproc<=1:
 			res = map(gen_fits, worker_arguments)
 		else:
 			pool = mp.Pool(nproc)
 			res = pool.map(gen_fits, worker_arguments)
 			pool.close()
+			
+		if return_results: return res
 
 
 	def ramp_optimize(self, sp, sp_bright=None, is_extended=False, patterns=None,
@@ -1890,12 +1932,12 @@ def gen_fits(args):
 	Helper function for generating FITs integrations from a slope image
 	"""
 	from ngNRC import slope_to_ramp
-	#from pynrc import ngNRC
+
 	# Must call np.random.seed() for multiprocessing, otherwise 
 	# random numbers for parallel processes start in the same seed state!
 	np.random.seed()
 	res = slope_to_ramp(*args)
-	del res
+	return res
 
 def nproc_use_ng(det):
 	""" 

@@ -259,12 +259,14 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
 	For a given detector operations class and slope image, create a
 	ramp integration using Poisson noise and detector noise. 
 
-	Currently, this image simulator does not take into account:
+	Currently, this image simulator does NOT take into account:
 		- QE variations across a pixel's surface
 		- Intrapixel Capacitance (IPC)
 		- Post-pixel Coupling (PPC) due to ADC "smearing"
 		- Pixel non-linearity
 		- Persistence/latent image
+		- Optical distortions
+		- Zodiacal background roll off for grism edges
 
 	Parameters
 	===========
@@ -355,7 +357,8 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
 		hdu.header['UNITS'] = 'ADU'
 	
 	hdu.data = data
-	hdu.header['FILENAME'] = os.path.split(file_out)[1]
-	hdu.writeto(file_out, clobber='True')
+	if file_out is not None:
+		hdu.header['FILENAME'] = os.path.split(file_out)[1]
+		hdu.writeto(file_out, clobber='True')
 
 	return hdu
