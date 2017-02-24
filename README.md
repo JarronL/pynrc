@@ -46,7 +46,7 @@ You can grab the required data files at: http://mips.as.arizona.edu/~jleisenring
 
 ## Requirements
 
-+ Python 2.7.x (3.x compatability built in, but not well vetted)
++ Python 2.7.x (3.x compatability not guaranteed, but vetting welcome!)
 + WebbPSF >=0.5.0 (https://pythonhosted.org/webbpsf/)
 + Astropy >=1.2.0 (http://www.astropy.org/)
 + Pysynphot >=0.9.8.2 (https://pysynphot.readthedocs.io)
