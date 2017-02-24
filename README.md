@@ -42,7 +42,7 @@ startup file, such as ``.bashrc``:
 
 - ``export PYNRC_PATH="/Users/Bob/pynrc_data/"``
 
-You can grab the required data files at: http://mips.as.arizona.edu/~jleisenring/pynrc/pynrc_data_0.5.0.tar. One of the directories includes speckle maps for computing contrasts. These files can either be computed directly via the generate_speckle_maps.ipynb or downloaded at http://mips.as.arizona.edu/~jleisenring/pynrc/speckle_maps.tar.
+You can grab the required data files at: http://mips.as.arizona.edu/~jleisenring/pynrc/pynrc_data_v0.5.0.tar. One of the directories includes speckle maps for computing contrasts. These files can either be computed directly via the generate_speckle_maps.ipynb or downloaded at http://mips.as.arizona.edu/~jleisenring/pynrc/speckle_maps.tar.
 
 ## Requirements
 
