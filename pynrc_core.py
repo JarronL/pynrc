@@ -3,23 +3,27 @@ pyNRC - Python ETC and Simulator for JWST NIRCam
 
 Modification History:
 
-v0.1 - Aug 2016 - J.M. Leisenring, UA/Steward
+v0.1.0 - Aug 2016 - J.M. Leisenring, UA/Steward
   - Rewrite of SimNRC
   - Object oriented Multiaccum, Detector, and NIRCam classes
   - Create a detector property instance for each detector
-v0.2 - Sep 2016 - J.M. Leisenring, UA/Steward
+v0.2.0 - Sep 2016 - J.M. Leisenring, UA/Steward
   - Add support for LW slitless grism
   - Add support for extended sources
-v0.3 - Jan 2017 - J.M. Leisenring, UA/Steward
+v0.3.0 - Jan 2017 - J.M. Leisenring, UA/Steward
   - Observations subclass for coronagraphs and direct imaging
+v0.4.0 - N/A
+v0.5.0 - Feb 2017 - J.M. Leisenring, UA/Steward
+  - ND Acquisition filters
+  - Ramp settings optimizer
+  - Ability to create simulated ramps with detector noise
+  - Query Euclid's IPAC server for position-dependent Zodiacal emission
+  - Added example notebooks
 
 To Be Completed:
- - Function to determine optimal ramp settings for required SNR 
-   - Requires function for realistic ramp overheads
  - Support for SW DHS
  - Validate detector array sizes compared to WebbPSF sizes
    - Is there an issue if WebbPSF image is larger than detector size?
- - Create simulated ramps
 """
 
 from __future__ import division, print_function, unicode_literals
