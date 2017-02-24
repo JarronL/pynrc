@@ -2825,7 +2825,8 @@ def nrc_header(det_class, filter=None, pupil=None, obs_time=None, header=None):
 
 
 
-def lazy_thunkif# y(f):
+# Unused function
+#def lazy_thunkif y(f):
 # 	"""
 # 	Make a function immediately return a function of no args which, when called,
 # 	waits for the result, which will start being processed in another thread.
