@@ -808,52 +808,6 @@ def get_SNR(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=None,
 	"""
 	Obtain the SNR of an input source spectrum with specified instrument setup.
 	This is simply a wrapper for bg_sensitivity(forwardSNR=True).
-
-	Parameters
-	==========
-
-	Instrument Settings
-	-------------------
-	filter_or_bp : Either the name of the filter or pre-computed Pysynphot bandpass.
-	pupil  : NIRCam pupil elements such as grisms or lyot stops
-	mask   : Specify the coronagraphic occulter (spots or bar)
-	module : 'A' or 'B'
-	pix_scale : Pixel scale in arcsec/pixel
-
-	Spectrum Settings
-	-------------------
-	sp         : A pysynphot spectral object to calculate sensitivity 
-		         (default: Flat spectrum in photlam)
-	forwardSNR : Find the SNR of the input spectrum instead of determining sensitivity.
-
-	Ramp Settings
-	-------------------
-	tf     : Time per frame
-	ngroup : Number of groups per integration
-	nf     : Number of averaged frames per group
-	nd2    : Number of dropped frames per group
-	nint   : Number of integrations/ramps to consider
-
-	PSF Information
-	-------------------
-	coeff : A cube of polynomial coefficients for generating PSFs. This is
-		generally oversampled and has the shape: 
-	
-			[fov_pix*oversample, fov_pix*oversample, deg]
-	
-		If not set, this this will be calculated from fov_pix, oversample,
-		and npsf by generating a number of webbPSF images within the bandpass
-		and fitting a high-order polynomial.
-	fov_pix : Number of detector pixels in the image coefficient and PSF.
-	oversample : Factor of oversampling of detector pixels.
-	
-	Keyword Args
-	-------------------
-	**kwargs : Allows the user to pass additional (optional) arguments to
-		a variety of functions including:
-		zodi_spec - zfact
-		pix_noise - rn, ktc, idark, and p_excess
-		psf_coeff - npsf and ndeg
 	"""
 	
 	return bg_sensitivity(filter_or_bp, \
@@ -892,10 +846,9 @@ def _mlim_helper(sub_im, mag_norm=10, mag_arr=np.arange(5,35,1),
 def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=None,
 	sp=None, units=None, nsig=10, tf=10.737, ngroup=2, nf=1, nd2=0, nint=1,
 	coeff=None, fov_pix=11, oversample=4, quiet=True, forwardSNR=False, 
-	offset_r=0, offset_theta=0, 
-	return_image=False, image=None, dw_bin=None, **kwargs):
+	offset_r=0, offset_theta=0, return_image=False, image=None, dw_bin=None, **kwargs):
 	"""
-	Estimates the point source sensitivity for a set of instrument parameters.
+	Estimates the sensitivity for a set of instrument parameters.
 	By default, a flat spectrum is convolved with the specified bandpass.
 	For imaging, this function also returns the surface brightness sensitivity.
 
@@ -951,8 +904,10 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
 		If not set, this this will be calculated from fov_pix, oversample,
 		and npsf by generating a number of webbPSF images within the bandpass
 		and fitting a high-order polynomial.
-	fov_pix : Number of detector pixels in the image coefficient and PSF.
-	oversample : Factor of oversampling of detector pixels.
+	fov_pix      : Number of detector pixels in the image coefficient and PSF.
+	oversample   : Factor of oversampling of detector pixels.
+	offset_r     : Radial offset of the target from center.
+	offset_theta : Position angle for that offset, in degrees CCW (+Y).
 	
 	Misc.
 	-------------------
@@ -962,8 +917,7 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
 	
 	Keyword Args
 	-------------------
-	**kwargs : Allows the user to pass additional (optional) arguments to
-		a variety of functions including:
+	**kwargs : Allows the user to pass additional (optional) arguments:
 		zodi_spec - zfact
 		pix_noise - rn, ktc, idark, and p_excess
 		psf_coeff - npsf and ndeg
@@ -1359,9 +1313,11 @@ def sat_limit_webbpsf(filter_or_bp, pupil=None, mask=None, module='A',
 		If not set, this this will be calculated from fov_pix, oversample,
 		and npsf by generating a number of webbPSF images within the bandpass
 		and fitting a high-order polynomial.
-	fov_pix : Number of detector pixels in the image coefficient and PSF.
-	oversample : Factor of oversampling of detector pixels.
-	**kwargs : Allows the user to pass additional (optional) arguments to 
+	fov_pix      : Number of detector pixels in the image coefficient and PSF.
+	oversample   : Factor of oversampling of detector pixels.
+	offset_r     : Radial offset of the target from center.
+	offset_theta : Position angle for that offset, in degrees CCW (+Y).
+	**kwargs     : Allows the user to pass additional (optional) arguments to 
 		psf_coeff(), such as npsf and ndeg.
 	"""
 
@@ -1758,7 +1714,8 @@ def pad_or_cut_to_size(array, new_shape):
 
 def fshift(image, delx=0, dely=0, pad=False):
 	"""
-	Routine to shift an image by non-integer values
+	Ported from IDL function fshift.pro.
+	Routine to shift an image by non-integer values.
 
 	INPUTS:
 		image - 2D image to be shifted
@@ -1860,16 +1817,18 @@ def fshift(image, delx=0, dely=0, pad=False):
 def frebin(image, dimensions=None, scale=None, total=True):
 	"""
 	Python port from the IDL frebin.pro
-	Shrink or expand the size of a 1D or 2D array by an arbitary amount using bilinear interpolation.
-	Conserves flux by ensuring that each input pixel is equally represented in the output array.
+	Shrink or expand the size of a 1D or 2D array by an arbitary amount 
+	using bilinear interpolation. Conserves flux by ensuring that each 
+	input pixel is equally represented in the output array.
 
 	Parameters
 	==========
 	image      : Input image, 1-d or 2-d ndarray
 	dimensions : Size of output array (take priority over scale)
 	scale      : Factor to scale output array
-	total      : Conserves the surface flux. If True, the output pixels will be the sum of pixels 
-				 within the appropriate box of the input image. Otherwise, they will be the average.
+	total      : Conserves the surface flux. If True, the output pixels 
+				 will be the sum of pixels within the appropriate box of 
+				 the input image. Otherwise, they will be the average.
 			 
 	Returns the binned ndarray
 	"""
@@ -2037,7 +1996,7 @@ def jl_poly(xvals, coeff):
 		np.polynomial.polynomial.polyval, where the first dimensions
 		correspond to the coeff latter dimensions, and the final dimension
 		is equal to the number of xvals. The result is flattened if either
-		only one xval or one set of coeff (or both)
+		only one xval or one set of coeff (or both).
 	"""
 
 	# How many xvals?
@@ -2094,7 +2053,7 @@ def rtheta_to_xy(r, theta):
 	in the imaging coordinate system (as opposed to RA/DEC)
 
 	r     : Radial offset from the center in pixels
-	theta : Position angle for offset in degrees CCW.
+	theta : Position angle for offset in degrees CCW (+Y).
 	"""
 	x = -r * np.sin(theta*np.pi/180.)
 	y =  r * np.cos(theta*np.pi/180.)
@@ -2342,6 +2301,9 @@ def zodi_euclid(locstr, year, day, wavelengths=[1,5.5], ido_viewin=0, **kwargs):
 	at a time, so this process can take some time to complete.
 	Testing shows about 500 wavelengths in 10 seconds as a rough
 	ballpark.
+	
+	Recommended to grab only a few wavelengths and use for normalization
+	purposes. 
 	"""
 
 	from urllib2 import urlopen
@@ -2385,45 +2347,45 @@ def zodi_euclid(locstr, year, day, wavelengths=[1,5.5], ido_viewin=0, **kwargs):
 	return np.array(res)
 
 
-def _zodi_spec_old(level=2):
-	"""
-	Create a spectrum of the zodiacal light emission in order to estimate the
-	in-band sky background flux. This is simply the addition of two blackbodies
-	at T=5800K (solar scattered light) and T=300K (thermal dust emission)
-	that have been scaled to match the literature flux values.
-	
-	In reality, the intensity of the zodiacal dust emission varies as a
-	function of viewing position. In this case, we have added different levels
-	intensity similiar to the results given by old NIRCam ETC. These have not
-	been validated in any way and should be used with caution, but at least
-	give an order of magnitude of the zodiacal light background flux.
-	
-	There are four different levels that can be passed through the level
-	parameter: 0=None, 1=Low, 2=Avg, 3=High
-	
-	For instance set sp_zodi = zodi_spec(3) for a highish sky flux.
-	Default is 2
-	"""
-
-	bb1 = S.BlackBody(5800.); bb2 = S.BlackBody(300.)
-	sp_zodi = (1.7e7*bb1 + 2.3e13*bb2) * 3.73
-	sp_zodi.convert('flam')
-
-	# This is how some case statements are done in Python
-	# Select the level of zodiacal light emission
-	# 0=None, 1=Low, 2=Avg, 3=High
-	switcher = {0:0.0, 1:0.5, 2:1.0, 3:1.8}
-	factor = switcher.get(level, None)
-	
-	if factor is None:
-		_log.warning('The input parameter level=%s is not valid. Setting zodiacal light to 0.' % level)
-		_log.warning('Valid values inlclude: %s' % switcher.keys())
-		factor = 0
-	
-	sp_zodi *= factor
-	sp_zodi.name = 'Zodiacal Light'
-	
-	return sp_zodi
+# def _zodi_spec_old(level=2):
+# 	"""
+# 	Create a spectrum of the zodiacal light emission in order to estimate the
+# 	in-band sky background flux. This is simply the addition of two blackbodies
+# 	at T=5800K (solar scattered light) and T=300K (thermal dust emission)
+# 	that have been scaled to match the literature flux values.
+# 	
+# 	In reality, the intensity of the zodiacal dust emission varies as a
+# 	function of viewing position. In this case, we have added different levels
+# 	intensity similiar to the results given by old NIRCam ETC. These have not
+# 	been validated in any way and should be used with caution, but at least
+# 	give an order of magnitude of the zodiacal light background flux.
+# 	
+# 	There are four different levels that can be passed through the level
+# 	parameter: 0=None, 1=Low, 2=Avg, 3=High
+# 	
+# 	For instance set sp_zodi = zodi_spec(3) for a highish sky flux.
+# 	Default is 2
+# 	"""
+# 
+# 	bb1 = S.BlackBody(5800.); bb2 = S.BlackBody(300.)
+# 	sp_zodi = (1.7e7*bb1 + 2.3e13*bb2) * 3.73
+# 	sp_zodi.convert('flam')
+# 
+# 	# This is how some case statements are done in Python
+# 	# Select the level of zodiacal light emission
+# 	# 0=None, 1=Low, 2=Avg, 3=High
+# 	switcher = {0:0.0, 1:0.5, 2:1.0, 3:1.8}
+# 	factor = switcher.get(level, None)
+# 	
+# 	if factor is None:
+# 		_log.warning('The input parameter level=%s is not valid. Setting zodiacal light to 0.' % level)
+# 		_log.warning('Valid values inlclude: %s' % switcher.keys())
+# 		factor = 0
+# 	
+# 	sp_zodi *= factor
+# 	sp_zodi.name = 'Zodiacal Light'
+# 	
+# 	return sp_zodi
 
 
 ###########################################################################
@@ -2515,6 +2477,8 @@ def coron_trans(name, module='A', pixscale=None, fov=20):
 	"""
 	Build a transmission image of a coronagraphic mask spanning
 	the 20" coronagraphic FoV.
+	
+	Pull from WebbPSF
 	"""
 
 	import scipy.special
