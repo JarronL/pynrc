@@ -1736,6 +1736,7 @@ class NIRCam(object):
 				_,_,ngroup_max = pattern_settings.get(read_mode)
 				if ng_max is not None:
 					ngroup_max = ng_max #np.min([ng_max,ngroup_max])
+				nng = ngroup_max - ng_min + 1
 				if nng>20:
 					_log.warning('Cycling through {} NGRPs. This may take a while!'\
 						.format(nng))
