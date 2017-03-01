@@ -512,19 +512,25 @@ def offset_bar(filter, mask):
 	"""
 
 	if (mask is not None) and ('WB' in mask):
-		xpos = np.array([-10.0,0.0,10.0])
-		if 'LWB' in mask:
-			xpos = xpos[::-1]
-			wpos = np.array([2.30, 4.60, 6.90])
-		else:
-			wpos = np.array([1.03, 2.10, 3.10])
+		#xpos = np.array([-10.0,0.0,10.0])
+		#if 'LWB' in mask:
+		#	xpos = xpos[::-1]
+		#	wpos = np.array([2.30, 4.60, 6.90])
+		#else:
+		#	wpos = np.array([1.03, 2.10, 3.10])
 		
 		# What is the effective wavelength of the filter?	
 		bp = pynrc.read_filter(filter)
 		w = bp.avgwave() / 1e4
-		
+
 		# Get appropriate x-offset
-		xoff_asec = np.interp(w,wpos,xpos)
+		#xoff_asec = np.interp(w,wpos,xpos)
+		
+		if 'LWB' in mask:
+			xoff_asec = -3.26 * (w - 4.6)
+		else:
+			xoff_asec = 7.14 * (w - 2.1)
+			
 		yoff_asec = 0.0
 		
 		r, theta = nrc_utils.xy_to_rtheta(xoff_asec, yoff_asec)
