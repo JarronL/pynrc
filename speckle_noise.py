@@ -503,7 +503,7 @@ def get_psf(opd, header, filter='F410M', mask=None, pupil=None,
 	return hdulist
 
 
-def offset_bar(filter, mask):
+def offset_bar(filt, mask):
 	"""
 	Get the appropriate offset in the x-position to place a source on a bar mask.
 	Each bar is 20" long with edges and centers corresponding to:
@@ -511,31 +511,36 @@ def offset_bar(filter, mask):
 	  LWB: [2.30, 4.60, 6.90] (um) => [+10, 0, -10] (asec)
 	"""
 
-	if (mask is not None) and ('WB' in mask):
-		#xpos = np.array([-10.0,0.0,10.0])
-		#if 'LWB' in mask:
-		#	xpos = xpos[::-1]
-		#	wpos = np.array([2.30, 4.60, 6.90])
-		#else:
-		#	wpos = np.array([1.03, 2.10, 3.10])
-		
+	if (mask is not None) and ('WB' in mask):		
 		# What is the effective wavelength of the filter?	
-		bp = pynrc.read_filter(filter)
-		w = bp.avgwave() / 1e4
+		#bp = pynrc.read_filter(filter)
+		#w0 = bp.avgwave() / 1e4
+		w0 = np.float(filt[1:-1])/100
+		
+		# Choose wavelength from dictionary
+		wdict = {'F182M': 1.84, 'F187N': 1.88, 'F210M': 2.09, 'F212N': 2.12, 
+				 'F250M': 2.50, 'F300M': 2.99, 'F335M': 3.35, 'F360M': 3.62, 
+				 'F410M': 4.09, 'F430M': 4.28, 'F460M': 4.63, 'F480M': 4.79,
+				 'F200W': 2.23, 'F277W': 3.14, 'F356W': 3.97, 'F444W': 4.99}
+		w = wdict.get(filt, w0)
 
 		# Get appropriate x-offset
 		#xoff_asec = np.interp(w,wpos,xpos)
 		
-		if 'LWB' in mask:
-			xoff_asec = -3.26 * (w - 4.6)
-		else:
-			xoff_asec = 7.14 * (w - 2.1)
+		if 'SWB' in mask:
+			if filt[-1]=="W": xoff_asec = 6.83 * (w - 2.196)
+			else:             xoff_asec = 7.14 * (w - 2.100)
+		elif 'LWB' in mask:
+			if filt[-1]=="W": xoff_asec = -3.16 * (w - 4.747)
+			else:             xoff_asec = -3.26 * (w - 4.600)
+			
+		print(w,xoff_asec)
 			
 		yoff_asec = 0.0
 		
 		r, theta = nrc_utils.xy_to_rtheta(xoff_asec, yoff_asec)
 	else:
-		r = 0.0; theta = 0.0
+		r, theta = (0.0, 0.0)
 		
 	return r, theta
 
