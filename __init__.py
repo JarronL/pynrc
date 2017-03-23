@@ -22,34 +22,34 @@ from astropy import config as _config
 
 class Conf(_config.ConfigNamespace):
 
-	# Path to data files for pynrc. 
-	# The environment variable $PYNRC_PATH takes priority.
-	import os
-	path = os.getenv('PYNRC_PATH')
-	if path is None:
-		#export PYNRC_PATH='/Volumes/NIRData/pynrc_data'
-		raise EnvironmentError("Environment variable $PYNRC_PATH is not set!")
-	if not os.path.isdir(path):
-		raise IOError("PYNRC_PATH ({}) is not a valid directory path!".format(path))
-	# Make sure there is a '/' at the end of the path name
-	if '/' not in path[-1]: 
-		path += '/'
-	PYNRC_PATH = _config.ConfigItem(path, 'Directory path to data files required for pynrc calculations.')
+    # Path to data files for pynrc. 
+    # The environment variable $PYNRC_PATH takes priority.
+    import os
+    path = os.getenv('PYNRC_PATH')
+    if path is None:
+        #export PYNRC_PATH='/Volumes/NIRData/pynrc_data'
+        raise EnvironmentError("Environment variable $PYNRC_PATH is not set!")
+    if not os.path.isdir(path):
+        raise IOError("PYNRC_PATH ({}) is not a valid directory path!".format(path))
+    # Make sure there is a '/' at the end of the path name
+    if '/' not in path[-1]: 
+        path += '/'
+    PYNRC_PATH = _config.ConfigItem(path, 'Directory path to data files required for pynrc calculations.')
 
-	logging_level = _config.ConfigItem(
-		['INFO', 'DEBUG', 'WARN', 'WARNING', 'ERROR', 'CRITICAL', 'NONE'],
-		'Desired logging level for pyNRC.'
-	)
-	default_logging_level = _config.ConfigItem('INFO', 
-		'Logging verbosity: one of {DEBUG, INFO, WARN, ERROR, or CRITICAL}')
-	logging_filename = _config.ConfigItem("none", "Desired filename to save log messages to.")
-	logging_format_screen = _config.ConfigItem(
-		'[%(name)10s:%(levelname)s] %(message)s', 'Format for lines logged to the screen.'
-	)
-	logging_format_file = _config.ConfigItem(
-		'%(asctime)s [%(name)s:%(levelname)s] %(filename)s:%(lineno)d: %(message)s',
-		'Format for lines logged to a file.'
-	)
+    logging_level = _config.ConfigItem(
+        ['INFO', 'DEBUG', 'WARN', 'WARNING', 'ERROR', 'CRITICAL', 'NONE'],
+        'Desired logging level for pyNRC.'
+    )
+    default_logging_level = _config.ConfigItem('INFO', 
+        'Logging verbosity: one of {DEBUG, INFO, WARN, ERROR, or CRITICAL}')
+    logging_filename = _config.ConfigItem("none", "Desired filename to save log messages to.")
+    logging_format_screen = _config.ConfigItem(
+        '[%(name)10s:%(levelname)s] %(message)s', 'Format for lines logged to the screen.'
+    )
+    logging_format_file = _config.ConfigItem(
+        '%(asctime)s [%(name)s:%(levelname)s] %(filename)s:%(lineno)d: %(message)s',
+        'Format for lines logged to a file.'
+    )
 
 conf = Conf()
 
