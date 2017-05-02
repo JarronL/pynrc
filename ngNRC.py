@@ -321,7 +321,7 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
     hdu.data += ramp # Add signal ramp to dark ramp
     data = hdu.data
 
-    #### Add in IPC (TBI)
+    #### Add in IPC (TBI) ####
 
     # Get rid of any drops at the beginning (nd1)
     if nd1>0: data = data[nd1:,:,:]
@@ -342,6 +342,7 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
         if nd2>0: data = data[:,:nf,:,:]
 
         # Average the frames within groups
+        # In reality, the 16-bit data is bit-shifted
         data = data.reshape([-1,ypix,xpix]) if nf==1 else data.mean(axis=0)
 
         # Add back the last group (already averaged)
