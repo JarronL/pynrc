@@ -494,7 +494,7 @@ class DetectorOps(object):
 
     @property
     def time_ramp(self):
-        """Photon integration time for a single ramp."""
+        """Photon collection time for a single ramp."""
 
         # How many total frames (incl. dropped and all) per ramp?
         # Exclude last set of nd2 as well as nd3 (drops that add nothing)
@@ -550,28 +550,34 @@ class DetectorOps(object):
                  ('t_acq',self.time_total), ('t_int_tot',self.time_total_int)]
         return tuples_to_dict(times, verbose)
 
-    def pixel_noise(self, fsrc=0.0, fzodi=0.0, fbg=0.0, verbose=False):
+    def pixel_noise(self, fsrc=0.0, fzodi=0.0, fbg=0.0, verbose=False, **kwargs):
         """
-        Return theoretical noise calculation for the specified MULTIACCUM ramp in terms of e-/sec.
-        Uses the pre-defined detector-specific noise properties. Can specify flux of a source
-        as well as background and zodiacal light (in e-/sec/pix).
+        Return theoretical noise calculation for the specified MULTIACCUM exposure 
+        in terms of e-/sec. This uses the pre-defined detector-specific noise 
+        properties. Can specify flux of a source as well as background and 
+        zodiacal light (in e-/sec/pix). After getting the noise per pixel per
+        ramp (integration), value(s) are divided by the sqrt(NINT) to return
+        the final noise
 
         Parameters
         ===========
         fsrc (float)  : Flux of source in e-/sec/pix
         fzodi (float) : Flux of the zodiacal background in e-/sec/pix
         fbg (float)   : Flux of telescope background in e-/sec/pix
+        ideal_Poisson : If set to True, use total signal for noise estimate,
+                        otherwise MULTIACCUM equation is used.
 
         These three components are functionally the same as they are immediately summed.
         They can also be single values or multiple elements (list, array, tuple, etc.).
         If multiple inputs are arrays, make sure their array sizes match.
+        
         """
 
         ma = self.multiaccum
         # Pixel noise per ramp (e-/sec/pix)
         pn = pix_noise(ma.ngroup, ma.nf, ma.nd2, tf=self.time_frame, \
                        rn=self.read_noise, ktc=self.ktc, p_excess=self.p_excess, \
-                       idark=self.dark_current, fsrc=fsrc, fzodi=fzodi, fbg=fbg)
+                       idark=self.dark_current, fsrc=fsrc, fzodi=fzodi, fbg=fbg, **kwargs)
 
         # Divide by sqrt(Total Integrations)
         final = pn / np.sqrt(ma.nint)
@@ -627,7 +633,7 @@ class planets_sb11(object):
     base_dir = conf.PYNRC_PATH + 'spiegel/'
 
     def __init__(self, atmo='hy1s', mass=1, age=100, entropy=10.0, 
-                 distance=10, base_dir=None):
+                 distance=10, base_dir=None, **kwargs):
 
         self._atmo = atmo
         self._mass = mass
@@ -805,10 +811,11 @@ class NIRCam(object):
     offset_theta (flt) : Position angle for radial offset, in degrees CCW.
     opd          (tup) : Tuple containing WebbPSF specific OPD file name and slice.
     save        (bool) : Whether or not to save the resulting PSF coefficients to file.
+    force       (bool) : Forces a recalcuation of PSF even if saved PSF exists.
     """
 
     def __init__(self, filter='F210M', pupil=None, mask=None, module='A', ND_acq=False,
-        save_psf=True, **kwargs):
+        **kwargs):
          
         # Available Filters
         # Note: Certain narrowband filters reside in the pupil wheel and cannot be paired
@@ -1162,7 +1169,7 @@ class NIRCam(object):
 
         # ND_acq and coronagraphic mask are mutually exclusive
         if self.ND_acq and (mask != ''):
-            _log.warning('ND_acq = True not a valid setting with mask != None.')
+            _log.warning('If ND_acq is set, then mask must be None.')
             warn_flag = True
 
         if warn_flag:
@@ -1192,7 +1199,8 @@ class NIRCam(object):
 
 
     def update_psf_coeff(self, fov_pix=None, oversample=None, 
-        offset_r=None, offset_theta=None, opd=None, save=None, **kwargs):
+        offset_r=None, offset_theta=None, opd=None, save=None, force=False,
+        **kwargs):
         """
         Generates a set of PSF coefficients from a sequence WebbPSF images.
         These coefficients can then be used to generate a sequence of
@@ -1218,7 +1226,7 @@ class NIRCam(object):
         offset_theta : Position angle for that offset, in degrees CCW.
         opd          : Tuple containing WebbPSF specific OPD file name and slice.
         save         : Whether or not to save the resulting PSF coefficients to file.
-
+        force        : Forces a recalcuation of PSF even if saved PSF exists.
         """
 
         if oversample is None: 
@@ -1268,7 +1276,7 @@ class NIRCam(object):
 
         self._psf_info={'fov_pix':fov_pix, 'oversample':oversample, 
             'offset_r':offset_r, 'offset_theta':offset_theta, 'opd':opd,
-            'save':save}
+            'save':save, 'force':force}
         self._psf_coeff = psf_coeff(self.bandpass, self.pupil, self.mask, self.module, 
             **self._psf_info)
     
@@ -1279,7 +1287,7 @@ class NIRCam(object):
         if self.mask is not None:
             self._psf_info_bg={'fov_pix':31, 'oversample':oversample, 
                 'offset_r':0, 'offset_theta':0, 'opd':opd,
-                'save':save}
+                'save':save, 'force':force}
             self._psf_coeff_bg = psf_coeff(self.bandpass, self.pupil, None, self.module, 
                 **self._psf_info_bg)
         else:
@@ -1382,7 +1390,7 @@ class NIRCam(object):
         sensitivity for the given instrument setup. See bg_sensitivity() for more
         details.
 
-        To do: Point source sensitivity for coronagraphic observations.
+        To do: Point source sensitivity for coronagraphic observations (contrast curves)?
 
         Parameters
         ==========
@@ -1397,7 +1405,7 @@ class NIRCam(object):
         forwardSNR    : Find the SNR of the input spectrum instead of sensitivity.
         zfact         : Factor to scale Zodiacal spectrum (default 2.5)
         ideal_Poisson : If set to True, use total signal for noise estimate,
-                        otherwise MULTIACCUM equation is used?
+                        otherwise MULTIACCUM equation is used.
 
         Representative values for zfact:
             0.0 - No zodiacal emission
@@ -1474,6 +1482,7 @@ class NIRCam(object):
             - Persistence/latent image
             - Optical distortions
             - Zodiacal background roll off for grism edges
+            - Telescope jitter
 
 
         Parameters
@@ -1482,12 +1491,12 @@ class NIRCam(object):
             assumed that we're looking at blank sky.
         file_out : Path and name of output FITs files. Time stamps will
             be automatically inserted for unique file names.
-        return_results : By default, we return results if if file_out is
+        return_results : By default, we return results if file_out is
             not set. The results are not returned by this function if
-            file_out is set. This is because return a massive amount of
+            file_out is set. This is because returning a massive amount of
             data can lead to large memory usage. Save the FITs files to
             disk if NINTs is large. We include the return_results keyword
-            if the user the user would like to do both (or neither??).
+            if the user would like to do both (or neither??).
         """
 
         filter = self.filter
@@ -1510,7 +1519,7 @@ class NIRCam(object):
             im_slope = self.gen_psf(sp)[0]
     
         # Add in Zodi emission
-        im_slope += self.bg_zodi()
+        if not ('FLAT' in pupil): im_slope += self.bg_zodi()
 
         # Expand or cut to detector size
         im_slope = pad_or_cut_to_size(im_slope, (ypix,xpix))
@@ -1596,9 +1605,11 @@ class NIRCam(object):
         snr_frac      : Give fractional buffer room rather than strict SNR cut-off.
         nint_min/max  : Min/max number of desired integrations.
         ng_min/max    : Min/max number of desired groups in a ramp.
+        tacq_max      : Maximum amount of acquisition time in seconds to consider.
+        tacq_frac     : Fractional amount of time to consider exceeding tacq_max.
 
         ideal_Poisson : If set to True, use total signal for noise estimate,
-                        otherwise MULTIACCUM equation is used?
+                        otherwise MULTIACCUM equation is used. Default=True.
 
         return_full_table : Don't filter or sort the final results.
         verbose           : Prints out top 10 results.
@@ -1659,6 +1670,8 @@ class NIRCam(object):
         pattern_settings = self.multiaccum._pattern_settings
         if patterns is None:
             patterns = pattern_settings.keys()
+        if not isinstance(patterns, list):
+            patterns = [patterns]
     
         m = np.zeros(len(patterns))
         s = np.zeros(len(patterns))
@@ -2005,7 +2018,7 @@ def nproc_use_ng(det):
         nproc = np.min([nproc, nint])
         # Resource optimization:
         # Split iterations evenly over processors to free up minimally used processors.
-        # For example, if there are 5 processes only doing 1 iteration, but a single
+        # For example, if there are 5 processors only doing 1 iteration and a single
         #   processor doing 2 iterations, those 5 processors (and their memory) will not
         #   get freed until the final processor is finished. So, to minimize the number
         #   of idle resources, take the total iterations and divide by two (round up),

@@ -61,7 +61,7 @@ from .nrc_utils import (read_filter, pix_noise, nrc_header, stellar_spectrum)
 
 from .pynrc_core import (multiaccum, DetectorOps, NIRCam, planets_sb11)
 
-from .obs_nircam import (nrc_diskobs, observe_disk, observe_star)
+from .obs_nircam import (obs_coronagraphy, nrc_diskobs, observe_disk, observe_star)
 
 #from .ngNRC import slope_to_ramp, nproc_use_ng
 

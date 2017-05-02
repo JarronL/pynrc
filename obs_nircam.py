@@ -11,6 +11,417 @@ import logging
 _log = logging.getLogger('pynrc')
 
 
+class obs_coronagraphy(NIRCam):
+    """
+    Subclass of the NIRCam instrument class used to observe stars (+exoplanets) 
+    with either the coronagraph or direct imaging.
+
+    Parameters
+    ==========
+    sp_sci/sp_ref : Pysynphot spectra of science and reference sources
+    wfe_drift     : WFE drift in nm of OPDs
+    xpix, ypix    : Size of detector readout (assumes subarray).
+    offset_list   : For coronagraph, incremental offset positions to build PSFs
+                    for accurately determining contrast curves.
+    """
+    
+    def __init__(self, sp_sci, sp_ref, distance, wfe_drift=10, offset_list=None, 
+                 wind_mode='WINDOW', xpix=320, ypix=320, **kwargs):
+
+        #super(NIRCam,self).__init__(**kwargs)
+        # Not sure if this works for both Python 2 and 3
+        NIRCam.__init__(self, wind_mode=wind_mode, xpix=xpix, ypix=ypix, **kwargs)
+        
+        # Spectral models
+        self.sp_sci = sp_sci
+        self.sp_ref = sp_ref
+        self._wfe_drift = wfe_drift
+        
+        # Distance to source in pc
+        self.distance = distance
+        self._planets = []
+
+        # Offsets positions to build PSFs
+        if self.mask is None:
+            # if no coronagraphic mask, then only 1 PSF
+            self.offset_list = [0.0]
+            if offset_list is not None:
+                print('No coronagraph, so offset_list automatically set to [0.0].')
+        elif offset_list is None:
+            self.offset_list = [0.0, 0.1, 0.2, 0.5, 1.0, 2.0]
+        else:
+            self.offset_list = offset_list
+        
+        print("Generating list of PSFs...")
+        # Faster once PSFs have already been previously generated 
+        log_prev = conf.logging_level
+        setup_logging('WARN', verbose=False)
+        self._gen_psf_max()
+        setup_logging(log_prev, verbose=False)
+        
+        self._gen_ref()
+        self._set_xypos()
+        
+        print("Finished.")
+        
+    @property
+    def wfe_drift(self):
+        """Assumed WFE drift"""
+        return self._wfe_drift
+    @wfe_drift.setter
+    def wfe_drift(self, value):
+        """Set the WFE drift value (updates self.nrc_ref)"""
+        self._wfe_drift = value
+        self._gen_ref()
+        
+    def _gen_ref(self):
+        """Function to generate Reference observation class"""
+
+        # PSF information
+        opd = (self.psf_info['opd'][0], self.psf_info['opd'][1], self._wfe_drift)
+        fov_pix = self.psf_info['fov_pix']
+        oversample = self.psf_info['oversample']
+
+        # Detector information
+        wind_mode = self.det_info['wind_mode']
+        xpix = self.det_info['xpix']
+        ypix = self.det_info['ypix']
+        
+        # Create a NIRCam reference class
+        # If it already exists, just update OPD info
+        try:
+            nrc = self.nrc_ref
+            nrc.update_psf_coeff(opd=opd)
+        except AttributeError:
+            print("Creating NIRCam reference class...")
+            nrc = NIRCam(self.filter, self.pupil, self.mask, \
+                         wind_mode=wind_mode, xpix=xpix, ypix=ypix, \
+                         fov_pix=fov_pix, oversample=oversample, opd=opd)        
+            self.nrc_ref = nrc
+        
+        
+    def _gen_psf_max(self):
+        """
+        Create instances of NIRCam observations that are incrementally offset 
+        from coronagraph center to determine maximum value of the detector-
+        sampled PSF for determination of contrast.
+        """
+        
+        # If no mask, then the PSF looks the same at all radii
+        if self.mask is None:
+            psf = self.gen_psf(self.sp_sci)
+            self.psf_max_vals = ([0,10], [psf.max(),psf.max()])
+            self.psf_offsets = [self]
+        else:
+            psf_off = []
+            psf_max = []
+            self.psf_offsets = []
+            for offset in self.offset_list:
+            
+                # Full FoV
+                fov_pix = 2 * np.max(self.offset_list) / self.pix_scale
+                # Increase to the next power of 2 and make odd
+                fov_pix = int(2**np.ceil(np.log2(fov_pix)+1))
+                oversample = self.psf_info['oversample']
+            
+                nrc_inst = NIRCam(self.filter, self.pupil, self.mask, \
+                                  fov_pix=fov_pix, oversample=oversample, \
+                                  offset_r=offset)
+                # Append offsets and PSF max values
+                psf_off.append(offset)          
+                psf_max.append(nrc_inst.gen_psf().max())
+                self.psf_offsets.append(nrc_inst)
+                
+            # Add background PSF info (without mask) for large distance
+            psf_off.append(np.max([np.max(self.offset_list)+1, 4]))
+            psf_max.append(self.gen_psf(use_bg_psf=True).max())
+            self.psf_max_vals = (psf_off, psf_max)
+
+    def _set_xypos(self):
+        """
+        Set x0 and y0 subarray positions.
+        Needs to be more specific for SW+335R and LW+210R as well as
+        for different modules.
+        """
+        xpix = self.det_info['xpix']
+        ypix = self.det_info['ypix']
+        x0 = self.det_info['x0']
+        y0 = self.det_info['y0']
+        mask = self.mask
+        
+        if ((x0==0) and (y0==0)) and ((mask is not None) and ('MASK' in mask)):
+            # Default positions (really depends on xpix/ypix)
+            if 'LWB' in mask:
+                x0=275; y0=1508
+            elif 'SWB' in mask:
+                x0=171; y0=236
+            elif '430R' in mask:
+                x0=916; y0=1502
+            elif '335R' in mask:
+                x0=1238; y0=1502
+            elif '210R' in mask:
+                x0=392; y0=224
+            
+            # Make sure subarray sizes don't push out of bounds
+            if (y0 + ypix) > 2048: y0 = 2048 - ypix
+            if (x0 + xpix) > 2048: x0 = 2048 - xpix
+        
+            self.update_detectors(x0=x0, y0=y0)
+
+
+    def planet_spec(self, Av=0, **kwargs):
+        """
+        Return the planet flux rate for spectrum from Spiegel & Burrows (2011). 
+        Parameters:
+            Av : Extinction magnitude (assumes Rv=4.0)
+            atmo: A string consisting of one of four atmosphere types:
+                hy1s = hybrid clouds, solar abundances
+                hy3s = hybrid clouds, 3x solar abundances
+                cf1s = cloud-free, solar abundances
+                cf3s = cloud-free, 3x solar abundances
+            mass: Integer number 1 to 15 Jupiter masses.
+            age: Age in millions of years (1-1000)
+            entropy: Initial entropy (8.0-13.0) in increments of 0.25
+        """
+        # Create planet class and convert to Pysynphot spectrum
+        planet = planets_sb11(distance=self.distance, **kwargs)
+        sp = planet.export_pysynphot()
+
+        # Add extinction from the disk
+        if Av>0:
+            Rv = 4.0
+            sp *= S.Extinction(Av/Rv,name='mwrv4')
+        return sp
+    
+
+    @property
+    def planets(self):
+        """Planet info (if any exists)"""
+        return self._planets
+
+    def add_planet(self, atmo='hy3s', mass=10, age=100, entropy=10,
+        loc=(0,0), loc_units='AU', Av=0, renorm_args=None):
+        """
+        Add exoplanet information that will be used to generate a point
+        source image using a spectrum from Spiegel & Burrows (2011).
+        Use self.kill_planets() to delete them.
+        
+        Parameters:
+            atmo: A string consisting of one of four atmosphere types:
+                hy1s = hybrid clouds, solar abundances
+                hy3s = hybrid clouds, 3x solar abundances
+                cf1s = cloud-free, solar abundances
+                cf3s = cloud-free, 3x solar abundances
+            mass: Integer number 1 to 15 Jupiter masses.
+            age: Age in millions of years (1-1000)
+            entropy: Initial entropy (8.0-13.0) in increments of 0.25
+
+            loc = (x,y) : Position to place point source relative to star (center).
+            loc_units   : What units are loc? Valid values are 'AU', 'asec', or 'pix'.
+            Av          : Extinction magnitude (assumes Rv=4.0).
+         """
+
+        image_shape = (self.det_info['ypix'], self.det_info['xpix'])
+
+        # Define pixel location
+        au_per_pixel = self.distance*self.pix_scale
+        if 'AU' in loc_units:
+            xoff, yoff = np.array(loc) / au_per_pixel
+            xoff_asec, yoff_asec = np.array(loc) / self.distance
+        elif ('asec' in loc_units) or ('arcsec' in loc_units):
+            xoff, yoff = np.array(loc) / self.pix_scale
+            xoff_asec, yoff_asec = loc
+        elif ('pix' in loc_units):
+            xoff, yoff = loc
+            xoff_asec, yoff_asec = np.array(loc) * self.pix_scale
+        else:
+            _log.warning("Do not recognize loc_units='{}'. Assuming 'AU'".format(loc_units))
+            xoff, yoff = np.array(loc) / au_per_pixel
+            xoff_asec, yoff_asec = np.array(loc) / self.distance
+        
+        ycen, xcen = tuple((a - 1) / 2.0 for a in image_shape)
+        xpix, ypix = int(round(xoff+xcen)), int(round(yoff+ycen))
+    
+        # Make sure planet is within image bounds
+        sh_diff = np.abs(np.array([ypix,xpix]))-np.array(image_shape)
+        if np.any(sh_diff>=0):
+            _log.warning('xoff,yoff = {} is beyond image boundaries.'.format((xoff,yoff)))
+            
+        # X and Y pixel offsets from center of image
+        #xoff = xpix-xcen
+        #yoff = ypix-ycen
+        # Dictionary of planet info
+        d = {'xyoff_pix':(xoff,yoff), 'atmo':atmo, 'mass':mass, 'age':age, 
+             'entropy':entropy, 'Av':Av, 'renorm_args':renorm_args}
+        self._planets.append(d)
+        
+    def gen_planets_image(self):
+        """
+        Use info stored in self.planets to create a slope image of just the
+        exoplanets (no star).
+        """
+        if len(self.planets)==0:
+            _log.warning("No planet info at self.planets")
+            return
+            
+        image_shape = (self.det_info['ypix'], self.det_info['xpix'])
+        image = np.zeros(image_shape)
+        for pl in self.planets:
+            # Choose the PSF closest to the planet position
+            xoff, yoff = pl['xyoff_pix']
+            xoff_asec, yoff_asec = np.array(pl['xyoff_pix']) * self.pix_scale
+            if len(self.offset_list) > 1:
+                roff_asec = np.sqrt(xoff_asec**2 + yoff_asec**2)
+                abs_diff = np.abs(np.array(self.offset_list)-roff_asec)
+                ind = np.where(abs_diff == abs_diff.min())[0][0]
+            else:
+                ind = 0
+
+            # Create slope image (postage stamp) of planet
+            sp = self.planet_spec(**pl)
+            renorm_args = pl['renorm_args']
+            if len(renorm_args) > 0:
+                sp_norm = sp.renorm(*renorm_args)
+                sp_norm.name = sp.name
+                sp = sp_norm
+            
+            psf_planet = self.psf_offsets[ind].gen_psf(sp)
+        
+            # This is offset according to offset_list
+            # First, shift to center
+            offset_pix = -self.offset_list[ind] / self.pix_scale
+            psf_planet = fshift(psf_planet, dely=offset_pix, pad=True)
+        
+            # Expand to full size
+            psf_planet = pad_or_cut_to_size(psf_planet, image_shape)
+        
+            # Shift to final position and add to image
+            #psf_planet = fshift(psf_planet, delx=xpix-xcen, dely=ypix-ycen, pad=True)
+            image += fshift(psf_planet, delx=xoff, dely=yoff, pad=True)
+            
+        return image
+
+    
+    def kill_planets(self):
+        self._planets = []
+    
+
+
+    def star_flux(self, fluxunit='counts'):
+        """
+        Return the stellar flux in whatever units, such as 
+        vegamag, counts, or Jy.
+        """
+
+        # Create pysynphot observation
+        bp = self.bandpass
+        waveset = bp.wave        
+        obs = S.Observation(self.sp_sci, bp, binset=waveset)
+
+        return obs.effstim(fluxunit)
+
+
+    def calc_contrast(self, roll_angle=10, zfact=None, nsig=1):
+        """
+        Generate n-sigma contrast curve for the current observation settings.
+        Make sure that MULTIACCUM parameters are set in both the main
+        class (self.update_detectors()) as well as the reference target
+        class (self.nrc_ref.update_detectors()).
+        
+        roll_angle : Telescope roll angle (deg) between two observations.
+            If set to 0 or None, then only one roll will be performed.
+            If vale is >0, then two rolls are performed, each using the
+            specified MULTIACCUM settings (doubling the effective exposure
+            time).
+        zfact : Zodiacal background factor (default=2.5)
+        nsig  : n-sigma contrast curve
+
+        Returns 3 arrays:
+            radius in arcsec
+            n-sigma contrast
+            n-sigma magnitude limit (vega mags)        
+        """
+        from astropy.convolution import convolve, Gaussian1DKernel
+        from scipy.ndimage.interpolation import rotate
+        
+        sci = self
+        ref = self.nrc_ref
+        
+        if roll_angle is None: roll_angle = 0
+        
+        # psf1 is the occulted science target star
+        # psf2 is the occulted reference star
+        psf1 = sci.gen_psf(self.sp_sci, return_oversample=False)
+        psf2 = ref.gen_psf(self.sp_ref, return_oversample=False)
+
+        # Noise for psf1
+        det = sci.Detectors[0]
+        fzodi = sci.bg_zodi(zfact)
+        im_noise1 = det.pixel_noise(fsrc=psf1, fzodi=fzodi)
+
+        # Noise for psf2
+        det = ref.Detectors[0]
+        fzodi = ref.bg_zodi(zfact)
+        im_noise2 = det.pixel_noise(fsrc=psf2, fzodi=fzodi)
+
+        # Reference simulated slope image
+        im_ref = psf2 + np.random.normal(scale=im_noise2)
+    
+        # Roll 1 and 2 simulated slope images
+        im_roll1 = psf1 + np.random.normal(scale=im_noise1)
+        scale1 = im_roll1.sum() / im_ref.sum()
+        im_diff1 = im_roll1 - im_ref*scale1
+        if roll_angle!=0:
+            im_roll2 = psf1 + np.random.normal(scale=im_noise1)
+            scale2 = im_roll2.sum() / im_ref.sum()
+            im_diff2 = im_roll2 - im_ref*scale2
+            im_diff2_rot = rotate(im_diff2, roll_angle, reshape=False)
+            final = (im_diff1 + im_diff2_rot) / 2
+        else:
+            final = im_diff1
+
+        hdu = fits.PrimaryHDU(final)
+        hdu.header['EXTNAME'] = ('DET_SAMP')
+        hdu.header['OVERSAMP'] = 1
+        hdu.header['PIXELSCL'] = sci.pix_scale / hdu.header['OVERSAMP']
+        hdu_diff = fits.HDUList([hdu])
+    
+        # Radial noise
+        binsize = hdu_diff[0].header['OVERSAMP'] * hdu_diff[0].header['PIXELSCL']
+        rr, stds = webbpsf.radial_profile(hdu_diff, ext=0, stddev=True, binsize=binsize)
+        stds[0] = stds[1] # First element is always a NaN
+        stds = convolve(stds, Gaussian1DKernel(1))
+
+        # Ignore corner regions
+        xsize = hdu_diff[0].header['PIXELSCL'] * hdu_diff[0].data.shape[0] / 2
+        mask = rr<xsize
+        rr = rr[mask]
+        stds = stds[mask]
+
+        # Normalized PSF radial standard deviation
+        # Divide out count rate
+        #obs = S.Observation(self.sp_sci, self.bandpass, binset=self.bandpass.wave)
+        stds = stds / self.star_flux()#obs.countrate() 
+    
+        # Grab the normalized PSF values generated on init
+        # These represent 
+        psf_off_list, psf_max_list = self.psf_max_vals
+        psf_off_list.append(rr.max())
+        psf_max_list.append(psf_max_list[-1])
+        # Interpolate at each radial position
+        psf_max = np.interp(rr, psf_off_list, psf_max_list)
+        # Normalize and multiply by psf max
+        contrast = stds / psf_max
+        # Sigma limit
+        contrast *= nsig
+
+        # Magnitude sensitivity
+        star_mag = self.star_flux('vegamag')
+        sen_mag = star_mag - 2.5*np.log10(contrast)
+
+        return rr, contrast, sen_mag
+
+
 class nrc_diskobs(NIRCam):
     """
     Subclass of the NIRCam instrument class. This subclass is specifically used to
@@ -435,7 +846,7 @@ class nrc_diskobs(NIRCam):
     
         det = self.Detectors[0]
         im_noise1 = det.pixel_noise(fsrc=im_rebin, fzodi=fzodi)
-        im_noise2 = det.pixel_noise(fsrc=imref_rebin, fzodi=fzodi)
+        #im_noise2 = det.pixel_noise(fsrc=imref_rebin, fzodi=fzodi)
     
         # Traditional readout, dark current, and photon noise values
         im_noise = im_noise1

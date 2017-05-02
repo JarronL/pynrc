@@ -8,8 +8,6 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 import six
 import time
 
-import threading, sys, functools, traceback
-
 # Import libraries
 import numpy as np
 import matplotlib
@@ -419,7 +417,7 @@ def _wrap_coeff_for_mp(args):
 
 def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A', 
     fov_pix=11, oversample=4, npsf=None, ndeg=8, opd=None, 
-    offset_r=0, offset_theta=0, save=True, **kwargs):
+    offset_r=0, offset_theta=0, save=True, force=False, **kwargs):
     """
     Creates a set of coefficients that will generate a simulated PSF at any
     arbitrary wavelength. This function first uses webbPSF to simulate
@@ -447,14 +445,20 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         generate with webbPSF. If not specified, then the default is to produce 
         20 PSFs/um. The wavelength range is determined by choosing those
         wavelengths where throughput is >0.001.
-    opd : Tuple specifying the OPD file info. 
-        ie., opd = ('OPD_RevV_nircam_150.fits', 0)
+    opd : Tuple specifying the OPD file info. Or can be an hdulist.
+        Acceptabled forms:
+            1. ('OPD_RevV_nircam_150.fits', 0)
+            2. ('OPD_RevV_nircam_150.fits', 0, 10) - 10 nm WFE drift
+            3. HDUlist
     """
 
     grism_obs = (pupil is not None) and ('GRISM' in pupil)
     dhs_obs   = (pupil is not None) and ('DHS'   in pupil)
-    coron_obs = (pupil is not None) and ('LYOT'   in pupil)
+    coron_obs = (pupil is not None) and ('LYOT'  in pupil)
 
+    # Default OPD
+    if opd is None: opd = ('OPD_RevV_nircam_132.fits', 0)
+    
     # Get filter throughput and create bandpass 
     if isinstance(filter_or_bp, six.string_types):
         filter = filter_or_bp
@@ -473,7 +477,7 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     inst.options['parity'] = 'odd'
     inst.options['source_offset_r'] = offset_r
     inst.options['source_offset_theta'] = offset_theta
-    inst.pupilopd = ('OPD_RevV_nircam_132.fits', 0) if opd is None else opd
+    #inst.pupilopd = opd
     inst.filter = filter
     setup_logging(log_prev, verbose=False)
 
@@ -485,19 +489,79 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     save_dir = conf.PYNRC_PATH + 'psf_coeffs/'
     mtemp = 'none' if mask is None else mask
     ptemp = 'none' if pupil is None else pupil
-    #if mask is None:
-    #	rtemp = 0; ttemp=0
+    # Get source offset positions
     if (mask is not None) and (('210R' in mask) or ('335R' in mask) or ('430R' in mask)):
-        rtemp = offset_r; ttemp = 0
+        rtemp, ttemp = (offset_r, 0)
     else:
-        rtemp = offset_r; ttemp = offset_theta
-    otemp = 'OPD' + inst.pupilopd[0][-8:-5] + 'nm' + str(inst.pupilopd[1])
-    save_name = save_dir + '{}_{}_{}_{}_{}_{}_{:.1f}_{:.1f}_{}.npy'.\
-        format(filter,mtemp,ptemp,module,fov_pix,oversample,rtemp,ttemp,otemp)
+        rtemp, ttemp = (offset_r, offset_theta)
 
-    if save and os.path.exists(save_name):
+    # Deal with OPD file name
+    wfe_drift = 0
+    if isinstance(opd, tuple):
+        if len(opd)==2: # No drift
+            pass
+        elif len(opd)==3: #3rd element is the nm drifted.
+            wfe_drift = opd[2]
+            opd = (opd[0], opd[1])
+        else:
+            raise ValueError("OPD passed as tuple must have length of 2 or 3.")
+         # Filename info
+        opd_nm = opd[0][-8:-5] # RMS WFE (e.g., 132)
+        opd_num = opd[1]       # OPD slice
+        otemp = 'OPD{}nm{:.0f}'.format(opd_nm, opd_num, wfe_drift)
+        if wfe_drift > 0:
+            otemp = '{}-{:.0f}nm'.format(otemp, wfe_drift)
+    elif isinstance(opd, fits.HDUList):
+        # A custom OPD is passed. Consider using force=True.
+        otemp = 'OPDcustom'
+    else:
+        raise ValueError("opd must be a tuple or HDUList.")
+    
+    # Final filename to save to
+    fname = '{}_{}_{}_{}_{}_{}_{:.1f}_{:.1f}_{}.npy'.\
+        format(filter,mtemp,ptemp,module,fov_pix,oversample,rtemp,ttemp,otemp)
+    save_name = save_dir + fname
+
+    if (not force) and (save and os.path.exists(save_name)):
         return np.load(save_name)
 
+    # Drift the OPD
+    # This isn't quite right compared to the nominal case on account
+    # of slight modifications to the pupil mask relative to RevV pupils.
+    # Contrasts for ~1-5nm drifts look very similar because the dominant
+    # WFE effects are due to differences in the segment edges. 
+    if wfe_drift > 0:
+        from . import speckle_noise as sn
+        pupilopd = opd
+        # Read in a specified OPD file and slice
+        opd_im, header = sn.read_opd_slice(pupilopd, header=True)
+        # Create an object that extracts the Zernike components for the OPD file
+        # We don't really care about the Hexike terms for individual segments 
+        opd_obj = sn.OPD_extract(opd_im, header, seg_terms=5)
+        # Standard deviation for each pupil Zernike
+        # Piston, Tip, Tilt, Focus, Astig, Coma, Trefoil,
+        #   Spherical, 2nd Astig, and Quadrafoil
+        pup_cf_std = np.array([ 0.0,  0.0,  0.0,  0.03258147,  0.02023745,
+            0.02036721,  0.02493373,  0.02338593,  0.01750089,  0.00750398,
+            0.01938736,  0.01712082,  0.01359327,  0.01458599,  0.00956585])
+        seg_cf_std = np.array([ 0.0,  0.0,  0.0,  0.01140949,  0.01712216,
+            0.01586312,  0.0234882 ,  0.02331315,  0.02316506,  0.02164931,
+            0.02015695,  0.01749708,  0.01672629,  0.01263545,  0.01471005,
+            0.0,  0.0,  0.0,  0.0,  0.0,
+            0.0,  0.0,  0.0,  0.0,  0.0,
+            0.0,  0.0,  0.0,  0.0,  0.0])
+        # Generate science OPD image and residuals for use in reference drift.
+        opd_sci, opd_resid = sn.opd_sci_gen(opd_obj)
+        # Generate reference OPD image
+        args = (opd_obj, wfe_drift, pup_cf_std, seg_cf_std, opd_resid, 1)
+        opd_ref = sn.opd_ref_gen(args)
+        # Create OPD inside an HDUList to pass to WebbPSF
+        hdu = fits.PrimaryHDU(opd_ref)
+        hdu.header = header.copy()
+        opd_hdulist = fits.HDUList([hdu]) 
+        inst.pupilopd = opd_hdulist
+    else:
+        inst.pupilopd = opd
 
     # Select which wavelengths to use
     wgood = bp.wave / 1e4
@@ -2077,6 +2141,48 @@ def xy_to_rtheta(x, y):
     return r, theta
 
 
+def bin_spectrum(sp, wave, waveunits='um'):
+    """
+    Rebin a Pysynphot spectrum to a lower wavelenght grid.
+    This function first converts the input spectrum to units
+    of photlam then combines the photon flux onto the 
+    desired wavelength bin
+    
+    Output spectrum units are the same as the input spectrum.
+    
+    sp        - Pysynphot spectrum to rebin
+    wave      - Wavelength grid to rebin to
+    waveunits - Units of wave input, recognizeable by Pysynphot
+    
+    Returns rebinned Pysynphot spectrum in same units as input spectrum.
+    """
+
+    waveunits0 = sp.waveunits
+    fluxunits0 = sp.fluxunits
+
+    sp.convert(waveunits)
+    sp.convert('photlam')
+
+    edges = S.binning.calculate_bin_edges(wave)
+    indices = np.searchsorted(sp.wave, edges)
+    i1_arr = indices[:-1]
+    i2_arr = indices[1:]
+
+    # This assumes the original wavelength grid is uniform
+    binflux = np.empty(shape=wave.shape, dtype=np.float64)
+    for i in range(len(wave)):
+        i1 = i1_arr[i]
+        i2 = i2_arr[i]
+        binflux[i] = sp.flux[i1:i2].sum() / (i2-i1)
+    
+    sp2 = S.ArraySpectrum(wave, binflux, waveunits=waveunits, fluxunits='photlam')
+    sp2.convert(waveunits0)
+    sp2.convert(fluxunits0)
+    sp.convert(waveunits0)
+    sp.convert(fluxunits0)
+
+    return sp2
+
 ###########################################################################
 #
 #    Pysynphot Spectrum Wrappers
@@ -2084,7 +2190,7 @@ def xy_to_rtheta(x, y):
 ###########################################################################
 
 
-def stellar_spectrum(sptype, *renorm_args):
+def stellar_spectrum(sptype, *renorm_args, **kwargs):
     """
     Get Pysynphot Spectrum object from a user-friendly spectral type string.
 
@@ -2100,10 +2206,13 @@ def stellar_spectrum(sptype, *renorm_args):
         ie., sp = stellar_spectrum('G2V', 10, 'vegamag', bp)
     
     Flat spectrum (in photlam) are also allowed via the 'flat' string.
+    
+    Use catname keyword for 'ck04models'
+    
     """
 
-
-    catname = 'phoenix'
+    catname = kwargs.get('catname')
+    if catname is None: catname = 'phoenix'
     lookuptable = {
         "O0V": (50000, 0.0, 4.0), # Bracketing for interpolation
         "O3V": (45000, 0.0, 4.0),
@@ -2200,9 +2309,12 @@ def stellar_spectrum(sptype, *renorm_args):
         v0 = np.interp(rank, rank_list, tup_list0)
         v1 = np.interp(rank, rank_list, tup_list1)
         v2 = np.interp(rank, rank_list, tup_list2)
-    
+        
+        if ('ck04models' in catname.lower()) and (v0<3500): v0 = 3500
         sp = S.Icat(catname, v0, v1, v2)
         sp.name = sptype
+        
+    #print(int(v0),v1,v2)
 
     # Renormalize if those args exist
     if len(renorm_args) > 0:
@@ -2478,7 +2590,7 @@ def coron_trans(name, module='A', pixscale=None, fov=20):
     Build a transmission image of a coronagraphic mask spanning
     the 20" coronagraphic FoV.
 
-    Pull from WebbPSF
+    Pulled from WebbPSF
     """
 
     import scipy.special
@@ -2790,75 +2902,77 @@ def nrc_header(det_class, filter=None, pupil=None, obs_time=None, header=None):
 
 
 # Unused function
-#def lazy_thunkif y(f):
-# 	"""
-# 	Make a function immediately return a function of no args which, when called,
-# 	waits for the result, which will start being processed in another thread.
+# def lazy_thunkif y(f):
+#     """
+#     Make a function immediately return a function of no args which, when called,
+#     waits for the result, which will start being processed in another thread.
 # 
-# 	This decorator will cause any function to, instead of running its code, 
-# 	start a thread to run the code, returning a thunk (function with no args) that 
-# 	waits for the function's completion and returns the value (or raises the exception).
+#     This decorator will cause any function to, instead of running its code, 
+#     start a thread to run the code, returning a thunk (function with no args) that 
+#     waits for the function's completion and returns the value (or raises the exception).
 # 
-# 	Useful if you have Computation A that takes x seconds and then uses Computation B, 
-# 	which takes y seconds. Instead of x+y seconds you only need max(x,y) seconds.
-# 	
-# 	Example:
+#     Useful if you have Computation A that takes x seconds and then uses Computation B, 
+#     which takes y seconds. Instead of x+y seconds you only need max(x,y) seconds.
 # 
-# 	@lazy_thunkify
-# 	def slow_double(i):
-# 		print "Multiplying..."
-# 		time.sleep(5)
-# 		print "Done multiplying!"
-# 		return i*2
+#     Example:
 # 
-# 	def maybe_multiply(x):
-# 		double_thunk = slow_double(x)
-# 		print "Thinking..."
-# 		time.sleep(3)
-# 		time.sleep(3)
-# 		time.sleep(1)
-# 		if x == 3:
-# 			print "Using it!"
-# 			res = double_thunk()
-# 		else:
-# 			print "Not using it."
-# 			res = None
-# 		return res
+#     @lazy_thunkify
+#     def slow_double(i):
+#         print "Multiplying..."
+#         time.sleep(5)
+#         print "Done multiplying!"
+#         return i*2
 # 
-# 	#both take 7 seconds
-# 	maybe_multiply(10)
-# 	maybe_multiply(3)
+#     def maybe_multiply(x):
+#         double_thunk = slow_double(x)
+#         print "Thinking..."
+#         time.sleep(3)
+#         time.sleep(3)
+#         time.sleep(1)
+#         if x == 3:
+#             print "Using it!"
+#             res = double_thunk()
+#         else:
+#             print "Not using it."
+#             res = None
+#         return res
 # 
-# 	"""
+#     #both take 7 seconds
+#     maybe_multiply(10)
+#     maybe_multiply(3)
 # 
-# 	@functools.wraps(f)
-# 	def lazy_thunked(*args, **kwargs):
-# 		wait_event = threading.Event()
+#     """
+#
+#    import threading, functools, traceback
 # 
-# 		result = [None]
-# 		exc = [False, None]
+#     @functools.wraps(f)
+#     def lazy_thunked(*args, **kwargs):
+#         wait_event = threading.Event()
 # 
-# 		def worker_func():
-# 			try:
-# 				func_result = f(*args, **kwargs)
-# 				result[0] = func_result
-# 			except Exception as e:
-# 				exc[0] = True
-# 				exc[1] = sys.exc_info()
-# 				print("Lazy thunk has thrown an exception (will be raised on thunk()):\n%s" % 
-# 					(traceback.format_exc()))
-# 			finally:
-# 				wait_event.set()
+#         result = [None]
+#         exc = [False, None]
 # 
-# 		def thunk():
-# 			wait_event.wait()
-# 			if exc[0]:
-# 				raise exc[1][0], exc[1][1], exc[1][2]
+#         def worker_func():
+#             try:
+#                 func_result = f(*args, **kwargs)
+#                 result[0] = func_result
+#             except Exception as e:
+#                 exc[0] = True
+#                 exc[1] = sys.exc_info()
+#                 print("Lazy thunk has thrown an exception (will be raised on thunk()):\n%s" % 
+#                     (traceback.format_exc()))
+#             finally:
+#                 wait_event.set()
 # 
-# 			return result[0]
+#         def thunk():
+#             wait_event.wait()
+#             if exc[0]:
+#                 raise exc[1][0], exc[1][1], exc[1][2]
 # 
-# 		threading.Thread(target=worker_func).start()
+#             return result[0]
 # 
-# 		return thunk
+#         threading.Thread(target=worker_func).start()
 # 
-# 	return lazy_thunked
+#         return thunk
+# 
+#     return lazy_thunked

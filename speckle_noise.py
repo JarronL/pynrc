@@ -18,7 +18,12 @@ from poppy.utils import pad_to_size
 
 class OPD_extract(object):
 
-    def __init__(self, opd, header, verbose=False):
+    """
+    For a given JWST OPD image and header, extract the Zernike/Hexike 
+    components for the overall pupil and each mirror segment.
+    """
+
+    def __init__(self, opd, header, seg_terms=30, verbose=False):
 
         self.opd = opd
         self.npix = opd.shape[0]
@@ -53,11 +58,11 @@ class OPD_extract(object):
         self.opd_diff_pupil = self.opd - self.opd_new_pupil
 
         if verbose: print('Fitting Hexike coefficients for each segment...')
-        self._coeff_segs = self._get_coeff_segs()
+        self._coeff_segs = self._get_coeff_segs(nterms=seg_terms)
         if verbose: print('Constructing OPD for each segment...')
         self.opd_new_segs = self._get_opd_new_segs()
 
-        print('Finished.')
+        if verbose: print('Finished.')
 
     @property
     def mask_pupil(self):
@@ -122,14 +127,14 @@ class OPD_extract(object):
         opd = self._opd_from_coeff(self.coeff_pupil, self.basis_zernike, self.mask_pupil)
         return opd * self.mask_opd
 
-    def _get_coeff_segs(self, opd_pupil=None):
+    def _get_coeff_segs(self, opd_pupil=None, nterms=30):
         """Calculate Hexike coeffiencts each individual segment"""
         coeff_list = []
         for i in range(self.nseg): #, pmask in enumerate(self._mask_segs):
             mask_sub = self.mask_seg(i)
             opd_sub  = self.opd_seg(i, opd_pupil)
     
-            coeff = self._get_coeff(opd_sub, mask_sub, self.basis_hexike, nterms=30)
+            coeff = self._get_coeff(opd_sub, mask_sub, self.basis_hexike, nterms=nterms)
             coeff_list.append(coeff)
         return coeff_list
 
@@ -399,6 +404,7 @@ def ODP_drift_all(wfe_drift, opds_all, pup_cf_std, seg_cf_std, opd_resid_list):
 
     return out
 
+
 def get_psf(opd, header, filter='F410M', mask=None, pupil=None, 
     jitter=False, njit=10, jitter_sigma=0.005, r=None, theta=None, **kwargs):
     """
@@ -406,7 +412,7 @@ def get_psf(opd, header, filter='F410M', mask=None, pupil=None,
 
     The jitter model recomputes the PSF at random positional offsets with
     a standard deviation equal to jitter_sigma. It does this njit times
-    and averages the resulting PSFs. This 
+    and averages the resulting PSFs. 
     """
 
     hdu = fits.PrimaryHDU(opd)
@@ -458,6 +464,26 @@ def get_psf(opd, header, filter='F410M', mask=None, pupil=None,
         hdulist[0].data = data0 / njit
         hdulist[1].data = data1 / njit
     else:
+#         fov_pix = 159
+#         oversample = 4
+#         im, im_over = nrc_utils.gen_image_coeff(filter, pupil=pupil, mask=mask,
+#             fov_pix=fov_pix, oversample=oversample, return_oversample=True,
+#             offset_r=r, offset_theta=theta, save=False, force=False, opd=opd_hdulist)
+# 
+#         hdu = fits.PrimaryHDU(im_over)
+#         hdu.header['EXTNAME'] = ('OVERSAMP')
+#         hdu.header['OVERSAMP'] = oversample
+#         hdu.header['DET_SAMP'] = oversample
+#         hdu.header['PIXELSCL'] = 0.063 / hdu.header['OVERSAMP']
+#         hdulist = fits.HDUList([hdu])
+#         
+#         hdu = fits.PrimaryHDU(im)
+#         hdu.header['EXTNAME'] = ('DET_SAMP')
+#         hdu.header['OVERSAMP'] = 1
+#         hdu.header['DET_SAMP'] = oversample
+#         hdu.header['PIXELSCL'] = 0.063
+#         hdulist.append(hdu)
+        
         hdulist = nc.calc_psf(fov_arcsec=10)
         jit_type = 'None'
         jitter_sigma = 0
@@ -837,3 +863,29 @@ def _opd_drift_nogood(opd, header, drift, nterms=8, defocus_frac=0.8):
     
     return hdulist
 
+def read_opd_file(opd_file, opd_path=None, header=True):
+    """
+    Read in the OPD file data and header (optional)
+    """
+    
+    if opd_path is None:
+        data_path = webbpsf.utils.get_webbpsf_data_path() + '/'
+        opd_path = data_path + 'NIRCam/OPD/'
+        
+    return fits.getdata(opd_path + opd_file, header=header)
+        
+def read_opd_slice(pupilopd, opd_path=None, header=True):
+    """
+    Get only a specified OPD slice from file.
+    
+    pupilopd is a tuple of form (filename, slice)
+    """
+    
+    opd_file, slice = pupilopd
+    out = read_opd_file(opd_file, opd_path, header)
+    
+    if header:
+        data, header = out
+        return data[slice,], header
+    else:
+        return out[slice,]
