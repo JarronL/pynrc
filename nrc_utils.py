@@ -910,7 +910,8 @@ def _mlim_helper(sub_im, mag_norm=10, mag_arr=np.arange(5,35,1),
 def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=None,
     sp=None, units=None, nsig=10, tf=10.737, ngroup=2, nf=1, nd2=0, nint=1,
     coeff=None, fov_pix=11, oversample=4, quiet=True, forwardSNR=False, 
-    offset_r=0, offset_theta=0, return_image=False, image=None, dw_bin=None, **kwargs):
+    offset_r=0, offset_theta=0, return_image=False, image=None, 
+    dw_bin=None, rad_EE=None, **kwargs):
     """
     Estimates the sensitivity for a set of instrument parameters.
     By default, a flat spectrum is convolved with the specified bandpass.
@@ -978,6 +979,7 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
     image        : Explicitly pass image data rather than calculating from coeff.
     return_image : Instead of calculating sensitivity, return the image calced from coeff.
     dw_bin       : Delta wavelength to calculate spectral sensitivities (grisms & DHS).
+    rad_EE       : Extraction aperture radius (in pixels) for imaging mode.
 
     Keyword Args
     -------------------
@@ -1187,7 +1189,8 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
 
         # How many pixels do we want?
         fwhm_pix = 1.2 * efflam * 0.206265 / 6.5 / pix_scale
-        rad_EE = np.max([fwhm_pix,2.5])
+        if rad_EE is None:
+            rad_EE = np.max([fwhm_pix,2.5])
         npix_EE = np.pi * rad_EE**2
 
         ####TEMPORARY

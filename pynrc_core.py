@@ -1390,8 +1390,6 @@ class NIRCam(object):
         sensitivity for the given instrument setup. See bg_sensitivity() for more
         details.
 
-        To do: Point source sensitivity for coronagraphic observations (contrast curves)?
-
         Parameters
         ==========
         sp    : A pysynphot spectral object to calculate sensitivity 
@@ -1401,7 +1399,7 @@ class NIRCam(object):
 
         **kwargs
         ==========
-        These are all pass through the **kwargs parameter
+        These are all passed through the **kwargs parameter (among others...)
         forwardSNR    : Find the SNR of the input spectrum instead of sensitivity.
         zfact         : Factor to scale Zodiacal spectrum (default 2.5)
         ideal_Poisson : If set to True, use total signal for noise estimate,
@@ -1696,7 +1694,7 @@ class NIRCam(object):
                 if ng_max is not None:
                     ngroup_max = ng_max
                 nng = ngroup_max - ng_min + 1
-                if nng>20:
+                if nng>30:
                     _log.warning('Cycling through {} NGRPs. This may take a while!'\
                         .format(nng))
                 for ng in range(ng_min,ngroup_max+1):
