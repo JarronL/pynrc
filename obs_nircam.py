@@ -1,6 +1,7 @@
 from __future__ import division, print_function, unicode_literals
 
 from astropy.convolution import convolve_fft, Gaussian2DKernel
+from scipy.ndimage.interpolation import rotate
 from scipy import fftpack
 
 # Import libraries
@@ -9,7 +10,6 @@ from nrc_utils import *
 
 import logging
 _log = logging.getLogger('pynrc')
-
 
 class obs_coronagraphy(NIRCam):
     """
@@ -255,20 +255,32 @@ class obs_coronagraphy(NIRCam):
              'entropy':entropy, 'Av':Av, 'renorm_args':renorm_args}
         self._planets.append(d)
         
-    def gen_planets_image(self):
+    def gen_planets_image(self, PA_offset=0):
         """
-        Use info stored in self.planets to create a slope image of just the
-        exoplanets (no star).
+        Use info stored in self.planets to create a noiseless slope image 
+        of just the exoplanets (no star). 
+        
+        PA_offset (float) : Rotate entire scene by some position angle.
+            Positive values are counter-clockwise from +Y direction.
+            Corresponds to instrument aperture PA.
         """
         if len(self.planets)==0:
             _log.warning("No planet info at self.planets")
-            return
+            return 0
+            
+        if PA_offset is None: PA_offset=0
             
         image_shape = (self.det_info['ypix'], self.det_info['xpix'])
         image = np.zeros(image_shape)
         for pl in self.planets:
             # Choose the PSF closest to the planet position
             xoff, yoff = pl['xyoff_pix']
+            
+            # Add in PA offset
+            if PA_offset!=0:
+                r, theta = xy_to_rtheta(xoff, yoff)
+                xoff, yoff = rtheta_to_xy(r, theta+PA_offset)
+            
             xoff_asec, yoff_asec = np.array(pl['xyoff_pix']) * self.pix_scale
             if len(self.offset_list) > 1:
                 roff_asec = np.sqrt(xoff_asec**2 + yoff_asec**2)
@@ -330,7 +342,7 @@ class obs_coronagraphy(NIRCam):
         
         roll_angle : Telescope roll angle (deg) between two observations.
             If set to 0 or None, then only one roll will be performed.
-            If vale is >0, then two rolls are performed, each using the
+            If value is >0, then two rolls are performed, each using the
             specified MULTIACCUM settings (doubling the effective exposure
             time).
         zfact : Zodiacal background factor (default=2.5)
@@ -342,7 +354,6 @@ class obs_coronagraphy(NIRCam):
             n-sigma magnitude limit (vega mags)        
         """
         from astropy.convolution import convolve, Gaussian1DKernel
-        from scipy.ndimage.interpolation import rotate
         
         sci = self
         ref = self.nrc_ref
@@ -420,6 +431,115 @@ class obs_coronagraphy(NIRCam):
         sen_mag = star_mag - 2.5*np.log10(contrast)
 
         return rr, contrast, sen_mag
+
+    def gen_final(self, PA1=0, PA2=10, zfact=None, oversample=None, exclude_noise=False):
+        """
+        Create a final roll-subtracted slope image based on current observation
+        settings.
+        
+        Procedure:
+          - Create Roll 1 and Roll 2 slope images (star+exoplanets)
+          - Create Reference Star slope image
+          - Add random Gaussian noise to all images
+          - Subtract ref image from both rolls
+          - De-rotate Roll 2 by roll_angle amplitude
+          - Average Roll 1 and de-rotated Roll 2
+          
+        Parameters
+        ==========
+        PA1 : Position angle of first roll position (clockwise, from East to West)
+        PA2 : Position angle of second roll position (optional)
+              If set equal to PA1 (or to None), then only one roll will be performed.
+              Otherwise, two rolls are performed, each using the specified 
+              MULTIACCUM settings (doubling the effective exposure time).
+        zfact      : Zodiacal background factor (default=2.5)
+        oversample : Set oversampling of final image.
+        exclude_noise : Don't add random Gaussian noise (detector+photon)
+        
+        Returns an HDUList of final image (North rotated upwards).
+        """
+    
+        # Final image shape
+        image_shape = (self.det_info['ypix'], self.det_info['xpix'])
+        if PA2 is None: 
+            roll_angle = 0
+        else:
+            roll_angle = PA2 - PA1
+        if oversample is None: oversample = 1
+   
+        sci = self
+        ref = self.nrc_ref
+        
+        # Reference star slope simulation
+        # Ideal slope
+        im_ref = ref.gen_psf(sci.sp_ref)
+        im_ref = pad_or_cut_to_size(im_ref, image_shape)
+        # Noise per pixel
+        if not exclude_noise:
+            det = ref.Detectors[0]
+            fzodi = ref.bg_zodi(zfact)
+            im_noise = det.pixel_noise(fsrc=im_ref, fzodi=fzodi)
+            # Add random noise
+            im_ref += np.random.normal(scale=im_noise)
+        
+        # Stellar PSF is fixed
+        im_star = sci.gen_psf(sci.sp_sci)
+        im_star = pad_or_cut_to_size(im_star, image_shape)
+
+        # Telescope Roll 1
+        im_roll1 = im_star + sci.gen_planets_image(PA_offset=PA1)
+        # Noise per pixel
+        if not exclude_noise:
+            det = sci.Detectors[0]
+            fzodi = sci.bg_zodi(zfact)
+            im_noise1 = det.pixel_noise(fsrc=im_roll1, fzodi=fzodi)
+            # Add random noise
+            im_roll1 += np.random.normal(scale=im_noise1)
+    
+        # Subtract reference star from Roll 1
+        scale1 = scale_ref_image(im_roll1, im_ref)
+        if oversample != 1:
+            im_ref_rebin = frebin(im_ref, scale=oversample)
+            im_roll1     = frebin(im_roll1, scale=oversample)
+        else:
+            im_ref_rebin = im_ref
+    
+        im_diff1 = im_roll1 - im_ref_rebin * scale1
+
+    
+        # Telescope Roll 2
+        if abs(roll_angle) > 0:
+            im_roll2 = im_star + sci.gen_planets_image(PA_offset=PA2)
+            # Noise per pixel
+            if not exclude_noise:
+                im_noise2 = det.pixel_noise(fsrc=im_roll2, fzodi=fzodi)
+                # Add random noise
+                im_roll2 += np.random.normal(scale=im_noise2)
+
+            # Subtract reference star from Roll 2
+            scale2 = scale_ref_image(im_roll2, im_ref)
+            if oversample != 1:
+                im_roll2  = frebin(im_roll2, scale=oversample)
+            im_diff2 = im_roll2 - im_ref_rebin * scale2
+
+            # De-rotate Roll 2 onto Roll 1
+            # Convention for rotate() is opposite PA_offset
+            im_diff2_rot = rotate(im_diff2, roll_angle, reshape=False)
+            final = (im_diff1 + im_diff2_rot) / 2
+        else:
+            final = im_diff1
+            
+        # De-rotate PA1 to North
+        if abs(PA1) > 0:
+            final = rotate(final, PA1, reshape=False)
+        
+        hdu = fits.PrimaryHDU(final)
+        hdu.header['EXTNAME'] = ('DET_SAMP')
+        hdu.header['OVERSAMP'] = oversample
+        hdu.header['PIXELSCL'] = sci.pix_scale / hdu.header['OVERSAMP']
+        hdulist = fits.HDUList([hdu])
+
+        return hdulist
 
 
 class nrc_diskobs(NIRCam):

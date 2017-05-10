@@ -1705,6 +1705,37 @@ def image_rescale(HDUlist_or_filename, args_in, args_out):
 
     return hdulist
 
+
+def scale_ref_image(im1, im2):
+    """
+    Find value to scale a reference image by minimizing residuals.
+    
+    Inputs
+    ======
+    im1 - Science star observation.
+    im2 - Reference star observation.
+    """
+
+    ind1 = np.where(im1==im1.max())
+    ind2 = np.where(im2==im2.max())
+
+    # Initial Guess
+    scl = im1[ind1[0]-3:ind1[0]+3,ind1[1]-3:ind1[1]+3].sum() / \
+          im2[ind2[0]-3:ind2[0]+3,ind2[1]-3:ind2[1]+3].sum()
+
+    # Check a range of scale values
+    # Want to minimize the standard deviation of the differenced images
+    scl_arr = np.linspace(scl-scl*0.1,scl+scl*0.1,50)
+    mad_arr = []
+    for val in scl_arr:
+        diff = im1 - val*im2
+        mad_arr.append(medabsdev(diff))
+    mad_arr = np.array(mad_arr)
+
+    #plt.plot(scl_arr,mad_arr)
+    return scl_arr[mad_arr==mad_arr.min()][0]
+
+
 def pad_or_cut_to_size(array, new_shape):
     """
     Resize an array to a new shape by either padding with zeros
