@@ -816,7 +816,7 @@ class NIRCam(object):
 
     def __init__(self, filter='F210M', pupil=None, mask=None, module='A', ND_acq=False,
         **kwargs):
-         
+                 
         # Available Filters
         # Note: Certain narrowband filters reside in the pupil wheel and cannot be paired
         # with pupil elements. This will be check for later.
@@ -1571,7 +1571,7 @@ class NIRCam(object):
     def ramp_optimize(self, sp, sp_bright=None, is_extended=False, patterns=None,
         well_frac_max=0.8, nint_min=1, nint_max=1000, ng_min=2, ng_max=None,
         snr_goal=None, snr_frac=0.02, tacq_max=None, tacq_frac=0.1,
-        return_full_table=None, verbose=False, **kwargs):
+        return_full_table=False, verbose=False, **kwargs):
         """
         Find the optimal ramp settings to observe spectrum based input constraints.
         This function quickly runs through each detector readout pattern and 
@@ -1608,8 +1608,8 @@ class NIRCam(object):
         tacq_max      : Maximum amount of acquisition time in seconds to consider.
         tacq_frac     : Fractional amount of time to consider exceeding tacq_max.
 
-        ideal_Poisson : If set to True, use total signal for noise estimate,
-                        otherwise MULTIACCUM equation is used. Default=True.
+        ideal_Poisson : Default=True. Use total signal for noise estimate,
+                        otherwise MULTIACCUM equation is used. 
 
         return_full_table : Don't filter or sort the final results.
         verbose           : Prints out top 10 results.
