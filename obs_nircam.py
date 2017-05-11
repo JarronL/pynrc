@@ -56,7 +56,7 @@ class obs_coronagraphy(NIRCam):
         # Faster once PSFs have already been previously generated 
         log_prev = conf.logging_level
         setup_logging('WARN', verbose=False)
-        self._gen_psf_max()
+        self._gen_psf_off()
         setup_logging(log_prev, verbose=False)
         
         self._gen_ref()
@@ -100,7 +100,7 @@ class obs_coronagraphy(NIRCam):
             self.nrc_ref = nrc
         
         
-    def _gen_psf_max(self):
+    def _gen_psf_off(self):
         """
         Create instances of NIRCam observations that are incrementally offset 
         from coronagraph center to determine maximum value of the detector-

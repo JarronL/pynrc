@@ -487,6 +487,10 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
 
     # Name to save array of oversampled coefficients
     save_dir = conf.PYNRC_PATH + 'psf_coeffs/'
+    # Create directory if it doesn't already exist
+    if not os.path.isdir(save_dir):
+        os.makedirs(save_dir)
+        
     mtemp = 'none' if mask is None else mask
     ptemp = 'none' if pupil is None else pupil
     # Get source offset positions
@@ -525,12 +529,12 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     if (not force) and (save and os.path.exists(save_name)):
         return np.load(save_name)
 
-    # Drift the OPD
+    # Drift the OPD if on the coronagraphic spot (rtemp=0)
     # This isn't quite right compared to the nominal case on account
     # of slight modifications to the pupil mask relative to RevV pupils.
     # Contrasts for ~1-5nm drifts look very similar because the dominant
     # WFE effects are due to differences in the segment edges. 
-    if wfe_drift > 0:
+    if rtemp == 0:
         from . import speckle_noise as sn
         pupilopd = opd
         # Read in a specified OPD file and slice
@@ -552,11 +556,15 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
             0.0,  0.0,  0.0,  0.0,  0.0])
         # Generate science OPD image and residuals for use in reference drift.
         opd_sci, opd_resid = sn.opd_sci_gen(opd_obj)
-        # Generate reference OPD image
-        args = (opd_obj, wfe_drift, pup_cf_std, seg_cf_std, opd_resid, 1)
-        opd_ref = sn.opd_ref_gen(args)
-        # Create OPD inside an HDUList to pass to WebbPSF
-        hdu = fits.PrimaryHDU(opd_ref)
+        if wfe_drift > 0:
+            # Generate reference OPD image
+            args = (opd_obj, wfe_drift, pup_cf_std, seg_cf_std, opd_resid, 1)
+            opd_ref = sn.opd_ref_gen(args)
+            # Create OPD inside an HDUList to pass to WebbPSF
+            hdu = fits.PrimaryHDU(opd_ref)
+        else:
+            hdu = fits.PrimaryHDU(opd_sci)
+
         hdu.header = header.copy()
         opd_hdulist = fits.HDUList([hdu]) 
         inst.pupilopd = opd_hdulist
