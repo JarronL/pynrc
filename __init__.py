@@ -65,4 +65,4 @@ from .obs_nircam import (obs_coronagraphy, nrc_diskobs, observe_disk, observe_st
 
 #from .ngNRC import slope_to_ramp, nproc_use_ng
 
-import robust, ngNRC
+from . import robust, ngNRC

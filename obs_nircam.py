@@ -5,8 +5,8 @@ from scipy.ndimage.interpolation import rotate
 from scipy import fftpack
 
 # Import libraries
-from pynrc_core import *
-from nrc_utils import *
+from . import *
+from .nrc_utils import *
 
 import logging
 _log = logging.getLogger('pynrc')
