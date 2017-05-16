@@ -55,7 +55,7 @@ poppy.conf.use_fftw = False
 # Make sure we can use multiprocessing!
 # Apple's Accelerate framework in 2.7 doesn't work with mp
 d = np.__config__.blas_opt_info
-accel_bool = (d.has_key('extra_link_args') and ('-Wl,Accelerate' in d['extra_link_args']))
+accel_bool = ('extra_link_args' in d.keys() and ('-Wl,Accelerate' in d['extra_link_args']))
 if (sys.version_info < (3,4,0)) and (platform.system()=='Darwin') and accel_bool:
     poppy.conf.use_multiprocessing = False
 # If the machine has 2 or less CPU cores, then no mp
