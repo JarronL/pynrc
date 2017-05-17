@@ -2851,8 +2851,8 @@ def nrc_header(det_class, filter=None, pupil=None, obs_time=None, header=None,
     hdr['SIMPLE']  = (True,   'conforms to FITS standard')
     hdr['BITPIX']  = (16,     'array data type')
     if DMS == True:
-        hdr['SUBSTRT1'] = (0, '0-indexed in DMS science frame')
-        hdr['SUBSTRT2'] = (0, '0-indexed in DMS science frame')
+        hdr['SUBSTRT1'] = (0, 'Starting pixel in axis 1 direction')
+        hdr['SUBSTRT2'] = (0, 'Starting pixel in axis 2 direction')
         hdr['SUBSIZE1'] = naxis1
         hdr['SUBSIZE2'] = naxis2
         hdr['NAXIS'] = (naxis,  'number of array dimensions')
@@ -2894,31 +2894,9 @@ def nrc_header(det_class, filter=None, pupil=None, obs_time=None, header=None,
     hdr['PIXELSCL']= (d.pixelscale, 'Detector Pixel Scale (arcsec/pixel)')
     fovx = naxis1 * d.pixelscale; fovy = naxis2 * d.pixelscale
     hdr['FOV']     = ('{:.2f}x{:.2f}'.format(fovx,fovy), 'Field of view in arcsec')
-    hdr['OBSMODE'] = ('UNKNOWN', 'Observation mode')
-    hdr['TARGNAME'] = (targ_name, 'Standard astronomical catalog name for target')
-    
-    
     if DMS == True:
-        if d.channel == 'LW':
-            headerChannel = 'LONG'
-        elif d.channel == 'SW':
-            headerChannel = 'SHORT'
-        else:
-            headerChannel = 'UNKNOWN'
-        hdr['CHANNEL'] = headerChannel
-        
-        hdr['GRATING'] = ('N/A - NIRCam', 'Name of the grating element used')
-        hdr['BAND']    = ('N/A - NIRCam', 'MRS wavelength band')
-        hdr['LAMP']    = ('N/A - NIRCam', 'Internal lamp state')
-        hdr['GWA_XTIL']= ('N/A - NIRCam', 'Grating Y tilt angle relative to mirror')
-        hdr['GWA_YTIL']= ('N/A - NIRCam', 'Grating Y tilt angle relative to mirror')
-        hdr['GWA_TILT']= ('N/A - NIRCam', 'Grating X tilt angle relative to mirror')
-        hdr['MSAMETFL']= ('N/A - NIRCam', 'GWA TILT (avg/calib) temperature (K)')
-        hdr['MSAMETID']= ('N/A - NIRCam', 'MSA metadata file name')
-        hdr['NUMDTHPT']= ('N/A - NIRCam', 'MSA metadata ID')
-        hdr['PATT_NUM']= ('N/A - NIRCam', 'Total number of points in pattern')
-        hdr['TARG_RA']=  (80.4875, 'Target RA at mid time of exposure')
-        hdr['TARG_DEC']= (-69.498333, 'Target Dec at mid time of exposure')
+        hdr['TARG_RA']=  (80.4875, 'Target RA at mid time of exposure') #arbitrary position
+        hdr['TARG_DEC']= (-69.498333, 'Target Dec at mid time of exposure') #arbitrary position
         
         hdr['PROGRAM'] = ('12345', 'Program number')
         hdr['OBSERVTN']= ('001',   'Observation number')
@@ -2932,7 +2910,29 @@ def nrc_header(det_class, filter=None, pupil=None, obs_time=None, header=None,
         hdr['EXPSTART']= (aTstart.mjd, 'UTC exposure start time')
         hdr['EXPEND']  = (aTend.mjd, 'UTC exposure end time')
         hdr['EFFEXPTM']= (d.time_total_int, 'Effective exposure time (sec)')
+        hdr['NUMDTHPT']= ('1','Total number of points in pattern')
+        hdr['PATT_NUM']= (1,'Position number in primary pattern')
         
+    hdr['OBSMODE'] = ('UNKNOWN', 'Observation mode')
+    hdr['TARGNAME'] = (targ_name, 'Standard astronomical catalog name for target')
+        
+    if DMS == True:
+        if d.channel == 'LW':
+            headerChannel = 'LONG'
+        elif d.channel == 'SW':
+            headerChannel = 'SHORT'
+        else:
+            headerChannel = 'UNKNOWN'
+        hdr['CHANNEL'] = headerChannel
+        
+        hdr['GRATING'] = ('N/A - NIRCam', 'Name of the grating element used')
+        hdr['BAND']    = ('N/A - NIRCam', 'MRS wavelength band')
+        hdr['LAMP']    = ('N/A - NIRCam', 'Internal lamp state')
+        hdr['GWA_XTIL']= ('N/A - NIRCam', 'Grating X tilt angle relative to mirror')
+        hdr['GWA_YTIL']= ('N/A - NIRCam', 'Grating Y tilt angle relative to mirror')
+        hdr['GWA_TILT']= ('N/A - NIRCam', 'GWA TILT (avg/calib) temperature (K)')
+        hdr['MSAMETFL']= ('N/A - NIRCam', 'MSA metadata file name')
+        hdr['MSAMETID']= ('N/A - NIRCam', 'MSA metadata ID')
 
     # Positions of optical elements
     hdr['FILTER']  = (filter, 'Module ' + d.module + ' ' + d.channel + ' FW element')
