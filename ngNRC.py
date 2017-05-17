@@ -22,6 +22,7 @@ from __future__ import division, print_function
 import numpy as np
 import datetime, os
 from astropy.io import fits
+from astropy.table import Table
 
 # HxRG Noise Generator
 from pynrc import nghxrg as ng
@@ -254,7 +255,8 @@ def SCAnoise(det=None, scaid=None, params=None, caldir=None, file_out=None,
     return hdu
 
 def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None, 
-                  filter=None, pupil=None, obs_time=None, targ_name=None):
+                  filter=None, pupil=None, obs_time=None, targ_name=None,
+                  DMS=True):
     """
     For a given detector operations class and slope image, create a
     ramp integration using Poisson noise and detector noise. 
@@ -283,7 +285,10 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
         This must be a datetime object:
             datetime.datetime(2016, 5, 9, 11, 57, 5, 796686)
         This information is added to the header.
-
+    targ_name : str
+        Target name (optional)
+    DMS : bool
+        Package the data in the format used by DMS?
     """
 
     #import ngNRC
@@ -317,7 +322,7 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
     # Create dark ramp with read noise and 1/f noise
     hdu = SCAnoise(det)
     # Update header information
-    hdu.header = det.make_header(filter, pupil, obs_time,targ_name=targ_name)
+    hdu.header = det.make_header(filter, pupil, obs_time,targ_name=targ_name,DMS=DMS)
     hdu.data += ramp # Add signal ramp to dark ramp
     data = hdu.data
 
@@ -358,8 +363,28 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
         hdu.header['UNITS'] = 'ADU'
 
     hdu.data = data
+    
     if file_out is not None:
         hdu.header['FILENAME'] = os.path.split(file_out)[1]
-        hdu.writeto(file_out, clobber='True')
-
-    return hdu
+    
+    if DMS == True:
+        primHDU = fits.PrimaryHDU(header=hdu.header)
+        primHDU.name = 'PRIMARY'
+        sciHDU = fits.ImageHDU(data=hdu.data)
+        sciHDU.name = 'SCI'
+        sciHDU.header.comments['NAXIS1'] = 'length of first data axis (#columns)'
+        sciHDU.header.comments['NAXIS2'] = 'length of second data axis (#rows)'
+        if sciHDU.header['NAXIS'] > 2:
+            sciHDU.header.comments['NAXIS3'] = 'length of third data axis (#groups/integration '
+        if sciHDU.header['NAXIS'] > 3:
+            sciHDU.header.comments['NAXIS4'] = 'length of fourth data axis (#integrations)  '
+        sciHDU.header['BZERO'] = (32768, 'physical value for an array value of zero')
+        sciHDU.header['BUNIT'] = ('DN', 'physical units of the data array values')
+        outHDU = fits.HDUList([primHDU,sciHDU])
+    else:
+        outHDU = hdu
+    
+    if file_out is not None:
+        outHDU.writeto(file_out, clobber='True')
+    
+    return outHDU
