@@ -254,7 +254,7 @@ def SCAnoise(det=None, scaid=None, params=None, caldir=None, file_out=None,
     return hdu
 
 def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None, 
-                  filter=None, pupil=None, obs_time=None):
+                  filter=None, pupil=None, obs_time=None, targ_name=None):
     """
     For a given detector operations class and slope image, create a
     ramp integration using Poisson noise and detector noise. 
@@ -317,7 +317,7 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
     # Create dark ramp with read noise and 1/f noise
     hdu = SCAnoise(det)
     # Update header information
-    hdu.header = det.make_header(filter, pupil, obs_time)
+    hdu.header = det.make_header(filter, pupil, obs_time,targ_name=targ_name)
     hdu.data += ramp # Add signal ramp to dark ramp
     data = hdu.data
 

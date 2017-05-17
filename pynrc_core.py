@@ -1467,7 +1467,7 @@ class NIRCam(object):
 
         return fzodi_pix
 
-    def gen_exposures(self, sp=None, file_out=None, return_results=None):
+    def gen_exposures(self, sp=None, file_out=None, return_results=None,targ_name=None):
         """
         Create a series of ramp integration saved to FITS files based on
         the current NIRCam settings. 
@@ -1495,6 +1495,8 @@ class NIRCam(object):
             data can lead to large memory usage. Save the FITs files to
             disk if NINTs is large. We include the return_results keyword
             if the user would like to do both (or neither??).
+        targ_name: str
+            A target name for the exposure file's header
         """
 
         filter = self.filter
@@ -1552,7 +1554,7 @@ class NIRCam(object):
         # For now, we're only doing the first detector. This will need to get more
         # sophisticated for SW FPAs
         det = self.Detectors[0]
-        worker_arguments = [(det, im_slope, True, fout, filter, pupil, otime) 
+        worker_arguments = [(det, im_slope, True, fout, filter, pupil, otime, targ_name) 
                             for fout,otime in zip(file_list, time_list)]
 
         nproc = nproc_use_ng(det)
