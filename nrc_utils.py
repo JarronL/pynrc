@@ -6,7 +6,6 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 
 # The six library is useful for Python 2 and 3 compatibility
 import six
-import time
 
 # Import libraries
 import numpy as np
@@ -16,13 +15,12 @@ matplotlib.rcParams['image.origin'] = 'lower'
 matplotlib.rcParams['image.interpolation'] = 'none'
 matplotlib.rcParams['image.cmap'] = 'gist_heat'
 
-
-import astropy.io.fits as fits
-import datetime
+import datetime, time
 import yaml, re, os
 import sys, platform
 import multiprocessing as mp
 
+from astropy.io import fits
 from astropy.table import Table
 
 from . import conf
@@ -2139,11 +2137,14 @@ def dist_image(image, pixscale=None, center=None, return_theta=False):
 
     return_theta will also return the angular position of each pixel relative 
     to the specified center
+    
+    center should be entered as (x,y)
     """
     y, x = np.indices(image.shape)
     if center is None:
         center = tuple((a - 1) / 2.0 for a in image.shape[::-1])
-    y = y - center[1]; x = x - center[0]
+    x = x - center[0]
+    y = y - center[1]
 
     rho = np.sqrt(x**2 + y**2)
     if pixscale is not None: rho *= pixscale
