@@ -601,7 +601,7 @@ class DetectorOps(object):
             This must be a datetime object:
                 datetime.datetime(2016, 5, 9, 11, 57, 5, 796686)
         """
-        return nrc_header(self, filter=None, pupil=None, obs_time=None, **kwargs)
+        return nrc_header(self, filter=filter, pupil=pupil, obs_time=obs_time, **kwargs)
 
 
 # Class for reading in planet spectra             
