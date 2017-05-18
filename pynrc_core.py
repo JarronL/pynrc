@@ -31,7 +31,7 @@ from __future__ import division, print_function, unicode_literals
 from astropy.convolution import convolve_fft
 from astropy.table import Table
 from scipy import fftpack
-
+import pdb
 # Import libraries
 from nrc_utils import *
 
@@ -1516,7 +1516,7 @@ class NIRCam(object):
             raise NotImplementedError('DHS has yet to be fully included')
         # Imaging+Coronagraphy
         else:
-            im_slope = self.gen_psf(sp)[0]
+            im_slope = self.gen_psf(sp)
     
         # Add in Zodi emission
         if not ('FLAT' in pupil): im_slope += self.bg_zodi()
@@ -1544,11 +1544,11 @@ class NIRCam(object):
             if file_out[-1:] == '_':
                 file_out = file_out[:-1]
 
-            for t in time_list:
+            for fileInd, t in enumerate(time_list):
                 file_time = t.isoformat()[:-7]
                 file_time = file_time.replace(':', 'h', 1)
                 file_time = file_time.replace(':', 'm', 1)
-                file_list.append(file_out + '_' + file_time + '.fits')
+                file_list.append(file_out + '_' + file_time + "_{0:03d}".format(fileInd) + '.fits')
 
         # Create a list of arguments to pass
         # For now, we're only doing the first detector. This will need to get more
