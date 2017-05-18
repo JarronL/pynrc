@@ -2913,8 +2913,8 @@ def nrc_header(det_class, filter=None, pupil=None, obs_time=None, header=None,
         hdr['NUMDTHPT']= ('1','Total number of points in pattern')
         hdr['PATT_NUM']= (1,'Position number in primary pattern')
         
-    hdr['OBSMODE'] = ('UNKNOWN', 'Observation mode')
     hdr['TARGNAME'] = (targ_name, 'Standard astronomical catalog name for target')
+    hdr['OBSMODE'] = ('UNKNOWN', 'Observation mode')
         
     if DMS == True:
         if d.channel == 'LW':
