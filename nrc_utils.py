@@ -443,6 +443,8 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         generate with webbPSF. If not specified, then the default is to produce 
         20 PSFs/um. The wavelength range is determined by choosing those
         wavelengths where throughput is >0.001.
+    ndeg : Polynomial degree for PSF fitting.
+    
     opd : Tuple specifying the OPD file info. Or can be an hdulist.
         Acceptabled forms:
             1. ('OPD_RevV_nircam_150.fits', 0)
@@ -592,11 +594,10 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     _log.debug('nprocessors: %.0f; npsf: %.0f' % (nproc, npsf))
     # Change log levels to WARNING for pyNRC, WebbPSF, and POPPY
     setup_logging('WARN', verbose=False)
-    # Setup the multiprocessing pool and arguments to pass to each pool
+    
     t0 = time.time()
+    # Setup the multiprocessing pool and arguments to pass to each pool
     worker_arguments = [(inst, wlen, fov_pix, oversample) for wlen in waves]
-
-
     if nproc > 1: 
         pool = mp.Pool(nproc)
         # Pass arguments to the helper function
@@ -605,8 +606,8 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     else:
         # Pass arguments to the helper function
         images = map(_wrap_coeff_for_mp, worker_arguments)	
-
     t1 = time.time()
+    
     # Reset to original log levels
     setup_logging(log_prev, verbose=False)
     _log.debug('Took %.2f seconds to generate WebbPSF images' % (t1-t0))

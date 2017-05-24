@@ -14,7 +14,7 @@ _log = logging.getLogger('pynrc')
 class obs_coronagraphy(NIRCam):
     """
     Subclass of the NIRCam instrument class used to observe stars (+exoplanets) 
-    with either the coronagraph or direct imaging.
+    with either a coronagraph or direct imaging.
 
     Parameters
     ==========
@@ -26,11 +26,12 @@ class obs_coronagraphy(NIRCam):
     """
     
     def __init__(self, sp_sci, sp_ref, distance, wfe_drift=10, offset_list=None, 
-                 wind_mode='WINDOW', xpix=320, ypix=320, **kwargs):
+                 wind_mode='WINDOW', xpix=320, ypix=320, oversample=2, **kwargs):
 
         #super(NIRCam,self).__init__(**kwargs)
         # Not sure if this works for both Python 2 and 3
-        NIRCam.__init__(self, wind_mode=wind_mode, xpix=xpix, ypix=ypix, **kwargs)
+        NIRCam.__init__(self, wind_mode=wind_mode, xpix=xpix, ypix=ypix, 
+                        oversample=2, **kwargs)
         
         # Spectral models
         self.sp_sci = sp_sci
@@ -432,7 +433,7 @@ class obs_coronagraphy(NIRCam):
 
         return rr, contrast, sen_mag
 
-    def gen_final(self, PA1=0, PA2=10, zfact=None, oversample=None, exclude_noise=False):
+    def gen_roll_image(self, PA1=0, PA2=10, zfact=None, oversample=None, exclude_noise=False):
         """
         Create a final roll-subtracted slope image based on current observation
         settings.
