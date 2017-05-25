@@ -24,10 +24,10 @@ import datetime, os
 from astropy.io import fits
 
 # HxRG Noise Generator
-from pynrc import nghxrg as ng
-from nrc_utils import nrc_header
+from . import nghxrg as ng
+from .nrc_utils import nrc_header
 
-from pynrc_core import DetectorOps
+from . import DetectorOps
 from . import conf
 
 # # Set log output levels
