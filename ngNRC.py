@@ -28,6 +28,8 @@ from astropy.table import Table
 from pynrc import nghxrg as ng
 from nrc_utils import nrc_header
 
+import pdb
+from copy import deepcopy
 from pynrc_core import DetectorOps
 from . import conf
 
@@ -331,6 +333,18 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
     # Get rid of any drops at the beginning (nd1)
     if nd1>0: data = data[nd1:,:,:]
 
+    # Convert to ADU (16-bit UINT)
+    if out_ADU:
+        gain = det.gain
+        data /= gain
+        data[data < 0] = 0
+        data[data >= 2**16] = 2**16 - 1
+        data = data.astype('uint16')
+        hdu.header['UNITS'] = 'ADU'
+
+    ## Save the first frame (so-called ZERO frame) for the zero frame extension
+    zeroData = deepcopy(data[0,:,:])
+
     # Remove drops and average grouped data
     if nf>1 or nd2>0:
         # Trailing drop frames already excluded, so need to pull off last group of avg'ed frames
@@ -352,16 +366,7 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
 
         # Add back the last group (already averaged)
         data = np.append(data,data_end,axis=0)
-
-    # Convert to ADU (16-bit UINT)
-    if out_ADU:
-        gain = det.gain
-        data /= gain
-        data[data < 0] = 0
-        data[data >= 2**16] = 2**16 - 1
-        data = data.astype('uint16')
-        hdu.header['UNITS'] = 'ADU'
-
+    
     hdu.data = data
     
     if file_out is not None:
@@ -380,7 +385,11 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
             sciHDU.header.comments['NAXIS4'] = 'length of fourth data axis (#integrations)  '
         sciHDU.header['BZERO'] = (32768, 'physical value for an array value of zero')
         sciHDU.header['BUNIT'] = ('DN', 'physical units of the data array values')
-        outHDU = fits.HDUList([primHDU,sciHDU])
+        
+        zerHDU = fits.ImageHDU(data=zeroData)
+        zerHDU.name = 'ZEROFRAME'
+        
+        outHDU = fits.HDUList([primHDU,sciHDU,zerHDU])
     else:
         outHDU = hdu
     
