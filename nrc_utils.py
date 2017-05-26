@@ -2991,9 +2991,10 @@ def nrc_header(det_class, filter=None, pupil=None, obs_time=None, header=None,
     
     if DMS == True:
         hdr['READPATT']= (ma.read_mode, 'Readout pattern name')
+        hdr['ZROFRAME']= (True,       'T if zeroth frame present, F if not')
     else:
         hdr['READOUT'] = (ma.read_mode, 'Readout pattern name')
-    hdr['ZROFRAME']= (False,       'T if zeroth frame present, F if not')
+        hdr['ZROFRAME']= (False,       'T if zeroth frame present, F if not')
 
     #Reference Data
     hdr['TREFROW'] = (ref_all[1], 'top reference pixel rows')
