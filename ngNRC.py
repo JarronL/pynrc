@@ -388,6 +388,8 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
         
         zerHDU = fits.ImageHDU(data=zeroData)
         zerHDU.name = 'ZEROFRAME'
+        zerHDU.header.comments['NAXIS1'] = 'length of first data axis (#columns)'
+        zerHDU.header.comments['NAXIS2'] = 'length of second data axis (#rows)'
         
         outHDU = fits.HDUList([primHDU,sciHDU,zerHDU])
     else:
