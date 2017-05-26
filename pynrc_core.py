@@ -1467,7 +1467,8 @@ class NIRCam(object):
 
         return fzodi_pix
 
-    def gen_exposures(self, sp=None, file_out=None, return_results=None,targ_name=None):
+    def gen_exposures(self, sp=None, file_out=None, return_results=None,targ_name=None,
+                      timeFileNames=False):
         """
         Create a series of ramp integration saved to FITS files based on
         the current NIRCam settings. 
@@ -1497,6 +1498,9 @@ class NIRCam(object):
             if the user would like to do both (or neither??).
         targ_name: str
             A target name for the exposure file's header
+        timeFileNames: bool
+            Save the exposure times in the file name? This is useful to see the timing
+            But also makes it a little harder to combine ints later for DMS simulations later
         """
 
         filter = self.filter
@@ -1527,7 +1531,10 @@ class NIRCam(object):
 
         # Create times indicating start of new ramp
         t0 = datetime.datetime.now()
-        dt = self.multiaccum_times['t_int_tot']
+        if timeFileNames == True:
+            dt = self.multiaccum_times['t_int_tot']
+        else:
+            dt = 0.
         nint = self.det_info['nint']
         time_list = [t0 + datetime.timedelta(seconds=i*dt) for i in range(nint)]
 
@@ -1548,7 +1555,7 @@ class NIRCam(object):
                 file_time = t.isoformat()[:-7]
                 file_time = file_time.replace(':', 'h', 1)
                 file_time = file_time.replace(':', 'm', 1)
-                file_list.append(file_out + '_' + file_time + "_{0:03d}".format(fileInd) + '.fits')
+                file_list.append(file_out + '_' + file_time + "_{0:04d}".format(fileInd) + '.fits')
 
         # Create a list of arguments to pass
         # For now, we're only doing the first detector. This will need to get more
