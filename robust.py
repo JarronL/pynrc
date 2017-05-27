@@ -232,7 +232,7 @@ def std(inputData, Zero=False, axis=None, dtype=None):
         good = numpy.where( u2 <= 1.0 )
         good = good[0]
         if len(good) < 3:
-            print "WARNING:  Distribution is too strange to compute standard deviation"
+            print("WARNING:  Distribution is too strange to compute standard deviation")
             sigma = -1.0
             return sigma
         

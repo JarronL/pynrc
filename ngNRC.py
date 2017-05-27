@@ -25,12 +25,13 @@ from astropy.io import fits
 from astropy.table import Table
 
 # HxRG Noise Generator
-from pynrc import nghxrg as ng
-from nrc_utils import nrc_header
+from . import nghxrg as ng
+from .nrc_utils import nrc_header
 
 import pdb
 from copy import deepcopy
-from pynrc_core import DetectorOps
+
+from . import DetectorOps
 from . import conf
 
 # # Set log output levels

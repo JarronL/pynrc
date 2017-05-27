@@ -5,8 +5,8 @@ from scipy.ndimage.interpolation import rotate
 from scipy import fftpack
 
 # Import libraries
-from pynrc_core import *
-from nrc_utils import *
+from . import *
+from .nrc_utils import *
 
 import logging
 _log = logging.getLogger('pynrc')
@@ -14,7 +14,7 @@ _log = logging.getLogger('pynrc')
 class obs_coronagraphy(NIRCam):
     """
     Subclass of the NIRCam instrument class used to observe stars (+exoplanets) 
-    with either the coronagraph or direct imaging.
+    with either a coronagraph or direct imaging.
 
     Parameters
     ==========
@@ -26,11 +26,12 @@ class obs_coronagraphy(NIRCam):
     """
     
     def __init__(self, sp_sci, sp_ref, distance, wfe_drift=10, offset_list=None, 
-                 wind_mode='WINDOW', xpix=320, ypix=320, **kwargs):
+                 wind_mode='WINDOW', xpix=320, ypix=320, oversample=2, **kwargs):
 
         #super(NIRCam,self).__init__(**kwargs)
         # Not sure if this works for both Python 2 and 3
-        NIRCam.__init__(self, wind_mode=wind_mode, xpix=xpix, ypix=ypix, **kwargs)
+        NIRCam.__init__(self, wind_mode=wind_mode, xpix=xpix, ypix=ypix, 
+                        oversample=2, **kwargs)
         
         # Spectral models
         self.sp_sci = sp_sci
@@ -56,7 +57,7 @@ class obs_coronagraphy(NIRCam):
         # Faster once PSFs have already been previously generated 
         log_prev = conf.logging_level
         setup_logging('WARN', verbose=False)
-        self._gen_psf_max()
+        self._gen_psf_off()
         setup_logging(log_prev, verbose=False)
         
         self._gen_ref()
@@ -100,7 +101,7 @@ class obs_coronagraphy(NIRCam):
             self.nrc_ref = nrc
         
         
-    def _gen_psf_max(self):
+    def _gen_psf_off(self):
         """
         Create instances of NIRCam observations that are incrementally offset 
         from coronagraph center to determine maximum value of the detector-
@@ -432,7 +433,7 @@ class obs_coronagraphy(NIRCam):
 
         return rr, contrast, sen_mag
 
-    def gen_final(self, PA1=0, PA2=10, zfact=None, oversample=None, exclude_noise=False):
+    def gen_roll_image(self, PA1=0, PA2=10, zfact=None, oversample=None, exclude_noise=False):
         """
         Create a final roll-subtracted slope image based on current observation
         settings.

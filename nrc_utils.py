@@ -6,7 +6,6 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 
 # The six library is useful for Python 2 and 3 compatibility
 import six
-import time
 
 # Import libraries
 import numpy as np
@@ -16,13 +15,12 @@ matplotlib.rcParams['image.origin'] = 'lower'
 matplotlib.rcParams['image.interpolation'] = 'none'
 matplotlib.rcParams['image.cmap'] = 'gist_heat'
 
-
-import astropy.io.fits as fits
-import datetime
+import datetime, time
 import yaml, re, os
 import sys, platform
 import multiprocessing as mp
 
+from astropy.io import fits
 from astropy.table import Table
 from astropy.time import Time
 
@@ -56,7 +54,7 @@ poppy.conf.use_fftw = False
 # Make sure we can use multiprocessing!
 # Apple's Accelerate framework in 2.7 doesn't work with mp
 d = np.__config__.blas_opt_info
-accel_bool = (d.has_key('extra_link_args') and ('-Wl,Accelerate' in d['extra_link_args']))
+accel_bool = ('extra_link_args' in d.keys() and ('-Wl,Accelerate' in d['extra_link_args']))
 if (sys.version_info < (3,4,0)) and (platform.system()=='Darwin') and accel_bool:
     poppy.conf.use_multiprocessing = False
 # If the machine has 2 or less CPU cores, then no mp
@@ -446,6 +444,8 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         generate with webbPSF. If not specified, then the default is to produce 
         20 PSFs/um. The wavelength range is determined by choosing those
         wavelengths where throughput is >0.001.
+    ndeg : Polynomial degree for PSF fitting.
+    
     opd : Tuple specifying the OPD file info. Or can be an hdulist.
         Acceptabled forms:
             1. ('OPD_RevV_nircam_150.fits', 0)
@@ -488,6 +488,10 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
 
     # Name to save array of oversampled coefficients
     save_dir = conf.PYNRC_PATH + 'psf_coeffs/'
+    # Create directory if it doesn't already exist
+    if not os.path.isdir(save_dir):
+        os.makedirs(save_dir)
+        
     mtemp = 'none' if mask is None else mask
     ptemp = 'none' if pupil is None else pupil
     # Get source offset positions
@@ -526,12 +530,12 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     if (not force) and (save and os.path.exists(save_name)):
         return np.load(save_name)
 
-    # Drift the OPD
+    # Drift the OPD if on the coronagraphic spot (rtemp=0)
     # This isn't quite right compared to the nominal case on account
     # of slight modifications to the pupil mask relative to RevV pupils.
     # Contrasts for ~1-5nm drifts look very similar because the dominant
     # WFE effects are due to differences in the segment edges. 
-    if wfe_drift > 0:
+    if rtemp == 0:
         from . import speckle_noise as sn
         pupilopd = opd
         # Read in a specified OPD file and slice
@@ -553,11 +557,15 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
             0.0,  0.0,  0.0,  0.0,  0.0])
         # Generate science OPD image and residuals for use in reference drift.
         opd_sci, opd_resid = sn.opd_sci_gen(opd_obj)
-        # Generate reference OPD image
-        args = (opd_obj, wfe_drift, pup_cf_std, seg_cf_std, opd_resid, 1)
-        opd_ref = sn.opd_ref_gen(args)
-        # Create OPD inside an HDUList to pass to WebbPSF
-        hdu = fits.PrimaryHDU(opd_ref)
+        if wfe_drift > 0:
+            # Generate reference OPD image
+            args = (opd_obj, wfe_drift, pup_cf_std, seg_cf_std, opd_resid, 1)
+            opd_ref = sn.opd_ref_gen(args)
+            # Create OPD inside an HDUList to pass to WebbPSF
+            hdu = fits.PrimaryHDU(opd_ref)
+        else:
+            hdu = fits.PrimaryHDU(opd_sci)
+
         hdu.header = header.copy()
         opd_hdulist = fits.HDUList([hdu]) 
         inst.pupilopd = opd_hdulist
@@ -587,11 +595,10 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     _log.debug('nprocessors: %.0f; npsf: %.0f' % (nproc, npsf))
     # Change log levels to WARNING for pyNRC, WebbPSF, and POPPY
     setup_logging('WARN', verbose=False)
-    # Setup the multiprocessing pool and arguments to pass to each pool
+    
     t0 = time.time()
+    # Setup the multiprocessing pool and arguments to pass to each pool
     worker_arguments = [(inst, wlen, fov_pix, oversample) for wlen in waves]
-
-
     if nproc > 1: 
         pool = mp.Pool(nproc)
         # Pass arguments to the helper function
@@ -600,8 +607,8 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     else:
         # Pass arguments to the helper function
         images = map(_wrap_coeff_for_mp, worker_arguments)	
-
     t1 = time.time()
+    
     # Reset to original log levels
     setup_logging(log_prev, verbose=False)
     _log.debug('Took %.2f seconds to generate WebbPSF images' % (t1-t0))
@@ -2132,11 +2139,14 @@ def dist_image(image, pixscale=None, center=None, return_theta=False):
 
     return_theta will also return the angular position of each pixel relative 
     to the specified center
+    
+    center should be entered as (x,y)
     """
     y, x = np.indices(image.shape)
     if center is None:
         center = tuple((a - 1) / 2.0 for a in image.shape[::-1])
-    y = y - center[1]; x = x - center[0]
+    x = x - center[0]
+    y = y - center[1]
 
     rho = np.sqrt(x**2 + y**2)
     if pixscale is not None: rho *= pixscale

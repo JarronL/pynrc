@@ -33,11 +33,10 @@ from astropy.table import Table
 from scipy import fftpack
 import pdb
 # Import libraries
-from nrc_utils import *
+from .nrc_utils import *
 
 import logging
 _log = logging.getLogger('pynrc')
-
 
 class multiaccum(object):
     """
@@ -1956,7 +1955,7 @@ def gen_fits(args):
     """
     Helper function for generating FITs integrations from a slope image
     """
-    from ngNRC import slope_to_ramp
+    from .ngNRC import slope_to_ramp
 
     # Must call np.random.seed() for multiprocessing, otherwise 
     # random numbers for parallel processes start in the same seed state!
