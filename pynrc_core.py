@@ -31,7 +31,7 @@ from __future__ import division, print_function, unicode_literals
 from astropy.convolution import convolve_fft
 from astropy.table import Table
 from scipy import fftpack
-
+import pdb
 # Import libraries
 from .nrc_utils import *
 
@@ -600,7 +600,7 @@ class DetectorOps(object):
             This must be a datetime object:
                 datetime.datetime(2016, 5, 9, 11, 57, 5, 796686)
         """
-        return nrc_header(self, filter=None, pupil=None, obs_time=None, **kwargs)
+        return nrc_header(self, filter=filter, pupil=pupil, obs_time=obs_time, **kwargs)
 
 
 # Class for reading in planet spectra             
@@ -1466,7 +1466,8 @@ class NIRCam(object):
 
         return fzodi_pix
 
-    def gen_exposures(self, sp=None, file_out=None, return_results=None):
+    def gen_exposures(self, sp=None, file_out=None, return_results=None,targ_name=None,
+                      timeFileNames=False):
         """
         Create a series of ramp integration saved to FITS files based on
         the current NIRCam settings. 
@@ -1494,6 +1495,11 @@ class NIRCam(object):
             data can lead to large memory usage. Save the FITs files to
             disk if NINTs is large. We include the return_results keyword
             if the user would like to do both (or neither??).
+        targ_name: str
+            A target name for the exposure file's header
+        timeFileNames: bool
+            Save the exposure times in the file name? This is useful to see the timing
+            But also makes it a little harder to combine ints later for DMS simulations later
         """
 
         filter = self.filter
@@ -1513,7 +1519,7 @@ class NIRCam(object):
             raise NotImplementedError('DHS has yet to be fully included')
         # Imaging+Coronagraphy
         else:
-            im_slope = self.gen_psf(sp)[0]
+            im_slope = self.gen_psf(sp)
     
         # Add in Zodi emission
         if not ('FLAT' in pupil): im_slope += self.bg_zodi()
@@ -1524,7 +1530,10 @@ class NIRCam(object):
 
         # Create times indicating start of new ramp
         t0 = datetime.datetime.now()
-        dt = self.multiaccum_times['t_int_tot']
+        if timeFileNames == True:
+            dt = self.multiaccum_times['t_int_tot']
+        else:
+            dt = 0.
         nint = self.det_info['nint']
         time_list = [t0 + datetime.timedelta(seconds=i*dt) for i in range(nint)]
 
@@ -1541,17 +1550,17 @@ class NIRCam(object):
             if file_out[-1:] == '_':
                 file_out = file_out[:-1]
 
-            for t in time_list:
+            for fileInd, t in enumerate(time_list):
                 file_time = t.isoformat()[:-7]
                 file_time = file_time.replace(':', 'h', 1)
                 file_time = file_time.replace(':', 'm', 1)
-                file_list.append(file_out + '_' + file_time + '.fits')
+                file_list.append(file_out + '_' + file_time + "_{0:04d}".format(fileInd) + '.fits')
 
         # Create a list of arguments to pass
         # For now, we're only doing the first detector. This will need to get more
         # sophisticated for SW FPAs
         det = self.Detectors[0]
-        worker_arguments = [(det, im_slope, True, fout, filter, pupil, otime) 
+        worker_arguments = [(det, im_slope, True, fout, filter, pupil, otime, targ_name) 
                             for fout,otime in zip(file_list, time_list)]
 
         nproc = nproc_use_ng(det)

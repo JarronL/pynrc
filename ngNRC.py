@@ -22,10 +22,14 @@ from __future__ import division, print_function
 import numpy as np
 import datetime, os
 from astropy.io import fits
+from astropy.table import Table
 
 # HxRG Noise Generator
 from . import nghxrg as ng
 from .nrc_utils import nrc_header
+
+import pdb
+from copy import deepcopy
 
 from . import DetectorOps
 from . import conf
@@ -254,7 +258,8 @@ def SCAnoise(det=None, scaid=None, params=None, caldir=None, file_out=None,
     return hdu
 
 def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None, 
-                  filter=None, pupil=None, obs_time=None):
+                  filter=None, pupil=None, obs_time=None, targ_name=None,
+                  DMS=True):
     """
     For a given detector operations class and slope image, create a
     ramp integration using Poisson noise and detector noise. 
@@ -283,7 +288,10 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
         This must be a datetime object:
             datetime.datetime(2016, 5, 9, 11, 57, 5, 796686)
         This information is added to the header.
-
+    targ_name : str
+        Target name (optional)
+    DMS : bool
+        Package the data in the format used by DMS?
     """
 
     #import ngNRC
@@ -317,7 +325,7 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
     # Create dark ramp with read noise and 1/f noise
     hdu = SCAnoise(det)
     # Update header information
-    hdu.header = det.make_header(filter, pupil, obs_time)
+    hdu.header = det.make_header(filter, pupil, obs_time,targ_name=targ_name,DMS=DMS)
     hdu.data += ramp # Add signal ramp to dark ramp
     data = hdu.data
 
@@ -335,6 +343,18 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
 
     # Get rid of any drops at the beginning (nd1)
     if nd1>0: data = data[nd1:,:,:]
+
+    # Convert to ADU (16-bit UINT)
+    if out_ADU:
+        gain = det.gain
+        data /= gain
+        data[data < 0] = 0
+        data[data >= 2**16] = 2**16 - 1
+        data = data.astype('uint16')
+        hdu.header['UNITS'] = 'ADU'
+
+    ## Save the first frame (so-called ZERO frame) for the zero frame extension
+    zeroData = deepcopy(data[0,:,:])
 
     # Remove drops and average grouped data
     if nf>1 or nd2>0:
@@ -358,10 +378,35 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
         # Add back the last group (already averaged)
         data = np.append(data,data_end,axis=0)
 
-
     hdu.data = data
+    
     if file_out is not None:
         hdu.header['FILENAME'] = os.path.split(file_out)[1]
-        hdu.writeto(file_out, clobber='True')
-
-    return hdu
+    
+    if DMS == True:
+        primHDU = fits.PrimaryHDU(header=hdu.header)
+        primHDU.name = 'PRIMARY'
+        sciHDU = fits.ImageHDU(data=hdu.data)
+        sciHDU.name = 'SCI'
+        sciHDU.header.comments['NAXIS1'] = 'length of first data axis (#columns)'
+        sciHDU.header.comments['NAXIS2'] = 'length of second data axis (#rows)'
+        if sciHDU.header['NAXIS'] > 2:
+            sciHDU.header.comments['NAXIS3'] = 'length of third data axis (#groups/integration '
+        if sciHDU.header['NAXIS'] > 3:
+            sciHDU.header.comments['NAXIS4'] = 'length of fourth data axis (#integrations)  '
+        sciHDU.header['BZERO'] = (32768, 'physical value for an array value of zero')
+        sciHDU.header['BUNIT'] = ('DN', 'physical units of the data array values')
+        
+        zerHDU = fits.ImageHDU(data=zeroData)
+        zerHDU.name = 'ZEROFRAME'
+        zerHDU.header.comments['NAXIS1'] = 'length of first data axis (#columns)'
+        zerHDU.header.comments['NAXIS2'] = 'length of second data axis (#rows)'
+        
+        outHDU = fits.HDUList([primHDU,sciHDU,zerHDU])
+    else:
+        outHDU = hdu
+    
+    if file_out is not None:
+        outHDU.writeto(file_out, clobber='True')
+    
+    return outHDU
