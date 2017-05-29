@@ -1309,12 +1309,12 @@ class NIRCam(object):
         Parameters
         ==========
         sp : A normalized Pysynphot spectrum. If not specified, the default is flat 
-            in phot lam (equal number of photons per spectral bin).
-            The default is normalized to produce 1 count/sec within that bandpass,
-            assuming the telescope collecting area and instrument bandpass. 
-            Coronagraphic PSFs will further decrease this due to the smaller pupil
-            size and coronagraphic spot. DHS and grism observations do no yet have
-            pupil size reductions accounted for.
+             in phot lam (equal number of photons per spectral bin).
+             The default is normalized to produce 1 count/sec within that bandpass,
+             assuming the telescope collecting area and instrument bandpass. 
+             Coronagraphic PSFs will further decrease this due to the smaller pupil
+             size and coronagraphic spot. DHS and grism observations do no yet have
+             pupil size reductions accounted for.
         return_oversample : If True, then also returns the oversampled version of the PSF
         use_bg_psf : If a coronagraphic observation, off-center PSF is different.
 
