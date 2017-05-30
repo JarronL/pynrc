@@ -1201,7 +1201,7 @@ class NIRCam(object):
         offset_r=None, offset_theta=None, opd=None, save=None, force=False,
         **kwargs):
         """
-        Generates a set of PSF coefficients from a sequence WebbPSF images.
+        Generates a set of PSF coefficients from a sequence of WebbPSF images.
         These coefficients can then be used to generate a sequence of
         monochromatic PSFs (useful if you need to make hundreds of PSFs
         for slitless grism or DHS observations) that are subsequenty
@@ -1225,7 +1225,7 @@ class NIRCam(object):
         offset_theta : Position angle for that offset, in degrees CCW.
         opd          : Tuple containing WebbPSF specific OPD file name and slice.
         save         : Whether or not to save the resulting PSF coefficients to file.
-        force        : Forces a recalcuation of PSF even if saved PSF exists.
+        force        : Forces a recalcuation of PSFs even if saved coefficients exist.
         """
 
         if oversample is None: 
