@@ -491,11 +491,11 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     setup_logging(log_prev, verbose=False)
 
     # Check if mask and pupil names exist in webbpsf lists
-    if mask in list(inst.image_mask_list): 
+    if (mask in list(inst.image_mask_list)) or (mask is None): 
         inst.image_mask = mask
     else:
         raise ValueError("{} not recognized in image_mask_list".format(mask))
-    if pupil in list(inst.pupil_mask_list): 
+    if (pupil in list(inst.pupil_mask_list)) or (pupil is None): 
         inst.pupil_mask = pupil
     else:
         raise ValueError("{} not recognized in pupil_mask_list".format(pupil))
@@ -2412,7 +2412,7 @@ def stellar_spectrum(sptype, *renorm_args, **kwargs):
     
     Flat spectrum (in photlam) are also allowed via the 'flat' string.
     
-    Use catname keyword for 'ck04models'
+    Use catname='ck04models' keyword for ck04 models
     
     """
 
