@@ -57,7 +57,7 @@ setup_logging(conf.default_logging_level, verbose=False)
 
 from .nrc_utils import (read_filter, pix_noise, nrc_header, stellar_spectrum)
 
-from .pynrc_core import (multiaccum, DetectorOps, NIRCam, planets_sb11)
+from .pynrc_core import (multiaccum, DetectorOps, NIRCam, planets_sb11, planets_sb12)
 
 from .obs_nircam import (obs_coronagraphy, nrc_diskobs, observe_disk, observe_star)
 
