@@ -1863,7 +1863,7 @@ class NIRCam(object):
             t_all = t_all[ind_sort]
             # Select only even integrations
             if even_nints:
-                ind = (t_all['t_int'] % 2 == 0)
+                ind = (t_all['NINT'] % 2 == 0)
                 t_all = t_all[ind]
 
             if verbose: print(t_all)
