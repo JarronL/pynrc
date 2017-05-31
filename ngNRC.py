@@ -331,16 +331,6 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
 
     #### Add in IPC (TBI) ####
 
-
-    # Convert to ADU (16-bit UINT)
-    if out_ADU:
-        gain = det.gain
-        data /= gain
-        data[data < 0] = 0
-        data[data >= 2**16] = 2**16 - 1
-        data = data.astype('uint16')
-        hdu.header['UNITS'] = 'ADU'
-
     # Get rid of any drops at the beginning (nd1)
     if nd1>0: data = data[nd1:,:,:]
 
