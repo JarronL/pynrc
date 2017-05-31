@@ -560,7 +560,7 @@ def offset_bar(filt, mask):
             if filt[-1]=="W": xoff_asec = -3.16 * (w - 4.747)
             else:             xoff_asec = -3.26 * (w - 4.600)
         
-        print(w,xoff_asec)
+        print(w, xoff_asec)
         
         yoff_asec = 0.0
     
@@ -568,6 +568,7 @@ def offset_bar(filt, mask):
     else:
         r, theta = (0.0, 0.0)
     
+    print(r, theta)
     return r, theta
 
 
