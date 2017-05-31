@@ -1591,7 +1591,7 @@ class NIRCam(object):
     def ramp_optimize(self, sp, sp_bright=None, is_extended=False, patterns=None,
         well_frac_max=0.8, nint_min=1, nint_max=1000, ng_min=2, ng_max=None,
         snr_goal=None, snr_frac=0.02, tacq_max=None, tacq_frac=0.1,
-        return_full_table=False, verbose=False, **kwargs):
+        return_full_table=False, even_nints=False, verbose=False, **kwargs):
         """
         Find the optimal ramp settings to observe spectrum based input constraints.
         This function quickly runs through each detector readout pattern and 
@@ -1631,7 +1631,8 @@ class NIRCam(object):
         ideal_Poisson : Default=True. Use total signal for noise estimate,
                         otherwise MULTIACCUM equation is used. 
 
-        return_full_table : Don't filter or sort the final results.
+		even_nints        : Return only the event NINTS
+        return_full_table : Don't filter or sort the final results (ingores event_ints).
         verbose           : Prints out top 10 results.
 
 
@@ -1740,6 +1741,7 @@ class NIRCam(object):
                     nint2 = np.min([nint2,nint_max])
             
                     nint_all = range(nint1, nint2+1)
+                    
                     narr = len(nint_all)
                     # Sometimes there are a lot of nint values to check
                     # Let's pair down to <5 per ng
@@ -1859,6 +1861,11 @@ class NIRCam(object):
             t_all = table_filter(t_all, **kwargs)
             ind_sort = np.lexsort((t_all['t_acq'],1/t_all['eff']))
             t_all = t_all[ind_sort]
+			# Select only even integrations
+			if even_nints:
+				ind = (t_all['t_int'] % 2 == 0)
+				t_all = t_all[ind]
+
             if verbose: print(t_all)
 
         return t_all
