@@ -490,15 +490,11 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     inst.filter = filter
     setup_logging(log_prev, verbose=False)
 
-    # Check if mask and pupil names exist in webbpsf lists
-    if (mask in list(inst.image_mask_list)) or (mask is None): 
-        inst.image_mask = mask
-    else:
-        raise ValueError("{} not recognized in image_mask_list".format(mask))
-    if (pupil in list(inst.pupil_mask_list)) or (pupil is None): 
-        inst.pupil_mask = pupil
-    else:
-        raise ValueError("{} not recognized in pupil_mask_list".format(pupil))
+    # Check if mask and pupil names exist in WebbPSF lists.
+    # We don't want to pass values that WebbPSF does not recognize,
+    # but are otherwise completely valid in the NIRCam framework.
+    if mask in list(inst.image_mask_list): inst.image_mask = mask
+    if pupil in list(inst.pupil_mask_list): inst.pupil_mask = pupil
 
     mtemp = 'none' if mask is None else mask
     ptemp = 'none' if pupil is None else pupil
