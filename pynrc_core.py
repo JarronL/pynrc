@@ -1858,9 +1858,9 @@ class NIRCam(object):
                 print("Top 10 results sorted by 'efficiency' [SNR/sqrt(t_acq)]:")
                 print(t_all[0:10])
         else:
-            t_all = table_filter(t_all, **kwargs)
-            ind_sort = np.lexsort((t_all['t_acq'],1/t_all['eff']))
-            t_all = t_all[ind_sort]
+			t_all = table_filter(t_all, **kwargs)
+			ind_sort = np.lexsort((t_all['t_acq'],1/t_all['eff']))
+			t_all = t_all[ind_sort]
 			# Select only even integrations
 			if even_nints:
 				ind = (t_all['t_int'] % 2 == 0)
