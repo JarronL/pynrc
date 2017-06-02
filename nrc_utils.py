@@ -3017,8 +3017,8 @@ def nrc_header(det_class, filter=None, pupil=None, obs_time=None, header=None,
     hdr['SIMPLE']  = (True,   'conforms to FITS standard')
     hdr['BITPIX']  = (16,     'array data type')
     if DMS == True:
-        hdr['SUBSTRT1'] = (0, 'Starting pixel in axis 1 direction')
-        hdr['SUBSTRT2'] = (0, 'Starting pixel in axis 2 direction')
+        hdr['SUBSTRT1'] = (x1+1, 'Starting pixel in axis 1 direction')
+        hdr['SUBSTRT2'] = (y1+1, 'Starting pixel in axis 2 direction')
         hdr['SUBSIZE1'] = naxis1
         hdr['SUBSIZE2'] = naxis2
         hdr['NAXIS'] = (naxis,  'number of array dimensions')
