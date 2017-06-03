@@ -819,7 +819,8 @@ class NIRCam(object):
     PSF Info
     --------
     fov_pix      (int) : Size of the FoV in pixels (real SW or LW pixels).
-    oversample   (int) : Factor to oversample during WebbPSF calculations (default: 4).
+    oversample   (int) : Factor to oversample during WebbPSF calculations.
+                         Default 2 for coronagraphy and 4 otherwise.
     offset_r     (flt) : Radial offset from the center in arcsec.
     offset_theta (flt) : Position angle for radial offset, in degrees CCW.
     opd          (tup) : Tuple containing WebbPSF specific OPD file name and slice.
@@ -1234,7 +1235,8 @@ class NIRCam(object):
         ----------
         fov_pix      : Size of the FoV in pixels (real SW or LW pixels).
                        The defaults depend on the type of observation.
-        oversample   : Factor to oversample during WebbPSF calculations. Default of 4.
+        oversample   : Factor to oversample during WebbPSF calculations.
+                       Default 2 for coronagraphy and 4 otherwise.
         offset_r     : Radial offset from the center in pixels
         offset_theta : Position angle for that offset, in degrees CCW.
         opd          : Tuple containing WebbPSF specific OPD file name and slice.
@@ -1245,7 +1247,9 @@ class NIRCam(object):
         if oversample is None: 
             # Check if oversample has already been saved
             try: oversample = self._psf_info['oversample']
-            except: oversample = 4
+            except: 
+                coron_obs = (pupil is not None) and ('LYOT'  in pupil)
+                oversample = 2 if coron_obs else 4
 
         # Default size is 11 pixels
         fov_default = 11
@@ -1480,8 +1484,8 @@ class NIRCam(object):
 
         return fzodi_pix
 
-    def gen_exposures(self, sp=None, file_out=None, return_results=None,targ_name=None,
-                      timeFileNames=False):
+    def gen_exposures(self, sp=None, file_out=None, return_results=None,
+                      targ_name=None, timeFileNames=False):
         """
         Create a series of ramp integration saved to FITS files based on
         the current NIRCam settings. 
@@ -1512,8 +1516,8 @@ class NIRCam(object):
         targ_name: str
             A target name for the exposure file's header
         timeFileNames: bool
-            Save the exposure times in the file name? This is useful to see the timing
-            But also makes it a little harder to combine ints later for DMS simulations later
+            Save the exposure times in the file name? This is useful to see the timing,
+            but also makes it a little harder to combine ints later for DMS simulations.
         """
 
         filter = self.filter
@@ -1536,7 +1540,8 @@ class NIRCam(object):
             im_slope = self.gen_psf(sp)
     
         # Add in Zodi emission
-        if not ('FLAT' in pupil): im_slope += self.bg_zodi()
+        # Returns 0 if self.pupil='FLAT'
+        im_slope += self.bg_zodi()
 
         # Expand or cut to detector size
         im_slope = pad_or_cut_to_size(im_slope, (ypix,xpix))

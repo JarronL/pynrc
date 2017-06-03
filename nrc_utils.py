@@ -422,7 +422,7 @@ def _wrap_coeff_for_mp(args):
     return hdu_list[0].data
 
 def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A', 
-    fov_pix=11, oversample=4, npsf=None, ndeg=8, opd=None, 
+    fov_pix=11, oversample=None, npsf=None, ndeg=8, opd=None, 
     offset_r=0, offset_theta=0, save=True, force=False, **kwargs):
     """
     Creates a set of coefficients that will generate a simulated PSF at any
@@ -447,7 +447,8 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     fov_pix      : Size of the FoV in pixels (real SW or LW pixels)
     oversample   : Factor to oversample pixels (in one dimension). 
                    The resulting coefficients will have x/y dimensions 
-                   of fov_pix*oversample.
+                   of fov_pix*oversample. Default 2 for coronagraphy and 
+                   4 otherwise.
                    
     npsf : Number of evenly-spaced (with wavelength) monochromatic PSFs to 
            generate with webbPSF. If not specified, then the default is to 
@@ -464,6 +465,9 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     grism_obs = (pupil is not None) and ('GRISM' in pupil)
     dhs_obs   = (pupil is not None) and ('DHS'   in pupil)
     coron_obs = (pupil is not None) and ('LYOT'  in pupil)
+    
+    if oversample is None:
+        oversample = 2 if coron_obs else 4
 
     # Default OPD
     if opd is None: opd = ('OPD_RevV_nircam_132.fits', 0)
@@ -1545,11 +1549,11 @@ def sat_limit_webbpsf(filter_or_bp, pupil=None, mask=None, module='A',
 
         if not quiet:
             if bp_lim.name == bp.name:
-                print('{0} Saturation Limit assuming {1} source: {2:.2f}'.\
-                    format(bp_lim.name, sp_norm.name, sat_mag) )
+                print('{} Saturation Limit assuming {} source: {:.2f} {}'.\
+                    format(bp_lim.name, sp_norm.name, sat_mag, units) )
             else:
-                print('{0} Saturation Limit for {1} assuming {2} source: {3:.2f}'.\
-                    format(bp_lim.name, bp.name, sp_norm.name, sat_mag) )
+                print('{} Saturation Limit for {} assuming {} source: {:.2f} {}'.\
+                    format(bp_lim.name, bp.name, sp_norm.name, sat_mag, units) )
 
         return {'satmag':sat_mag, 'units':units, 'Spectrum':sp_norm.name, 
             'bp_lim':bp_lim.name}
@@ -3058,8 +3062,13 @@ def nrc_header(det_class, filter=None, pupil=None, obs_time=None, header=None,
     hdr['SCA_ID']  = (d.scaid,   'Unique SCA identification in ISIM')
     hdr['DETECTOR']= (d.detname, 'ASCII Mnemonic corresponding to the SCA_ID')
     hdr['PIXELSCL']= (d.pixelscale, 'Detector Pixel Scale (arcsec/pixel)')
-    fovx = naxis1 * d.pixelscale; fovy = naxis2 * d.pixelscale
+    
+    nx_noref = naxis1 - ref_all[2] - ref_all[3]
+    ny_noref = naxis2 - ref_all[0] - ref_all[1]
+    fovx = nx_noref * d.pixelscale
+    fovy = ny_noref * d.pixelscale
     hdr['FOV']     = ('{:.2f}x{:.2f}'.format(fovx,fovy), 'Field of view in arcsec')
+    
     if DMS == True:
         hdr['TARG_RA']=  (80.4875, 'Target RA at mid time of exposure') #arbitrary position
         hdr['TARG_DEC']= (-69.498333, 'Target Dec at mid time of exposure') #arbitrary position
