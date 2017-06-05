@@ -439,48 +439,80 @@ class DetectorOps(object):
     def _extra_lines(self):
         """Determine how many extra lines/rows are added to a to a given frame"""
         if self.nout == 1:
-            sub = 2**(np.arange(8)+4.)         # Subarray size            
-            l1 = np.array([3,2.5,2,2,2,2,2,2]) # Extra lines for early frames
-            l2 = np.array([6,5.0,4,3,2,2,2,2]) # Extra lines for last frame
-            ladd1 = (np.interp([self.xpix],sub,l1))[0]
-            ladd2 = (np.interp([self.xpix],sub,l1))[0]
-        else:
-            ladd1 = 1
-            ladd2 = 2
-        return (ladd1,ladd2)
-
+            xtra_lines = 2 if self.xpix>10 else 3
+        elif self.nout == 4:
+            xtra_lines = 1
+            
+        return xtra_lines
+        
     @property
     def _exp_delay(self):
         """
         Additional overhead time at the end of an exposure.
-        (Does this occur per integration or per exposure???)
+        This does not add any more photon flux to a pixel.
+        Due to transition to idle.
         """
-        # Note: I don't think this adds any more photons to a pixel
-        #   It simply slightly delays the subsequent reset frame AFTER the last pixel read
 
+        # Window Mode        
+        if self.nout == 1:
+            if   self.xpix>150: xtra_lines = 0
+            elif self.xpix>64:  xtra_lines = 1
+            elif self.xpix>16:  xtra_lines = 3
+            elif self.xpix>8:   xtra_lines = 4
+            else:               xtra_lines = 5
+        # Full and Stripe
+        else: xtra_lines = 1
+        
         # Clock ticks per line
         xticks = self.chsize + self._line_overhead  
-        l1,l2 = self._extra_lines
-        return xticks * (l2 - l1) / self._pixel_rate
+        return xticks * xtra_lines / self._pixel_rate
+
 
     @property
     def _frame_overhead_pix(self):
+        """
+        Full and Stripe mode frames have an additional pixel at the end.
+        """
+        
         pix_offset = 0 if self.nout==1 else 1
         return pix_offset
-
+        
+    @property
+    def time_row_reset(self):
+        """NFF Row Resets time"""
+        
+        # Window Mode        
+        if self.nout == 1:
+            if   self.ypix>256: nff = 2048
+            elif self.ypix>64:  nff = 512
+            elif self.ypix>16:  nff = 256
+            elif self.ypix>8:   nff = 64
+            else:               nff = 16
+        # Full and Stripe
+        else: 
+            if   self.ypix==2048: nff = 0
+            elif self.ypix>=256:  nff = 2048
+            else:                 nff = 512
+            
+        xtra_lines = int(nff / (self.chsize))
+        
+        # Clock ticks per line
+        xticks = self.chsize + self._line_overhead  
+        return xticks * xtra_lines / self._pixel_rate
+        
     @property
     def time_frame(self):
         """Determine frame times based on xpix, ypix, and wind_mode."""
 
         chsize = self.chsize                        # Number of x-pixels within a channel
         xticks = self.chsize + self._line_overhead  # Clock ticks per line
-        flines = self.ypix + self._extra_lines[0] # Lines per frame (early frames)
+        flines = self.ypix + self._extra_lines      # Lines per frame
 
         # Add a single pix offset for full frame and stripe.
         pix_offset = self._frame_overhead_pix
         end_delay = 0 # Used for syncing each frame w/ FPE bg activity. Not currently used.
 
-        # Total number of clock ticks per frame (reads and drops)
+        # Total number of clock ticks per frame (reset, read, and drops)
         fticks = xticks*flines + pix_offset + end_delay
 
         # Return frame time
@@ -496,7 +528,7 @@ class DetectorOps(object):
         """Photon collection time for a single ramp."""
 
         # How many total frames (incl. dropped and all) per ramp?
-        # Exclude last set of nd2 as well as nd3 (drops that add nothing)
+        # Exclude nd3 (drops that add nothing)
         ma = self.multiaccum
         nf = ma.nf; nd1 = ma.nd1; nd2 = ma.nd2
         ngroup = ma.ngroup
@@ -514,7 +546,7 @@ class DetectorOps(object):
 
     @property
     def time_exp(self):
-        """Total exposure time for all ramps."""
+        """Total photon collection time for all ramps."""
         return self.multiaccum.nint * self.time_ramp
 
     @property
@@ -527,12 +559,12 @@ class DetectorOps(object):
         nr = 1
 
         nframes = nr + nd1 + ngroup*nf + (ngroup-1)*nd2 + nd3        
-        return nframes * self.time_frame
+        return nframes * self.time_frame + self.time_row_reset
 
     @property
     def time_total(self):
         """Total exposure acquisition time"""
-        return self.multiaccum.nint * self.time_total_int
+        return self.multiaccum.nint * self.time_total_int + self._exp_delay
 
     def to_dict(self, verbose=False):
         """Export detector settings to a dictionary."""
@@ -1247,9 +1279,8 @@ class NIRCam(object):
         if oversample is None: 
             # Check if oversample has already been saved
             try: oversample = self._psf_info['oversample']
-            except: 
-                coron_obs = (pupil is not None) and ('LYOT'  in pupil)
-                oversample = 2 if coron_obs else 4
+            except:
+                oversample = 2 if 'LYOT' in self.pupil else 4
 
         # Default size is 11 pixels
         fov_default = 11
