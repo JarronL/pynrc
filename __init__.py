@@ -11,6 +11,7 @@ reproduce realistic JWST NIRCam images and spectra.
 
 Developed by Jarron Leisenring and contributors at University of AZ (2015-17).
 """
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 
 from .version import __version__
@@ -63,4 +64,6 @@ from .obs_nircam import (obs_coronagraphy, nrc_diskobs, observe_disk, observe_st
 
 #from .ngNRC import slope_to_ramp, nproc_use_ng
 
-from . import robust, ngNRC
+from .maths import *
+
+from .simul import ngNRC

@@ -17,7 +17,8 @@ Modification History:
     - 
 """
 # Necessary for Python 2.6 and later
-from __future__ import division, print_function
+#from __future__ import division, print_function
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import numpy as np
 import datetime, os
@@ -26,13 +27,13 @@ from astropy.table import Table
 
 # HxRG Noise Generator
 from . import nghxrg as ng
-from .nrc_utils import nrc_header
+from pynrc.nrc_utils import nrc_header
 
-import pdb
+#import pdb
 from copy import deepcopy
 
-from . import DetectorOps
-from . import conf
+from pynrc import DetectorOps
+from pynrc import conf
 
 # # Set log output levels
 # # webbpsf and poppy have too many unnecessary warnings
@@ -120,7 +121,7 @@ def SCAnoise(det=None, scaid=None, params=None, caldir=None, file_out=None,
 
     # Line and frame overheads
     nroh     = det._line_overhead
-    nfoh     = det._extra_lines[0]
+    nfoh     = det._extra_lines
     nfoh_pix = det._frame_overhead_pix
 
     # How many total frames (incl. dropped and all) per ramp?

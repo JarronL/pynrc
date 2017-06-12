@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 """
 Small collection of robust statistical estimators based on functions from
 Henry Freudenriech (Hughes STX) statistics library (called ROBLIB) that have
@@ -15,22 +13,66 @@ been incorporated into the AstroIDL User's Library.  Function included are:
   * polyfit - outlier resistant fit of a polynomial to data
 
 For the fitting routines, the coefficients are returned in the same order as
-numpy.polyfit, i.e., with the coefficient of the highest power listed first.
+np.polyfit, i.e., with the coefficient of the highest power listed first.
 
 For additional information about the original IDL routines, see:
   http://idlastro.gsfc.nasa.gov/contents.html#C17
 """
 
+from __future__ import division, print_function#, unicode_literals
+
 import math
-import numpy
+import numpy as np
+
+import logging
+_log = logging.getLogger('pynrc')
 
 __version__ = '0.4'
 __revision__ = '$Rev$'
-__all__ = ['biweightMean', 'mean', 'mode', 'std', 'checkfit', 'linefit', 'polyfit', '__version__', '__revision__', '__all__']
+__all__ = ['medabsdev','biweightMean', 'mean', 'mode', 'std', \
+           'checkfit', 'linefit', 'polyfit', \
+           '__version__', '__revision__', '__all__']
 
 __iterMax = 25
 __delta = 5.0e-7
-__epsilon = 1.0e-20
+#__epsilon = 1.0e-20
+__epsilon = np.finfo(float).eps # 2.22E-16
+
+def medabsdev(data, axis=None, keepdims=False):
+    """
+    Median Absolute Deviation: a "Robust" version of standard deviation.
+    
+    axis : None or int or tuple of ints, optional
+        Axis or axes along which the deviation is computed. The
+        default is to compute the deviation of the flattened array.
+        
+        If this is a tuple of ints, a standard deviation is performed over
+        multiple axes, instead of a single axis or all the axes as before.
+        This is the equivalent of reshaping the input data and then taking
+        the standard devation.
+    keepdims : bool, optional
+        If this is set to True, the axes which are reduced are left
+        in the result as dimensions with size one. With this option,
+        the result will broadcast correctly against the original `arr`.
+    """
+    med = np.median(data, axis=axis, keepdims=True)
+    abs = np.abs(data - med)
+    sigma = np.median(abs, axis=axis, keepdims=True)  / 0.6744897501960817
+    
+    # Check if anything is near 0.0 (below machine precision)
+    mask = sigma < __epsilon
+    if np.any(mask):
+        sigma[mask] = (np.mean(abs, axis=axis, keepdims=True))[mask] / 0.8
+    mask = sigma < __epsilon
+    if np.any(mask):
+        sigma[mask] = 0.0
+        
+    
+    if not keepdims:
+        return np.squeeze(abs_dev)
+    else:
+        return sigma
+
 
 
 def biweightMean(inputData, axis=None, dtype=None):
@@ -42,12 +84,12 @@ def biweightMean(inputData, axis=None, dtype=None):
 
     .. versionchanged:: 1.0.3
         Added the 'axis' and 'dtype' keywords to make this function more
-        compatible with numpy.mean()
+        compatible with np.mean()
     """
 
     if axis is not None:
         fnc = lambda x: biweightMean(x, dtype=dtype)
-        y0 = numpy.apply_along_axis(fnc, axis, inputData)
+        y0 = np.apply_along_axis(fnc, axis, inputData)
     else:
         y = inputData.ravel()
         if type(y).__name__ == "MaskedArray":
@@ -56,12 +98,12 @@ def biweightMean(inputData, axis=None, dtype=None):
             y = y.astype(dtype)
         
         n = len(y)
-        closeEnough = 0.03*numpy.sqrt(0.5/(n-1))
+        closeEnough = 0.03*np.sqrt(0.5/(n-1))
     
         diff = 1.0e30
         nIter = 0
     
-        y0 = numpy.median(y)
+        y0 = np.median(y)
         deviation = y - y0
         sigma = std(deviation)
     
@@ -72,7 +114,7 @@ def biweightMean(inputData, axis=None, dtype=None):
             if nIter > __iterMax:
                 break
             uu = ((y-y0)/(6.0*sigma))**2.0
-            uu = numpy.where(uu > 1.0, 1.0, uu)
+            uu = np.where(uu > 1.0, 1.0, uu)
             weights = (1.0-uu)**2.0
             weights /= weights.sum()
             y0 = (weights*y).sum()
@@ -80,7 +122,7 @@ def biweightMean(inputData, axis=None, dtype=None):
             prevSigma = sigma
             sigma = std(deviation, Zero=True)
             if sigma > __epsilon:
-                diff = numpy.abs(prevSigma - sigma) / prevSigma
+                diff = np.abs(prevSigma - sigma) / prevSigma
             else:
                 diff = 0.0
             
@@ -94,12 +136,12 @@ def mean(inputData, Cut=3.0, axis=None, dtype=None):
 
     .. versionchanged:: 1.0.3
         Added the 'axis' and 'dtype' keywords to make this function more
-        compatible with numpy.mean()
+        compatible with np.mean()
     """
 
     if axis is not None:
         fnc = lambda x: mean(x, dtype=dtype)
-        dataMean = numpy.apply_along_axis(fnc, axis, inputData)
+        dataMean = np.apply_along_axis(fnc, axis, inputData)
     else:
         data = inputData.ravel()
         if type(data).__name__ == "MaskedArray":
@@ -107,13 +149,13 @@ def mean(inputData, Cut=3.0, axis=None, dtype=None):
         if dtype is not None:
             data = data.astype(dtype)
         
-        data0 = numpy.median(data)
-        maxAbsDev = numpy.median(numpy.abs(data-data0)) / 0.6745
+        data0 = np.median(data)
+        maxAbsDev = np.median(np.abs(data-data0)) / 0.6745
         if maxAbsDev < __epsilon:
-            maxAbsDev = (numpy.abs(data-data0)).mean() / 0.8000
+            maxAbsDev = (np.abs(data-data0)).mean() / 0.8000
         
         cutOff = Cut*maxAbsDev
-        good = numpy.where( numpy.abs(data-data0) <= cutOff )
+        good = np.where( np.abs(data-data0) <= cutOff )
         good = good[0]
         dataMean = data[good].mean()
         dataSigma = math.sqrt( ((data[good]-dataMean)**2.0).sum() / len(good) )
@@ -126,7 +168,7 @@ def mean(inputData, Cut=3.0, axis=None, dtype=None):
             dataSigma = dataSigma / (-0.15405 + 0.90723*sigmaCut - 0.23584*sigmaCut**2.0 + 0.020142*sigmaCut**3.0)
         
         cutOff = Cut*dataSigma
-        good = numpy.where(  numpy.abs(data-data0) <= cutOff )
+        good = np.where(  np.abs(data-data0) <= cutOff )
         good = good[0]
         dataMean = data[good].mean()
         if len(good) > 3:
@@ -153,7 +195,7 @@ def mode(inputData, axis=None, dtype=None):
 
     if axis is not None:
         fnc = lambda x: mode(x, dtype=dtype)
-        dataMode = numpy.apply_along_axis(fnc, axis, inputData)
+        dataMode = np.apply_along_axis(fnc, axis, inputData)
     else:
         # Create the function that we can use for the half-sample mode
         def _hsm(data):
@@ -187,7 +229,7 @@ def mode(inputData, axis=None, dtype=None):
             data = data.astype(dtype)
         
         # The data need to be sorted for this to work
-        data = numpy.sort(data)
+        data = np.sort(data)
     
         # Find the mode
         dataMode = _hsm(data)
@@ -203,12 +245,12 @@ def std(inputData, Zero=False, axis=None, dtype=None):
 
     .. versionchanged:: 1.0.3
         Added the 'axis' and 'dtype' keywords to make this function more
-        compatible with numpy.std()
+        compatible with np.std()
     """
 
     if axis is not None:
         fnc = lambda x: std(x, dtype=dtype)
-        sigma = numpy.apply_along_axis(fnc, axis, inputData)
+        sigma = np.apply_along_axis(fnc, axis, inputData)
     else:
         data = inputData.ravel()
         if type(data).__name__ == "MaskedArray":
@@ -219,17 +261,17 @@ def std(inputData, Zero=False, axis=None, dtype=None):
         if Zero:
             data0 = 0.0
         else:
-            data0 = numpy.median(data)
-        maxAbsDev = numpy.median(numpy.abs(data-data0)) / 0.6745
+            data0 = np.median(data)
+        maxAbsDev = np.median(np.abs(data-data0)) / 0.6744897501960817
         if maxAbsDev < __epsilon:
-            maxAbsDev = (numpy.abs(data-data0)).mean() / 0.8000
+            maxAbsDev = np.mean(np.abs(data-data0)) / 0.8000
         if maxAbsDev < __epsilon:
             sigma = 0.0
             return sigma
         
         u = (data-data0) / 6.0 / maxAbsDev
         u2 = u**2.0
-        good = numpy.where( u2 <= 1.0 )
+        good = np.where( u2 <= 1.0 )
         good = good[0]
         if len(good) < 3:
             print("WARNING:  Distribution is too strange to compute standard deviation")
@@ -274,16 +316,16 @@ def checkfit(inputData, inputFit, epsilon, delta, BisquareLimit=6.0):
     if sigma < epsilon:
         return (sigma, 0.0, 0, 0.0, 0.0)
 
-    toUse = (numpy.where( numpy.abs(fit) > epsilon ))[0]
+    toUse = (np.where( np.abs(fit) > epsilon ))[0]
     if len(toUse) < 3:
         fracDev = 0.0
     else:
-        fracDev = numpy.median(numpy.abs(deviation[toUse]/fit[toUse]))
+        fracDev = np.median(np.abs(deviation[toUse]/fit[toUse]))
     if fracDev < delta:
         return (sigma, fracDev, 0, 0.0, 0.0)
     
-    biweights = numpy.abs(deviation)/(BisquareLimit*sigma)
-    toUse = (numpy.where(biweights > 1))[0]
+    biweights = np.abs(deviation)/(BisquareLimit*sigma)
+    toUse = (np.where(biweights > 1))[0]
     if len(toUse) > 0:
         biweights[toUse] = 1.0
     nGood = len(data) - len(toUse)
@@ -304,7 +346,7 @@ def linefit(inputX, inputY, iterMax=25, Bisector=False, BisquareLimit=6.0, Close
     xIn = inputX.ravel()
     yIn = inputY.ravel()
     if type(yIn).__name__ == "MaskedArray":
-        xIn = xIn.compress(numpy.logical_not(yIn.mask))
+        xIn = xIn.compress(np.logical_not(yIn.mask))
         yIn = yIn.compressed()
     n = len(xIn)
 
@@ -313,8 +355,8 @@ def linefit(inputX, inputY, iterMax=25, Bisector=False, BisquareLimit=6.0, Close
     x = xIn - x0
     y = yIn - y0
 
-    cc = numpy.zeros(2)
-    ss = numpy.zeros(2)
+    cc = np.zeros(2)
+    ss = np.zeros(2)
     sigma = 0.0
     yFit = yIn
     badFit = 0
@@ -323,15 +365,15 @@ def linefit(inputX, inputY, iterMax=25, Bisector=False, BisquareLimit=6.0, Close
     lsq = 0.0
     yp = y
     if n > 5:
-        s = numpy.argsort(x)
+        s = np.argsort(x)
         u = x[s]
         v = y[s]
         nHalf = n/2 -1
-        x1 = numpy.median(u[0:nHalf])
-        x2 = numpy.median(u[nHalf:])
-        y1 = numpy.median(v[0:nHalf])
-        y2 = numpy.median(v[nHalf:])
-        if numpy.abs(x2-x1) < __epsilon:
+        x1 = np.median(u[0:nHalf])
+        x2 = np.median(u[nHalf:])
+        y1 = np.median(v[0:nHalf])
+        y2 = np.median(v[nHalf:])
+        if np.abs(x2-x1) < __epsilon:
             x1 = u[0]
             x2 = u[-1]
             y1 = v[0]
@@ -349,7 +391,7 @@ def linefit(inputX, inputY, iterMax=25, Bisector=False, BisquareLimit=6.0, Close
         sxy = (x*y).sum()
         sxx = (x*x).sum()
         d = sxx - sx*sx
-        if numpy.abs(d) < __epsilon:
+        if np.abs(d) < __epsilon:
             return (0.0, 0.0)
         ySlope = (sxy - sx*sy) / d
         yYInt = (sxx*sy - sx*sxy) / d
@@ -357,31 +399,31 @@ def linefit(inputX, inputY, iterMax=25, Bisector=False, BisquareLimit=6.0, Close
         if Bisector:
             syy = (y*y).sum()
             d = syy - sy*sy
-            if numpy.abs(d) < __epsilon:
+            if np.abs(d) < __epsilon:
                 return (0.0, 0.0)
             tSlope = (sxy - sy*sx) / d
             tYInt = (syy*sx - sy*sxy) / d
-            if numpy.abs(tSlope) < __epsilon:
+            if np.abs(tSlope) < __epsilon:
                 return (0.0, 0.0)
             xSlope = 1.0/tSlope
             xYInt = -tYInt / tSlope
             if ySlope > xSlope:
                 a1 = yYInt
                 b1 = ySlope
-                r1 = numpy.sqrt(1.0+ySlope**2.0)
+                r1 = np.sqrt(1.0+ySlope**2.0)
                 a2 = xYInt
                 b2 = xSlope
-                r2 = numpy.sqrt(1.0+xSlope**2.0)
+                r2 = np.sqrt(1.0+xSlope**2.0)
             else:
                 a2 = yYInt
                 b2 = ySlope
-                r2 = numpy.sqrt(1.0+ySlope**2.0)
+                r2 = np.sqrt(1.0+ySlope**2.0)
                 a1 = xYInt
                 b1 = xSlope
-                r1 = numpy.sqrt(1.0+xSlope**2.0)
+                r1 = np.sqrt(1.0+xSlope**2.0)
             yInt = (r1*a2 + r2*a1) / (r1 + r2)
             slope = (r1*b2 + r2*b1) / (r1 + r2)
-            r = numpy.sqrt(1.0+slope**2.0)
+            r = np.sqrt(1.0+slope**2.0)
             if yInt > 0:
                 r = -r
             u1 = slope / r
@@ -403,7 +445,7 @@ def linefit(inputX, inputY, iterMax=25, Bisector=False, BisquareLimit=6.0, Close
         return cc[::-1]
     
     sigma1 = (100.0*sigma)
-    closeEnough = CloseFactor * numpy.sqrt(0.5/(n-1))
+    closeEnough = CloseFactor * np.sqrt(0.5/(n-1))
     if closeEnough < __delta:
         closeEnough = __delta
     diff = 1.0e20
@@ -419,7 +461,7 @@ def linefit(inputX, inputY, iterMax=25, Bisector=False, BisquareLimit=6.0, Close
         sxy = (biweights*x*y).sum()
         sxx = (biweights*x*x).sum()
         d = sxx - sx*sx
-        if numpy.abs(d) < __epsilon:
+        if np.abs(d) < __epsilon:
             return (0.0, 0.0)
         ySlope = (sxy - sx*sy) / d
         yYInt = (sxx*sy - sx*sxy) / d
@@ -429,31 +471,31 @@ def linefit(inputX, inputY, iterMax=25, Bisector=False, BisquareLimit=6.0, Close
         if Bisector:
             syy = (biweights*y*y).sum()
             d = syy - sy*sy
-            if numpy.abs(d) < __epsilon:
+            if np.abs(d) < __epsilon:
                 return (0.0, 0.0)
             tSlope = (sxy - sy*sx) / d
             tYInt = (syy*sx - sy*sxy) / d
-            if numpy.abs(tSlope) < __epsilon:
+            if np.abs(tSlope) < __epsilon:
                 return (0.0, 0.0)
             xSlope = 1.0/tSlope
             xYInt = -tYInt / tSlope
             if ySlope > xSlope:
                 a1 = yYInt
                 b1 = ySlope
-                r1 = numpy.sqrt(1.0+ySlope**2.0)
+                r1 = np.sqrt(1.0+ySlope**2.0)
                 a2 = xYInt
                 b2 = xSlope
-                r2 = numpy.sqrt(1.0+xSlope**2.0)
+                r2 = np.sqrt(1.0+xSlope**2.0)
             else:
                 a2 = yYInt
                 b2 = ySlope
-                r2 = numpy.sqrt(1.0+ySlope**2.0)
+                r2 = np.sqrt(1.0+ySlope**2.0)
                 a1 = xYInt
                 b1 = xSlope
-                r1 = numpy.sqrt(1.0+xSlope**2.0)
+                r1 = np.sqrt(1.0+xSlope**2.0)
             yInt = (r1*a2 + r2*a1) / (r1 + r2)
             slope = (r1*b2 + r2*b1) / (r1 + r2)
-            r = numpy.sqrt(1.0+slope**2.0)
+            r = np.sqrt(1.0+slope**2.0)
             if yInt > 0:
                 r = -r
             u1 = slope / r
@@ -471,8 +513,8 @@ def linefit(inputX, inputY, iterMax=25, Bisector=False, BisquareLimit=6.0, Close
         if nGood < 2:
             badFit = 1
             break
-        diff1 = numpy.abs(sigma1 - sigma)/sigma
-        diff2 = numpy.abs(sigma2 - sigma)/sigma
+        diff1 = np.abs(sigma1 - sigma)/sigma
+        diff2 = np.abs(sigma2 - sigma)/sigma
         if diff1 < diff2:
             diff = diff1
         else:
@@ -490,7 +532,7 @@ def polyfit(inputX, inputY, order, iterMax=25):
     Library.
 
     Unlike robust_poly_fit, two different polynomial fitters are used
-    because numpy.polyfit does not support non-uniform weighting of the
+    because np.polyfit does not support non-uniform weighting of the
     data.  For the weighted fitting, the SciPy Orthogonal Distance
     Regression module (scipy.odr) is used.
     """
@@ -507,7 +549,7 @@ def polyfit(inputX, inputY, order, iterMax=25):
     x = inputX.ravel()
     y = inputY.ravel()
     if type(y).__name__ == "MaskedArray":
-        x = x.compress(numpy.logical_not(y.mask))
+        x = x.compress(np.logical_not(y.mask))
         y = y.compressed()
     n = len(x)
 
@@ -522,36 +564,36 @@ def polyfit(inputX, inputY, order, iterMax=25):
     minPts = nSeg*3
     if n < 1000:
         lsqFit = 1
-        cc = numpy.polyfit(u, v, order)
-        yFit = numpy.polyval(cc, u)
+        cc = np.polyfit(u, v, order)
+        yFit = np.polyval(cc, u)
     else:
         lsqfit = 0
-        q = numpy.argsort(u)
+        q = np.argsort(u)
         u = u[q]
         v = v[q]
-        nPerSeg = numpy.zeros(nSeg) + n/nSeg
+        nPerSeg = np.zeros(nSeg) + n/nSeg
         nLeft = n - nPerSeg[0]*nSeg
         nPerSeg[nSeg/2] = nPerSeg[nSeg/2] + nLeft
-        r = numpy.zeros(nSeg)
-        s = numpy.zeros(nSeg)
-        r[0] = numpy.median(u[0:nPerSeg[0]])
-        s[0] = numpy.median(v[0:nPerSeg[0]])
+        r = np.zeros(nSeg)
+        s = np.zeros(nSeg)
+        r[0] = np.median(u[0:nPerSeg[0]])
+        s[0] = np.median(v[0:nPerSeg[0]])
         i2 = nPerSeg[0]-1
         for i in range(1,nSeg):
             i1 = i2
             i2 = i1 + nPerSeg[i]
-            r[i] = numpy.median(u[i1:i2])
-            s[i] = numpy.median(v[i1:i2])
-        cc = numpy.polyfit(r, s, order)
-        yFit = numpy.polyval(cc, u)
+            r[i] = np.median(u[i1:i2])
+            s[i] = np.median(v[i1:i2])
+        cc = np.polyfit(r, s, order)
+        yFit = np.polyval(cc, u)
     
     sigma, fracDev, nGood, biweights, scaledResids = checkfit(v, yFit, __epsilon, __delta)
     if nGood == 0:
         return cc
     if nGood < minPts:
         if lsqFit == 0:
-            cc = numpy.polyfit(u, v, order)
-            yFit = numpy.polyval(cc, u)
+            cc = np.polyfit(u, v, order)
+            yFit = np.polyval(cc, u)
             sigma, fracDev, nGood, biweights, scaledResids = checkfit(yp, yFit, __epsilon, __delta)
             if nGood == 0:
                 return __processPoly(x0, y0, order, cc)
@@ -559,7 +601,7 @@ def polyfit(inputX, inputY, order, iterMax=25):
         if nGood < minPts:
             return 0
         
-    closeEnough = 0.03*numpy.sqrt(0.5/(n-1))
+    closeEnough = 0.03*np.sqrt(0.5/(n-1))
     if closeEnough < __delta:
         closeEnough = __delta
     diff = 1.0e10
@@ -571,7 +613,7 @@ def polyfit(inputX, inputY, order, iterMax=25):
             break
         sigma2 = sigma1
         sigma1 = sigma
-        g = (numpy.where(biweights > 0))[0]
+        g = (np.where(biweights > 0))[0]
         if len(g) < len(biweights):
             u = u[g]
             v = v[g]
@@ -584,13 +626,13 @@ def polyfit(inputX, inputY, order, iterMax=25):
             cc = out.beta[::-1]
         except:
             ## And then give up when it doesn't work
-            cc = numpy.polyfit(u, v, order)
-        yFit = numpy.polyval(cc, u)
+            cc = np.polyfit(u, v, order)
+        yFit = np.polyval(cc, u)
         sigma, fracDev, nGood, biweights, scaledResids = checkfit(v, yFit, __epsilon, __delta)
         if nGood < minPts:
             return cc
-        diff1 = numpy.abs(sigma1 - sigma)/sigma
-        diff2 = numpy.abs(sigma2 - sigma)/sigma
+        diff1 = np.abs(sigma1 - sigma)/sigma
+        diff2 = np.abs(sigma2 - sigma)/sigma
         if diff1 < diff2:
             diff = diff1
         else:

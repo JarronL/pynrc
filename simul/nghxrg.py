@@ -89,7 +89,8 @@ Modification History:
 
 """
 # Necessary for Python 2.6 and later
-from __future__ import division, print_function
+#from __future__ import division, print_function
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 __version__ = "3.0"
 
@@ -425,17 +426,17 @@ class HXRGNoise:
         """
 
         # Configure depending on mode setting
-        if mode is 'pink':
+        if 'pink' in mode:
             nstep  = 2*self.nstep
             nstep2 = 2*self.nstep2
             f = self.f2
             p_filter = self.p_filter2
-        elif mode is 'acn':
+        elif 'acn' in mode:
             nstep  = self.nstep
             nstep2 = self.nstep2
             f = self.f1
             p_filter = self.p_filter1
-        elif mode is 'ref_inst':
+        elif 'ref_inst' in mode:
             nstep  = 2*self.naxis3
             nstep2 = 2*self.naxis3
             f = self.f3

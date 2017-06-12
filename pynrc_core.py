@@ -28,11 +28,12 @@ To Be Completed:
 
 from __future__ import division, print_function, unicode_literals
 
-from astropy.convolution import convolve_fft
-from astropy.table import Table
-from scipy import fftpack
-import pdb
+#from astropy.convolution import convolve_fft
+
+#from scipy import fftpack
+#import pdb
 # Import libraries
+from astropy.table import Table
 from .nrc_utils import *
 
 import logging
@@ -49,10 +50,17 @@ class multiaccum(object):
         overwritten by read_mode. See JWST MULTIACCUM documentation for more details.
 
     NIRCam-specific readout modes:
-        patterns = ['RAPID', 'BRIGHT1', 'BRIGHT2', 'SHALLOW2', 'SHALLOW4', 
-                'MEDIUM2', 'MEDIUM8', 'DEEP2', 'DEEP8']
-        nf_arr   = [1, 1, 2, 2, 4, 2, 8,  2,  8] # Averaged frames per group
-        nd2_arr  = [0, 1, 0, 3, 1, 8, 2, 18, 12] # Dropped frames per group (group gap)
+      PATTERN  NF ND2
+      ---------------
+      RAPID     1   0
+      BRIGHT1   1   1
+      BRIGHT2   2   0
+      SHALLOW2  2   3
+      SHALLOW4  4   1
+      MEDIUM2   2   8
+      MEDIUM8   8   2
+      DEEP2     2  18
+      DEEP8     8  12
     """
 
     def __init__(self, read_mode='RAPID', nint=1, ngroup=1, nf=1, nd1=0, nd2=0, nd3=0, 
@@ -63,8 +71,8 @@ class multiaccum(object):
         patterns = ['RAPID', 'BRIGHT1', 'BRIGHT2', 'SHALLOW2', 'SHALLOW4', 'MEDIUM2', 'MEDIUM8', 'DEEP2', 'DEEP8']
         nf_arr   = [1,1,2,2,4,2,8, 2, 8]
         nd2_arr  = [0,1,0,3,1,8,2,18,12]
-        ng_max   = [10,10,10,10,10,10,10,20,20]
-        self._pattern_settings = dict(zip(patterns, zip(nf_arr, nd2_arr,ng_max)))
+        ng_max   = [10,10,10,10,10,10,10,20,20]  # Currently ignored, because not valid for TSO
+        self._pattern_settings = dict(zip(patterns, zip(nf_arr, nd2_arr, ng_max)))
 
         #self.nexp = nexp # Don't need multiple exposures. Just increase nint
         self.nint = nint
@@ -79,13 +87,13 @@ class multiaccum(object):
         # Now set read mode to specified mode, which may modify nf, nd1, nd2, and nd3
         self.read_mode = read_mode
 
-    #     @property
-    #     def nexp(self):
-    #         """Number of exposures in an obervation."""
-    #         return self._nexp
-    #     @nexp.setter
-    #     def nexp(self, value):
-    #         self._nexp = self._check_int(value)
+#     @property
+#     def nexp(self):
+#         """Number of exposures in an obervation."""
+#         return self._nexp
+#     @nexp.setter
+#     def nexp(self, value):
+#         self._nexp = self._check_int(value)
 
     @property
     def nint(self):
@@ -101,7 +109,7 @@ class multiaccum(object):
         return self._ngroup
     @ngroup.setter
     def ngroup(self, value):
-        value = self._check_int(value)
+        value = self._check_int(value,1)
         if value > self._ngroup_max:
             _log.warning('Specified ngroup (%s) greater than allowed value (%s)' \
                          % (value, self._ngroup_max))
@@ -115,7 +123,7 @@ class multiaccum(object):
         return self._nf
     @nf.setter
     def nf(self, value):
-        value = self._check_int(value)
+        value = self._check_int(value,1)
         self._nf = self._check_custom(value, self._nf)
 
     @property
@@ -633,178 +641,6 @@ class DetectorOps(object):
                 datetime.datetime(2016, 5, 9, 11, 57, 5, 796686)
         """
         return nrc_header(self, filter=filter, pupil=pupil, obs_time=obs_time, **kwargs)
-
-
-# Class for reading in planet spectra
-class planets_sb12(object):
-    """
-    Exoplanet spectrum from Spiegel & Burrows (2012)
-
-    This contains 1680 files, one for each of 4 atmosphere types, each of
-    15 masses, and each of 28 ages.  Wavelength range of 0.8 - 15.0 um at
-    moderate resolution (R ~ 204).
-
-    The flux in the source files are at 10 pc. If the distance is specified,
-    then the flux will be scaled accordingly. This is also true if the distance
-    is changed by the user. All other properties (atmo, mass, age, entropy) are 
-    not adjustable once loaded.
-
-    Arguments:
-        atmo: A string consisting of one of four atmosphere types:
-            hy1s = hybrid clouds, solar abundances
-            hy3s = hybrid clouds, 3x solar abundances
-            cf1s = cloud-free, solar abundances
-            cf3s = cloud-free, 3x solar abundances
-        mass: Integer number 1 to 15 Jupiter masses.
-        age: Age in millions of years (1-1000)
-        entropy: Initial entropy (8.0-13.0) in increments of 0.25
-        distance: Assumed distance in pc (default is 10pc)
-        base_dir: Location of atmospheric model sub-directories.
-    """
-
-    base_dir = conf.PYNRC_PATH + 'spiegel/'
-
-    def __init__(self, atmo='hy1s', mass=1, age=100, entropy=10.0, 
-                 distance=10, base_dir=None, **kwargs):
-
-        self._atmo = atmo
-        self._mass = mass
-        self._age = age
-        self._entropy = entropy
-
-        if base_dir is not None:
-            self.base_dir = base_dir
-        self.sub_dir = self.base_dir  + 'SB.' + self.atmo + '/'
-
-        self.get_file()
-        self.read_file()
-        self.distance = distance
-
-    def get_file(self):
-        files = []; masses = []; ages = []
-        for file in os.listdir(self.sub_dir):
-            files.append(file)
-            fsplit = re.split('[_\.]',file)
-            ind_mass = fsplit.index('mass') + 1
-            ind_age = fsplit.index('age') + 1
-            masses.append(int(fsplit[ind_mass]))
-            ages.append(int(fsplit[ind_age]))
-        files = np.array(files)
-        ages = np.array(ages)
-        masses = np.array(masses)
-
-        # Find those indices closest in mass
-        mdiff = np.abs(masses - self.mass)
-        ind_mass = mdiff == np.min(mdiff)
-
-        # Of those masses, find the closest age
-        adiff = np.abs(ages - self.age)
-        ind_age = adiff[ind_mass] == np.min(adiff[ind_mass])
-
-        # Get the final file name
-        self.file = ((files[ind_mass])[ind_age])[0]
-
-    def read_file(self):
-        # Read in the file's content row-by-row (saved as a string)
-        with open(self.sub_dir + self.file) as f:
-            content = f.readlines()
-        content = [x.strip('\n') for x in content]
-
-        # Parse the strings into an array
-        #   Row #, Value
-        #   1      col 1: age (Myr);
-        #          cols 2-601: wavelength (in microns, in range 0.8-15.0)
-        #   2-end  col 1: initial S;
-        #          cols 2-601: F_nu (in mJy for a source at 10 pc)
-
-        ncol = len(content[0].split())
-        nrow = len(content)
-        arr = np.zeros([nrow,ncol])
-        for i,row in enumerate(content):
-            arr[i,:] = np.array(content[i].split(), dtype='float64')
-
-        # Find the closest entropy and save
-        entropy = arr[1:,0]
-        diff = np.abs(self.entropy - entropy)
-        ind = diff == np.min(diff)
-        self._flux = arr[1:,1:][ind,:].flatten()
-        self._fluxunits = 'mJy'
-
-        # Save the wavelength information
-        self._wave = arr[0,1:]
-        self._waveunits = 'um'
-
-        # Distance (10 pc)
-        self._distance = 10
-
-    @property
-    def wave(self):
-        return self._wave
-    @property
-    def waveunits(self):
-        return self._waveunits
-
-    @property
-    def flux(self):
-        return self._flux
-    @property
-    def fluxunits(self):
-        return self._fluxunits
-
-    @property
-    def distance(self):
-        """Assumed distance to source (pc)"""
-        return self._distance
-    @distance.setter
-    def distance(self, value):
-        self._flux *= (self._distance/value)**2
-        self._distance = value
-
-    @property
-    def atmo(self):
-        """
-        A string consisting of one of four atmosphere types:
-            hy1s = hybrid clouds, solar abundances
-            hy3s = hybrid clouds, 3x solar abundances
-            cf1s = cloud-free, solar abundances
-            cf3s = cloud-free, 3x solar abundances
-        """
-        return self._atmo
-    @property
-    def mass(self):
-        """Jupiter masses"""
-        return self._mass
-    @property
-    def age(self):
-        """Age in millions of years"""
-        return self._age
-    @property
-    def entropy(self):
-        """Initial entropy (8.0-13.0)"""
-        return self._entropy
-
-    def export_pysynphot(self, waveout='angstrom', fluxout='flam'):
-        w = self.wave; f = self.flux        
-        name = (re.split('[\.]', self.file))[5:]        
-        sp = S.ArraySpectrum(w, f, name=name, waveunits=self.waveunits, fluxunits=self.fluxunits)
-
-        sp.convert(waveout)
-        sp.convert(fluxout)
-
-        return sp
-        
-# Turns out the paper is Spiegel & Burrows (2012), not 2011
-class planets_sb11(planets_sb12):
-
-    """
-    Deprecated version of planets_sb12 class. Use that instead.
-    """
-
-    def __init__(self, *args, **kwargs):
-                 
-        _log.warning('planets_sb11 is depcrecated. Use planets_sb12 instead.')
-        planets_sb12.__init__(self, *args, **kwargs)
-
 
 
 class NIRCam(object):
@@ -2012,7 +1848,7 @@ def gen_fits(args):
     """
     Helper function for generating FITs integrations from a slope image
     """
-    from .ngNRC import slope_to_ramp
+    from .simul.ngNRC import slope_to_ramp
 
     # Must call np.random.seed() for multiprocessing, otherwise 
     # random numbers for parallel processes start in the same seed state!

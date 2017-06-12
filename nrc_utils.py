@@ -9,11 +9,17 @@ import six
 
 # Import libraries
 import numpy as np
-import matplotlib
-import matplotlib.pyplot as plt
-matplotlib.rcParams['image.origin'] = 'lower'
-matplotlib.rcParams['image.interpolation'] = 'none'
-matplotlib.rcParams['image.cmap'] = 'gist_heat'
+# import matplotlib
+# import matplotlib.pyplot as plt
+# rcvals = {'xtick.minor.visible': True, 'ytick.minor.visible': True,
+#           'xtick.direction': 'in', 'ytick.direction': 'in', 
+#           'xtick.top': True, 'ytick.right': True, 'font.family': ['serif'], 
+#           'image.interpolation': 'none', 'image.origin': 'lower'}#,
+#           #'text.usetex': True, 'text.latex.preamble': ['\usepackage{gensymb}']}
+# matplotlib.rcParams.update(rcvals)
+# cmap_pri, cmap_alt = ('magma', 'gist_heat')
+# matplotlib.rcParams['image.cmap'] = cmap_pri if cmap_pri in plt.colormaps() else cmap_alt
+
 
 import datetime, time
 import yaml, re, os
@@ -29,6 +35,10 @@ from scipy.ndimage import fourier_shift
 
 from . import conf
 from .logging_utils import setup_logging
+
+from .maths import robust
+from .maths.image_manip import *
+from .maths.fast_poly import *
 
 ###########################################################################
 #
@@ -81,7 +91,7 @@ S.refs.set_default_waveset(minwave=500, maxwave=56000, num=10000.0, delta=None, 
 # Flux loss from masks and occulters are taken into account in WebbPSF
 S.refs.setref(area = 25.4e4) # cm^2
 
-# Grap WebbPSF assumed pixel scales 
+# Grab WebbPSF assumed pixel scales 
 nc_temp = webbpsf.NIRCam()
 pixscale_SW = nc_temp._pixelscale_short
 pixscale_LW = nc_temp._pixelscale_long
@@ -422,7 +432,7 @@ def _wrap_coeff_for_mp(args):
     return hdu_list[0].data
 
 def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A', 
-    fov_pix=11, oversample=None, npsf=None, ndeg=8, opd=None, 
+    fov_pix=11, oversample=None, npsf=None, ndeg=7, opd=None, 
     offset_r=0, offset_theta=0, save=True, force=False, **kwargs):
     """
     Creates a set of coefficients that will generate a simulated PSF at any
@@ -655,19 +665,23 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     #   Or is it (npsf,ny,nx)? Depends on WebbPSF's coord system...
     images = np.array(images)
 
+###     # Simultaneous polynomial fits to all pixels using linear least squares
+###     # 7th-degree polynomial seems to do the trick
+###     #ndeg = 8 # 7+1
+###     x = waves
+###     #a = np.vstack((np.ones(npsf), x, x**2, x**3, x**4, x**5, x**6, x**7)).T
+###     a = np.array([x**num for num in range(ndeg+1)]).T
+###     #b = images.reshape([-1,npsf]).T
+###     b = images.reshape([npsf,-1])
+###     coeff_all, _, _, _ = np.linalg.lstsq(a, b)
+### 
+###     # The number of pixels to span spatially
+###     fov_pix_over = fov_pix * oversample	
+###     coeff_all = coeff_all.reshape([ndeg+1,fov_pix_over,fov_pix_over])
+    
     # Simultaneous polynomial fits to all pixels using linear least squares
     # 7th-degree polynomial seems to do the trick
-    #ndeg = 8 # 7+1
-    x = waves
-    #a = np.vstack((np.ones(npsf), x, x**2, x**3, x**4, x**5, x**6, x**7)).T
-    a = np.array([x**num for num in range(ndeg)]).T
-    #b = images.reshape([-1,npsf]).T
-    b = images.reshape([npsf,-1])
-    coeff_all, _, _, _ = np.linalg.lstsq(a, b)
-
-    # The number of pixels to span spatially
-    fov_pix_over = fov_pix * oversample	
-    coeff_all = coeff_all.reshape([ndeg,fov_pix_over,fov_pix_over])
+    coeff_all = jl_poly_fit(waves, images, ndeg)
 
     if save:
         np.save(save_name, coeff_all)
@@ -1768,527 +1782,14 @@ def scale_ref_image(im1, im2):
     mad_arr = []
     for val in scl_arr:
         diff = im1 - val*im2
-        mad_arr.append(medabsdev(diff))
+        mad_arr.append(robust.medabsdev(diff))
     mad_arr = np.array(mad_arr)
 
     #plt.plot(scl_arr,mad_arr)
     return scl_arr[mad_arr==mad_arr.min()][0]
 
 
-def pad_or_cut_to_size(array, new_shape):
-    """
-    Resize an array to a new shape by either padding with zeros
-    or trimming off rows and/or columns. The ouput shape can
-    be of any arbitrary amount.
 
-    Parameters
-    ----------
-    array :  ndarray
-        A 1D or 2D array representing some image
-    padded_shape :  tuple of 2 elements
-        Desired size for the output array. For 2D case, if a single value, 
-        then will create a 2-element tuple of the same value.
-
-    Returns
-    -------
-    output : ndarray
-        An array of size new_shape that preserves the central information 
-        of the input array.
-    """
-
-    ndim = len(array.shape)
-    if ndim == 1:
-        is_1d = True
-        # Reshape array to a 2D array with nx=1
-        array = array.reshape((-1,1))
-        ny, nx = array.shape
-        if isinstance(new_shape, float) or isinstance(new_shape, int):
-            ny_new = int(round(new_shape))
-            nx_new = 1
-            new_shape = (ny_new, nx_new)
-        elif len(new_shape) < 2:
-            ny_new = nx_new = new_shape[0]
-            new_shape = (ny_new, nx_new)
-        else:
-            ny_new = new_shape[0]
-            nx_new = new_shape[1]
-        output = np.zeros(shape=new_shape, dtype=array.dtype)
-    elif ndim == 2:	
-        is_1d = False
-        ny, nx = array.shape
-        if isinstance(new_shape, float) or isinstance(new_shape, int):
-            ny_new = nx_new = int(round(new_shape))
-            new_shape = (ny_new, nx_new)
-        elif len(new_shape) < 2:
-            ny_new = nx_new = new_shape[0]
-            new_shape = (ny_new, nx_new)
-        else:
-            ny_new = new_shape[0]
-            nx_new = new_shape[1]
-        output = np.zeros(shape=new_shape, dtype=array.dtype)
-    else:
-        raise ValueError('Input image can only have 1 or 2 dimensions. \
-                          Found {} dimensions.'.format(ndim))
-
-    if nx_new>nx:
-        n0 = (nx_new - nx) / 2
-        n1 = n0 + nx
-    elif nx>nx_new:
-        n0 = (nx - nx_new) / 2
-        n1 = n0 + nx_new
-    else:
-        n0 = 0; n1 = nx		
-    n0 = int(round(n0))
-    n1 = int(round(n1))
-
-    if ny_new>ny:
-        m0 = (ny_new - ny) / 2
-        m1 = m0 + ny
-    elif ny>ny_new:
-        m0 = (ny - ny_new) / 2
-        m1 = m0 + ny_new
-    else:
-        m0 = 0; m1 = ny		
-    m0 = int(round(m0))
-    m1 = int(round(m1))
-
-    if (nx_new>=nx) and (ny_new>=ny):
-        #print('Case 1')
-        output[m0:m1,n0:n1] = array
-    elif (nx_new<=nx) and (ny_new<=ny):
-        #print('Case 2')
-        output = array[m0:m1,n0:n1]
-    elif (nx_new<=nx) and (ny_new>=ny):
-        #print('Case 3')
-        output[m0:m1,:] = array[:,n0:n1]
-    elif (nx_new>=nx) and (ny_new<=ny):
-        #print('Case 4')
-        output[:,n0:n1] = array[m0:m1,:]
-        
-    # Flatten if input and output arrays are 1D
-    if (ndim==1) and (nx_new==1):
-        output = output.flatten()
-
-    return output
-
-
-
-def fshift(image, delx=0, dely=0, pad=False):
-    """
-    Ported from IDL function fshift.pro.
-    Routine to shift an image by non-integer values.
-
-    INPUTS:
-        image - 2D image to be shifted
-        delx  - shift in x (same direction as IDL SHIFT function)
-        dely  - shift in y
-        pad   - Should we pad the array before shifting, then truncate?
-                Otherwise, the image is wrapped.
-    OUTPUTS:
-        shifted image is returned as the function results
-
-    """
-    
-    if len(image.shape) == 1:
-        # separate shift into an integer and fraction shift
-        intx = np.int(delx)
-        fracx = delx - intx
-        if fracx < 0:
-            fracx += 1
-            intx -= 1
-
-        # Pad ends with zeros
-        if pad:
-            padx = np.abs(intx) + 1
-            x = np.pad(image,np.abs(intx),'constant')
-        else:
-            padx = 0
-            x = image.copy()
-
-        # shift by integer portion
-        x = np.roll(x, intx)
-        # if significant fractional shift...
-        if not np.isclose(fracx, 0, atol=1e-5):
-            x = x * (1.-fracx) + np.roll(x,1) * fracx
-
-        x = x[padx:padx+image.size]
-        return x
-
-    elif len(image.shape) == 2:	
-        # separate shift into an integer and fraction shift
-        intx = np.int(delx)
-        inty = np.int(dely)
-        fracx = delx - intx
-        fracy = dely - inty
-        if fracx < 0:
-            fracx += 1
-            intx -= 1
-        if fracy < 0:
-            fracy += 1
-            inty -= 1
-
-        # Pad ends with zeros
-        if pad:
-            padx = np.abs(intx) + 1
-            pady = np.abs(inty) + 1
-            pad_vals = ([pady]*2,[padx]*2)
-            x = np.pad(image,pad_vals,'constant')
-        else:
-            padx = 0; pady = 0
-            x = image.copy()
-
-        # shift by integer portion
-        x = np.roll(np.roll(x, intx, axis=1), inty, axis=0)
-    
-        # Check if fracx and fracy are effectively 0
-        fxis0 = np.isclose(fracx,0, atol=1e-5)
-        fyis0 = np.isclose(fracy,0, atol=1e-5)
-        # If fractional shifts are significant
-        # use bi-linear interpolation between four pixels
-        if not (fxis0 and fyis0):
-            # Break bi-linear interpolation into four parts
-            # to avoid NaNs unnecessarily affecting integer shifted dimensions
-            x1 = x * ((1-fracx)*(1-fracy))
-            x2 = 0 if fyis0 else np.roll(x,1,axis=0)*((1-fracx)*fracy)
-            x3 = 0 if fxis0 else np.roll(x,1,axis=1)*((1-fracy)*fracx)
-            x4 = 0 if (fxis0 or fyis0) else np.roll(np.roll(x, 1, axis=1), 1, axis=0) * fracx*fracy
-    
-            x = x1 + x2 + x3 + x4
-    
-        x = x[pady:pady+image.shape[0], padx:padx+image.shape[1]]
-        return x
-            
-
-        #if not np.allclose([fracx,fracy], 0, atol=1e-5):
-        #	x = x * ((1-fracx)*(1-fracy)) + \
-        #		np.roll(x,1,axis=0) * ((1-fracx)*fracy) + \
-        #		np.roll(x,1,axis=1) * (fracx*(1-fracy)) + \
-        #		np.roll(np.roll(x, 1, axis=1), 1, axis=0) * fracx*fracy
-
-        #x = x[pady:pady+image.shape[0], padx:padx+image.shape[1]]
-        #return x
-
-    else:
-        raise ValueError('Input image can only have 1 or 2 dimensions. \
-                          Found {} dimensions.'.format(len(image.shape)))
-                          
-                          
-def fourier_imshift(image, xshift, yshift, pad=False):
-    '''
-    Shift an image by use of Fourier shift theorem
-    Parameters:
-        image : nd array
-            N x K image
-        xshift : float
-            Pixel value by which to shift image in the x direction
-        yshift : float
-            Pixel value by which to shift image in the x direction
-        pad : bool
-            Should we pad the array before shifting, then truncate?
-            Otherwise, the image is wrapped.
-    Returns:
-        offset : nd array
-            Shifted image
-    '''
-    # Pad ends with zeros
-    if pad:
-        padx = np.abs(np.int(xshift)) + 1
-        pady = np.abs(np.int(yshift)) + 1
-        pad_vals = ([pady]*2,[padx]*2)
-        im = np.pad(image,pad_vals,'constant')
-    else:
-        padx = 0; pady = 0
-        im = image
-    
-    offset = fourier_shift( np.fft.fft2(im), (yshift,xshift) )
-    offset = np.fft.ifft2(offset).real
-    
-    offset = offset[pady:pady+image.shape[0], padx:padx+image.shape[1]]
-    
-    return offset
-    
-def shift_subtract(params, reference, target, mask=None, pad=False, 
-                   shift_function=fshift):
-    '''
-    Use Fourier Shift theorem for subpixel shifts for 
-    input into least-square optimizer.
-    
-    Parameters:
-        params : tuple
-            xshift, yshift, beta
-        reference : nd array
-            See align_fourierLSQ
-        target : nd array
-            See align_fourierLSQ
-        mask : nd array, optional
-            See align_fourierLSQ
-        pad  : bool
-            Should we pad the array before shifting, then truncate?
-            Otherwise, the image is wrapped.
-            
-        shift_function : which function to use for sub-pixel shifting
-            
-    Returns:
-        1D nd array of target-reference residual after
-        applying shift and intensity fraction.
-    '''
-    xshift, yshift, beta = params
-
-    offset = shift_function(reference, xshift, yshift, pad)
-    
-    if mask is not None:
-        return ( (target - beta * offset) * mask ).flatten()
-    else:
-        return ( target - beta * offset ).flatten()
-
-def align_LSQ(reference, target, mask=None, pad=False, shift_function=fshift):
-    '''
-    LSQ optimization with option of shift alignment algorithm
-    
-    Parameters:
-        reference : nd array
-            N x K image to be aligned to
-        target : nd array
-            N x K image to align to reference
-        mask : nd array, optional
-            N x K image indicating pixels to ignore when
-            performing the minimization. The masks acts as
-            a weighting function in performing the fit.
-        shift_function : which function to use for sub-pixel shifting.
-            Options are fourier_imshift or fshift.
-            fshift tends to be 3-5 times faster for similar results.s
-    Returns:
-        results : list
-            [x, y, beta] values from LSQ optimization, where (x, y) 
-            are the misalignment of target from reference and beta
-            is the fraction by which the target intensity must be
-            reduced to match the intensity of the reference.
-    '''
-
-    init_pars = [0.0, 0.0, 1.0]
-
-    # Use loss='soft_l1' for least squares robust against outliers
-    # May want to play around with f_scale...
-    res = least_squares(shift_subtract, init_pars, diff_step=0.1,
-                        loss='soft_l1', f_scale=1.0, args=(reference,target), 
-                        kwargs={'mask':mask,'pad':pad,'shift_function':shift_function})
-    out = res.x
-    #out,_ = leastsq(shift_subtract, init_pars, 
-    #                args=(reference,target,mask,pad,shift_function))
-
-    results = [out[0],out[1],out[2]] #x,y,beta
-    return res.x
-
-
-def frebin(image, dimensions=None, scale=None, total=True):
-    """
-    Python port from the IDL frebin.pro
-    Shrink or expand the size of a 1D or 2D array by an arbitary amount 
-    using bilinear interpolation. Conserves flux by ensuring that each 
-    input pixel is equally represented in the output array.
-
-    Parameters
-    ==========
-    image      : Input image, 1-d or 2-d ndarray
-    dimensions : Size of output array (take priority over scale)
-    scale      : Factor to scale output array
-    total      : Conserves the surface flux. If True, the output pixels 
-                 will be the sum of pixels within the appropriate box of 
-                 the input image. Otherwise, they will be the average.
-         
-    Returns the binned ndarray
-    """
-
-    if dimensions is not None:
-        if isinstance(dimensions, float):
-            dimensions = [int(dimensions)] * len(image.shape)
-        elif isinstance(dimensions, int):
-            dimensions = [dimensions] * len(image.shape)
-        elif len(dimensions) != len(image.shape):
-            raise RuntimeError("The number of input dimensions don't match the image shape.")
-    elif scale is not None:
-        if isinstance(scale, float) or isinstance(scale, int):
-            dimensions = map(int, map(round, map(lambda x: x*scale, image.shape)))
-        elif len(scale) != len(image.shape):
-            raise RuntimeError("The number of input dimensions don't match the image shape.")
-        else:
-            dimensions = [scale[i]*image.shape[i] for i in range(len(scale))]
-    else:
-        raise RuntimeError('Incorrect parameters to rebin.\n\frebin(image, dimensions=(x,y))\n\frebin(image, scale=a')
-    #print(dimensions)
-
-
-    shape = image.shape
-    if len(shape)==1:
-        nlout = 1
-        nsout = dimensions[0]
-        nsout = int(round(nsout))
-        dimensions = [nsout]
-    elif len(shape)==2:
-        nlout, nsout = dimensions
-        nlout = int(round(nlout))
-        nsout = int(round(nsout))
-        dimensions = [nlout, nsout]
-    if len(shape) > 2:
-        raise ValueError('Input image can only have 1 or 2 dimensions. Found {} dimensions.'.format(len(shape)))
-    
-
-    if nlout != 1:
-        nl = shape[0]
-        ns = shape[1]
-    else:
-        nl = nlout
-        ns = shape[0]
-
-    sbox = ns / float(nsout)
-    lbox = nl / float(nlout)
-    #print(sbox,lbox)
-
-    # Contract by integer amount
-    if (sbox.is_integer()) and (lbox.is_integer()):
-        image = image.reshape((nl,ns))
-        result = poppy.utils.krebin(image, (nlout,nsout))
-        if not total: result /= (sbox*lbox)
-        if nl == 1:
-            return result[0,:]
-        else:
-            return result
-
-    ns1 = ns - 1
-    nl1 = nl - 1
-
-    if nl == 1:
-        #1D case
-        _log.debug("Rebinning to Dimension: %s" % nsout)
-        result = np.zeros(nsout)
-        for i in range(nsout):
-            rstart = i * sbox
-            istart = int(rstart)
-            rstop = rstart + sbox
-
-            if int(rstop) < ns1:
-                istop = int(rstop)
-            else:
-                istop = ns1
-
-            frac1 = float(rstart) - istart
-            frac2 = 1.0 - (rstop - istop)
-
-            #add pixel values from istart to istop and subtract fraction pixel
-            #from istart to rstart and fraction pixel from rstop to istop
-            result[i] = np.sum(image[istart:istop + 1]) - frac1 * image[istart] - frac2 * image[istop]
-
-        if total:
-            return result
-        else:
-            return result / (float(sbox) * lbox)
-    else:
-        _log.debug("Rebinning to Dimensions: %s, %s" % tuple(dimensions))
-        #2D case, first bin in second dimension
-        temp = np.zeros((nlout, ns))
-        result = np.zeros((nsout, nlout))
-
-        #first lines
-        for i in range(nlout):
-            rstart = i * lbox
-            istart = int(rstart)
-            rstop = rstart + lbox
-
-            if int(rstop) < nl1:
-                istop = int(rstop)
-            else:
-                istop = nl1
-
-            frac1 = float(rstart) - istart
-            frac2 = 1.0 - (rstop - istop)
-
-            if istart == istop:
-                temp[i, :] = (1.0 - frac1 - frac2) * image[istart, :]
-            else:
-                temp[i, :] = np.sum(image[istart:istop + 1, :], axis=0) -\
-                             frac1 * image[istart, :] - frac2 * image[istop, :]
-
-        temp = np.transpose(temp)
-
-        #then samples
-        for i in range(nsout):
-            rstart = i * sbox
-            istart = int(rstart)
-            rstop = rstart + sbox
-
-            if int(rstop) < ns1:
-                istop = int(rstop)
-            else:
-                istop = ns1
-
-            frac1 = float(rstart) - istart
-            frac2 = 1.0 - (rstop - istop)
-
-            if istart == istop:
-                result[i, :] = (1. - frac1 - frac2) * temp[istart, :]
-            else:
-                result[i, :] = np.sum(temp[istart:istop + 1, :], axis=0) -\
-                               frac1 * temp[istart, :] - frac2 * temp[istop, :]
-
-        if total:
-            return np.transpose(result)
-        else:
-            return np.transpose(result) / (sbox * lbox)
-
-
-def medabsdev(data, axis=None, keepdims=False):
-    """
-    Median Absolute Deviation: a "Robust" version of standard deviation.
-    """
-    med = np.median(data, axis=axis, keepdims=True)
-    abs = np.abs(data - med)
-    return np.median(abs, axis=axis, keepdims=keepdims)  / 0.6744897501960817
-
-
-def jl_poly(xvals, coeff):
-    """
-    Drop in replacement for np.polynomial.polynomial.polyval(wgood, coeff).
-    Uses matrix multiplication, which is much faster.
-
-    Inputs:
-        xvals - 1D array (time, for instance)
-        coeff - 1D, 2D, or 3D array of coefficients from a polynomial fit.
-                The first dimension should have a number of elements equal
-                to the polynomial degree + 1.
-        
-    Returns:
-        An array of values where each xval has been evaluated at for each
-        set of supplied coefficients. The output shape is the same as for
-        np.polynomial.polynomial.polyval, where the first dimensions
-        correspond to the coeff latter dimensions, and the final dimension
-        is equal to the number of xvals. The result is flattened if either
-        only one xval or one set of coeff (or both).
-    """
-
-    # How many xvals?
-    n = np.size(xvals)
-    xdim = len(xvals.shape)
-    if xdim>1:
-        raise ValueError('xvals can only have 1 dimension. Found {} dimensions.'.format(xdim))
-
-    # Check number of dimensions in coefficients
-    dim = coeff.shape
-    ndim = len(dim)
-    if ndim>3:
-        raise ValueError('coefficient can only have 1, 2, or 3 dimensions. Found {} dimensions.'.format(ndim))
-
-    # Create an array of exponent values
-    parr = np.arange(dim[0], dtype='float')
-    xfan = xvals**parr.reshape((-1,1)) # Array broadcasting
-
-    # Reshape to 2D array
-    cf = coeff.reshape(dim[0],-1)
-    yfit = np.dot(cf.T, xfan)
-
-    if ndim==1 or n==1: yfit = yfit.flatten()
-    if ndim==3: yfit = yfit.reshape((dim[1],dim[2],n))
-
-    return yfit
 
 
 def dist_image(image, pixscale=None, center=None, return_theta=False):
@@ -2346,6 +1847,14 @@ def xy_to_rtheta(x, y):
     return r, theta
 
 
+
+###########################################################################
+#
+#    Pysynphot Spectrum Wrappers
+#
+###########################################################################
+
+
 def bin_spectrum(sp, wave, waveunits='um'):
     """
     Rebin a Pysynphot spectrum to a lower wavelenght grid.
@@ -2355,9 +1864,9 @@ def bin_spectrum(sp, wave, waveunits='um'):
     
     Output spectrum units are the same as the input spectrum.
     
-    sp        - Pysynphot spectrum to rebin
-    wave      - Wavelength grid to rebin to
-    waveunits - Units of wave input, recognizeable by Pysynphot
+    sp        - Pysynphot spectrum to rebin.
+    wave      - Wavelength grid to rebin onto.
+    waveunits - Units of wave input. Must be recognizeable by Pysynphot.
     
     Returns rebinned Pysynphot spectrum in same units as input spectrum.
     """
@@ -2365,7 +1874,9 @@ def bin_spectrum(sp, wave, waveunits='um'):
     waveunits0 = sp.waveunits
     fluxunits0 = sp.fluxunits
 
+    # Convert wavelength of input spectrum to desired output units
     sp.convert(waveunits)
+    # We also want input to be in terms of photlam
     sp.convert('photlam')
 
     edges = S.binning.calculate_bin_edges(wave)
@@ -2383,16 +1894,13 @@ def bin_spectrum(sp, wave, waveunits='um'):
     sp2 = S.ArraySpectrum(wave, binflux, waveunits=waveunits, fluxunits='photlam')
     sp2.convert(waveunits0)
     sp2.convert(fluxunits0)
+    
+    # Put back units of original input spectrum
     sp.convert(waveunits0)
     sp.convert(fluxunits0)
 
     return sp2
 
-###########################################################################
-#
-#    Pysynphot Spectrum Wrappers
-#
-###########################################################################
 
 
 def stellar_spectrum(sptype, *renorm_args, **kwargs):
@@ -2703,6 +2211,178 @@ def zodi_euclid(locstr, year, day, wavelengths=[1,5.5], ido_viewin=0, **kwargs):
 # 	sp_zodi.name = 'Zodiacal Light'
 # 	
 # 	return sp_zodi
+
+# Class for reading in planet spectra
+class planets_sb12(object):
+    """
+    Exoplanet spectrum from Spiegel & Burrows (2012)
+
+    This contains 1680 files, one for each of 4 atmosphere types, each of
+    15 masses, and each of 28 ages.  Wavelength range of 0.8 - 15.0 um at
+    moderate resolution (R ~ 204).
+
+    The flux in the source files are at 10 pc. If the distance is specified,
+    then the flux will be scaled accordingly. This is also true if the distance
+    is changed by the user. All other properties (atmo, mass, age, entropy) are 
+    not adjustable once loaded.
+
+    Arguments:
+        atmo: A string consisting of one of four atmosphere types:
+            hy1s = hybrid clouds, solar abundances
+            hy3s = hybrid clouds, 3x solar abundances
+            cf1s = cloud-free, solar abundances
+            cf3s = cloud-free, 3x solar abundances
+        mass: Integer number 1 to 15 Jupiter masses.
+        age: Age in millions of years (1-1000)
+        entropy: Initial entropy (8.0-13.0) in increments of 0.25
+        distance: Assumed distance in pc (default is 10pc)
+        base_dir: Location of atmospheric model sub-directories.
+    """
+
+    base_dir = conf.PYNRC_PATH + 'spiegel/'
+
+    def __init__(self, atmo='hy1s', mass=1, age=100, entropy=10.0, 
+                 distance=10, base_dir=None, **kwargs):
+
+        self._atmo = atmo
+        self._mass = mass
+        self._age = age
+        self._entropy = entropy
+
+        if base_dir is not None:
+            self.base_dir = base_dir
+        self.sub_dir = self.base_dir  + 'SB.' + self.atmo + '/'
+
+        self.get_file()
+        self.read_file()
+        self.distance = distance
+
+    def get_file(self):
+        files = []; masses = []; ages = []
+        for file in os.listdir(self.sub_dir):
+            files.append(file)
+            fsplit = re.split('[_\.]',file)
+            ind_mass = fsplit.index('mass') + 1
+            ind_age = fsplit.index('age') + 1
+            masses.append(int(fsplit[ind_mass]))
+            ages.append(int(fsplit[ind_age]))
+        files = np.array(files)
+        ages = np.array(ages)
+        masses = np.array(masses)
+
+        # Find those indices closest in mass
+        mdiff = np.abs(masses - self.mass)
+        ind_mass = mdiff == np.min(mdiff)
+
+        # Of those masses, find the closest age
+        adiff = np.abs(ages - self.age)
+        ind_age = adiff[ind_mass] == np.min(adiff[ind_mass])
+
+        # Get the final file name
+        self.file = ((files[ind_mass])[ind_age])[0]
+
+    def read_file(self):
+        # Read in the file's content row-by-row (saved as a string)
+        with open(self.sub_dir + self.file) as f:
+            content = f.readlines()
+        content = [x.strip('\n') for x in content]
+
+        # Parse the strings into an array
+        #   Row #, Value
+        #   1      col 1: age (Myr);
+        #          cols 2-601: wavelength (in microns, in range 0.8-15.0)
+        #   2-end  col 1: initial S;
+        #          cols 2-601: F_nu (in mJy for a source at 10 pc)
+
+        ncol = len(content[0].split())
+        nrow = len(content)
+        arr = np.zeros([nrow,ncol])
+        for i,row in enumerate(content):
+            arr[i,:] = np.array(content[i].split(), dtype='float64')
+
+        # Find the closest entropy and save
+        entropy = arr[1:,0]
+        diff = np.abs(self.entropy - entropy)
+        ind = diff == np.min(diff)
+        self._flux = arr[1:,1:][ind,:].flatten()
+        self._fluxunits = 'mJy'
+
+        # Save the wavelength information
+        self._wave = arr[0,1:]
+        self._waveunits = 'um'
+
+        # Distance (10 pc)
+        self._distance = 10
+
+    @property
+    def wave(self):
+        return self._wave
+    @property
+    def waveunits(self):
+        return self._waveunits
+
+    @property
+    def flux(self):
+        return self._flux
+    @property
+    def fluxunits(self):
+        return self._fluxunits
+
+    @property
+    def distance(self):
+        """Assumed distance to source (pc)"""
+        return self._distance
+    @distance.setter
+    def distance(self, value):
+        self._flux *= (self._distance/value)**2
+        self._distance = value
+
+    @property
+    def atmo(self):
+        """
+        A string consisting of one of four atmosphere types:
+            hy1s = hybrid clouds, solar abundances
+            hy3s = hybrid clouds, 3x solar abundances
+            cf1s = cloud-free, solar abundances
+            cf3s = cloud-free, 3x solar abundances
+        """
+        return self._atmo
+    @property
+    def mass(self):
+        """Jupiter masses"""
+        return self._mass
+    @property
+    def age(self):
+        """Age in millions of years"""
+        return self._age
+    @property
+    def entropy(self):
+        """Initial entropy (8.0-13.0)"""
+        return self._entropy
+
+    def export_pysynphot(self, waveout='angstrom', fluxout='flam'):
+        w = self.wave; f = self.flux        
+        name = (re.split('[\.]', self.file))[5:]        
+        sp = S.ArraySpectrum(w, f, name=name, waveunits=self.waveunits, fluxunits=self.fluxunits)
+
+        sp.convert(waveout)
+        sp.convert(fluxout)
+
+        return sp
+        
+# Turns out the paper is Spiegel & Burrows (2012), not 2011
+class planets_sb11(planets_sb12):
+
+    """
+    Deprecated version of planets_sb12 class. Use that instead.
+    """
+
+    def __init__(self, *args, **kwargs):
+                 
+        _log.warning('planets_sb11 is depcrecated. Use planets_sb12 instead.')
+        planets_sb12.__init__(self, *args, **kwargs)
+
+
 
 
 ###########################################################################
