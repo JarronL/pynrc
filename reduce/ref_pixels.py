@@ -61,22 +61,36 @@ class references(object):
     @property
     def header(self):
         return self.hdulist[0].header
+#         
+#     def _create_detops(self, DMS=True, 
+#         wind_mode=None, xpix=None, ypix=None, x0=None, y0=None,
+#         read_mode=None, nint=None, ngroup=None):
+#         
+#         if wind_mode is None:
+#             if DMS:
+#                 wind_mode = 
+#             
+# 
+#         if DMS:
+#             hnames = ['SUBARRAY', xpix, ypix, x0, y0, 'READPATT', 'NINTS', 'NGROUPS']  
+#         else:
+#             hnames = ['READOUT', 'NINT', 'NGROUP']
+# 
+# 
+#     
+#     wind_mode='FULL', xpix=2048, ypix=2048, x0=0, y0=0
+#         
+#     def _create_multiaccum(self, DMS=True, read_mode=None, nint=None, ngroup=None):
+#         """Multiaccum object based on header settings."""
+#         
+#         read_mode = header[hnames[0]] if read_mode is None else read_mode
+#         nint      = header[hnames[0]]    if nint      is None else nint
+#         ngroup    = header[hnames[0]] if ngroup is None else ngroup
+#         
+#         self.multiaccum = multiaccum(read_mode, nint, ngroup)
         
-    def _create_multiaccum(self, DMS=True, read_mode=None, nint=None, ngroup=None):
-        """Multiaccum object based on header settings."""
-        
-        if DMS:
-            hnames = ['READPATT', 'NINTS', 'NGROUPS']  
-        else:
-            hnames = ['READOUT', 'NINT', 'NGROUP']
-        read_mode = header[hnames[0]] if read_mode is None else read_mode
-        nint      = header[hnames[0]]    if nint      is None else nint
-        ngroup    = header[hnames[0]] if ngroup is None else ngroup
-        
-        self.multiaccum = multiaccum(read_mode, nint, ngroup)
-        
-    #@property
-    #ref_vals(self):
+    @property
+    ref_pixels(self):
 
 
 
