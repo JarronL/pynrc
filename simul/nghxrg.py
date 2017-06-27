@@ -474,7 +474,9 @@ class HXRGNoise:
 
         # Restore the mean and standard deviation
         result *= the_std / np.std(result)
-        result = result - np.mean(result) + the_mean
+        result -= np.mean(result)
+        result += the_mean
+        #result = result - np.mean(result) + the_mean
   
         # Done
         return(result)
