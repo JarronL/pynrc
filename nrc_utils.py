@@ -572,7 +572,7 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     # Need to look at functions inside speckle_noise to see if
     # I can speed up this process. Might be running some unnecessary
     # processes.
-    if rtemp == 0:
+    if (rtemp == 0) and (not isinstance(opd, fits.HDUList)):
         from . import speckle_noise as sn
         pupilopd = opd
         # Read in a specified OPD file and slice
