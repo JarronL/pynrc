@@ -682,7 +682,7 @@ class NIRCam(object):
     x0, y0     (int) : Lower-left window position in detector coords (0,0).
     read_mode  (str) : NIRCam Ramp Readout mode such as 'RAPID', 'BRIGHT1', etc.
     nint, ngroup, nf, nd1, nd2, nd3 (int) : Ramp parameters, some of which may be
-        overwritten by read_mode. See JWST MULTIACCUM documentation for more details.
+        overwritten by read_mode. See JWST MULTIACCUM documentation.
 
     PSF Info
     --------
@@ -692,7 +692,7 @@ class NIRCam(object):
     offset_r     (flt) : Radial offset from the center in arcsec.
     offset_theta (flt) : Position angle for radial offset, in degrees CCW.
     opd          (tup) : Tuple containing WebbPSF specific OPD file name and slice.
-    save        (bool) : Whether or not to save the resulting PSF coefficients to file.
+    save        (bool) : Save the resulting PSF coefficients to a file?
     force       (bool) : Forces a recalcuation of PSF even if saved PSF exists.
     """
 
@@ -729,6 +729,9 @@ class NIRCam(object):
         pupil = 'CLEAR' if pupil is None else pupil.upper()
         if mask is not None: mask = mask.upper()
         module = 'A' if module is None else module.upper()
+        
+        self._ice_scale = kwargs['ice_scale'] if 'ice_scale' in kwargs.keys() else None
+        self._nvr_scale = kwargs['nvr_scale'] if 'nvr_scale' in kwargs.keys() else None
 
 
         # Validate all values, set values, and update bandpass
@@ -859,7 +862,8 @@ class NIRCam(object):
         Update bandpass based on filter, pupil, and module, etc.
         """
         self._bandpass = read_filter(self.filter, self.pupil, self.mask, 
-                                     self.module, self.ND_acq)
+                                     self.module, self.ND_acq,
+                                     ice_scale=self._ice_scale, nvr_scale=self._nvr_scale)
 
     def plot_bandpass(self, ax=None, color=None, title=None, **kwargs):
         """
@@ -1081,8 +1085,8 @@ class NIRCam(object):
 
 
     def update_psf_coeff(self, fov_pix=None, oversample=None, 
-        offset_r=None, offset_theta=None, opd=None, save=None, force=False,
-        **kwargs):
+        offset_r=None, offset_theta=None, tel_pupil=None, opd=None,
+        save=None, force=False, **kwargs):
         """
         Generates a set of PSF coefficients from a sequence of WebbPSF images.
         These coefficients can then be used to generate a sequence of
@@ -1107,7 +1111,8 @@ class NIRCam(object):
                        Default 2 for coronagraphy and 4 otherwise.
         offset_r     : Radial offset from the center in pixels
         offset_theta : Position angle for that offset, in degrees CCW.
-        opd          : Tuple containing WebbPSF specific OPD file name and slice.
+        tel_pupil    : File name or HDUList specifying telescope entrance pupil.
+        opd          : Tuple or HDUList specifying OPD.
         save         : Whether or not to save the resulting PSF coefficients to file.
         force        : Forces a recalcuation of PSFs even if saved coefficients exist.
         """
@@ -1150,6 +1155,9 @@ class NIRCam(object):
         if offset_theta is None:
             try: offset_theta = self._psf_info['offset_theta']
             except (AttributeError, KeyError): offset_theta = 0
+        if tel_pupil is None:
+            try: tel_pupil = self._psf_info['tel_pupil']
+            except (AttributeError, KeyError): tel_pupil = None
         if opd is None:
             try: opd = self._psf_info['opd']
             except (AttributeError, KeyError): opd = ('OPD_RevV_nircam_132.fits', 0)
@@ -1159,8 +1167,8 @@ class NIRCam(object):
 
 
         self._psf_info={'fov_pix':fov_pix, 'oversample':oversample, 
-            'offset_r':offset_r, 'offset_theta':offset_theta, 'opd':opd,
-            'save':save, 'force':force}
+            'offset_r':offset_r, 'offset_theta':offset_theta, 
+            'opd':opd, 'tel_pupil':tel_pupil, 'save':save, 'force':force}
         self._psf_coeff = psf_coeff(self.bandpass, self.pupil, self.mask, self.module, 
             **self._psf_info)
     
@@ -1170,7 +1178,7 @@ class NIRCam(object):
         # coronagraphic mask and save the PSF coefficients. 
         if self.mask is not None:
             self._psf_info_bg={'fov_pix':31, 'oversample':oversample, 
-                'offset_r':0, 'offset_theta':0, 'opd':opd,
+                'offset_r':0, 'offset_theta':0, 'opd':opd, 'tel_pupil':tel_pupil,
                 'save':save, 'force':force}
             self._psf_coeff_bg = psf_coeff(self.bandpass, self.pupil, None, self.module, 
                 **self._psf_info_bg)
@@ -1352,7 +1360,8 @@ class NIRCam(object):
         return fzodi_pix
 
     def gen_exposures(self, sp=None, file_out=None, return_results=None,
-                      targ_name=None, timeFileNames=False):
+                      targ_name=None, timeFileNames=False, DMS=True,
+                      dark=True, bias=True, zfact=None):
         """
         Create a series of ramp integration saved to FITS files based on
         the current NIRCam settings. 
@@ -1408,7 +1417,7 @@ class NIRCam(object):
     
         # Add in Zodi emission
         # Returns 0 if self.pupil='FLAT'
-        im_slope += self.bg_zodi()
+        im_slope += self.bg_zodi(zfact)
 
         # Expand or cut to detector size
         im_slope = pad_or_cut_to_size(im_slope, (ypix,xpix))
@@ -1446,7 +1455,8 @@ class NIRCam(object):
         # For now, we're only doing the first detector. This will need to get more
         # sophisticated for SW FPAs
         det = self.Detectors[0]
-        worker_arguments = [(det, im_slope, True, fout, filter, pupil, otime, targ_name) 
+        worker_arguments = [(det, im_slope, True, fout, filter, pupil, otime, 
+                             targ_name, DMS, dark, bias, return_results) \
                             for fout,otime in zip(file_list, time_list)]
 
         nproc = nproc_use_ng(det)
@@ -1835,7 +1845,7 @@ def tuples_to_dict(pairs, verbose=False):
 def merge_dicts(*dict_args):
     """
     Given any number of dicts, shallow copy and merge into a new dict.
-    If the same key appars mutile times, precedence goes to key/value 
+    If the same key appars mutile times, priority goes to key/value 
     pairs in latter dicts.
     """
     result = {}

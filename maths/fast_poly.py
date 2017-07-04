@@ -107,8 +107,10 @@ def jl_poly_fit(x, yvals, deg=1, QR=True):
     
     Gives the options of performing QR decomposition, which gives
     a considerable speed-up compared to simply using np.linalg.lstsq().
-    In addition to be fast, it has better numerical stability than
+    In addition to being fast, it has better numerical stability than
     linear regressions that involve matrix inversions (ie., dot(x.T,x)).
+    
+    Returns the coefficients of the fit for each pixel.
     """
 
     orig_shape = yvals.shape

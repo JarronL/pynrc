@@ -51,7 +51,8 @@ import logging
 _log = logging.getLogger('pynrc')
 
 def SCAnoise(det=None, scaid=None, params=None, caldir=None, file_out=None, 
-    dark=True, bias=True, out_ADU=False, verbose=False, use_fftw=False, ncores=None):
+    dark=True, bias=True, out_ADU=False, verbose=False, use_fftw=False, ncores=None,
+    **kwargs):
     """
     Create a data cube consisting of realistic NIRCam detector noise.
 
@@ -260,7 +261,7 @@ def SCAnoise(det=None, scaid=None, params=None, caldir=None, file_out=None,
 
 def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None, 
                   filter=None, pupil=None, obs_time=None, targ_name=None,
-                  DMS=True):
+                  DMS=True, dark=True, bias=True, return_results=True):
     """
     For a given detector operations class and slope image, create a
     ramp integration using Poisson noise and detector noise. 
@@ -312,6 +313,17 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
     naxis3 = nd1 + ngroup*nf + (ngroup-1)*nd2
 
     if im_slope is not None:
+        # Set reference pixels' slopes equal to 0
+        w = det.ref_info
+        if w[0] > 0: # lower
+            im_slope[:w[0],:] = 0
+        if w[1] > 0: # upper
+            im_slope[-w[1]:,:] = 0
+        if w[2] > 0: # left
+            im_slope[:,:w[2]] = 0
+        if w[3] > 0: # right
+            im_slope[:,-w[3]:] = 0
+
         # Count accumulation for a single frame
         frame = im_slope * t_frame
         # Add Poisson noise at each frame step
@@ -324,7 +336,7 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
         ramp = 0
 
     # Create dark ramp with read noise and 1/f noise
-    hdu = SCAnoise(det)
+    hdu = SCAnoise(det=det, dark=dark, bias=bias)
     # Update header information
     hdu.header = det.make_header(filter, pupil, obs_time,targ_name=targ_name,DMS=DMS)
     hdu.data += ramp # Add signal ramp to dark ramp
@@ -400,4 +412,5 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
     if file_out is not None:
         outHDU.writeto(file_out, clobber='True')
     
-    return outHDU
+    # Only return outHDU if return_results=True
+    if return_results: return outHDU

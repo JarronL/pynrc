@@ -67,3 +67,5 @@ from .obs_nircam import (obs_coronagraphy, nrc_diskobs, observe_disk, observe_st
 from .maths import *
 
 from .simul import ngNRC
+
+from .reduce import ref_pixels

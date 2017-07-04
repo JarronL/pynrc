@@ -229,11 +229,14 @@ class HXRGNoise:
         # Initialize PCA-zero file and make sure that it exists and is a file
         #self.bias_file = os.getenv('NGHXRG_HOME')+'/sca_images/nirspec_pca0.fits' if \
         #				 bias_file is None else bias_file
-        self.bias_file = 'nirspec_pca0.fits' if bias_file is None else bias_file
-        if os.path.isfile(self.bias_file) is False:
-            print('There was an error finding bias_file!')
-            print(bias_file)
-            os.sys.exit()
+        #self.bias_file = 'nirspec_pca0.fits' if bias_file is None else bias_file
+        self.bias_file = bias_file
+        if bias_file is not None:
+            if os.path.isfile(self.bias_file) is False:
+                raise ValueError('There was an error finding bias_file {}'.format(bias_file))
+                print('There was an error finding bias_file!')
+                print(bias_file)
+                #os.sys.exit()
 
 #             print('There was an error finding bias_file! Check to be')
 #             print('sure that the NGHXRG_HOME shell environment')
@@ -247,9 +250,10 @@ class HXRGNoise:
         self.dark_file = dark_file
         if dark_file is not None:
             if os.path.isfile(self.dark_file) is False:
-                print('There was an error finding dark_file!')
-                print(dark_file)
-                os.sys.exit()
+                raise ValueError('There was an error finding dark_file {}'.format(dark_file))
+                #print('There was an error finding dark_file!')
+                #print(dark_file)
+                #os.sys.exit()
 
 
         # ======================================================================
@@ -316,7 +320,11 @@ class HXRGNoise:
         # Initialize pca0. This includes scaling to the correct size,
         # zero offsetting, and renormalization. We use robust statistics
         # because pca0 is real data
-        hdu = fits.open(self.bias_file)
+        if self.bias_file is None:
+            h = fits.PrimaryHDU(np.zeros([det_size, det_size]))
+            hdu = fits.HDUList([h])
+        else:
+            hdu = fits.open(self.bias_file)
         nx_pca0 = hdu[0].header['naxis1']
         ny_pca0 = hdu[0].header['naxis2']
         data = hdu[0].data     

@@ -69,7 +69,7 @@ def medabsdev(data, axis=None, keepdims=False):
         
     
     if not keepdims:
-        return np.squeeze(abs_dev)
+        return np.squeeze(sigma)
     else:
         return sigma
 
