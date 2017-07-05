@@ -16,7 +16,8 @@ rcvals = {'xtick.minor.visible': True, 'ytick.minor.visible': True,
           'xtick.top': True, 'ytick.right': True, 'font.family': ['serif'],
           'xtick.major.size': 6, 'ytick.major.size': 6,
           'xtick.minor.size': 3, 'ytick.minor.size': 3,
-          'image.interpolation': 'none', 'image.origin': 'lower'}#,
+          'image.interpolation': 'none', 'image.origin': 'lower',
+          'figure.figsize': [8,6]}#,
           #'text.usetex': True, 'text.latex.preamble': ['\usepackage{gensymb}']}
 matplotlib.rcParams.update(rcvals)
 cmap_pri, cmap_alt = ('viridis', 'gist_heat')

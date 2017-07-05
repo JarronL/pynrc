@@ -70,7 +70,7 @@ class NRC_refs(object):
     6. Remove approximation of 1/f noise: ref.correct_col_refs()
     """
 
-    def __init__(self, data, header, DMS=False, altcol=True):
+    def __init__(self, data, header, DMS=False, altcol=True, do_all=False):
     
         # Convert to float if necessary
         if 'float' not in data.dtype.name:
@@ -117,6 +117,14 @@ class NRC_refs(object):
         self.refs_amps_avg = None
         # Set column reference values to None initially        
         self.refs_side_avg = None
+        
+        # Perform all the usual ref pixel corrections with defaults
+        if do_all:
+            self.calc_avg_amps()
+            self.correct_amp_refs()
+            self.calc_avg_cols()
+            self.calc_col_smooth()
+            self.correct_col_refs()
         
     def _create_detops(self, read_mode=None, nint=None, ngroup=None,
         detector=None, wind_mode=None, xpix=None, ypix=None, x0=None, y0=None):

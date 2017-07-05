@@ -1192,7 +1192,7 @@ class NIRCam(object):
         Create a PSF image from instrument settings. The image is noiseless and
         doesn't take into account any non-linearity or saturation effects, but is
         convolved with the instrument throughput. Pixel values are in counts/sec.
-        The result is effectively an idealized slope image.
+        The result is effectively an idealized slope image (no background).
 
         If no spectral dispersers (grisms or DHS), then this returns a single
         image or list of images if sp is a list of spectra. By default, it returns

@@ -365,7 +365,8 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
         data_end = data[-nf:,:,:].mean(axis=0) if nf>1 else data[-1:,:,:]
         data_end = data_end.reshape([1,ypix,xpix])
 
-        # Only care about first (n-1) groups 
+        # Only care about first (n-1) groups
+        # Last group is handled separately
         data = data[:-nf,:,:]
 
         # Reshape for easy group manipulation
@@ -376,7 +377,7 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
 
         # Average the frames within groups
         # In reality, the 16-bit data is bit-shifted
-        data = data.reshape([-1,ypix,xpix]) if nf==1 else data.mean(axis=0)
+        data = data.reshape([-1,ypix,xpix]) if nf==1 else data.mean(axis=1)
 
         # Add back the last group (already averaged)
         data = np.append(data,data_end,axis=0)

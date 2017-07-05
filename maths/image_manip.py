@@ -6,6 +6,7 @@ import numpy as np
 import logging
 _log = logging.getLogger('pynrc')
 
+from poppy.utils import krebin
 
 def pad_or_cut_to_size(array, new_shape):
     """
@@ -378,7 +379,7 @@ def frebin(image, dimensions=None, scale=None, total=True):
     # Contract by integer amount
     if (sbox.is_integer()) and (lbox.is_integer()):
         image = image.reshape((nl,ns))
-        result = poppy.utils.krebin(image, (nlout,nsout))
+        result = krebin(image, (nlout,nsout))
         if not total: result /= (sbox*lbox)
         if nl == 1:
             return result[0,:]
