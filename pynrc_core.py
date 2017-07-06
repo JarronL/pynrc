@@ -1359,7 +1359,7 @@ class NIRCam(object):
 
         return fzodi_pix
 
-    def gen_exposures(self, sp=None, file_out=None, return_results=None,
+    def gen_exposures(self, sp=None, im_slope=None, file_out=None, return_results=None,
                       targ_name=None, timeFileNames=False, DMS=True,
                       dark=True, bias=True, zfact=None):
         """
@@ -1375,11 +1375,15 @@ class NIRCam(object):
             - Optical distortions
             - Zodiacal background roll off for grism edges
             - Telescope jitter
+            - Cosmic Rays
 
 
         Parameters
         ==========
-        sp : A pysynphot spectral object. If not specified, then
+        im_slope : Pass the slope image directly. If not set, then a slope
+            image will be created from the input spectrum keyword. This
+            should include zodiacal light emission, but not dark current.
+        sp : A pysynphot spectral object. If not specified, then it is
             assumed that we're looking at blank sky.
         file_out : Path and name of output FITs files. Time stamps will
             be automatically inserted for unique file names.
@@ -1401,23 +1405,24 @@ class NIRCam(object):
         xpix = self.det_info['xpix']
         ypix = self.det_info['ypix']
 
-
-        # No visible source
-        if ('FLAT' in pupil) or (sp is None):
-            im_slope = np.zeros([ypix,xpix])
-        # Grism spec
-        elif ('GRISM' in pupil):
-            w, im_slope = self.gen_psf(sp)
-        # DHS spectroscopy
-        elif ('DHS' in pupil):
-            raise NotImplementedError('DHS has yet to be fully included')
-        # Imaging+Coronagraphy
-        else:
-            im_slope = self.gen_psf(sp)
+        # If slope image is not specified
+        if im_slope is None:
+            # No visible source
+            if ('FLAT' in pupil) or (sp is None):
+                im_slope = np.zeros([ypix,xpix])
+            # Grism spec
+            elif ('GRISM' in pupil):
+                w, im_slope = self.gen_psf(sp)
+            # DHS spectroscopy
+            elif ('DHS' in pupil):
+                raise NotImplementedError('DHS has yet to be fully included')
+            # Imaging+Coronagraphy
+            else:
+                im_slope = self.gen_psf(sp)
     
-        # Add in Zodi emission
-        # Returns 0 if self.pupil='FLAT'
-        im_slope += self.bg_zodi(zfact)
+            # Add in Zodi emission
+            # Returns 0 if self.pupil='FLAT'
+            im_slope += self.bg_zodi(zfact)
 
         # Expand or cut to detector size
         im_slope = pad_or_cut_to_size(im_slope, (ypix,xpix))

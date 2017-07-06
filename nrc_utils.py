@@ -1640,7 +1640,7 @@ def pix_noise(ngroup=2, nf=1, nd2=0, tf=10.737, rn=15.0, ktc=29.0, p_excess=(0,0
     fsrc=0.0, idark=0.003, fzodi=0, fbg=0, ideal_Poisson=False, **kwargs):
     """
     Theoretical noise calculation of a generalized MULTIACCUM ramp in terms of e-/sec.
-    Includes flat field errors from JWST-CALC-003894
+    Includes flat field errors from JWST-CALC-003894.
 
     Parameters
     ===========
@@ -1890,9 +1890,9 @@ def xy_to_rtheta(x, y):
     r = np.sqrt(x**2 + y**2)
     theta = np.arctan2(-x,y)*180/np.pi
 
-    if len(r)==1:
-        if abs(x) < __epsilon: x = 0
-        if abs(y) < __epsilon: y = 0
+    if np.size(r)==1:
+        if np.abs(x) < __epsilon: x = 0
+        if np.abs(y) < __epsilon: y = 0
     else:
         r[np.abs(r) < __epsilon] = 0
         theta[np.abs(theta) < __epsilon] = 0
@@ -1912,7 +1912,7 @@ def rtheta_to_xy(r, theta):
     x = -r * np.sin(theta*np.pi/180.)
     y =  r * np.cos(theta*np.pi/180.)
 
-    if len(x)==1:
+    if np.size(x)==1:
         if np.abs(x) < __epsilon: x = 0
         if np.abs(y) < __epsilon: y = 0
     else:
@@ -2144,6 +2144,10 @@ def zodi_spec(zfact=None, locstr=None, year=None, day=None, **kwargs):
     location and observing time. The two blackbodies will be scaled to the
     1.0 and 5.5 um emission. See the help website for more details:
         http://irsa.ipac.caltech.edu/applications/BackgroundModel/docs/dustProgramInterface.html
+        locstr - Object name, RA/DEC in decimal degrees or sexigesimal input
+        year   - Year of observation
+        day    - Day of observation
+        
     """
 
     if zfact is None: zfact = 2.5
