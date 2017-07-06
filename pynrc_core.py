@@ -28,11 +28,12 @@ To Be Completed:
 
 from __future__ import division, print_function, unicode_literals
 
-from astropy.convolution import convolve_fft
-from astropy.table import Table
-from scipy import fftpack
-import pdb
+#from astropy.convolution import convolve_fft
+
+#from scipy import fftpack
+#import pdb
 # Import libraries
+from astropy.table import Table
 from .nrc_utils import *
 
 import logging
@@ -49,10 +50,17 @@ class multiaccum(object):
         overwritten by read_mode. See JWST MULTIACCUM documentation for more details.
 
     NIRCam-specific readout modes:
-        patterns = ['RAPID', 'BRIGHT1', 'BRIGHT2', 'SHALLOW2', 'SHALLOW4', 
-                'MEDIUM2', 'MEDIUM8', 'DEEP2', 'DEEP8']
-        nf_arr   = [1, 1, 2, 2, 4, 2, 8,  2,  8] # Averaged frames per group
-        nd2_arr  = [0, 1, 0, 3, 1, 8, 2, 18, 12] # Dropped frames per group (group gap)
+      PATTERN  NF ND2
+      ---------------
+      RAPID     1   0
+      BRIGHT1   1   1
+      BRIGHT2   2   0
+      SHALLOW2  2   3
+      SHALLOW4  4   1
+      MEDIUM2   2   8
+      MEDIUM8   8   2
+      DEEP2     2  18
+      DEEP8     8  12
     """
 
     def __init__(self, read_mode='RAPID', nint=1, ngroup=1, nf=1, nd1=0, nd2=0, nd3=0, 
@@ -63,8 +71,8 @@ class multiaccum(object):
         patterns = ['RAPID', 'BRIGHT1', 'BRIGHT2', 'SHALLOW2', 'SHALLOW4', 'MEDIUM2', 'MEDIUM8', 'DEEP2', 'DEEP8']
         nf_arr   = [1,1,2,2,4,2,8, 2, 8]
         nd2_arr  = [0,1,0,3,1,8,2,18,12]
-        ng_max   = [10,10,10,10,10,10,10,20,20]
-        self._pattern_settings = dict(zip(patterns, zip(nf_arr, nd2_arr,ng_max)))
+        ng_max   = [10,10,10,10,10,10,10,20,20]  # Currently ignored, because not valid for TSO
+        self._pattern_settings = dict(zip(patterns, zip(nf_arr, nd2_arr, ng_max)))
 
         #self.nexp = nexp # Don't need multiple exposures. Just increase nint
         self.nint = nint
@@ -79,13 +87,13 @@ class multiaccum(object):
         # Now set read mode to specified mode, which may modify nf, nd1, nd2, and nd3
         self.read_mode = read_mode
 
-    #     @property
-    #     def nexp(self):
-    #         """Number of exposures in an obervation."""
-    #         return self._nexp
-    #     @nexp.setter
-    #     def nexp(self, value):
-    #         self._nexp = self._check_int(value)
+#     @property
+#     def nexp(self):
+#         """Number of exposures in an obervation."""
+#         return self._nexp
+#     @nexp.setter
+#     def nexp(self, value):
+#         self._nexp = self._check_int(value)
 
     @property
     def nint(self):
@@ -101,7 +109,7 @@ class multiaccum(object):
         return self._ngroup
     @ngroup.setter
     def ngroup(self, value):
-        value = self._check_int(value)
+        value = self._check_int(value,1)
         if value > self._ngroup_max:
             _log.warning('Specified ngroup (%s) greater than allowed value (%s)' \
                          % (value, self._ngroup_max))
@@ -115,7 +123,7 @@ class multiaccum(object):
         return self._nf
     @nf.setter
     def nf(self, value):
-        value = self._check_int(value)
+        value = self._check_int(value,1)
         self._nf = self._check_custom(value, self._nf)
 
     @property
@@ -439,48 +447,80 @@ class DetectorOps(object):
     def _extra_lines(self):
         """Determine how many extra lines/rows are added to a to a given frame"""
         if self.nout == 1:
-            sub = 2**(np.arange(8)+4.)         # Subarray size            
-            l1 = np.array([3,2.5,2,2,2,2,2,2]) # Extra lines for early frames
-            l2 = np.array([6,5.0,4,3,2,2,2,2]) # Extra lines for last frame
-            ladd1 = (np.interp([self.xpix],sub,l1))[0]
-            ladd2 = (np.interp([self.xpix],sub,l1))[0]
-        else:
-            ladd1 = 1
-            ladd2 = 2
-        return (ladd1,ladd2)
-
+            xtra_lines = 2 if self.xpix>10 else 3
+        elif self.nout == 4:
+            xtra_lines = 1
+            
+        return xtra_lines
+        
     @property
     def _exp_delay(self):
         """
         Additional overhead time at the end of an exposure.
-        (Does this occur per integration or per exposure???)
+        This does not add any more photon flux to a pixel.
+        Due to transition to idle.
         """
-        # Note: I don't think this adds any more photons to a pixel
-        #   It simply slightly delays the subsequent reset frame AFTER the last pixel read
 
+        # Window Mode        
+        if self.nout == 1:
+            if   self.xpix>150: xtra_lines = 0
+            elif self.xpix>64:  xtra_lines = 1
+            elif self.xpix>16:  xtra_lines = 3
+            elif self.xpix>8:   xtra_lines = 4
+            else:               xtra_lines = 5
+        # Full and Stripe
+        else: xtra_lines = 1
+        
         # Clock ticks per line
         xticks = self.chsize + self._line_overhead  
-        l1,l2 = self._extra_lines
-        return xticks * (l2 - l1) / self._pixel_rate
+        return xticks * xtra_lines / self._pixel_rate
+
 
     @property
     def _frame_overhead_pix(self):
+        """
+        Full and Stripe mode frames have an additional pixel at the end.
+        """
+        
         pix_offset = 0 if self.nout==1 else 1
         return pix_offset
-
+        
+    @property
+    def time_row_reset(self):
+        """NFF Row Resets time"""
+        
+        # Window Mode        
+        if self.nout == 1:
+            if   self.ypix>256: nff = 2048
+            elif self.ypix>64:  nff = 512
+            elif self.ypix>16:  nff = 256
+            elif self.ypix>8:   nff = 64
+            else:               nff = 16
+        # Full and Stripe
+        else: 
+            if   self.ypix==2048: nff = 0
+            elif self.ypix>=256:  nff = 2048
+            else:                 nff = 512
+            
+        xtra_lines = int(nff / (self.chsize))
+        
+        # Clock ticks per line
+        xticks = self.chsize + self._line_overhead  
+        return xticks * xtra_lines / self._pixel_rate
+        
     @property
     def time_frame(self):
         """Determine frame times based on xpix, ypix, and wind_mode."""
 
         chsize = self.chsize                        # Number of x-pixels within a channel
         xticks = self.chsize + self._line_overhead  # Clock ticks per line
-        flines = self.ypix + self._extra_lines[0] # Lines per frame (early frames)
+        flines = self.ypix + self._extra_lines      # Lines per frame
 
         # Add a single pix offset for full frame and stripe.
         pix_offset = self._frame_overhead_pix
         end_delay = 0 # Used for syncing each frame w/ FPE bg activity. Not currently used.
 
-        # Total number of clock ticks per frame (reads and drops)
+        # Total number of clock ticks per frame (reset, read, and drops)
         fticks = xticks*flines + pix_offset + end_delay
 
         # Return frame time
@@ -496,7 +536,7 @@ class DetectorOps(object):
         """Photon collection time for a single ramp."""
 
         # How many total frames (incl. dropped and all) per ramp?
-        # Exclude last set of nd2 as well as nd3 (drops that add nothing)
+        # Exclude nd3 (drops that add nothing)
         ma = self.multiaccum
         nf = ma.nf; nd1 = ma.nd1; nd2 = ma.nd2
         ngroup = ma.ngroup
@@ -514,7 +554,7 @@ class DetectorOps(object):
 
     @property
     def time_exp(self):
-        """Total exposure time for all ramps."""
+        """Total photon collection time for all ramps."""
         return self.multiaccum.nint * self.time_ramp
 
     @property
@@ -527,12 +567,12 @@ class DetectorOps(object):
         nr = 1
 
         nframes = nr + nd1 + ngroup*nf + (ngroup-1)*nd2 + nd3        
-        return nframes * self.time_frame
+        return nframes * self.time_frame + self.time_row_reset
 
     @property
     def time_total(self):
         """Total exposure acquisition time"""
-        return self.multiaccum.nint * self.time_total_int
+        return self.multiaccum.nint * self.time_total_int + self._exp_delay
 
     def to_dict(self, verbose=False):
         """Export detector settings to a dictionary."""
@@ -603,178 +643,6 @@ class DetectorOps(object):
         return nrc_header(self, filter=filter, pupil=pupil, obs_time=obs_time, **kwargs)
 
 
-# Class for reading in planet spectra
-class planets_sb12(object):
-    """
-    Exoplanet spectrum from Spiegel & Burrows (2012)
-
-    This contains 1680 files, one for each of 4 atmosphere types, each of
-    15 masses, and each of 28 ages.  Wavelength range of 0.8 - 15.0 um at
-    moderate resolution (R ~ 204).
-
-    The flux in the source files are at 10 pc. If the distance is specified,
-    then the flux will be scaled accordingly. This is also true if the distance
-    is changed by the user. All other properties (atmo, mass, age, entropy) are 
-    not adjustable once loaded.
-
-    Arguments:
-        atmo: A string consisting of one of four atmosphere types:
-            hy1s = hybrid clouds, solar abundances
-            hy3s = hybrid clouds, 3x solar abundances
-            cf1s = cloud-free, solar abundances
-            cf3s = cloud-free, 3x solar abundances
-        mass: Integer number 1 to 15 Jupiter masses.
-        age: Age in millions of years (1-1000)
-        entropy: Initial entropy (8.0-13.0) in increments of 0.25
-        distance: Assumed distance in pc (default is 10pc)
-        base_dir: Location of atmospheric model sub-directories.
-    """
-
-    base_dir = conf.PYNRC_PATH + 'spiegel/'
-
-    def __init__(self, atmo='hy1s', mass=1, age=100, entropy=10.0, 
-                 distance=10, base_dir=None, **kwargs):
-
-        self._atmo = atmo
-        self._mass = mass
-        self._age = age
-        self._entropy = entropy
-
-        if base_dir is not None:
-            self.base_dir = base_dir
-        self.sub_dir = self.base_dir  + 'SB.' + self.atmo + '/'
-
-        self.get_file()
-        self.read_file()
-        self.distance = distance
-
-    def get_file(self):
-        files = []; masses = []; ages = []
-        for file in os.listdir(self.sub_dir):
-            files.append(file)
-            fsplit = re.split('[_\.]',file)
-            ind_mass = fsplit.index('mass') + 1
-            ind_age = fsplit.index('age') + 1
-            masses.append(int(fsplit[ind_mass]))
-            ages.append(int(fsplit[ind_age]))
-        files = np.array(files)
-        ages = np.array(ages)
-        masses = np.array(masses)
-
-        # Find those indices closest in mass
-        mdiff = np.abs(masses - self.mass)
-        ind_mass = mdiff == np.min(mdiff)
-
-        # Of those masses, find the closest age
-        adiff = np.abs(ages - self.age)
-        ind_age = adiff[ind_mass] == np.min(adiff[ind_mass])
-
-        # Get the final file name
-        self.file = ((files[ind_mass])[ind_age])[0]
-
-    def read_file(self):
-        # Read in the file's content row-by-row (saved as a string)
-        with open(self.sub_dir + self.file) as f:
-            content = f.readlines()
-        content = [x.strip('\n') for x in content]
-
-        # Parse the strings into an array
-        #   Row #, Value
-        #   1      col 1: age (Myr);
-        #          cols 2-601: wavelength (in microns, in range 0.8-15.0)
-        #   2-end  col 1: initial S;
-        #          cols 2-601: F_nu (in mJy for a source at 10 pc)
-
-        ncol = len(content[0].split())
-        nrow = len(content)
-        arr = np.zeros([nrow,ncol])
-        for i,row in enumerate(content):
-            arr[i,:] = np.array(content[i].split(), dtype='float64')
-
-        # Find the closest entropy and save
-        entropy = arr[1:,0]
-        diff = np.abs(self.entropy - entropy)
-        ind = diff == np.min(diff)
-        self._flux = arr[1:,1:][ind,:].flatten()
-        self._fluxunits = 'mJy'
-
-        # Save the wavelength information
-        self._wave = arr[0,1:]
-        self._waveunits = 'um'
-
-        # Distance (10 pc)
-        self._distance = 10
-
-    @property
-    def wave(self):
-        return self._wave
-    @property
-    def waveunits(self):
-        return self._waveunits
-
-    @property
-    def flux(self):
-        return self._flux
-    @property
-    def fluxunits(self):
-        return self._fluxunits
-
-    @property
-    def distance(self):
-        """Assumed distance to source (pc)"""
-        return self._distance
-    @distance.setter
-    def distance(self, value):
-        self._flux *= (self._distance/value)**2
-        self._distance = value
-
-    @property
-    def atmo(self):
-        """
-        A string consisting of one of four atmosphere types:
-            hy1s = hybrid clouds, solar abundances
-            hy3s = hybrid clouds, 3x solar abundances
-            cf1s = cloud-free, solar abundances
-            cf3s = cloud-free, 3x solar abundances
-        """
-        return self._atmo
-    @property
-    def mass(self):
-        """Jupiter masses"""
-        return self._mass
-    @property
-    def age(self):
-        """Age in millions of years"""
-        return self._age
-    @property
-    def entropy(self):
-        """Initial entropy (8.0-13.0)"""
-        return self._entropy
-
-    def export_pysynphot(self, waveout='angstrom', fluxout='flam'):
-        w = self.wave; f = self.flux        
-        name = (re.split('[\.]', self.file))[5:]        
-        sp = S.ArraySpectrum(w, f, name=name, waveunits=self.waveunits, fluxunits=self.fluxunits)
-
-        sp.convert(waveout)
-        sp.convert(fluxout)
-
-        return sp
-        
-# Turns out the paper is Spiegel & Burrows (2012), not 2011
-class planets_sb11(planets_sb12):
-
-    """
-    Deprecated version of planets_sb12 class. Use that instead.
-    """
-
-    def __init__(self, *args, **kwargs):
-                 
-        _log.warning('planets_sb11 is depcrecated. Use planets_sb12 instead.')
-        planets_sb12.__init__(self, *args, **kwargs)
-
-
-
 class NIRCam(object):
 
     """
@@ -814,16 +682,17 @@ class NIRCam(object):
     x0, y0     (int) : Lower-left window position in detector coords (0,0).
     read_mode  (str) : NIRCam Ramp Readout mode such as 'RAPID', 'BRIGHT1', etc.
     nint, ngroup, nf, nd1, nd2, nd3 (int) : Ramp parameters, some of which may be
-        overwritten by read_mode. See JWST MULTIACCUM documentation for more details.
+        overwritten by read_mode. See JWST MULTIACCUM documentation.
 
     PSF Info
     --------
     fov_pix      (int) : Size of the FoV in pixels (real SW or LW pixels).
-    oversample   (int) : Factor to oversample during WebbPSF calculations (default: 4).
+    oversample   (int) : Factor to oversample during WebbPSF calculations.
+                         Default 2 for coronagraphy and 4 otherwise.
     offset_r     (flt) : Radial offset from the center in arcsec.
     offset_theta (flt) : Position angle for radial offset, in degrees CCW.
     opd          (tup) : Tuple containing WebbPSF specific OPD file name and slice.
-    save        (bool) : Whether or not to save the resulting PSF coefficients to file.
+    save        (bool) : Save the resulting PSF coefficients to a file?
     force       (bool) : Forces a recalcuation of PSF even if saved PSF exists.
     """
 
@@ -860,6 +729,9 @@ class NIRCam(object):
         pupil = 'CLEAR' if pupil is None else pupil.upper()
         if mask is not None: mask = mask.upper()
         module = 'A' if module is None else module.upper()
+        
+        self._ice_scale = kwargs['ice_scale'] if 'ice_scale' in kwargs.keys() else None
+        self._nvr_scale = kwargs['nvr_scale'] if 'nvr_scale' in kwargs.keys() else None
 
 
         # Validate all values, set values, and update bandpass
@@ -990,7 +862,8 @@ class NIRCam(object):
         Update bandpass based on filter, pupil, and module, etc.
         """
         self._bandpass = read_filter(self.filter, self.pupil, self.mask, 
-                                     self.module, self.ND_acq)
+                                     self.module, self.ND_acq,
+                                     ice_scale=self._ice_scale, nvr_scale=self._nvr_scale)
 
     def plot_bandpass(self, ax=None, color=None, title=None, **kwargs):
         """
@@ -1212,8 +1085,8 @@ class NIRCam(object):
 
 
     def update_psf_coeff(self, fov_pix=None, oversample=None, 
-        offset_r=None, offset_theta=None, opd=None, save=None, force=False,
-        **kwargs):
+        offset_r=None, offset_theta=None, tel_pupil=None, opd=None,
+        save=None, force=False, **kwargs):
         """
         Generates a set of PSF coefficients from a sequence of WebbPSF images.
         These coefficients can then be used to generate a sequence of
@@ -1234,10 +1107,12 @@ class NIRCam(object):
         ----------
         fov_pix      : Size of the FoV in pixels (real SW or LW pixels).
                        The defaults depend on the type of observation.
-        oversample   : Factor to oversample during WebbPSF calculations. Default of 4.
+        oversample   : Factor to oversample during WebbPSF calculations.
+                       Default 2 for coronagraphy and 4 otherwise.
         offset_r     : Radial offset from the center in pixels
         offset_theta : Position angle for that offset, in degrees CCW.
-        opd          : Tuple containing WebbPSF specific OPD file name and slice.
+        tel_pupil    : File name or HDUList specifying telescope entrance pupil.
+        opd          : Tuple or HDUList specifying OPD.
         save         : Whether or not to save the resulting PSF coefficients to file.
         force        : Forces a recalcuation of PSFs even if saved coefficients exist.
         """
@@ -1245,7 +1120,8 @@ class NIRCam(object):
         if oversample is None: 
             # Check if oversample has already been saved
             try: oversample = self._psf_info['oversample']
-            except: oversample = 4
+            except:
+                oversample = 2 if 'LYOT' in self.pupil else 4
 
         # Default size is 11 pixels
         fov_default = 11
@@ -1279,6 +1155,9 @@ class NIRCam(object):
         if offset_theta is None:
             try: offset_theta = self._psf_info['offset_theta']
             except (AttributeError, KeyError): offset_theta = 0
+        if tel_pupil is None:
+            try: tel_pupil = self._psf_info['tel_pupil']
+            except (AttributeError, KeyError): tel_pupil = None
         if opd is None:
             try: opd = self._psf_info['opd']
             except (AttributeError, KeyError): opd = ('OPD_RevV_nircam_132.fits', 0)
@@ -1288,8 +1167,8 @@ class NIRCam(object):
 
 
         self._psf_info={'fov_pix':fov_pix, 'oversample':oversample, 
-            'offset_r':offset_r, 'offset_theta':offset_theta, 'opd':opd,
-            'save':save, 'force':force}
+            'offset_r':offset_r, 'offset_theta':offset_theta, 
+            'opd':opd, 'tel_pupil':tel_pupil, 'save':save, 'force':force}
         self._psf_coeff = psf_coeff(self.bandpass, self.pupil, self.mask, self.module, 
             **self._psf_info)
     
@@ -1299,7 +1178,7 @@ class NIRCam(object):
         # coronagraphic mask and save the PSF coefficients. 
         if self.mask is not None:
             self._psf_info_bg={'fov_pix':31, 'oversample':oversample, 
-                'offset_r':0, 'offset_theta':0, 'opd':opd,
+                'offset_r':0, 'offset_theta':0, 'opd':opd, 'tel_pupil':tel_pupil,
                 'save':save, 'force':force}
             self._psf_coeff_bg = psf_coeff(self.bandpass, self.pupil, None, self.module, 
                 **self._psf_info_bg)
@@ -1313,7 +1192,7 @@ class NIRCam(object):
         Create a PSF image from instrument settings. The image is noiseless and
         doesn't take into account any non-linearity or saturation effects, but is
         convolved with the instrument throughput. Pixel values are in counts/sec.
-        The result is effectively an idealized slope image.
+        The result is effectively an idealized slope image (no background).
 
         If no spectral dispersers (grisms or DHS), then this returns a single
         image or list of images if sp is a list of spectra. By default, it returns
@@ -1480,8 +1359,9 @@ class NIRCam(object):
 
         return fzodi_pix
 
-    def gen_exposures(self, sp=None, file_out=None, return_results=None,targ_name=None,
-                      timeFileNames=False):
+    def gen_exposures(self, sp=None, im_slope=None, file_out=None, return_results=None,
+                      targ_name=None, timeFileNames=False, DMS=True,
+                      dark=True, bias=True, zfact=None):
         """
         Create a series of ramp integration saved to FITS files based on
         the current NIRCam settings. 
@@ -1495,11 +1375,15 @@ class NIRCam(object):
             - Optical distortions
             - Zodiacal background roll off for grism edges
             - Telescope jitter
+            - Cosmic Rays
 
 
         Parameters
         ==========
-        sp : A pysynphot spectral object. If not specified, then
+        im_slope : Pass the slope image directly. If not set, then a slope
+            image will be created from the input spectrum keyword. This
+            should include zodiacal light emission, but not dark current.
+        sp : A pysynphot spectral object. If not specified, then it is
             assumed that we're looking at blank sky.
         file_out : Path and name of output FITs files. Time stamps will
             be automatically inserted for unique file names.
@@ -1512,8 +1396,8 @@ class NIRCam(object):
         targ_name: str
             A target name for the exposure file's header
         timeFileNames: bool
-            Save the exposure times in the file name? This is useful to see the timing
-            But also makes it a little harder to combine ints later for DMS simulations later
+            Save the exposure times in the file name? This is useful to see the timing,
+            but also makes it a little harder to combine ints later for DMS simulations.
         """
 
         filter = self.filter
@@ -1521,22 +1405,24 @@ class NIRCam(object):
         xpix = self.det_info['xpix']
         ypix = self.det_info['ypix']
 
-
-        # No visible source
-        if ('FLAT' in pupil) or (sp is None):
-            im_slope = np.zeros([ypix,xpix])
-        # Grism spec
-        elif ('GRISM' in pupil):
-            w, im_slope = self.gen_psf(sp)
-        # DHS spectroscopy
-        elif ('DHS' in pupil):
-            raise NotImplementedError('DHS has yet to be fully included')
-        # Imaging+Coronagraphy
-        else:
-            im_slope = self.gen_psf(sp)
+        # If slope image is not specified
+        if im_slope is None:
+            # No visible source
+            if ('FLAT' in pupil) or (sp is None):
+                im_slope = np.zeros([ypix,xpix])
+            # Grism spec
+            elif ('GRISM' in pupil):
+                w, im_slope = self.gen_psf(sp)
+            # DHS spectroscopy
+            elif ('DHS' in pupil):
+                raise NotImplementedError('DHS has yet to be fully included')
+            # Imaging+Coronagraphy
+            else:
+                im_slope = self.gen_psf(sp)
     
-        # Add in Zodi emission
-        if not ('FLAT' in pupil): im_slope += self.bg_zodi()
+            # Add in Zodi emission
+            # Returns 0 if self.pupil='FLAT'
+            im_slope += self.bg_zodi(zfact)
 
         # Expand or cut to detector size
         im_slope = pad_or_cut_to_size(im_slope, (ypix,xpix))
@@ -1574,7 +1460,8 @@ class NIRCam(object):
         # For now, we're only doing the first detector. This will need to get more
         # sophisticated for SW FPAs
         det = self.Detectors[0]
-        worker_arguments = [(det, im_slope, True, fout, filter, pupil, otime, targ_name) 
+        worker_arguments = [(det, im_slope, True, fout, filter, pupil, otime, 
+                             targ_name, DMS, dark, bias, return_results) \
                             for fout,otime in zip(file_list, time_list)]
 
         nproc = nproc_use_ng(det)
@@ -1963,7 +1850,7 @@ def tuples_to_dict(pairs, verbose=False):
 def merge_dicts(*dict_args):
     """
     Given any number of dicts, shallow copy and merge into a new dict.
-    If the same key appars mutile times, precedence goes to key/value 
+    If the same key appars mutile times, priority goes to key/value 
     pairs in latter dicts.
     """
     result = {}
@@ -1976,7 +1863,7 @@ def gen_fits(args):
     """
     Helper function for generating FITs integrations from a slope image
     """
-    from .ngNRC import slope_to_ramp
+    from .simul.ngNRC import slope_to_ramp
 
     # Must call np.random.seed() for multiprocessing, otherwise 
     # random numbers for parallel processes start in the same seed state!
