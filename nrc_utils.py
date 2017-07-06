@@ -1092,7 +1092,7 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
     Keyword Args
     -------------------
     **kwargs : Allows the user to pass additional (optional) arguments:
-        zodi_spec   - zfact
+        zodi_spec   - zfact, locstr, year, day
         pix_noise   - rn, ktc, idark, and p_excess
         psf_coeff   - npsf and ndeg
         read_filter - ND_acq

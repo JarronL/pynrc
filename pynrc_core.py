@@ -1515,14 +1515,22 @@ class NIRCam(object):
         tacq_max      : Maximum amount of acquisition time in seconds to consider.
         tacq_frac     : Fractional amount of time to consider exceeding tacq_max.
 
-        ideal_Poisson : Default=True. Use total signal for noise estimate,
-                        otherwise MULTIACCUM equation is used. 
-
-		even_nints        : Return only the event NINTS
+        even_nints        : Return only the even NINTS
         return_full_table : Don't filter or sort the final results (ingores event_ints).
         verbose           : Prints out top 10 results.
 
 
+        **kwargs
+        ==========
+        zfact           : Factor to scale Zodiacal spectrum (default 2.5)
+        locstr,year,day : Another option for specifying zodiacal emisison
+            locstr - Object name, RA/DEC in decimal degrees or sexigesimal input
+            year   - Year of observation
+            day    - Day of observation
+            
+        dw_bin          : Delta wavelength to calculate spectral sensitivities.
+        ideal_Poisson   : Default=True. Use total signal for noise estimate,
+                          otherwise MULTIACCUM equation is used. 
 
         """
 
@@ -1572,7 +1580,7 @@ class NIRCam(object):
                 psf_faint  = self.gen_psf(sp, use_bg_psf=True)
             pix_count_rate = np.max([psf_bright.max(), psf_faint.max()])
 
-        image = self.sensitivity(sp=sp, forwardSNR=True, return_image=True)
+        image = self.sensitivity(sp=sp, forwardSNR=True, return_image=True, **kwargs)
 
         # Cycle through each readout pattern
         pattern_settings = self.multiaccum._pattern_settings

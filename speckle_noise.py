@@ -14,7 +14,8 @@ pynrc.setup_logging('WARNING', verbose=False)
 
 from poppy import zernike
 from poppy.optics import MultiHexagonAperture
-from poppy.utils import pad_to_size
+#from poppy.utils import pad_to_size
+from pynrc.maths.image_manip import pad_or_cut_to_size
 
 class OPD_extract(object):
 
@@ -106,7 +107,8 @@ class OPD_extract(object):
         npix_max = np.max(imsub.shape)
 
         # Make x and y the same size
-        imsub = pad_to_size(imsub, [npix_max,npix_max])
+        #imsub = pad_to_size(imsub, [npix_max,npix_max])
+        imsub = pad_or_cut_to_size(imsub, [npix_max,npix_max])
 
         # If nx was larger than ny, then center y
         if nx > ny: # xhift in y
@@ -178,7 +180,8 @@ class OPD_extract(object):
         """Sample an analytic pupil mask at 1024x1024"""
         npix = self.npix
         outmask, pixelscale = mask.sample(npix=npix-8, return_scale=True)
-        outmask = pad_to_size(outmask, [npix,npix])
+        #outmask = pad_to_size(outmask, [npix,npix])
+        outmask = pad_or_cut_to_size(outmask, [npix,npix])
 
         return outmask, pixelscale
 
