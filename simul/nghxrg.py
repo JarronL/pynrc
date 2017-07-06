@@ -89,7 +89,8 @@ Modification History:
 
 """
 # Necessary for Python 2.6 and later
-from __future__ import division, print_function
+#from __future__ import division, print_function
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 __version__ = "3.0"
 
@@ -228,11 +229,14 @@ class HXRGNoise:
         # Initialize PCA-zero file and make sure that it exists and is a file
         #self.bias_file = os.getenv('NGHXRG_HOME')+'/sca_images/nirspec_pca0.fits' if \
         #				 bias_file is None else bias_file
-        self.bias_file = 'nirspec_pca0.fits' if bias_file is None else bias_file
-        if os.path.isfile(self.bias_file) is False:
-            print('There was an error finding bias_file!')
-            print(bias_file)
-            os.sys.exit()
+        #self.bias_file = 'nirspec_pca0.fits' if bias_file is None else bias_file
+        self.bias_file = bias_file
+        if bias_file is not None:
+            if os.path.isfile(self.bias_file) is False:
+                raise ValueError('There was an error finding bias_file {}'.format(bias_file))
+                print('There was an error finding bias_file!')
+                print(bias_file)
+                #os.sys.exit()
 
 #             print('There was an error finding bias_file! Check to be')
 #             print('sure that the NGHXRG_HOME shell environment')
@@ -246,9 +250,10 @@ class HXRGNoise:
         self.dark_file = dark_file
         if dark_file is not None:
             if os.path.isfile(self.dark_file) is False:
-                print('There was an error finding dark_file!')
-                print(dark_file)
-                os.sys.exit()
+                raise ValueError('There was an error finding dark_file {}'.format(dark_file))
+                #print('There was an error finding dark_file!')
+                #print(dark_file)
+                #os.sys.exit()
 
 
         # ======================================================================
@@ -315,7 +320,11 @@ class HXRGNoise:
         # Initialize pca0. This includes scaling to the correct size,
         # zero offsetting, and renormalization. We use robust statistics
         # because pca0 is real data
-        hdu = fits.open(self.bias_file)
+        if self.bias_file is None:
+            h = fits.PrimaryHDU(np.zeros([det_size, det_size]))
+            hdu = fits.HDUList([h])
+        else:
+            hdu = fits.open(self.bias_file)
         nx_pca0 = hdu[0].header['naxis1']
         ny_pca0 = hdu[0].header['naxis2']
         data = hdu[0].data     
@@ -425,17 +434,17 @@ class HXRGNoise:
         """
 
         # Configure depending on mode setting
-        if mode is 'pink':
+        if 'pink' in mode:
             nstep  = 2*self.nstep
             nstep2 = 2*self.nstep2
             f = self.f2
             p_filter = self.p_filter2
-        elif mode is 'acn':
+        elif 'acn' in mode:
             nstep  = self.nstep
             nstep2 = self.nstep2
             f = self.f1
             p_filter = self.p_filter1
-        elif mode is 'ref_inst':
+        elif 'ref_inst' in mode:
             nstep  = 2*self.naxis3
             nstep2 = 2*self.naxis3
             f = self.f3
@@ -473,7 +482,9 @@ class HXRGNoise:
 
         # Restore the mean and standard deviation
         result *= the_std / np.std(result)
-        result = result - np.mean(result) + the_mean
+        result -= np.mean(result)
+        result += the_mean
+        #result = result - np.mean(result) + the_mean
   
         # Done
         return(result)

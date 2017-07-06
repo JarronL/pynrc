@@ -17,7 +17,8 @@ Modification History:
     - 
 """
 # Necessary for Python 2.6 and later
-from __future__ import division, print_function
+#from __future__ import division, print_function
+from __future__ import absolute_import, division, print_function, unicode_literals
 
 import numpy as np
 import datetime, os
@@ -26,13 +27,13 @@ from astropy.table import Table
 
 # HxRG Noise Generator
 from . import nghxrg as ng
-from .nrc_utils import nrc_header
+from pynrc.nrc_utils import nrc_header
 
-import pdb
+#import pdb
 from copy import deepcopy
 
-from . import DetectorOps
-from . import conf
+from pynrc import DetectorOps
+from pynrc import conf
 
 # # Set log output levels
 # # webbpsf and poppy have too many unnecessary warnings
@@ -50,7 +51,8 @@ import logging
 _log = logging.getLogger('pynrc')
 
 def SCAnoise(det=None, scaid=None, params=None, caldir=None, file_out=None, 
-    dark=True, bias=True, out_ADU=False, verbose=False, use_fftw=False, ncores=None):
+    dark=True, bias=True, out_ADU=False, verbose=False, use_fftw=False, ncores=None,
+    **kwargs):
     """
     Create a data cube consisting of realistic NIRCam detector noise.
 
@@ -120,7 +122,7 @@ def SCAnoise(det=None, scaid=None, params=None, caldir=None, file_out=None,
 
     # Line and frame overheads
     nroh     = det._line_overhead
-    nfoh     = det._extra_lines[0]
+    nfoh     = det._extra_lines
     nfoh_pix = det._frame_overhead_pix
 
     # How many total frames (incl. dropped and all) per ramp?
@@ -259,7 +261,7 @@ def SCAnoise(det=None, scaid=None, params=None, caldir=None, file_out=None,
 
 def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None, 
                   filter=None, pupil=None, obs_time=None, targ_name=None,
-                  DMS=True):
+                  DMS=True, dark=True, bias=True, return_results=True):
     """
     For a given detector operations class and slope image, create a
     ramp integration using Poisson noise and detector noise. 
@@ -311,6 +313,17 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
     naxis3 = nd1 + ngroup*nf + (ngroup-1)*nd2
 
     if im_slope is not None:
+        # Set reference pixels' slopes equal to 0
+        w = det.ref_info
+        if w[0] > 0: # lower
+            im_slope[:w[0],:] = 0
+        if w[1] > 0: # upper
+            im_slope[-w[1]:,:] = 0
+        if w[2] > 0: # left
+            im_slope[:,:w[2]] = 0
+        if w[3] > 0: # right
+            im_slope[:,-w[3]:] = 0
+
         # Count accumulation for a single frame
         frame = im_slope * t_frame
         # Add Poisson noise at each frame step
@@ -323,7 +336,7 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
         ramp = 0
 
     # Create dark ramp with read noise and 1/f noise
-    hdu = SCAnoise(det)
+    hdu = SCAnoise(det=det, dark=dark, bias=bias)
     # Update header information
     hdu.header = det.make_header(filter, pupil, obs_time,targ_name=targ_name,DMS=DMS)
     hdu.data += ramp # Add signal ramp to dark ramp
@@ -352,7 +365,8 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
         data_end = data[-nf:,:,:].mean(axis=0) if nf>1 else data[-1:,:,:]
         data_end = data_end.reshape([1,ypix,xpix])
 
-        # Only care about first (n-1) groups 
+        # Only care about first (n-1) groups
+        # Last group is handled separately
         data = data[:-nf,:,:]
 
         # Reshape for easy group manipulation
@@ -363,7 +377,7 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
 
         # Average the frames within groups
         # In reality, the 16-bit data is bit-shifted
-        data = data.reshape([-1,ypix,xpix]) if nf==1 else data.mean(axis=0)
+        data = data.reshape([-1,ypix,xpix]) if nf==1 else data.mean(axis=1)
 
         # Add back the last group (already averaged)
         data = np.append(data,data_end,axis=0)
@@ -399,4 +413,5 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
     if file_out is not None:
         outHDU.writeto(file_out, clobber='True')
     
-    return outHDU
+    # Only return outHDU if return_results=True
+    if return_results: return outHDU

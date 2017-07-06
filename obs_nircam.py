@@ -185,7 +185,7 @@ class obs_coronagraphy(NIRCam):
             entropy: Initial entropy (8.0-13.0) in increments of 0.25
         """
         # Create planet class and convert to Pysynphot spectrum
-        planet = planets_sb11(distance=self.distance, **kwargs)
+        planet = planets_sb12(distance=self.distance, **kwargs)
         sp = planet.export_pysynphot()
 
         # Add extinction from the disk
