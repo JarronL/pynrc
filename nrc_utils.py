@@ -1019,7 +1019,7 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
     sp=None, units=None, nsig=10, tf=10.737, ngroup=2, nf=1, nd2=0, nint=1,
     coeff=None, fov_pix=11, oversample=4, quiet=True, forwardSNR=False, 
     offset_r=0, offset_theta=0, return_image=False, image=None, 
-    dw_bin=None, rad_EE=None, **kwargs):
+    dw_bin=None, ap_spec=None, rad_EE=None, **kwargs):
     """
     Estimates the sensitivity for a set of instrument parameters.
     By default, a flat spectrum is convolved with the specified bandpass.
@@ -1086,8 +1086,10 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
     -------------------
     image        : Explicitly pass image data rather than calculating from coeff.
     return_image : Instead of calculating sensitivity, return the image calced from coeff.
-    dw_bin       : Delta wavelength to calculate spectral sensitivities (grisms & DHS).
     rad_EE       : Extraction aperture radius (in pixels) for imaging mode.
+    dw_bin       : Delta wavelength to calculate spectral sensitivities (grisms & DHS).
+    ap_spec      : Instead of dw_bin, specify the spectral extraction aperture in pixels.
+                   Takes priority over dw_bin. Value will get rounded up to nearest int.
 
     Keyword Args
     -------------------
@@ -1201,10 +1203,12 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
         ispat2 = ispat1 + ap_spat
 
         # Get spectral indices on the spectral image
-        if dw_bin is None:
+        if (dw_bin is None) and (ap_spec is None):
             ap_spec = 2
-        else:
+        elif (dw_bin is not None) and (ap_spec is None):
             ap_spec = wspec.size * dw_bin / (wspec.max() - wspec.min())
+            ap_spec = int(ap_spec+0.5)
+        else:
             ap_spec = int(ap_spec+0.5)
         diff = abs(wspec.reshape(wspec.size,1) - wsen_arr)
         ind_wave = []
