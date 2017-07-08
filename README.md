@@ -3,7 +3,7 @@ pyNRC - A JWST NIRCam ETC
 
 *Authors:* Jarron Leisenring (University of Arizona)
 
-*Contributors:* Everett Schlawin (University of Arizona)
+*Contributors:* Everett Schlawin (University of Arizona), Jonathan Fraine (STScI)
 
 **!!Under Development!!**
 

@@ -1291,11 +1291,15 @@ class NIRCam(object):
 
         **kwargs
         ==========
-        These are all passed through the **kwargs parameter (among others...)
         forwardSNR    : Find the SNR of the input spectrum instead of sensitivity.
         zfact         : Factor to scale Zodiacal spectrum (default 2.5)
         ideal_Poisson : If set to True, use total signal for noise estimate,
                         otherwise MULTIACCUM equation is used.
+
+        rad_EE  : Extraction aperture radius (in pixels) for imaging mode.
+        dw_bin  : Delta wavelength to calculate spectral sensitivities (grisms & DHS).
+        ap_spec : Instead of dw_bin, specify the spectral extraction aperture in pixels.
+                  Takes priority over dw_bin. Value will get rounded up to nearest int.
 
         Representative values for zfact:
             0.0 - No zodiacal emission
@@ -1331,7 +1335,7 @@ class NIRCam(object):
     
         return bglim
 
-    def bg_zodi(self, zfact=None):
+    def bg_zodi(self, zfact=None, **kwargs):
         """
         Return the Zodiacal background flux in e-/sec/pixel.
         Representative values for zfact:
@@ -1341,6 +1345,14 @@ class NIRCam(object):
             2.5 - Average (default)
             5.0 - High
             10. - Maximum
+
+        **kwargs
+        ==========
+        Other option for specifying zodiacal emisison using location and time of year
+          locstr : Object name, RA/DEC in decimal degrees or sexigesimal input
+          year   : Year of observation
+          day    : Day of observation
+
         """
     
         # Dark image
@@ -1348,10 +1360,23 @@ class NIRCam(object):
             return 0
 
         bp = self.bandpass
-        waveset = bp.wave
-        sp_zodi = zodi_spec(zfact)
-        obs_zodi = S.Observation(sp_zodi, bp, waveset)
+        waveset   = bp.wave
+        sp_zodi   = zodi_spec(zfact, **kwargs)
+        obs_zodi  = S.Observation(sp_zodi, bp, waveset)
         fzodi_pix = obs_zodi.countrate() * (self.pix_scale/206265.0)**2
+        
+        # Recommend a zfact value if locstr, year, and day specified
+        if 'locstr' in kwargs.keys():
+            sp_zodi_temp   = zodi_spec(zfact=1)
+            obs_zodi_temp  = S.Observation(sp_zodi_temp, bp, waveset)
+            fzodi_pix_temp = obs_zodi_temp.countrate() * (self.pix_scale/206265.0)**2
+            zf_rec = fzodi_pix / fzodi_pix_temp
+            str1 = 'Using locstr,year,day keywords can be very slow. \n'
+            str2 = 'For your specified loc and date, we recommend using zfact={:.1f}'\
+                .format(zf_rec)
+            _log.warning(str1)
+            _log.warning(str2)
+            
 
         # Don't forget about Lyot mask attenuation (not in bandpass throughput)
         if ('LYOT' in self.pupil):
@@ -1361,7 +1386,7 @@ class NIRCam(object):
 
     def gen_exposures(self, sp=None, im_slope=None, file_out=None, return_results=None,
                       targ_name=None, timeFileNames=False, DMS=True,
-                      dark=True, bias=True, zfact=None):
+                      dark=True, bias=True, **kwargs):
         """
         Create a series of ramp integration saved to FITS files based on
         the current NIRCam settings. 
@@ -1393,11 +1418,24 @@ class NIRCam(object):
             data can lead to large memory usage. Save the FITs files to
             disk if NINTs is large. We include the return_results keyword
             if the user would like to do both (or neither??).
-        targ_name: str
-            A target name for the exposure file's header
-        timeFileNames: bool
-            Save the exposure times in the file name? This is useful to see the timing,
-            but also makes it a little harder to combine ints later for DMS simulations.
+            
+        targ_name     : A target name for the exposure file's header.
+        timeFileNames : Save the exposure times in the file name? This is 
+            useful to see the timing, but also makes it a little harder 
+            to combine INTs later for DMS simulations.
+            
+        dark : Include the super dark current?
+        bias : Include the super bias frame?
+
+        **kwargs
+        ==========
+        zfact           : Factor to scale Zodiacal spectrum (default 2.5)
+        locstr,year,day : Another option for specifying zodiacal emisison rate
+          - locstr : Object name, RA/DEC in decimal degrees or sexigesimal input
+          - year   : Year of observation
+          - day    : Day of observation
+
+
         """
 
         filter = self.filter
@@ -1422,7 +1460,7 @@ class NIRCam(object):
     
             # Add in Zodi emission
             # Returns 0 if self.pupil='FLAT'
-            im_slope += self.bg_zodi(zfact)
+            im_slope += self.bg_zodi(zfact, **kwargs)
 
         # Expand or cut to detector size
         im_slope = pad_or_cut_to_size(im_slope, (ypix,xpix))
@@ -1503,7 +1541,7 @@ class NIRCam(object):
                       sp is not occulted.
         is_extended : Treat source(s) as extended objects, then in units/arcsec^2
 
-        patterns      : List of a subset of MULTIACCUM patterns to check, otherwise check all.
+        patterns      : Subset of MULTIACCUM patterns to check, otherwise check all.
         well_frac_max : Maximum level that the pixel well is allowed to be filled. 
                         Fractions greater than 1 imply hard saturation, but the reported 
                         SNR will not be aware of any saturation that may occur to sp.
@@ -1515,14 +1553,29 @@ class NIRCam(object):
         tacq_max      : Maximum amount of acquisition time in seconds to consider.
         tacq_frac     : Fractional amount of time to consider exceeding tacq_max.
 
-        ideal_Poisson : Default=True. Use total signal for noise estimate,
-                        otherwise MULTIACCUM equation is used. 
-
-		even_nints        : Return only the event NINTS
+        even_nints        : Return only the even NINTS
         return_full_table : Don't filter or sort the final results (ingores event_ints).
         verbose           : Prints out top 10 results.
 
 
+        **kwargs
+        ==========
+        zfact           : Factor to scale Zodiacal spectrum (default 2.5)
+        locstr,year,day : Another option for specifying zodiacal emisison.
+            These are not recommended for use given the amount of time it
+            takes to query the Euclid web server. Instead, use NIRCam.bg_zodi()
+            to match a zfact estimate.
+            locstr - Object name, RA/DEC in decimal degrees or sexigesimal input
+            year   - Year of observation
+            day    - Day of observation
+            
+        ideal_Poisson   : Default=True. Use total signal for noise estimate,
+                          otherwise MULTIACCUM equation is used. 
+                          
+        rad_EE  : Extraction aperture radius (in pixels) for imaging mode.
+        dw_bin  : Delta wavelength to calculate spectral sensitivities (grisms & DHS).
+        ap_spec : Instead of dw_bin, specify the spectral extraction aperture in pixels.
+                  Takes priority over dw_bin. Value will get rounded up to nearest int.
 
         """
 
@@ -1572,7 +1625,7 @@ class NIRCam(object):
                 psf_faint  = self.gen_psf(sp, use_bg_psf=True)
             pix_count_rate = np.max([psf_bright.max(), psf_faint.max()])
 
-        image = self.sensitivity(sp=sp, forwardSNR=True, return_image=True)
+        image = self.sensitivity(sp=sp, forwardSNR=True, return_image=True, **kwargs)
 
         # Cycle through each readout pattern
         pattern_settings = self.multiaccum._pattern_settings
