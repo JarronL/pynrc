@@ -312,7 +312,7 @@ def read_filter(filter, pupil=None, mask=None, module=None, ND_acq=False,
             s = np.r_[ttemp[ws-1:0:-1],ttemp,ttemp[-1:-ws:-1]]
             w = np.blackman(ws)
             y = np.convolve(w/w.sum(),s,mode='valid')
-            ttemp = y[(ws/2-1):-(ws/2)]
+            ttemp = y[int((ws/2-1)):int(-(ws/2))]
             
             # Estimates for w<2.3um
             wtemp = np.insert(wtemp, 0, [1.00])
@@ -1037,7 +1037,7 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
     radius of ~1 FWHM rounded to the next highest integer pixel (or 2.5 pixels,
     whichever is larger). For spectral observtions, this function returns an 
     array of sensitivities at 0.1um intervals with apertures corresponding to 
-    3 spectral pixels and a number of spatial pixels equivalent to 1 FWHM rounded 
+    2 spectral pixels and a number of spatial pixels equivalent to 1 FWHM rounded 
     to the next highest integer (minimum of 5 spatial pixels). 
 
     Parameters
@@ -1768,7 +1768,7 @@ def pix_noise(ngroup=2, nf=1, nd2=0, tf=10.737, rn=15.0, ktc=29.0, p_excess=(0,0
 #
 ###########################################################################
 
-def image_rescale(HDUlist_or_filename, args_in, args_out):
+def image_rescale(HDUlist_or_filename, args_in, args_out, cen_star=True):
     """
     Scale the flux and rebin the image with a give pixel scale and distance
     to some output pixel scale and distance. The object's physical units (AU)
@@ -1782,6 +1782,7 @@ def image_rescale(HDUlist_or_filename, args_in, args_out):
     args_in  : Two parameters consisting of the input image pixel scale and distance
         assumed to be in units of arcsec/pixel and parsecs, respectively
     args_out : Same as above, but the new desired outputs
+    cen_star : Is the star placed in the central pixel?
 
     Returns an HDUlist of the new image
     """
@@ -1797,19 +1798,20 @@ def image_rescale(HDUlist_or_filename, args_in, args_out):
 
     # By moving the image closer, we increased the flux (inverse square law)
     image = (hdulist[0].data) * (dist / dist_new)**2
-    hdulist.close()
+    #hdulist.close()
 
     # We also increased the angle that the image subtends
-    # So, each pixel would has a large angular size
+    # So, each pixel would have a large angular size
     # New image scale in arcsec/pixel
     imscale_new = im_scale * dist / dist_new
 
     # Before rebinning, we want the flux in the central pixel to
     # always be in the central pixel (the star). So, let's save
     # and remove that flux then add back after the rebinning.
-    mask_max = image==image.max()
-    star_flux = image[mask_max][0]
-    image[mask_max] = 0
+    if cen_star:
+        mask_max = image==image.max()
+        star_flux = image[mask_max][0]
+        image[mask_max] = 0
 
     # Rebin the image to get a pixel scale that oversamples the detector pixels
     fact = imscale_new / pixscale_out
@@ -1817,13 +1819,16 @@ def image_rescale(HDUlist_or_filename, args_in, args_out):
 
     # Restore stellar flux to the central pixel.
     ny,nx = image_new.shape
-    image_new[ny//2, nx//2] += star_flux
+    if cen_star:
+        image_new[ny//2, nx//2] += star_flux
 
     hdu_new = fits.PrimaryHDU(image_new)
-    hdulist = fits.HDUList([hdu_new])
-    hdulist[0].header['PIXELSCL'] = pixscale_out
+    hdu_new.header = hdulist[0].header.copy()
+    hdulist_new = fits.HDUList([hdu_new])
+    hdulist_new[0].header['PIXELSCL'] = (pixscale_out, 'arcsec/pixel')
+    hdulist_new[0].header['DISTANCE'] = (dist_new, 'parsecs')
 
-    return hdulist
+    return hdulist_new
 
 
 def scale_ref_image(im1, im2):
