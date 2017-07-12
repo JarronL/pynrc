@@ -471,13 +471,15 @@ def _wrap_coeff_for_mp(args):
     mp_prev = poppy.conf.use_multiprocessing
     poppy.conf.use_multiprocessing = False
 
-    inst,w,fov_pix,oversample = args	
+    inst,w,fov_pix,oversample = args
+    fov_pix_orig = fov_pix # Does calc_psf change fov_pix??
     hdu_list = inst.calc_psf(outfile=None, save_intermediates=False, oversample=oversample, rebin=True, \
-                            fov_pixels=fov_pix, monochromatic=w*1e-6)
+                             fov_pixels=fov_pix, monochromatic=w*1e-6)
 
     # Return to previous setting
     poppy.conf.use_multiprocessing = mp_prev
-    return hdu_list[0].data
+    return pad_or_cut_to_size(hdu_list[0].data, fov_pix_orig*oversample)
+    #return hdu_list[0].data
 
 def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A', 
     fov_pix=11, oversample=None, npsf=None, ndeg=7, opd=None, tel_pupil=None,
@@ -592,6 +594,7 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     inst.options['source_offset_theta'] = ttemp
 
     # Deal with OPD file name
+    #print(opd)
     wfe_drift = 0
     if isinstance(opd, tuple):
         if len(opd)==2: # No drift
@@ -1831,7 +1834,7 @@ def image_rescale(HDUlist_or_filename, args_in, args_out, cen_star=True):
     return hdulist_new
 
 
-def scale_ref_image(im1, im2):
+def scale_ref_image(im1, im2, mask=None):
     """
     Find value to scale a reference image by minimizing residuals.
     
@@ -1839,7 +1842,12 @@ def scale_ref_image(im1, im2):
     ======
     im1 - Science star observation.
     im2 - Reference star observation.
+    mask - Use this mask to exclude pixels for performing standard deviation.
     """
+    
+    # Mask for generating standard deviation
+    if mask is None:
+        mask = np.ones(im1.shape, dtype=np.bool)
 
     ind1 = np.where(im1==im1.max())
     ind2 = np.where(im2==im2.max())
@@ -1854,7 +1862,7 @@ def scale_ref_image(im1, im2):
     mad_arr = []
     for val in scl_arr:
         diff = im1 - val*im2
-        mad_arr.append(robust.medabsdev(diff))
+        mad_arr.append(robust.medabsdev(diff[mask]))
     mad_arr = np.array(mad_arr)
 
     #plt.plot(scl_arr,mad_arr)

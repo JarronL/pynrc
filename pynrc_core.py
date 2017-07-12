@@ -1165,7 +1165,7 @@ class NIRCam(object):
             try: save = self._psf_info['save']
             except (AttributeError, KeyError): save = True
 
-
+        #print(opd)
         self._psf_info={'fov_pix':fov_pix, 'oversample':oversample, 
             'offset_r':offset_r, 'offset_theta':offset_theta, 
             'opd':opd, 'tel_pupil':tel_pupil, 'save':save, 'force':force}
@@ -1514,10 +1514,12 @@ class NIRCam(object):
 
 
     def ramp_optimize(self, sp, sp_bright=None, is_extended=False, patterns=None,
-        well_frac_max=0.8, nint_min=1, nint_max=1000, ng_min=2, ng_max=None,
         snr_goal=None, snr_frac=0.02, tacq_max=None, tacq_frac=0.1,
+        well_frac_max=0.8, nint_min=1, nint_max=5000, ng_min=2, ng_max=None,
         return_full_table=False, even_nints=False, verbose=False, **kwargs):
         """
+        Set either snr_goal or tacq_max.
+        
         Find the optimal ramp settings to observe spectrum based input constraints.
         This function quickly runs through each detector readout pattern and 
         calculates the acquisition time and SNR for all possible settings of NINT
@@ -1541,17 +1543,18 @@ class NIRCam(object):
                       sp is not occulted.
         is_extended : Treat source(s) as extended objects, then in units/arcsec^2
 
-        patterns      : Subset of MULTIACCUM patterns to check, otherwise check all.
-        well_frac_max : Maximum level that the pixel well is allowed to be filled. 
-                        Fractions greater than 1 imply hard saturation, but the reported 
-                        SNR will not be aware of any saturation that may occur to sp.
         snr_goal      : Minimum required SNR for source. For grism, this is the average
                         SNR for all wavelength.
         snr_frac      : Give fractional buffer room rather than strict SNR cut-off.
-        nint_min/max  : Min/max number of desired integrations.
-        ng_min/max    : Min/max number of desired groups in a ramp.
         tacq_max      : Maximum amount of acquisition time in seconds to consider.
         tacq_frac     : Fractional amount of time to consider exceeding tacq_max.
+
+        patterns      : Subset of MULTIACCUM patterns to check, otherwise check all.
+        nint_min/max  : Min/max number of desired integrations.
+        ng_min/max    : Min/max number of desired groups in a ramp.
+        well_frac_max : Maximum level that the pixel well is allowed to be filled. 
+                        Fractions greater than 1 imply hard saturation, but the reported 
+                        SNR will not be aware of any saturation that may occur to sp.
 
         even_nints        : Return only the even NINTS
         return_full_table : Don't filter or sort the final results (ingores event_ints).
@@ -1627,7 +1630,7 @@ class NIRCam(object):
 
         image = self.sensitivity(sp=sp, forwardSNR=True, return_image=True, **kwargs)
 
-        # Cycle through each readout pattern
+        # Correctly format patterns
         pattern_settings = self.multiaccum._pattern_settings
         if patterns is None:
             patterns = pattern_settings.keys()
@@ -1649,6 +1652,7 @@ class NIRCam(object):
         rows = []
         if tacq_max is not None:
             snr_goal_list = []
+            # Cycle through each readout pattern
             for read_mode in patterns:
                 if verbose: print(read_mode)
 

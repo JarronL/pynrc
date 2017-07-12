@@ -13,20 +13,27 @@ _log = logging.getLogger('pynrc')
 
 class obs_coronagraphy(NIRCam):
     """
-    Subclass of the NIRCam instrument class used to observe stars (+exoplanets) 
-    with either a coronagraph or direct imaging.
+    Subclass of the NIRCam instrument class used to observe stars 
+    (plus exoplanets and disks) with either a coronagraph or direct imaging.
 
     Parameters
     ==========
     sp_sci/sp_ref : Pysynphot spectra of science and reference sources
-    wfe_drift     : WFE drift in nm of OPDs
-    xpix, ypix    : Size of detector readout (assumes subarray).
+    distance      : Distance in parsecs
+    wfe_drift     : WFE drift of OPDs in nm
     offset_list   : For coronagraph, incremental offset positions to build PSFs
-                    for accurately determining contrast curves.
+                    for accurately determining contrast curves. A default is
+                    applied if set to None.
+    wind_mode     : 'FULL', 'STRIPE', or 'WINDOW'
+    xpix, ypix    : Size of detector readout (assumes subarray).
+    oversample    : PSF oversampling (default=2)
+    disk_hdu      : A model of the disk in photons/sec. This requires header
+                    keywords PIXSCALE (in arcsec/pixel) and DISTANCE (in pc).
     """
     
     def __init__(self, sp_sci, sp_ref, distance, wfe_drift=10, offset_list=None, 
-                 wind_mode='WINDOW', xpix=320, ypix=320, oversample=2, **kwargs):
+                 wind_mode='WINDOW', xpix=320, ypix=320, oversample=2, 
+                 disk_hdu=None, verbose=False, **kwargs):
 
         #super(NIRCam,self).__init__(**kwargs)
         # Not sure if this works for both Python 2 and 3
@@ -53,17 +60,21 @@ class obs_coronagraphy(NIRCam):
         else:
             self.offset_list = offset_list
         
-        print("Generating list of PSFs...")
+        if verbose: print("Generating list of PSFs...")
         # Faster once PSFs have already been previously generated 
         log_prev = conf.logging_level
         setup_logging('WARN', verbose=False)
         self._gen_psf_off()
         setup_logging(log_prev, verbose=False)
         
-        self._gen_ref()
+        self._gen_ref(verbose=verbose)
         self._set_xypos()
         
-        print("Finished.")
+        # Rescale input disk image to observation parameters
+        self._disk_hdulist_input = disk_hdu
+        self._gen_disk_hdulist()
+        
+        if verbose: print("Finished.")
         
     @property
     def wfe_drift(self):
@@ -74,8 +85,42 @@ class obs_coronagraphy(NIRCam):
         """Set the WFE drift value (updates self.nrc_ref)"""
         self._wfe_drift = value
         self._gen_ref()
+
+    def _gen_disk_hdulist(self):
+        """Create a correctly scaled disk model image"""
+        if self._disk_hdulist_input is None:
+            self.disk_hdulist = None
+        else:
+            xpix = self.det_info['xpix']
+            ypix = self.det_info['ypix']
+            oversample = self.psf_info['oversample']
         
-    def _gen_ref(self):
+            disk_hdul = self._disk_hdulist_input
+            hdr = disk_hdul[0].header
+            
+            # Get rid of the central star flux
+            # and anything interior to 1.2 l/D
+            image = disk_hdul[0].data
+            image_rho = dist_image(image, pixscale=self.pix_scale) # Arcsec
+            fwhm = 206265 * 1.22 * self.bandpass.avgwave() *1E-10 / 6.5
+            image[image_rho < (2*fwhm)] = 0
+            #mask  = (image==image.max())
+            #indy,indx = np.where(mask == True)
+            #image[indy,indx] = 0
+                       
+            # Resample disk to detector pixel scale
+            # args_in  = (input pixelscale,  input distance)
+            # args_out = (output pixelscale, output distance)
+            args_in = (hdr['PIXSCALE'], hdr['DISTANCE'])
+            args_out = (self.pix_scale, self.distance)            
+            hdulist_out = image_rescale(disk_hdul, args_in, args_out, cen_star=False)
+            
+            # Expand to full observation size
+            hdulist_out[0].data = pad_or_cut_to_size(hdulist_out[0].data, (ypix,xpix))
+            self.disk_hdulist = hdulist_out
+                        
+        
+    def _gen_ref(self, verbose=False):
         """Function to generate Reference observation class"""
 
         # PSF information
@@ -94,28 +139,31 @@ class obs_coronagraphy(NIRCam):
             nrc = self.nrc_ref
             nrc.update_psf_coeff(opd=opd)
         except AttributeError:
-            print("Creating NIRCam reference class...")
+            if verbose: print("Creating NIRCam reference class...")
             nrc = NIRCam(self.filter, self.pupil, self.mask, \
                          wind_mode=wind_mode, xpix=xpix, ypix=ypix, \
                          fov_pix=fov_pix, oversample=oversample, opd=opd)        
             self.nrc_ref = nrc
-        
+
         
     def _gen_psf_off(self):
         """
         Create instances of NIRCam observations that are incrementally offset 
         from coronagraph center to determine maximum value of the detector-
-        sampled PSF for determination of contrast.
+        sampled PSF for determination of contrast. Also saves the list of
+        PSFs for later retrieval.
         """
         
         # If no mask, then the PSF looks the same at all radii
         if self.mask is None:
-            psf = self.gen_psf(self.sp_sci)
-            self.psf_max_vals = ([0,10], [psf.max(),psf.max()])
+            psf = self.gen_psf()
+            self.psf_max_vals = ([0,10], [psf.max(),psf.max()]) # radius and psf max
             self.psf_offsets = [self]
+            self.psf_list = [psf]
         else:
             psf_off = []
             psf_max = []
+            self.psf_list = []
             self.psf_offsets = []
             for offset in self.offset_list:
             
@@ -129,9 +177,11 @@ class obs_coronagraphy(NIRCam):
                                   fov_pix=fov_pix, oversample=oversample, \
                                   offset_r=offset)
                 # Append offsets and PSF max values
-                psf_off.append(offset)          
-                psf_max.append(nrc_inst.gen_psf().max())
+                psf = nrc_inst.gen_psf()
+                psf_off.append(offset)                
+                psf_max.append(psf.max())
                 self.psf_offsets.append(nrc_inst)
+                self.psf_list.append(psf)
                 
             # Add background PSF info (without mask) for large distance
             psf_off.append(np.max([np.max(self.offset_list)+1, 4]))
@@ -146,11 +196,14 @@ class obs_coronagraphy(NIRCam):
         """
         xpix = self.det_info['xpix']
         ypix = self.det_info['ypix']
-        x0 = self.det_info['x0']
-        y0 = self.det_info['y0']
+        x0   = self.det_info['x0']
+        y0   = self.det_info['y0']
         mask = self.mask
+        wind_mode = self.det_info['wind_mode']
         
-        if ((x0==0) and (y0==0)) and ((mask is not None) and ('MASK' in mask)):
+        # Coronagraphic Mask
+        if ((x0==0) and (y0==0)) and ((mask is not None) and ('MASK' in mask)) \
+            and ('FULL' not in wind_mode):
             # Default positions (really depends on xpix/ypix)
             if 'LWB' in mask:
                 x0=275; y0=1508
@@ -189,9 +242,12 @@ class obs_coronagraphy(NIRCam):
         sp = planet.export_pysynphot()
 
         # Add extinction from the disk
-        if Av>0:
-            Rv = 4.0
-            sp *= S.Extinction(Av/Rv,name='mwrv4')
+        Rv = 4.0
+        if Av>0: sp *= S.Extinction(Av/Rv,name='mwrv4')
+        
+        #obs = S.Observation(sp, self.bandpass, binset=self.bandpass.wave)
+        #flux = obs.effstim(fluxunit)
+        
         return sp
     
 
@@ -256,6 +312,7 @@ class obs_coronagraphy(NIRCam):
              'entropy':entropy, 'Av':Av, 'renorm_args':renorm_args}
         self._planets.append(d)
         
+        
     def gen_planets_image(self, PA_offset=0):
         """
         Use info stored in self.planets to create a noiseless slope image 
@@ -266,7 +323,7 @@ class obs_coronagraphy(NIRCam):
             Corresponds to instrument aperture PA.
         """
         if len(self.planets)==0:
-            _log.warning("No planet info at self.planets")
+            _log.info("No planet info at self.planets")
             return 0
             
         if PA_offset is None: PA_offset=0
@@ -313,11 +370,56 @@ class obs_coronagraphy(NIRCam):
             image += fshift(psf_planet, delx=xoff, dely=yoff, pad=True)
             
         return image
-
-    
+        
     def kill_planets(self):
         self._planets = []
     
+    def gen_disk_image(self, PA_offset=0):
+        """
+        Generate a convolved image of the disk at some PA offset. 
+        The PA offset value will rotate the image CCW.
+        """
+            
+        if self.disk_hdulist is None:
+            return 0.0
+
+        # Final image shape
+        image_shape = ypix, xpix = (self.det_info['ypix'], self.det_info['xpix'])
+        
+        # The detector-sampled disk image
+        disk_image  = self.disk_hdulist[0].data
+        header = self.disk_hdulist[0].header
+        if PA_offset!=0: 
+            disk_image = rotate(disk_image, -PA_offset, reshape=False)
+            
+        if len(self.offset_list) == 1: # Direct imaging
+            psf = self.psf_list[0]
+            image_conv = convolve_fft(disk_image, psf, fftn=fftpack.fftn, 
+                                      ifftn=fftpack.ifftn, allow_huge=True)
+        else:
+            noff = len(self.offset_list)
+
+            image_rho = dist_image(disk_image, pixscale=header['PIXSCALE'])
+            worker_arguments = [(psf, disk_image, image_rho, self.offset_list, i) 
+                                for i,psf in enumerate(self.psf_list)]
+                                
+            npix = ypix*xpix
+            nproc = nproc_use_convolve(npix, 1, noff)
+            if nproc<=1:
+                imconv_slices = map(_wrap_convolve_for_mp, worker_arguments)
+            else:
+                pool = mp.Pool(nproc)
+                imconv_slices = pool.map(_wrap_convolve_for_mp, worker_arguments)
+                pool.close()
+                
+            # Turn into a numpy array of shape (noff,nx,ny)
+            imconv_slices = np.array(imconv_slices)
+
+            # Sum all images together
+            image_conv = imconv_slices.sum(axis=0)
+            
+        return image_conv
+
 
 
     def star_flux(self, fluxunit='counts'):
@@ -328,13 +430,12 @@ class obs_coronagraphy(NIRCam):
 
         # Create pysynphot observation
         bp = self.bandpass
-        waveset = bp.wave        
-        obs = S.Observation(self.sp_sci, bp, binset=waveset)
-
+        obs = S.Observation(self.sp_sci, bp, binset=bp.wave)
+        
         return obs.effstim(fluxunit)
 
 
-    def calc_contrast(self, roll_angle=10, zfact=None, nsig=1):
+    def calc_contrast(self, hdu_diff=None, roll_angle=10, nsig=1, **kwargs):
         """
         Generate n-sigma contrast curve for the current observation settings.
         Make sure that MULTIACCUM parameters are set in both the main
@@ -346,8 +447,14 @@ class obs_coronagraphy(NIRCam):
             If value is >0, then two rolls are performed, each using the
             specified MULTIACCUM settings (doubling the effective exposure
             time).
-        zfact : Zodiacal background factor (default=2.5)
         nsig  : n-sigma contrast curve
+        
+        
+        **kwargs
+        ==========
+        zfact : Zodiacal background factor (default=2.5)
+        exclude_noise: Don't add random Gaussian noise (detector+photon)
+
 
         Returns 3 arrays:
             radius in arcsec
@@ -356,47 +463,13 @@ class obs_coronagraphy(NIRCam):
         """
         from astropy.convolution import convolve, Gaussian1DKernel
         
-        sci = self
-        ref = self.nrc_ref
+
+        # If no HDUList is passed, then create one
+        if hdu_diff is None:
+            PA1 = 0
+            PA2 = None if abs(roll_angle) < 0.0001 else roll_angle
+            hdu_diff = self.gen_roll_image(PA1=PA1, PA2=PA2, **kwargs)
         
-        if roll_angle is None: roll_angle = 0
-        
-        # psf1 is the occulted science target star
-        # psf2 is the occulted reference star
-        psf1 = sci.gen_psf(self.sp_sci, return_oversample=False)
-        psf2 = ref.gen_psf(self.sp_ref, return_oversample=False)
-
-        # Noise for psf1
-        det = sci.Detectors[0]
-        fzodi = sci.bg_zodi(zfact)
-        im_noise1 = det.pixel_noise(fsrc=psf1, fzodi=fzodi)
-
-        # Noise for psf2
-        det = ref.Detectors[0]
-        fzodi = ref.bg_zodi(zfact)
-        im_noise2 = det.pixel_noise(fsrc=psf2, fzodi=fzodi)
-
-        # Reference simulated slope image
-        im_ref = psf2 + np.random.normal(scale=im_noise2)
-    
-        # Roll 1 and 2 simulated slope images
-        im_roll1 = psf1 + np.random.normal(scale=im_noise1)
-        scale1 = im_roll1.sum() / im_ref.sum()
-        im_diff1 = im_roll1 - im_ref*scale1
-        if roll_angle!=0:
-            im_roll2 = psf1 + np.random.normal(scale=im_noise1)
-            scale2 = im_roll2.sum() / im_ref.sum()
-            im_diff2 = im_roll2 - im_ref*scale2
-            im_diff2_rot = rotate(im_diff2, roll_angle, reshape=False)
-            final = (im_diff1 + im_diff2_rot) / 2
-        else:
-            final = im_diff1
-
-        hdu = fits.PrimaryHDU(final)
-        hdu.header['EXTNAME'] = ('DET_SAMP')
-        hdu.header['OVERSAMP'] = 1
-        hdu.header['PIXELSCL'] = sci.pix_scale / hdu.header['OVERSAMP']
-        hdu_diff = fits.HDUList([hdu])
     
         # Radial noise
         binsize = hdu_diff[0].header['OVERSAMP'] * hdu_diff[0].header['PIXELSCL']
@@ -412,11 +485,9 @@ class obs_coronagraphy(NIRCam):
 
         # Normalized PSF radial standard deviation
         # Divide out count rate
-        #obs = S.Observation(self.sp_sci, self.bandpass, binset=self.bandpass.wave)
-        stds = stds / self.star_flux()#obs.countrate() 
+        stds = stds / self.star_flux()
     
         # Grab the normalized PSF values generated on init
-        # These represent 
         psf_off_list, psf_max_list = self.psf_max_vals
         psf_off_list.append(rr.max())
         psf_max_list.append(psf_max_list[-1])
@@ -473,7 +544,7 @@ class obs_coronagraphy(NIRCam):
         
         # Reference star slope simulation
         # Ideal slope
-        im_ref = ref.gen_psf(sci.sp_ref)
+        im_ref = ref.gen_psf(sci.sp_ref, return_oversample=False)
         im_ref = pad_or_cut_to_size(im_ref, image_shape)
         # Noise per pixel
         if not exclude_noise:
@@ -484,11 +555,15 @@ class obs_coronagraphy(NIRCam):
             im_ref += np.random.normal(scale=im_noise)
         
         # Stellar PSF is fixed
-        im_star = sci.gen_psf(sci.sp_sci)
+        im_star = sci.gen_psf(sci.sp_sci, return_oversample=False)
         im_star = pad_or_cut_to_size(im_star, image_shape)
+        
+        # Disk and Planet images
+        im_disk_r1 = sci.gen_disk_image(PA_offset=PA1)
+        im_pl_r1   = sci.gen_planets_image(PA_offset=PA1)
 
         # Telescope Roll 1
-        im_roll1 = im_star + sci.gen_planets_image(PA_offset=PA1)
+        im_roll1 = im_star + im_disk_r1 + im_pl_r1
         # Noise per pixel
         if not exclude_noise:
             det = sci.Detectors[0]
@@ -499,6 +574,7 @@ class obs_coronagraphy(NIRCam):
     
         # Subtract reference star from Roll 1
         scale1 = scale_ref_image(im_roll1, im_ref)
+        #scale1 = im_roll1.max() / im_ref.max()
         if oversample != 1:
             im_ref_rebin = frebin(im_ref, scale=oversample)
             im_roll1     = frebin(im_roll1, scale=oversample)
@@ -509,16 +585,21 @@ class obs_coronagraphy(NIRCam):
 
     
         # Telescope Roll 2
-        if abs(roll_angle) > 0:
-            im_roll2 = im_star + sci.gen_planets_image(PA_offset=PA2)
+        if abs(roll_angle) > 0.0001:
+            im_disk_r2 = sci.gen_disk_image(PA_offset=PA2)
+            im_pl_r2   = sci.gen_planets_image(PA_offset=PA2)
+            im_roll2   = im_star + im_disk_r2 + im_pl_r2
             # Noise per pixel
             if not exclude_noise:
+                det = sci.Detectors[0]
+                fzodi = sci.bg_zodi(zfact)
                 im_noise2 = det.pixel_noise(fsrc=im_roll2, fzodi=fzodi)
                 # Add random noise
                 im_roll2 += np.random.normal(scale=im_noise2)
 
             # Subtract reference star from Roll 2
             scale2 = scale_ref_image(im_roll2, im_ref)
+            #scale2 = im_roll2.max() / im_ref.max()
             if oversample != 1:
                 im_roll2  = frebin(im_roll2, scale=oversample)
             im_diff2 = im_roll2 - im_ref_rebin * scale2
@@ -531,7 +612,7 @@ class obs_coronagraphy(NIRCam):
             final = im_diff1
             
         # De-rotate PA1 to North
-        if abs(PA1) > 0:
+        if abs(PA1) > 0.0001:
             final = rotate(final, PA1, reshape=False)
         
         hdu = fits.PrimaryHDU(final)
@@ -1150,6 +1231,74 @@ class nrc_diskobs(NIRCam):
         return hdulist	
 
 
+def model_to_hdulist(args_model, sp_star, filter, pupil=None, mask=None):
+
+    """
+    Convert disk model to an HDUList with units of photons/sec/pixel.
+    If observed filter is different than input filter, we assume that
+    the disk has a flat scattering, meaning it scales with stellar
+    continuum. Pixel sizes are left unchanged. Info stored in header.
+    """
+
+    #filt, mask, pupil = args_inst
+    fname, scale0, dist0, wave_um, units0 = args_model
+    wave0 = wave_um * 1e4
+    
+    bp = read_filter(filter, pupil=pupil, mask=mask)
+
+    # Detector pixel scale and PSF oversample
+    #detscale = channel_select(bp)[0]
+    #oversample = 4
+    #pixscale_over = detscale / oversample
+    
+    #### Read in the image, then convert from mJy/arcsec^2 to photons/sec/pixel
+
+    # Open file
+    hdulist = fits.open(fname)
+    #data    = hdulist[0].data#.copy()
+    #header  = hdulist[0].header
+    #hdutemp.close()
+
+    # Break apart units0
+    units_list = units0.split('/')
+    if 'Jy' in units_list[0]:
+        units_pysyn = S.units.Jy()
+    if 'mJy' in units_list[0]:
+        units_pysyn = S.units.mJy()
+    if 'umJy' in units_list[0]:
+        units_pysyn = S.units.umJy()
+    if 'nJy' in units_list[0]:
+        units_pysyn = S.units.nJy()    
+
+    # Convert from mJy to photlam (photons/sec/cm^2/A/angular size)
+    # Compare observed wavelength to image wavelength
+    wave_obs = bp.avgwave() # Current bandpass wavelength
+    im = units_pysyn.ToPhotlam(wave0, hdulist[0].data)
+
+    # We want to assume scattering is flat in photons/sec/A
+    # This means everything scales with stellar continuum
+    sp_star.convert('photlam') 
+    im *= sp_star.sample(wave_obs) / sp_star.sample(wave0)
+
+    # Convert to photons/sec/pixel
+    im *= bp.equivwidth() * S.refs.PRIMARY_AREA
+    # If input units are per arcsec^2 then scale by pixel scale
+    # This will be ph/sec for each oversampled pixel
+    if ('arcsec' in units_list[1]) or ('asec' in units_list[1]):
+        im *= scale0**2
+    elif 'mas' in units_list[1]:
+        im *= (scale0*1000)**2
+        
+    # Save into HDUList
+    hdulist[0].data = im
+        
+    hdulist[0].header['UNITS']    = 'photons/sec'
+    hdulist[0].header['PIXSCALE'] = (scale0, 'arcsec/pixel')
+    hdulist[0].header['DISTANCE'] = (dist0, 'parsecs')
+
+    return hdulist
+
+
 
 def observe_disk(args_inst, args_model, dist_out=140, subsize=None, 
              sptype='G2V', star_kmag=None, **kwargs):
@@ -1432,7 +1581,7 @@ def _wrap_convolve_for_mp(args):
     For multiprocessing:
     """
 
-    psf_over, model, rho, offset_list, i = args
+    psf, model, rho, offset_list, i = args
 
     noff = len(offset_list)
     if noff==1:
@@ -1459,4 +1608,4 @@ def _wrap_convolve_for_mp(args):
     #_, psf_over = nrc_object.gen_psf(return_oversample=True)
     #offset_pix = -offset_list[i] / pixscale_over
     #psf_over = fshift(psf_over, dely=offset_pix, pad=True)
-    return convolve_fft(im_temp, psf_over, fftn=fftpack.fftn, ifftn=fftpack.ifftn, allow_huge=True)
+    return convolve_fft(im_temp, psf, fftn=fftpack.fftn, ifftn=fftpack.ifftn, allow_huge=True)
