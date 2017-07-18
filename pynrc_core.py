@@ -1697,8 +1697,7 @@ class NIRCam(object):
             
                     #print(len(nint_all))
                     for nint in nint_all:
-                        if nint > nint_max:
-                            break
+                        if nint > nint_max: break
                         self.update_detectors(nint=nint)
                         mtimes = self.multiaccum_times
                         sen = self.sensitivity(sp=sp, forwardSNR=True, image=image, **kwargs)
@@ -1719,6 +1718,8 @@ class NIRCam(object):
                 if nng>20:
                     _log.warning('Cycling through {} NGRPs. This may take a while!'\
                         .format(nng))
+                        
+                ng_saved = False
                 for ng in range(ng_min,ngroup_max+1):
                     self.update_detectors(read_mode=read_mode, ngroup=ng, nint=1)
                     mtimes = self.multiaccum_times
@@ -1753,17 +1754,25 @@ class NIRCam(object):
                         sen = self.sensitivity(sp=sp, forwardSNR=True, image=image, **kwargs)
                         snr = parse_snr(sen, grism_obs, ind_snr)
                 
-                    # Skip if NINT or SNR are out of bounds
-                    if (nint > nint_max) or (snr > ((1+snr_frac)*snr_goal)):
+                    # Skip if NINT
+                    if (nint > nint_max):# or :
+                        continue
+                        
+                    # We want to make sure that at least one NINT setting is saved
+                    # if the resulting SNR is higher than our stated goal.
+                    if (snr > ((1+snr_frac)*snr_goal)) and ng_saved:
                         continue
 
                     rows.append((read_mode, ng, nint, mtimes['t_int'], mtimes['t_exp'], \
                         mtimes['t_acq'], snr, well_frac))
+                    ng_saved = True
+                    
     
                     # Increment NINT until SNR > 1.05 snr_goal
                     # Add each NINT to table output
                     while (snr < ((1+snr_frac)*snr_goal)) and (nint<=nint_max):
                         nint += 1
+                        if (nint > nint_max): break # double-check
                         self.update_detectors(nint=nint)
                         sen = self.sensitivity(sp=sp, forwardSNR=True, image=image, **kwargs)
                         snr = parse_snr(sen, grism_obs, ind_snr)

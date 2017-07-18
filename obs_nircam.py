@@ -11,6 +11,8 @@ from .nrc_utils import *
 import logging
 _log = logging.getLogger('pynrc')
 
+eps = np.finfo(float).eps
+
 class obs_coronagraphy(NIRCam):
     """
     Subclass of the NIRCam instrument class used to observe stars 
@@ -83,8 +85,10 @@ class obs_coronagraphy(NIRCam):
     @wfe_drift.setter
     def wfe_drift(self, value):
         """Set the WFE drift value (updates self.nrc_ref)"""
-        self._wfe_drift = value
-        self._gen_ref()
+        # Only update if the value changes
+        vold = self._wfe_drift; self._wfe_drift = value
+        if vold != self._wfe_drift: 
+            self._gen_ref()
 
     def _gen_disk_hdulist(self):
         """Create a correctly scaled disk model image"""
@@ -111,7 +115,7 @@ class obs_coronagraphy(NIRCam):
             # Resample disk to detector pixel scale
             # args_in  = (input pixelscale,  input distance)
             # args_out = (output pixelscale, output distance)
-            args_in = (hdr['PIXSCALE'], hdr['DISTANCE'])
+            args_in = (hdr['PIXELSCL'], hdr['DISTANCE'])
             args_out = (self.pix_scale, self.distance)            
             hdulist_out = image_rescale(disk_hdul, args_in, args_out, cen_star=False)
             
@@ -181,7 +185,12 @@ class obs_coronagraphy(NIRCam):
                 psf_off.append(offset)                
                 psf_max.append(psf.max())
                 self.psf_offsets.append(nrc_inst)
+
+                # Shift to center
+                offset_pix = -offset / nrc_inst.pix_scale
+                psf = fshift(psf, dely=offset_pix, pad=True)
                 self.psf_list.append(psf)
+
                 
             # Add background PSF info (without mask) for large distance
             psf_off.append(np.max([np.max(self.offset_list)+1, 4]))
@@ -376,7 +385,7 @@ class obs_coronagraphy(NIRCam):
     
     def gen_disk_image(self, PA_offset=0):
         """
-        Generate a convolved image of the disk at some PA offset. 
+        Generate a (noiseless) convolved image of the disk at some PA offset. 
         The PA offset value will rotate the image CCW.
         """
             
@@ -399,7 +408,7 @@ class obs_coronagraphy(NIRCam):
         else:
             noff = len(self.offset_list)
 
-            image_rho = dist_image(disk_image, pixscale=header['PIXSCALE'])
+            image_rho = dist_image(disk_image, pixscale=header['PIXELSCL'])
             worker_arguments = [(psf, disk_image, image_rho, self.offset_list, i) 
                                 for i,psf in enumerate(self.psf_list)]
                                 
@@ -435,7 +444,8 @@ class obs_coronagraphy(NIRCam):
         return obs.effstim(fluxunit)
 
 
-    def calc_contrast(self, hdu_diff=None, roll_angle=10, nsig=1, **kwargs):
+    def calc_contrast(self, hdu_diff=None, roll_angle=10, nsig=1, 
+        exclude_disk=True, **kwargs):
         """
         Generate n-sigma contrast curve for the current observation settings.
         Make sure that MULTIACCUM parameters are set in both the main
@@ -453,7 +463,8 @@ class obs_coronagraphy(NIRCam):
         **kwargs
         ==========
         zfact : Zodiacal background factor (default=2.5)
-        exclude_noise: Don't add random Gaussian noise (detector+photon)
+        exclude_disk  : Ignore disk when generating image
+        exclude_noise : Don't add random Gaussian noise (detector+photon)
 
 
         Returns 3 arrays:
@@ -467,8 +478,9 @@ class obs_coronagraphy(NIRCam):
         # If no HDUList is passed, then create one
         if hdu_diff is None:
             PA1 = 0
-            PA2 = None if abs(roll_angle) < 0.0001 else roll_angle
-            hdu_diff = self.gen_roll_image(PA1=PA1, PA2=PA2, **kwargs)
+            PA2 = None if abs(roll_angle) < eps else roll_angle
+            hdu_diff = self.gen_roll_image(PA1=PA1, PA2=PA2, 
+                                           exclude_disk=exclude_disk, **kwargs)
         
     
         # Radial noise
@@ -504,7 +516,8 @@ class obs_coronagraphy(NIRCam):
 
         return rr, contrast, sen_mag
 
-    def gen_roll_image(self, PA1=0, PA2=10, zfact=None, oversample=None, exclude_noise=False):
+    def gen_roll_image(self, PA1=0, PA2=10, zfact=None, oversample=None, 
+        exclude_disk=False, exclude_noise=False):
         """
         Create a final roll-subtracted slope image based on current observation
         settings.
@@ -526,6 +539,7 @@ class obs_coronagraphy(NIRCam):
               MULTIACCUM settings (doubling the effective exposure time).
         zfact      : Zodiacal background factor (default=2.5)
         oversample : Set oversampling of final image.
+        exclude_disk  : Ignore disk when generating image (for radial contrast)
         exclude_noise : Don't add random Gaussian noise (detector+photon)
         
         Returns an HDUList of final image (North rotated upwards).
@@ -559,7 +573,7 @@ class obs_coronagraphy(NIRCam):
         im_star = pad_or_cut_to_size(im_star, image_shape)
         
         # Disk and Planet images
-        im_disk_r1 = sci.gen_disk_image(PA_offset=PA1)
+        im_disk_r1 = 0 if exclude_disk else sci.gen_disk_image(PA_offset=PA1)
         im_pl_r1   = sci.gen_planets_image(PA_offset=PA1)
 
         # Telescope Roll 1
@@ -585,8 +599,8 @@ class obs_coronagraphy(NIRCam):
 
     
         # Telescope Roll 2
-        if abs(roll_angle) > 0.0001:
-            im_disk_r2 = sci.gen_disk_image(PA_offset=PA2)
+        if abs(roll_angle) > eps:
+            im_disk_r2 = 0 if exclude_disk else sci.gen_disk_image(PA_offset=PA2)
             im_pl_r2   = sci.gen_planets_image(PA_offset=PA2)
             im_roll2   = im_star + im_disk_r2 + im_pl_r2
             # Noise per pixel
@@ -606,13 +620,16 @@ class obs_coronagraphy(NIRCam):
 
             # De-rotate Roll 2 onto Roll 1
             # Convention for rotate() is opposite PA_offset
-            im_diff2_rot = rotate(im_diff2, roll_angle, reshape=False)
+            im_diff2_rot = rotate(im_diff2, roll_angle, reshape=False, cval=np.nan)
             final = (im_diff1 + im_diff2_rot) / 2
+            # Replace NaNs with values from im_diff1
+            nan_mask = np.isnan(final)
+            final[nan_mask] = im_diff1[nan_mask]
         else:
             final = im_diff1
             
         # De-rotate PA1 to North
-        if abs(PA1) > 0.0001:
+        if abs(PA1) > eps:
             final = rotate(final, PA1, reshape=False)
         
         hdu = fits.PrimaryHDU(final)
@@ -695,7 +712,7 @@ class nrc_diskobs(NIRCam):
     @property
     def image_scale(self):
         """Pixel scale of image (usually oversampled)"""
-        return self.hdulist[0].header['PIXSCALE']
+        return self.hdulist[0].header['PIXELSCL']
     @property
     def image_oversample(self):
         """Image oversampling amount"""
@@ -1270,7 +1287,7 @@ def model_to_hdulist(args_model, sp_star, filter, pupil=None, mask=None):
     if 'nJy' in units_list[0]:
         units_pysyn = S.units.nJy()    
 
-    # Convert from mJy to photlam (photons/sec/cm^2/A/angular size)
+    # Convert from input units to photlam (photons/sec/cm^2/A/angular size)
     # Compare observed wavelength to image wavelength
     wave_obs = bp.avgwave() # Current bandpass wavelength
     im = units_pysyn.ToPhotlam(wave0, hdulist[0].data)
@@ -1293,7 +1310,7 @@ def model_to_hdulist(args_model, sp_star, filter, pupil=None, mask=None):
     hdulist[0].data = im
         
     hdulist[0].header['UNITS']    = 'photons/sec'
-    hdulist[0].header['PIXSCALE'] = (scale0, 'arcsec/pixel')
+    hdulist[0].header['PIXELSCL'] = (scale0, 'arcsec/pixel')
     hdulist[0].header['DISTANCE'] = (dist0, 'parsecs')
 
     return hdulist
@@ -1420,7 +1437,7 @@ def observe_disk(args_inst, args_model, dist_out=140, subsize=None,
     hdulist[0].header['UNITS']    = 'photons/sec'
     hdulist[0].header['DETSAMP']  = detscale
     hdulist[0].header['OVERSAMP'] = oversample
-    hdulist[0].header['PIXSCALE'] = pixscale_over
+    hdulist[0].header['PIXELSCL'] = pixscale_over
     hdulist[0].header['DISTANCE'] = dist_out
 
     # If the stellar magnitude is specified then determine flux
@@ -1535,7 +1552,7 @@ def observe_star(args_inst, dist_out=140, subsize=None,
     hdulist[0].header['UNITS']    = 'photons/sec'
     hdulist[0].header['DETSAMP']  = detscale
     hdulist[0].header['OVERSAMP'] = oversample
-    hdulist[0].header['PIXSCALE'] = pixscale_over
+    hdulist[0].header['PIXELSCL'] = pixscale_over
     hdulist[0].header['DISTANCE'] = dist_out
 
     im = hdulist[0].data
