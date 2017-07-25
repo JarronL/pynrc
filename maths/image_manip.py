@@ -8,6 +8,10 @@ _log = logging.getLogger('pynrc')
 
 from poppy.utils import krebin
 
+from scipy.optimize import least_squares#, leastsq
+from scipy.ndimage import fourier_shift
+
+
 def pad_or_cut_to_size(array, new_shape):
     """
     Resize an array to a new shape by either padding with zeros
@@ -467,3 +471,44 @@ def frebin(image, dimensions=None, scale=None, total=True):
         else:
             return np.transpose(result) / (sbox * lbox)
 
+
+# Fix NaN values
+def fix_nans_with_med(im, niter_max=5, verbose=False):
+    """Iteratively fix NaNs with surrounding Real data"""
+    sh_orig = im.shape
+    
+    nan_mask = np.isnan(im)
+    n_nans = np.where(nan_mask)[0].size
+    if verbose: print('{} NaNs to start'.format(n_nans))
+    
+    for ii in range(niter_max):
+        im = im.flatten()
+        nan_mask = np.isnan(im)
+        im = im.reshape(sh_orig)
+
+        # Return if we no NaNs
+        if not np.any(nan_mask): return im
+
+        if verbose: print('Iter {}'.format(ii))
+
+        # Shift
+        im_smth = []
+        for i in np.arange(-1,2):
+            for j in np.arange(-1,2):
+                im_smth.append(fshift(im, i, j))
+        im_smth = np.array(im_smth)
+        
+        # Flatten arrays for indexing of NaNs
+        im_smth = im_smth.reshape([im_smth.shape[0],-1])
+        im = im.flatten()
+        
+        # Take median of only the NaN'ed pixels
+        im[nan_mask] = np.nanmedian(im_smth[:,nan_mask], axis=0)
+        im = im.reshape(sh_orig)
+        
+    nan_mask = np.isnan(im)
+    if np.any(nan_mask):
+        n_nans = np.where(nan_mask)[0].size
+        print('{} NaNs left after {} iterations.'.format(n_nans, niter_max))
+        
+    return im

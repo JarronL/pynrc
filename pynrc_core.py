@@ -268,7 +268,7 @@ class DetectorOps(object):
                                'IPC':0.60, 'PPC':0.19, 'p_excess':(1.5,10.0), 'ktc':36.8,
                                'well_level':80e3, 'well_level_old':75e3}
         # Automatically set the pixel scale based on detector selection
-        self.auto_pixel = True  
+        self.auto_pixscale = True  
 
         self._gain_list = {481:2.07, 482:2.01, 483:2.16, 484:2.01, 485:1.83, 
                            486:2.00, 487:2.42, 488:1.93, 489:2.30, 490:1.85}
@@ -331,7 +331,7 @@ class DetectorOps(object):
         # Select various detector properties (pixel scale, dark current, read noise, etc)
         # depending on LW or SW detector
         dtemp = self._properties_LW if self.channel=='LW' else self._properties_SW
-        if self.auto_pixel: self.pixelscale = dtemp['pixel_scale']
+        if self.auto_pixscale: self.pixelscale = dtemp['pixel_scale']
         self.ktc          = dtemp['ktc']
         self.dark_current = dtemp['dark_current']
         self.read_noise   = dtemp['read_noise']
@@ -1383,10 +1383,40 @@ class NIRCam(object):
             fzodi_pix *= 0.19
 
         return fzodi_pix
+        
+    def saturation_levels(self, sp, full_size=False, ramp_sat=False):
+        """
+        Create image showing level of saturation for each pixel.
+        Can either show the saturation after one frame or after
+        the ramp has finished integrating.
+        
+        Parameters
+        ==========
+        sp        : A pysynphot spectral object (normalized).
+        full_size : Expand (or contract) to size of detector array?
+                    Otherwise, use fov_pix size (default).
+        ramp_sat  : Calculate saturation level at end of ramp?
+                    Otherwise, calculate after first frame (default).
+        
+        """
+        image = self.gen_psf(sp)
+
+        if full_size:
+            xpix, ypix = (self.det_info['xpix'], self.det_info['ypix'])
+            image = pad_or_cut_to_size(image, (ypix, xpix))
+    
+        t_frame = self.multiaccum_times['t_frame']
+        t_int = self.multiaccum_times['t_int']
+        t_sat = t_int if ramp_sat else t_frame
+    
+        # Saturation after 1 frame time
+        sat_level = image * t_sat / self.well_level
+    
+        return sat_level
 
     def gen_exposures(self, sp=None, im_slope=None, file_out=None, return_results=None,
                       targ_name=None, timeFileNames=False, DMS=True,
-                      dark=True, bias=True, **kwargs):
+                      dark=True, bias=True, nproc=None, **kwargs):
         """
         Create a series of ramp integration saved to FITS files based on
         the current NIRCam settings. 
@@ -1408,6 +1438,7 @@ class NIRCam(object):
         im_slope : Pass the slope image directly. If not set, then a slope
             image will be created from the input spectrum keyword. This
             should include zodiacal light emission, but not dark current.
+            Make sure this is in detector coordinates.
         sp : A pysynphot spectral object. If not specified, then it is
             assumed that we're looking at blank sky.
         file_out : Path and name of output FITs files. Time stamps will
@@ -1438,6 +1469,7 @@ class NIRCam(object):
 
         """
 
+        det = self.Detectors[0]
         filter = self.filter
         pupil = self.pupil
         xpix = self.det_info['xpix']
@@ -1461,10 +1493,19 @@ class NIRCam(object):
             # Add in Zodi emission
             # Returns 0 if self.pupil='FLAT'
             im_slope += self.bg_zodi(zfact, **kwargs)
+            
+            targ_name = sp.name if targ_name is None else targ_name
+            
+            # Image coordinates have +V3 up and +V2 to left
+            # Want to convert to detector coordinates
+            im_slope = V2V3_to_det(image, det.detid)
 
+        # Minimum value of slope
+        im_min = im_slope[im_slope>=0].min()
         # Expand or cut to detector size
         im_slope = pad_or_cut_to_size(im_slope, (ypix,xpix))
-        im_slope[im_slope==0] = im_slope[im_slope>0].min()
+        # Make sure there are no negative numbers
+        im_slope[im_slope<=0] = im_min
 
         # Create times indicating start of new ramp
         t0 = datetime.datetime.now()
@@ -1497,18 +1538,22 @@ class NIRCam(object):
         # Create a list of arguments to pass
         # For now, we're only doing the first detector. This will need to get more
         # sophisticated for SW FPAs
-        det = self.Detectors[0]
-        worker_arguments = [(det, im_slope, True, fout, filter, pupil, otime, 
+        worker_arguments = [(det, im_slope, True, fout, filter, pupil, otime, \
                              targ_name, DMS, dark, bias, return_results) \
                             for fout,otime in zip(file_list, time_list)]
 
-        nproc = nproc_use_ng(det)
+        nproc = nproc_use_ng(det) if nproc is None else nproc
         if nproc<=1:
             res = map(gen_fits, worker_arguments)
         else:
             pool = mp.Pool(nproc)
-            res = pool.map(gen_fits, worker_arguments)
-            pool.close()
+            try:
+                res = pool.map(gen_fits, worker_arguments)
+            except Exception as e:
+                print('Caught an exception during multiprocess:')
+                raise e
+            finally:
+                pool.close()
         
         if return_results: return res
 
@@ -1934,7 +1979,17 @@ def gen_fits(args):
     # Must call np.random.seed() for multiprocessing, otherwise 
     # random numbers for parallel processes start in the same seed state!
     np.random.seed()
-    res = slope_to_ramp(*args)
+    try:
+        res = slope_to_ramp(*args)
+    except Exception as e:
+        print('Caught exception in worker thread:')
+        # This prints the type, value, and stack trace of the
+        # current exception being handled.
+        traceback.print_exc()
+
+        print()
+        raise e
+
     return res
 
 def nproc_use_ng(det):

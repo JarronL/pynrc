@@ -36,6 +36,9 @@ class obs_coronagraphy(NIRCam):
     def __init__(self, sp_sci, sp_ref, distance, wfe_drift=10, offset_list=None, 
                  wind_mode='WINDOW', xpix=320, ypix=320, oversample=2, 
                  disk_hdu=None, verbose=False, **kwargs):
+                 
+        if 'FULL'   in wind_mode: xpix = ypix = 2048
+        if 'STRIPE' in wind_mode: xpix = 2048
 
         #super(NIRCam,self).__init__(**kwargs)
         # Not sure if this works for both Python 2 and 3
@@ -234,7 +237,7 @@ class obs_coronagraphy(NIRCam):
 
     def planet_spec(self, Av=0, **kwargs):
         """
-        Return the planet flux rate for spectrum from Spiegel & Burrows (2011). 
+        Return the planet spectrum from Spiegel & Burrows (2011). 
         Parameters:
             Av : Extinction magnitude (assumes Rv=4.0)
             atmo: A string consisting of one of four atmosphere types:
@@ -254,9 +257,6 @@ class obs_coronagraphy(NIRCam):
         Rv = 4.0
         if Av>0: sp *= S.Extinction(Av/Rv,name='mwrv4')
         
-        #obs = S.Observation(sp, self.bandpass, binset=self.bandpass.wave)
-        #flux = obs.effstim(fluxunit)
-        
         return sp
     
 
@@ -266,11 +266,13 @@ class obs_coronagraphy(NIRCam):
         return self._planets
 
     def add_planet(self, atmo='hy3s', mass=10, age=100, entropy=10,
-        loc=(0,0), loc_units='AU', Av=0, renorm_args=None):
+        rtheta=(0,0), runits='AU', Av=0, renorm_args=None):
         """
         Add exoplanet information that will be used to generate a point
-        source image using a spectrum from Spiegel & Burrows (2011).
+        source image using a spectrum from Spiegel & Burrows (2012).
         Use self.kill_planets() to delete them.
+        
+        Coordinate convention is for +V3 up and +V2 to left.
         
         Parameters:
             atmo: A string consisting of one of four atmosphere types:
@@ -282,40 +284,40 @@ class obs_coronagraphy(NIRCam):
             age: Age in millions of years (1-1000)
             entropy: Initial entropy (8.0-13.0) in increments of 0.25
 
-            loc = (x,y) : Position to place point source relative to star (center).
-            loc_units   : What units are loc? Valid values are 'AU', 'asec', or 'pix'.
-            Av          : Extinction magnitude (assumes Rv=4.0).
+            rtheta : Radius and position angle relative to star (center).
+            runits : What units is radius? Valid values are 'AU', 'asec', or 'pix'.
+            Av     : Extinction magnitude (assumes Rv=4.0).
          """
 
+        # Size of subarray image in terms of pixels
         image_shape = (self.det_info['ypix'], self.det_info['xpix'])
-
-        # Define pixel location
-        au_per_pixel = self.distance*self.pix_scale
-        if 'AU' in loc_units:
-            xoff, yoff = np.array(loc) / au_per_pixel
-            xoff_asec, yoff_asec = np.array(loc) / self.distance
-        elif ('asec' in loc_units) or ('arcsec' in loc_units):
-            xoff, yoff = np.array(loc) / self.pix_scale
-            xoff_asec, yoff_asec = loc
-        elif ('pix' in loc_units):
-            xoff, yoff = loc
-            xoff_asec, yoff_asec = np.array(loc) * self.pix_scale
-        else:
-            _log.warning("Do not recognize loc_units='{}'. Assuming 'AU'".format(loc_units))
-            xoff, yoff = np.array(loc) / au_per_pixel
-            xoff_asec, yoff_asec = np.array(loc) / self.distance
         
-        ycen, xcen = tuple((a - 1) / 2.0 for a in image_shape)
-        xpix, ypix = int(round(xoff+xcen)), int(round(yoff+ycen))
+        # XY location of planets within subarray with units from runits keyword
+        loc = rtheta_to_xy(rtheta[0], rtheta[1])
+
+        # Define pixel location relative to the center of the subarray
+        au_per_pixel = self.distance*self.pix_scale
+        if 'AU' in runits:
+            xoff, yoff = np.array(loc) / au_per_pixel
+        elif ('asec' in runits) or ('arcsec' in runits):
+            xoff, yoff = np.array(loc) / self.pix_scale
+        elif ('pix' in runits):
+            xoff, yoff = loc
+        else:
+            errstr = "Do not recognize runits='{}'".format(runits)
+            raise ValueError(errstr)
+            
+        # Offset in terms of arcsec
+        xoff_asec, yoff_asec = np.array([xoff, yoff]) * self.pix_scale
+        _log.debug('(xoff,yoff) = {} pixels'.format((xoff,yoff)))
+        _log.debug('(xoff_asec,yoff_asec) = {} arcsec'.format((xoff_asec,yoff_asec)))
     
         # Make sure planet is within image bounds
-        sh_diff = np.abs(np.array([ypix,xpix]))-np.array(image_shape)
+        sh_diff = np.abs(np.array([yoff,xoff])) - np.array(image_shape)/2
         if np.any(sh_diff>=0):
             _log.warning('xoff,yoff = {} is beyond image boundaries.'.format((xoff,yoff)))
             
         # X and Y pixel offsets from center of image
-        #xoff = xpix-xcen
-        #yoff = ypix-ycen
         # Dictionary of planet info
         d = {'xyoff_pix':(xoff,yoff), 'atmo':atmo, 'mass':mass, 'age':age, 
              'entropy':entropy, 'Av':Av, 'renorm_args':renorm_args}
@@ -325,7 +327,9 @@ class obs_coronagraphy(NIRCam):
     def gen_planets_image(self, PA_offset=0):
         """
         Use info stored in self.planets to create a noiseless slope image 
-        of just the exoplanets (no star). 
+        of just the exoplanets (no star).
+        
+        Coordinate convention is for +V3 up and +V2 to left.
         
         PA_offset (float) : Rotate entire scene by some position angle.
             Positive values are counter-clockwise from +Y direction.
@@ -359,7 +363,7 @@ class obs_coronagraphy(NIRCam):
             # Create slope image (postage stamp) of planet
             sp = self.planet_spec(**pl)
             renorm_args = pl['renorm_args']
-            if len(renorm_args) > 0:
+            if (renorm_args is not None) and (len(renorm_args) > 0):
                 sp_norm = sp.renorm(*renorm_args)
                 sp_norm.name = sp.name
                 sp = sp_norm
@@ -386,7 +390,9 @@ class obs_coronagraphy(NIRCam):
     def gen_disk_image(self, PA_offset=0):
         """
         Generate a (noiseless) convolved image of the disk at some PA offset. 
-        The PA offset value will rotate the image CCW.
+        The PA offset value will rotate the image CCW. Units of e-/sec.
+        
+        Coordinate convention is for +V3 up and +V2 to left.
         """
             
         if self.disk_hdulist is None:
@@ -418,8 +424,13 @@ class obs_coronagraphy(NIRCam):
                 imconv_slices = map(_wrap_convolve_for_mp, worker_arguments)
             else:
                 pool = mp.Pool(nproc)
-                imconv_slices = pool.map(_wrap_convolve_for_mp, worker_arguments)
-                pool.close()
+                try:
+                    imconv_slices = pool.map(_wrap_convolve_for_mp, worker_arguments)
+                except Exception as e:
+                    print('Caught an exception during multiprocess:')
+                    raise e
+                finally:
+                    pool.close()
                 
             # Turn into a numpy array of shape (noff,nx,ny)
             imconv_slices = np.array(imconv_slices)
@@ -427,6 +438,7 @@ class obs_coronagraphy(NIRCam):
             # Sum all images together
             image_conv = imconv_slices.sum(axis=0)
             
+        image_conv[image_conv<0] = 0
         return image_conv
 
 
@@ -520,7 +532,7 @@ class obs_coronagraphy(NIRCam):
         exclude_disk=False, exclude_noise=False):
         """
         Create a final roll-subtracted slope image based on current observation
-        settings.
+        settings. Coordinate convention is for +V3 up and +V2 to left.
         
         Procedure:
           - Create Roll 1 and Roll 2 slope images (star+exoplanets)
@@ -546,7 +558,14 @@ class obs_coronagraphy(NIRCam):
         """
     
         # Final image shape
-        image_shape = (self.det_info['ypix'], self.det_info['xpix'])
+        xpix, ypix = (self.det_info['xpix'], self.det_info['ypix'])
+        image_shape = (ypix, xpix)
+        # Sub-image for determining ref star scale factor
+        xsub = np.min([100,xpix])
+        ysub = np.min([100,ypix])
+        image_shape_sub = (ysub, xsub)
+        
+        # Position angle decisions
         if PA2 is None: 
             roll_angle = 0
         else:
@@ -560,6 +579,7 @@ class obs_coronagraphy(NIRCam):
         # Ideal slope
         im_ref = ref.gen_psf(sci.sp_ref, return_oversample=False)
         im_ref = pad_or_cut_to_size(im_ref, image_shape)
+        im_ref_sub = pad_or_cut_to_size(im_ref, image_shape_sub)
         # Noise per pixel
         if not exclude_noise:
             det = ref.Detectors[0]
@@ -587,7 +607,9 @@ class obs_coronagraphy(NIRCam):
             im_roll1 += np.random.normal(scale=im_noise1)
     
         # Subtract reference star from Roll 1
-        scale1 = scale_ref_image(im_roll1, im_ref)
+        im_roll1_sub = pad_or_cut_to_size(im_roll1, image_shape_sub)
+        scale1 = scale_ref_image(im_roll1_sub, im_ref_sub)
+        _log.debug('scale1: {0:.3f}'.format(scale1))
         #scale1 = im_roll1.max() / im_ref.max()
         if oversample != 1:
             im_ref_rebin = frebin(im_ref, scale=oversample)
@@ -612,7 +634,9 @@ class obs_coronagraphy(NIRCam):
                 im_roll2 += np.random.normal(scale=im_noise2)
 
             # Subtract reference star from Roll 2
-            scale2 = scale_ref_image(im_roll2, im_ref)
+            im_roll2_sub = pad_or_cut_to_size(im_roll2, image_shape_sub)
+            scale2 = scale_ref_image(im_roll2_sub, im_ref_sub)
+            _log.debug('scale2: {0:.3f}'.format(scale2))
             #scale2 = im_roll2.max() / im_ref.max()
             if oversample != 1:
                 im_roll2  = frebin(im_roll2, scale=oversample)
@@ -639,6 +663,7 @@ class obs_coronagraphy(NIRCam):
         hdulist = fits.HDUList([hdu])
 
         return hdulist
+        
 
 
 class nrc_diskobs(NIRCam):

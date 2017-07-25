@@ -28,14 +28,15 @@ import datetime, time
 import yaml, re, os
 import sys, platform
 import multiprocessing as mp
+import traceback
 
 from astropy.io import fits
 from astropy.io import ascii
 from astropy.table import Table
 from astropy.time import Time
 
-from scipy.optimize import least_squares#, leastsq
-from scipy.ndimage import fourier_shift
+#from scipy.optimize import least_squares#, leastsq
+#from scipy.ndimage import fourier_shift
 
 from . import conf
 from .logging_utils import setup_logging
@@ -473,8 +474,18 @@ def _wrap_coeff_for_mp(args):
 
     inst,w,fov_pix,oversample = args
     fov_pix_orig = fov_pix # Does calc_psf change fov_pix??
-    hdu_list = inst.calc_psf(outfile=None, save_intermediates=False, oversample=oversample, rebin=True, \
-                             fov_pixels=fov_pix, monochromatic=w*1e-6)
+    try:
+        hdu_list = inst.calc_psf(outfile=None, save_intermediates=False, \
+                                 oversample=oversample, rebin=True, \
+                                 fov_pixels=fov_pix, monochromatic=w*1e-6)
+    except Exception as e:
+        print('Caught exception in worker thread (w = {}):'.format(w))
+        # This prints the type, value, and stack trace of the
+        # current exception being handled.
+        traceback.print_exc()
+
+        print()
+        raise e
 
     # Return to previous setting
     poppy.conf.use_multiprocessing = mp_prev
@@ -705,7 +716,15 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         pool = mp.Pool(nproc)
         # Pass arguments to the helper function
         images = pool.map(_wrap_coeff_for_mp, worker_arguments)
-        pool.close()
+
+        try:
+            images = pool.map(_wrap_coeff_for_mp, worker_arguments)
+        except Exception as e:
+            print('Caught an exception during multiprocess.')
+            raise e
+        finally:
+            _log.debug('Closing multiprocess pool.')
+            pool.close()
     else:
         # Pass arguments to the helper function
         images = map(_wrap_coeff_for_mp, worker_arguments)	
@@ -927,6 +946,7 @@ def gen_image_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         data_list = []
         for psf_fit in psf_list:
             data_over = psf_fit.sum(axis=2)
+            data_over[data_over<__epsilon] = 0
             data_list.append(poppy.utils.krebin(data_over, (fov_pix,fov_pix)))
         
         if nspec == 1: data_list = data_list[0]
@@ -1834,7 +1854,7 @@ def image_rescale(HDUlist_or_filename, args_in, args_out, cen_star=True):
     return hdulist_new
 
 
-def scale_ref_image(im1, im2, mask=None):
+def scale_ref_image(im1, im2, mask=None, smooth_imgs=False):
     """
     Find value to scale a reference image by minimizing residuals.
     
@@ -1843,22 +1863,48 @@ def scale_ref_image(im1, im2, mask=None):
     im1 - Science star observation.
     im2 - Reference star observation.
     mask - Use this mask to exclude pixels for performing standard deviation.
+           Boolean mask where True is included and False is excluded
     """
     
     # Mask for generating standard deviation
     if mask is None:
         mask = np.ones(im1.shape, dtype=np.bool)
+    nan_mask = ~(np.isnan(im1) | np.isnan(im2))
+    mask = (mask & nan_mask)
 
-    ind1 = np.where(im1==im1.max())
-    ind2 = np.where(im2==im2.max())
+    # Spatial averaging to remove bad pixels
+    if smooth_imgs:
+        im1_smth = []#np.zeros_like(im1)
+        im2_smth = []#np.zeros_like(im2)
+        for i in [-1,0,1]:
+            for j in [-1,0,1]:
+                im1_smth.append(fshift(im1, i, j))
+                im2_smth.append(fshift(im2, i, j))
+
+        im1 = np.nanmedian(np.array(im1_smth), axis=0)
+        im2 = np.nanmedian(np.array(im2_smth), axis=0)
+
+    ind = np.where(im1==im1[mask].max())
+    ind = [ind[0][0], ind[1][0]]
 
     # Initial Guess
-    scl = im1[ind1[0]-3:ind1[0]+3,ind1[1]-3:ind1[1]+3].sum() / \
-          im2[ind2[0]-3:ind2[0]+3,ind2[1]-3:ind2[1]+3].sum()
+    scl = np.nanmean(im1[ind[0]-3:ind[0]+3,ind[1]-3:ind[1]+3]) / \
+          np.nanmean(im2[ind[0]-3:ind[0]+3,ind[1]-3:ind[1]+3])
+          
+    # Wider range
+    # Check a range of scale values
+    # Want to minimize the standard deviation of the differenced images
+    scl_arr = np.linspace(0.2*scl,2*scl,10)
+    mad_arr = []
+    for val in scl_arr:
+        diff = im1 - val*im2
+        mad_arr.append(robust.medabsdev(diff[mask]))
+    mad_arr = np.array(mad_arr)
+    scl = scl_arr[mad_arr==mad_arr.min()][0]
 
     # Check a range of scale values
     # Want to minimize the standard deviation of the differenced images
-    scl_arr = np.linspace(scl-scl*0.1,scl+scl*0.1,50)
+    scl_arr = np.linspace(0.85*scl,1.15*scl,50)
     mad_arr = []
     for val in scl_arr:
         diff = im1 - val*im2
@@ -1938,7 +1984,52 @@ def rtheta_to_xy(r, theta):
 
     return x, y
 
+###########################################################################
+#
+#    Coordinate Systems
+#
+###########################################################################
 
+def det_to_V2V3(image, detid):
+    """
+    Reorient image from detector coordinates to V2/V3 coordinate system.
+    This places +V3 up and +V2 to the LEFT. Detector pixel (0,0) is assumed 
+    to be in the bottom left. For now, we're simply performing axes flips. 
+    """
+    
+    # Check if SCA ID (481-489) where passed through detname rather than A1-B5
+    try:
+        detid = int(detid)
+    except ValueError:
+        detname = detid
+    else:
+        scaids = {481:'A1', 482:'A2', 483:'A3', 484:'A4', 485:'A5',
+                  486:'B1', 487:'B2', 488:'B3', 489:'B4', 490:'B5'}
+        detname = scaids[detid]
+    
+    xflip = ['A1','A3','A5','B2','B4']
+    yflip = ['A2','A4','B1','B3','B5']
+    
+    for s in xflip:
+        if detname in s:
+            image = image[:,::-1] 
+    for s in yflip:
+        if detname in s:
+            image = image[::-1,:] 
+    
+    return image
+    
+def V2V3_to_det(image, detid):
+    """
+    Reorient image from V2/V3 coordinates to detector coordinate system.
+    Assumes +V3 up and +V2 to the LEFT. The result plances the detector
+    pixel (0,0) in the bottom left. For now, we're simply performing 
+    axes flips.
+    """
+    
+    # Flips occur along the same axis and manner as in det_to_V2V3()
+    return det_to_V2V3(image, detid)
+    
 
 ###########################################################################
 #
@@ -2701,6 +2792,7 @@ def coron_trans(name, module='A', pixscale=None, fov=20):
 def build_mask(module='A', pixscale=0.03):
     """
     Return an image of the full coronagraphic mask layout for a given module.
+    +V3 is up, and +V2 is to the left.
     """
     if module=='A':
         names = ['MASK210R', 'MASK335R', 'MASK430R', 'MASKSWB', 'MASKLWB']

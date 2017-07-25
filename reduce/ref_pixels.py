@@ -77,7 +77,7 @@ class NRC_refs(object):
             type_in = data.dtype.name
             data = data.astype(np.float, copy=False)
             type_out = data.dtype.name
-            print('Converting data from {} to {}'.format(type_in, type_out))
+            #print('Converting data from {} to {}'.format(type_in, type_out))
 
         # Check the number of dimensions are valid.
         ndim = len(data.shape)
@@ -315,7 +315,7 @@ class NRC_refs(object):
 
         perint    (bool) : Smooth side reference pixel per int, otherwise per frame.
         edge_wrap (bool) : Add a partial frames to the beginning and end of each averaged
-                           time seires pixels in order to get rid of edge effects.          
+                           time series pixels in order to get rid of edge effects.          
         """
         
         refvals = self.refs_side_avg

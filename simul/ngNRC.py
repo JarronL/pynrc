@@ -339,7 +339,7 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
     hdu = SCAnoise(det=det, dark=dark, bias=bias)
     # Update header information
     hdu.header = det.make_header(filter, pupil, obs_time,targ_name=targ_name,DMS=DMS)
-    hdu.data += ramp # Add signal ramp to dark ramp
+    hdu.data += ramp.reshape(hdu.data.shape) # Add signal ramp to dark ramp
     data = hdu.data
 
     #### Add in IPC (TBI) ####
