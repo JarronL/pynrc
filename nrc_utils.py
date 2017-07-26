@@ -398,10 +398,10 @@ def read_filter(filter, pupil=None, mask=None, module=None, ND_acq=False,
 ###########################################################################
 
 # Subclass of the WebbPSF NIRCam class to fix coronagraphy bug
-from webbpsf import NIRCam as NIRCam_webbpsf
-class NIRCam(NIRCam_webbpsf):
+from webbpsf import NIRCam as webbpsf_NIRCam
+class webbpsf_NIRCam_mod(webbpsf_NIRCam):
     def __init__(self):
-        NIRCam_webbpsf.__init__(self)
+        webbpsf_NIRCam.__init__(self)
 
     def _addAdditionalOptics(self,optsys, oversample=2):
         """ Slight re-write of the webbpsf version of this function -JML
@@ -634,7 +634,8 @@ def _wrap_coeff_for_mp(args):
         traceback.print_exc()
 
         print()
-        raise e
+        #raise e
+        return None
 
     # Return to previous setting
     poppy.conf.use_multiprocessing = mp_prev
@@ -715,7 +716,7 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     setup_logging('WARN', verbose=False)
 
     # Create a simulated PSF with WebbPSF
-    inst = NIRCam()
+    inst = webbpsf_NIRCam_mod()
     inst.options['output_mode'] = 'oversampled'
     inst.options['parity'] = 'odd'
     #inst.options['source_offset_r'] = offset_r
@@ -869,10 +870,17 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
 
         try:
             images = pool.map(_wrap_coeff_for_mp, worker_arguments)
+            if images[0] is None:
+                raise RuntimeError('Returned None values. Issue with multiprocess or WebbPSF??')
+               
         except Exception as e:
-            print('Caught an exception during multiprocess.')
+            _log.error('Caught an exception during multiprocess.')
+            _log.error('Closing multiprocess pool.')
+            pool.terminate()
+            pool.close()
             raise e
-        finally:
+            
+        else:
             _log.debug('Closing multiprocess pool.')
             pool.close()
     else:
