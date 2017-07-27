@@ -561,9 +561,10 @@ class obs_coronagraphy(NIRCam):
         xpix, ypix = (self.det_info['xpix'], self.det_info['ypix'])
         image_shape = (ypix, xpix)
         # Sub-image for determining ref star scale factor
-        xsub = np.min([100,xpix])
-        ysub = np.min([100,ypix])
-        image_shape_sub = (ysub, xsub)
+        subsize = 50
+        xsub = np.min([subsize,xpix])
+        ysub = np.min([subsize,ypix])
+        sub_shape = (ysub, xsub)
         
         # Position angle decisions
         if PA2 is None: 
@@ -579,7 +580,7 @@ class obs_coronagraphy(NIRCam):
         # Ideal slope
         im_ref = ref.gen_psf(sci.sp_ref, return_oversample=False)
         im_ref = pad_or_cut_to_size(im_ref, image_shape)
-        im_ref_sub = pad_or_cut_to_size(im_ref, image_shape_sub)
+        im_ref_sub = pad_or_cut_to_size(im_ref, sub_shape)
         # Noise per pixel
         if not exclude_noise:
             det = ref.Detectors[0]
@@ -607,7 +608,7 @@ class obs_coronagraphy(NIRCam):
             im_roll1 += np.random.normal(scale=im_noise1)
     
         # Subtract reference star from Roll 1
-        im_roll1_sub = pad_or_cut_to_size(im_roll1, image_shape_sub)
+        im_roll1_sub = pad_or_cut_to_size(im_roll1, sub_shape)
         scale1 = scale_ref_image(im_roll1_sub, im_ref_sub)
         _log.debug('scale1: {0:.3f}'.format(scale1))
         #scale1 = im_roll1.max() / im_ref.max()
@@ -616,10 +617,9 @@ class obs_coronagraphy(NIRCam):
             im_roll1     = frebin(im_roll1, scale=oversample)
         else:
             im_ref_rebin = im_ref
-    
-        im_diff1 = im_roll1 - im_ref_rebin * scale1
-
-    
+        #im_diff_r1 = im_roll1 - im_ref_rebin * scale1
+        im_diff_r1 = optimal_difference(im_roll1, im_ref_rebin, scale1)
+        
         # Telescope Roll 2
         if abs(roll_angle) > eps:
             im_disk_r2 = 0 if exclude_disk else sci.gen_disk_image(PA_offset=PA2)
@@ -634,23 +634,24 @@ class obs_coronagraphy(NIRCam):
                 im_roll2 += np.random.normal(scale=im_noise2)
 
             # Subtract reference star from Roll 2
-            im_roll2_sub = pad_or_cut_to_size(im_roll2, image_shape_sub)
+            im_roll2_sub = pad_or_cut_to_size(im_roll2, sub_shape)
             scale2 = scale_ref_image(im_roll2_sub, im_ref_sub)
             _log.debug('scale2: {0:.3f}'.format(scale2))
             #scale2 = im_roll2.max() / im_ref.max()
             if oversample != 1:
-                im_roll2  = frebin(im_roll2, scale=oversample)
-            im_diff2 = im_roll2 - im_ref_rebin * scale2
+                im_roll2 = frebin(im_roll2, scale=oversample)
+            #im_diff_r2 = im_roll2 - im_ref_rebin * scale2
+            im_diff_r2 = optimal_difference(im_roll2, im_ref_rebin, scale2)
 
             # De-rotate Roll 2 onto Roll 1
             # Convention for rotate() is opposite PA_offset
-            im_diff2_rot = rotate(im_diff2, roll_angle, reshape=False, cval=np.nan)
-            final = (im_diff1 + im_diff2_rot) / 2
-            # Replace NaNs with values from im_diff1
+            im_diff_r2_rot = rotate(im_diff_r2, roll_angle, reshape=False, cval=np.nan)
+            final = (im_diff_r1 + im_diff_r2_rot) / 2
+            # Replace NaNs with values from im_diff_r1
             nan_mask = np.isnan(final)
-            final[nan_mask] = im_diff1[nan_mask]
+            final[nan_mask] = im_diff_r1[nan_mask]
         else:
-            final = im_diff1
+            final = im_diff_r1
             
         # De-rotate PA1 to North
         if abs(PA1) > eps:

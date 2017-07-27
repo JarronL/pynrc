@@ -2073,6 +2073,38 @@ def scale_ref_image(im1, im2, mask=None, smooth_imgs=False):
     return scl_arr[mad_arr==mad_arr.min()][0]
 
 
+def optimal_difference(im_sci, im_ref, scale, binsize=1):
+    """
+    Scale factors from scale_ref_image work great for subtracting
+    a reference PSF from a science image where there are plenty
+    of photons, but perform poorly in the noise-limited regime. If
+    we simply perform a difference by scaling the reference image,
+    then we also amplify the noise. In the background, it's better to
+    simply subtract the unscaled reference pixels. This routine finds
+    the radial cut-off of the background noise and PSF noise.
+    """
+
+    diff1 = im_sci - im_ref
+    diff2 = im_sci - im_ref * scale
+    
+    rho = dist_image(im_sci)
+    ypix, xpix = rho.shape
+    rvals = np.arange(0, np.min([xpix,ypix])/2-binsize, binsize)
+    rstd1 = []
+    rstd2 = []
+    for r1 in rvals:
+        r2 = r1 +5
+        rmask = (rho>r1) & (rho<r2)
+        rstd1.append(robust.medabsdev(diff1[rmask]))
+        rstd2.append(robust.medabsdev(diff2[rmask]))
+
+    rstd1 = np.array(rstd1)
+    rstd2 = np.array(rstd2)
+    rsplit = rvals[rstd1<rstd2].min()
+    
+    diff1[rho<rsplit] = diff2[rho<rsplit]
+    
+    return diff1
 
 
 
