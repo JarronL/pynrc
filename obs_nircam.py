@@ -496,14 +496,20 @@ class obs_coronagraphy(NIRCam):
         
     
         # Radial noise
-        binsize = hdu_diff[0].header['OVERSAMP'] * hdu_diff[0].header['PIXELSCL']
-        rr, stds = webbpsf.radial_profile(hdu_diff, ext=0, stddev=True, binsize=binsize)
-        stds[0] = stds[1] # First element is always a NaN
+        data = hdu_diff[0].data
+        header = hdu_diff[0].header
+        rho = dist_image(data, pixscale=header['PIXELSCL'])
+
+        # Get radial profiles
+        binsize = header['OVERSAMP'] * header['PIXELSCL']
+        bins = np.arange(rho.min(), rho.max() + binsize, binsize)
+        igroups, _, rr = nrc_utils.hist_indices(rho, bins, True)
+        stds = nrc_utils.binned_statistic(igroups, data, func=np.std)
         stds = convolve(stds, Gaussian1DKernel(1))
 
         # Ignore corner regions
-        xsize = hdu_diff[0].header['PIXELSCL'] * hdu_diff[0].data.shape[0] / 2
-        mask = rr<xsize
+        arr_size = np.max(data.shape) * header['PIXELSCL']
+        mask = rr<arr_size
         rr = rr[mask]
         stds = stds[mask]
 
@@ -529,7 +535,7 @@ class obs_coronagraphy(NIRCam):
         return rr, contrast, sen_mag
 
     def gen_roll_image(self, PA1=0, PA2=10, zfact=None, oversample=None, 
-        exclude_disk=False, exclude_noise=False):
+        exclude_disk=False, exclude_noise=False, opt_diff=True):
         """
         Create a final roll-subtracted slope image based on current observation
         settings. Coordinate convention is for +V3 up and +V2 to left.
@@ -617,11 +623,14 @@ class obs_coronagraphy(NIRCam):
             im_roll1     = frebin(im_roll1, scale=oversample)
         else:
             im_ref_rebin = im_ref
-        #im_diff_r1 = im_roll1 - im_ref_rebin * scale1
-        im_diff_r1 = optimal_difference(im_roll1, im_ref_rebin, scale1)
         
         # Telescope Roll 2
         if abs(roll_angle) > eps:
+            # Subtraction with and without scaling
+            im_diff1_r1 = im_roll1 - im_ref_rebin
+            im_diff2_r1 = im_roll1 - im_ref_rebin * scale1
+            #im_diff_r1 = optimal_difference(im_roll1, im_ref_rebin, scale1)
+
             im_disk_r2 = 0 if exclude_disk else sci.gen_disk_image(PA_offset=PA2)
             im_pl_r2   = sci.gen_planets_image(PA_offset=PA2)
             im_roll2   = im_star + im_disk_r2 + im_pl_r2
@@ -640,25 +649,54 @@ class obs_coronagraphy(NIRCam):
             #scale2 = im_roll2.max() / im_ref.max()
             if oversample != 1:
                 im_roll2 = frebin(im_roll2, scale=oversample)
-            #im_diff_r2 = im_roll2 - im_ref_rebin * scale2
-            im_diff_r2 = optimal_difference(im_roll2, im_ref_rebin, scale2)
+            # Subtraction with and without scaling
+            im_diff1_r2 = im_roll2 - im_ref_rebin
+            im_diff2_r2 = im_roll2 - im_ref_rebin * scale2
+            #im_diff_r2 = optimal_difference(im_roll2, im_ref_rebin, scale2)
 
             # De-rotate Roll 2 onto Roll 1
             # Convention for rotate() is opposite PA_offset
-            im_diff_r2_rot = rotate(im_diff_r2, roll_angle, reshape=False, cval=np.nan)
-            final = (im_diff_r1 + im_diff_r2_rot) / 2
+            im_diff1_r2_rot = rotate(im_diff1_r2, roll_angle, reshape=False, cval=np.nan)
+            im_diff2_r2_rot = rotate(im_diff2_r2, roll_angle, reshape=False, cval=np.nan)
+            final1 = (im_diff1_r1 + im_diff1_r2_rot) / 2
+            final2 = (im_diff2_r1 + im_diff2_r2_rot) / 2
+            
             # Replace NaNs with values from im_diff_r1
-            nan_mask = np.isnan(final)
-            final[nan_mask] = im_diff_r1[nan_mask]
+            nan_mask1 = np.isnan(final1)
+            nan_mask2 = np.isnan(final2)
+            final1[nan_mask1] = im_diff1_r1[nan_mask1]
+            final2[nan_mask2] = im_diff2_r1[nan_mask2]
+            
+            # final1 has better noise in outer regions (background)
+            # final2 has better noise in inner regions (PSF removal)
+            if opt_diff:
+                rho = dist_image(final1)
+                binsize = 1
+                bins = np.arange(rho.min(), rho.max() + binsize, binsize)
+                igroups = hist_indices(rho, bins)
+
+                std1 = binned_statistic(igroups, final1, func=np.std)
+                std2 = binned_statistic(igroups, final2, func=np.std)
+                
+                ibin_better = np.where(std1 < std2)[0]
+                for ibin in ibin_better:
+                    final2.ravel()[igroups[ibin]] = final1.ravel()[igroups[ibin]]
+                    
+            final = final2
+
         else:
-            final = im_diff_r1
+            # Optimal differencing (with scaling only on the inner regions)
+            if opt_diff:
+                final = optimal_difference(im_roll1, im_ref_rebin, scale1)
+            else:
+                final = im_roll1 - im_ref_rebin * scale1
             
         # De-rotate PA1 to North
         if abs(PA1) > eps:
             final = rotate(final, PA1, reshape=False)
         
         hdu = fits.PrimaryHDU(final)
-        hdu.header['EXTNAME'] = ('DET_SAMP')
+        hdu.header['EXTNAME'] = ('ROLL_SUB')
         hdu.header['OVERSAMP'] = oversample
         hdu.header['PIXELSCL'] = sci.pix_scale / hdu.header['OVERSAMP']
         hdulist = fits.HDUList([hdu])

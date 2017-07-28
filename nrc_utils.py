@@ -1473,35 +1473,22 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
         # Wavelength to grab sensitivity values
         obs = S.Observation(sp_norm, bp, binset=waveset)
         efflam = obs.efflam()*1e-4 # microns
-
-        # Create HDU list to pass to radial_profile()
-        flux_hdu = fits.PrimaryHDU(image)
-        flux_hdu.header.append(('PIXELSCL', pix_scale))
-        flux_hdu_list = fits.HDUList(flux_hdu)
-        radius, _, EE_flux = radial_profile(flux_hdu_list, EE=True, center=center)
-        rad_pix = radius / pix_scale + 0.5
+        
+        # Encircled energy
+        rho_pix = dist_image(image)
+        bins = np.arange(rho.min(), rho.max() + 1, 1)
+        # Groups indices for each radial bin
+        igroups, _, rad_pix = hist_indices(rho_pix, bins, True)
+        # Sum of each radial annulus
+        sums = binned_statistic(igroups, image, func=np.sum)
+        # Encircled energy within each radius
+        EE_flux = np.cumsum(sums)
 
         # How many pixels do we want?
         fwhm_pix = 1.2 * efflam * 0.206265 / 6.5 / pix_scale
         if rad_EE is None:
             rad_EE = np.max([fwhm_pix,2.5])
         npix_EE = np.pi * rad_EE**2
-
-        ####TEMPORARY
-# 		tgrp = (nf + nd2) * tf
-# 		tint = ngroup*tgrp - nd2*tf #(ngroup*nf + (ngroup-1)*nd2) * tf
-# 		texp_orig = nint*tint
-# 		# Cosmic ray influence
-# 		texp = texp_orig#*(1. - 0.32*tgrp/tint)*(1. - tf/tint)
-# 		idark = 0.01
-# 		rn = 15.0
-# 		
-# 		var_const = fzodi_pix/tint + idark/tint + rn**2 / tint**2
-# 		_log.debug('tgrp:{0:.2f}, tint:{1:.2f}, texp_orig:{2:.2f}, texp:{3:.2f}'\
-# 			.format(tgrp,tint,texp_orig,texp))
-# 		_log.debug('idark:{0:.4f}, rn:{1:.1f}'.format(idark,rn))
-# 		_log.debug('Extraction radius: {0:.2f} pixels'.format(rad_EE))
-        ####TEMPORARY
 
         # For surface brightness sensitivity (extended object)
         # Assume the fiducial (sp_norm) to be in terms of mag/arcsec^2
@@ -1513,11 +1500,10 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
         if forwardSNR:
             im_var = pix_noise(ngroup=ngroup, nf=nf, nd2=nd2, tf=tf, 
                 fzodi=fzodi_pix, fsrc=image, **kwargs)**2
-            # Create HDU list to pass to radial_profile()
-            var_hdu = fits.PrimaryHDU(im_var)
-            var_hdu.header.append(('PIXELSCL', pix_scale))
-            var_hdu_list = fits.HDUList(var_hdu)
-            _, _, EE_var = radial_profile(var_hdu_list, EE=True, center=center)
+
+            # root squared sum of noise within each radius
+            sums = binned_statistic(igroups, im_var, func=np.sum)
+            EE_var = np.cumsum(sums)
             EE_sig = np.sqrt(EE_var / nint)
 
             EE_snr = snr_fact * EE_flux / EE_sig
@@ -1555,12 +1541,10 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
 
                     im_var = pix_noise(ngroup=ngroup, nf=nf, nd2=nd2, tf=tf, 
                         fzodi=fzodi_pix, fsrc=image/f, **kwargs)**2
-
-                    # Create HDU list to pass to radial_profile()
-                    var_hdu = fits.PrimaryHDU(im_var)
-                    var_hdu.header.append(('PIXELSCL', pix_scale))
-                    var_hdu_list = fits.HDUList(var_hdu)
-                    _, _, EE_var = radial_profile(var_hdu_list, EE=True, center=center)
+                        
+                    # root squared sum of noise within each radius
+                    sums = binned_statistic(igroups, im_var, func=np.sum)
+                    EE_var = np.cumsum(sums)
                     EE_sig = np.sqrt(EE_var / nint)
 
                     EE_snr = snr_fact * (EE_flux/f) / EE_sig
@@ -2072,8 +2056,110 @@ def scale_ref_image(im1, im2, mask=None, smooth_imgs=False):
     #plt.plot(scl_arr,mad_arr)
     return scl_arr[mad_arr==mad_arr.min()][0]
 
+def hist_indices(values, bins=10, return_more=False):
+    """
+    This function bins an input of values and returns the indices for
+    each bin. This is similar to the reverse indices functionality
+    of the IDL histogram routine. It's also much faster than doing
+    a for loop and creating masks/indice at each iteration, because
+    we utilize a sparse matrix constructor. It's kinda magical...
+    
+    Returns of a list of indices grouped together according to the bin.
+    
+    Parameters
+    ==========
+    values  - Input numpy array. Should be a single dimension.
+    bins    - If bins is an int, it defines the number of equal-width bins 
+              in the given range (10, by default). If bins is a sequence, 
+              it defines the bin edges, including the rightmost edge.
+   
+    return_more - Option to also return the values organized by bin and 
+                  the value of the centers (igroups, vgroups, center_vals).
+    
+    Example
+    ==========
+        # Find the standard deviation at each radius of an image
+        rho = dist_image(image)
+        binsize = 1
+        bins = np.arange(rho.min(), rho.max() + binsize, binsize)
+        igroups, vgroups, center_vals = hist_indices(rho, bins, True)
+        # Get the standard deviation of image at each bin
+        std = binned_statistic(igroups, image, np.std)
 
-def optimal_difference(im_sci, im_ref, scale, binsize=1):
+    """
+    
+    from scipy.sparse import csr_matrix
+    
+    values_flat = values.ravel()
+
+    v0 = values_flat.min()
+    v1 = values_flat.max()
+    N  = len(values_flat)   
+    
+    try: # if bins is an integer
+        binsize = (v1 - v0) / bins
+        bins = np.arange(v0, v1 + binsize, binsize)
+    except: # otherwise assume it's already an array
+        binsize = bins[1] - bins[0]
+    
+    # Central value of each bin
+    center_vals = bins[:-1] + binsize / 2.
+    nbins = center_vals.size
+
+    digitized = ((nbins-1.0) / (v1-v0) * (values_flat-v0)).astype(np.int)
+    csr = csr_matrix((values_flat, [digitized, np.arange(N)]), shape=(nbins, N))
+
+    # Split indices into their bin groups    
+    igroups = np.split(csr.indices, csr.indptr[1:-1])
+    
+    if return_more:
+        vgroups = np.split(csr.data, csr.indptr[1:-1])
+        return (igroups, vgroups, center_vals)
+    else:
+        return igroups
+    
+
+def binned_statistic(x, values, func=np.mean, bins=10):
+    """
+    Compute a binned statistic for a set of data. Drop-in replacement
+    for scipy.stats.binned_statistic.
+
+    Parameters
+    ==========
+    x      - A sequence of values to be binned. Or a list of binned 
+             indices from hist_indices().
+    values - The values on which the statistic will be computed.
+    func   - The function to use for calculating the statistic. 
+    bins   - If bins is an int, it defines the number of equal-width bins 
+             in the given range (10, by default). If bins is a sequence, 
+             it defines the bin edges, including the rightmost edge.
+             This doens't do anything if x is a list of indices.
+             
+    Example
+    ==========
+        # Find the standard deviation at each radius of an image
+        rho = dist_image(image)
+        binsize = 1
+        bins = np.arange(rho.min(), rho.max() + binsize, binsize)
+        igroups, vgroups, center_vals = hist_indices(rho, bins, True)
+        # Get the standard deviation of image at each bin
+        std = binned_statistic(igroups, image, np.std)
+    
+    """
+
+    values_flat = values.ravel()
+
+    from scipy.sparse import csr_matrix
+    try:
+        igroups = hist_indices(x, bins)
+    except:
+        igroups = x
+    
+    return np.array([func(values_flat[ind]) for ind in igroups])
+
+
+def optimal_difference(im_sci, im_ref, scale, binsize=1, center=None, 
+                       mask_good=None, sub_mean=True, std_func=np.std):
     """
     Scale factors from scale_ref_image work great for subtracting
     a reference PSF from a science image where there are plenty
@@ -2081,29 +2167,51 @@ def optimal_difference(im_sci, im_ref, scale, binsize=1):
     we simply perform a difference by scaling the reference image,
     then we also amplify the noise. In the background, it's better to
     simply subtract the unscaled reference pixels. This routine finds
-    the radial cut-off of the background noise and PSF noise.
+    the radial cut-off of the dominant noise source.
     """
 
     diff1 = im_sci - im_ref
     diff2 = im_sci - im_ref * scale
     
-    rho = dist_image(im_sci)
-    ypix, xpix = rho.shape
-    rvals = np.arange(0, np.min([xpix,ypix])/2-binsize, binsize)
-    rstd1 = []
-    rstd2 = []
-    for r1 in rvals:
-        r2 = r1 +5
-        rmask = (rho>r1) & (rho<r2)
-        rstd1.append(robust.medabsdev(diff1[rmask]))
-        rstd2.append(robust.medabsdev(diff2[rmask]))
+    rho = dist_image(im_sci, center=center)
+    
+    # Only perform operations on pixels where mask_good=True
+    if mask_good is None:
+        mask_good = np.ones(rho.shape, dtype=np.bool)
+    nan_mask1 = np.isnan(diff1)
+    nan_mask2 = np.isnan(diff2)
+    mask_good = mask_good & (~nan_mask1) & (~nan_mask2)
+        
+    rho_good = rho[mask_good]
+    diff1_good = diff1[mask_good]
+    diff2_good = diff2[mask_good]
 
-    rstd1 = np.array(rstd1)
-    rstd2 = np.array(rstd2)
-    rsplit = rvals[rstd1<rstd2].min()
-    
-    diff1[rho<rsplit] = diff2[rho<rsplit]
-    
+    # Get the histogram indices
+    bins = np.arange(rho_good.min(), rho_good.max() + binsize, binsize)
+    igroups = hist_indices(rho_good, bins)
+    nbins = len(igroups)
+
+    # Standard deviation for each bin
+    std1 = binned_statistic(igroups, diff1_good, func=std_func)
+    std2 = binned_statistic(igroups, diff2_good, func=std_func)
+
+    # Subtract the mean at each radius
+    if sub_mean:
+        med1 = binned_statistic(igroups, diff1_good, func=np.median)
+        med2 = binned_statistic(igroups, diff2_good, func=np.median)
+        for i in range(nbins):
+            diff1_good[igroups[i]] -= med1[i]
+            diff2_good[igroups[i]] -= med2[i]
+
+    # Replace values in diff1 with better ones in diff2
+    ibin_better = np.where(std2 < std1)[0]
+    for ibin in ibin_better:
+        diff1_good[igroups[ibin]] = diff2_good[igroups[ibin]]
+    #for i in range(nbins):
+    #    if std2[i] < std1[i]:
+    #        diff1_good[igroups[i]] = diff2_good[igroups[i]]
+            
+    diff1[mask_good] = diff1_good
     return diff1
 
 

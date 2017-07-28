@@ -605,10 +605,10 @@ def get_contrast_old(psf0,psf1,psf2):
     from copy import deepcopy
     psf_diff = deepcopy(psf1)
     psf_diff[0].data = (psf1[0].data - psf2[0].data)
-    psf_diff[1].data = (psf1[1].data - psf2[1].data)
+    #psf_diff[1].data = (psf1[1].data - psf2[1].data)
 
     # Radial noise profiles of PSF difference
-    rr0, stds0 = webbpsf.radial_profile(psf_diff, ext=0, stddev=True)
+    #rr0, stds0 = webbpsf.radial_profile(psf_diff, ext=0, stddev=True)
     #rr1, stds1 = webbpsf.radial_profile(psf_diff, ext=1, stddev=True)
 
     ## Total planet signal at a radius of 0.5"
@@ -620,6 +620,16 @@ def get_contrast_old(psf0,psf1,psf2):
     ## nsigma of planet signal relative to noise
     #contrast =  np.sqrt(stds0**2 * npix) / planet_signal
 
+    data = psf_diff[0].data
+    header = psf_diff[0].header
+    pixelscale = header['PIXELSCL']
+    
+    rho = dist_image(data, pixscale=pixelscale)
+    binsize = pixelscale
+    bins = np.arange(rho.min(), rho.max() + binsize, binsize)
+    rr0 = bins[:-1] + binsize / 2
+
+    stds0 = binned_statistic(rho, data, func=np.std, bins=bins)
     contrast = stds0 / np.max(psf0[0].data)
 
     return rr0, contrast
@@ -634,6 +644,7 @@ def get_contrast(speckle_noise_image, planet_psf):
 
     # Radial profile of the noise image
     ext = 0
+    data = speckle_noise_image[ext].data
     header = speckle_noise_image[ext].header
 
     pixelscale = header['PIXELSCL']
@@ -643,10 +654,17 @@ def get_contrast(speckle_noise_image, planet_psf):
     xcen = header['NAXIS1'] / 2.0 + xoff
     ycen = header['NAXIS2'] / 2.0 + yoff
 
-    rr0, stds0 = webbpsf.radial_profile(speckle_noise_image, ext=ext, center=(xcen,ycen))
+    #rr0, stds0 = webbpsf.radial_profile(speckle_noise_image, ext=ext, center=(xcen,ycen))
+    rho = dist_image(data, pixscale=pixelscale, center=(xcen,ycen))
+    binsize = pixelscale
+    bins = np.arange(rho.min(), rho.max() + binsize, binsize)
+    rr0 = bins[:-1] + binsize / 2
+
+    stds0 = binned_statistic(rho, data, func=np.mean, bins=bins)
+    contrast = stds0 / np.max(planet_psf[0].data)
+
     #rr1, stds1 = webbpsf.radial_profile(psf_diff, ext=1)
 
-    contrast = stds0 / np.max(planet_psf[0].data)
 
     return rr0, contrast
 
