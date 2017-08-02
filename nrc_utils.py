@@ -1608,7 +1608,7 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
 
 
 def sat_limit_webbpsf(filter_or_bp, pupil=None, mask=None, module='A', 
-    sp=None, bp_lim=None, int_time=21.47352, full_well=81e3, well_frac=0.8, 
+    sp=None, bp_lim=None, int_time=21.47354, full_well=81e3, well_frac=0.8, 
     coeff=None, fov_pix=11, oversample=4, quiet=True, units='vegamag', 
     offset_r=0, offset_theta=0, **kwargs):
     """
@@ -1996,9 +1996,13 @@ def image_rescale(HDUlist_or_filename, args_in, args_out, cen_star=True):
     return hdulist_new
 
 
-def scale_ref_image(im1, im2, mask=None, smooth_imgs=False):
+def scale_ref_image(im1, im2, mask=None, smooth_imgs=False,
+                    return_shift_values=False):
     """
     Find value to scale a reference image by minimizing residuals.
+    This assumed everything is already aligned. Or simply turn on
+    return_shift_values to return (dx,dy,scl). Then fshift(im2,dx,dy)
+    to shift the reference image.
     
     Inputs
     ======
@@ -2006,6 +2010,8 @@ def scale_ref_image(im1, im2, mask=None, smooth_imgs=False):
     im2 - Reference star observation.
     mask - Use this mask to exclude pixels for performing standard deviation.
            Boolean mask where True is included and False is excluded
+    smooth_imgs - Smooth the images with nearest neighbors to remove bad pixels.
+    return_shift_values - Option to return x and y shift values
     """
     
     # Mask for generating standard deviation
@@ -2025,36 +2031,43 @@ def scale_ref_image(im1, im2, mask=None, smooth_imgs=False):
 
         im1 = np.nanmedian(np.array(im1_smth), axis=0)
         im2 = np.nanmedian(np.array(im2_smth), axis=0)
+        
+    # Perform linear least squares fit on difference function
+    if return_shift_values:
+        return align_LSQ(im2[mask], im1[mask], shift_function=fshift)
+    else:
+        _, _, scl = align_LSQ(im2[mask], im1[mask], shift_function=None)
+        return scl
 
-    ind = np.where(im1==im1[mask].max())
-    ind = [ind[0][0], ind[1][0]]
-
-    # Initial Guess
-    scl = np.nanmean(im1[ind[0]-3:ind[0]+3,ind[1]-3:ind[1]+3]) / \
-          np.nanmean(im2[ind[0]-3:ind[0]+3,ind[1]-3:ind[1]+3])
-          
-    # Wider range
-    # Check a range of scale values
-    # Want to minimize the standard deviation of the differenced images
-    scl_arr = np.linspace(0.2*scl,2*scl,10)
-    mad_arr = []
-    for val in scl_arr:
-        diff = im1 - val*im2
-        mad_arr.append(robust.medabsdev(diff[mask]))
-    mad_arr = np.array(mad_arr)
-    scl = scl_arr[mad_arr==mad_arr.min()][0]
-
-    # Check a range of scale values
-    # Want to minimize the standard deviation of the differenced images
-    scl_arr = np.linspace(0.85*scl,1.15*scl,50)
-    mad_arr = []
-    for val in scl_arr:
-        diff = im1 - val*im2
-        mad_arr.append(robust.medabsdev(diff[mask]))
-    mad_arr = np.array(mad_arr)
-
-    #plt.plot(scl_arr,mad_arr)
-    return scl_arr[mad_arr==mad_arr.min()][0]
+###     ind = np.where(im1==im1[mask].max())
+###     ind = [ind[0][0], ind[1][0]]
+### 
+###     # Initial Guess
+###     scl = np.nanmean(im1[ind[0]-3:ind[0]+3,ind[1]-3:ind[1]+3]) / \
+###           np.nanmean(im2[ind[0]-3:ind[0]+3,ind[1]-3:ind[1]+3])
+###           
+###     # Wider range
+###     # Check a range of scale values
+###     # Want to minimize the standard deviation of the differenced images
+###     scl_arr = np.linspace(0.2*scl,2*scl,10)
+###     mad_arr = []
+###     for val in scl_arr:
+###         diff = im1 - val*im2
+###         mad_arr.append(robust.medabsdev(diff[mask]))
+###     mad_arr = np.array(mad_arr)
+###     scl = scl_arr[mad_arr==mad_arr.min()][0]
+### 
+###     # Check a range of scale values
+###     # Want to minimize the standard deviation of the differenced images
+###     scl_arr = np.linspace(0.85*scl,1.15*scl,50)
+###     mad_arr = []
+###     for val in scl_arr:
+###         diff = im1 - val*im2
+###         mad_arr.append(robust.medabsdev(diff[mask]))
+###     mad_arr = np.array(mad_arr)
+### 
+###     #plt.plot(scl_arr,mad_arr)
+###     return scl_arr[mad_arr==mad_arr.min()][0]
 
 def hist_indices(values, bins=10, return_more=False):
     """

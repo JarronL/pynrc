@@ -508,8 +508,8 @@ class obs_coronagraphy(NIRCam):
         stds = convolve(stds, Gaussian1DKernel(1))
 
         # Ignore corner regions
-        arr_size = np.max(data.shape) * header['PIXELSCL']
-        mask = rr<arr_size
+        arr_size = np.min(data.shape) * header['PIXELSCL']
+        mask = rr < (arr_size/2)
         rr = rr[mask]
         stds = stds[mask]
 

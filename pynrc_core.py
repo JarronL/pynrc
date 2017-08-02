@@ -465,7 +465,7 @@ class DetectorOps(object):
         if self.nout == 1:
             if   self.xpix>150: xtra_lines = 0
             elif self.xpix>64:  xtra_lines = 1
-            elif self.xpix>16:  xtra_lines = 3
+            elif self.xpix>16:  xtra_lines = 2
             elif self.xpix>8:   xtra_lines = 4
             else:               xtra_lines = 5
         # Full and Stripe
@@ -559,7 +559,10 @@ class DetectorOps(object):
 
     @property
     def time_total_int(self):
-        """Total time for all frames in a ramp (incl resets and excess drops)"""
+        """
+        Total time for all frames in a ramp.
+        Includes resets and excess drops, as well as NFF Rows Reset.
+        """
 
         ma = self.multiaccum
         nf = ma.nf; nd1 = ma.nd1; nd2 = ma.nd2; nd3 = ma.nd3
@@ -1265,7 +1268,7 @@ class NIRCam(object):
 
         well_level = self.Detectors[0].well_level
         # Total time spent integrating minus the reset frame
-        int_time = self.multiaccum_times['t_int_tot'] - self.multiaccum_times['t_frame']
+        int_time = self.multiaccum_times['t_int']
 
         kwargs = merge_dicts(kwargs, self._psf_info)
         satlim = sat_limit_webbpsf(self.bandpass, pupil=self.pupil, mask=self.mask,
@@ -1387,8 +1390,8 @@ class NIRCam(object):
     def saturation_levels(self, sp, full_size=False, ramp_sat=False):
         """
         Create image showing level of saturation for each pixel.
-        Can either show the saturation after one frame or after
-        the ramp has finished integrating.
+        Can either show the saturation after one frame (default)
+        or after the ramp has finished integrating (ramp_sat=True).
         
         Parameters
         ==========
@@ -1715,7 +1718,7 @@ class NIRCam(object):
 
                     # Get saturation level of observation
                     # Total time spent integrating minus the reset frame
-                    int_time = mtimes['t_int_tot'] - mtimes['t_frame']
+                    int_time = mtimes['t_int']
 
                     well_frac = pix_count_rate * int_time / self.well_level
                     # If above well_frac_max, then this setting is invalid
@@ -1770,8 +1773,7 @@ class NIRCam(object):
                     mtimes = self.multiaccum_times
 
                     # Get saturation level of observation
-                    # Total time spent integrating minus the reset frame
-                    int_time = mtimes['t_int_tot'] - mtimes['t_frame']
+                    int_time = mtimes['t_int']
                     well_frac = pix_count_rate * int_time / self.well_level
                     # If above well_frac_max, then this setting is invalid
                     if well_frac > well_frac_max:
