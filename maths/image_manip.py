@@ -270,14 +270,18 @@ def shift_subtract(params, reference, target, mask=None, pad=False,
     '''
     xshift, yshift, beta = params
 
-    offset = shift_function(reference, xshift, yshift, pad)
+    if shift_function is not None:
+        offset = shift_function(reference, xshift, yshift, pad)
+    else:
+        offset = reference
     
     if mask is not None:
-        return ( (target - beta * offset) * mask ).flatten()
+        return ( (target - beta * offset) * mask ).ravel() #.flatten()
     else:
-        return ( target - beta * offset ).flatten()
+        return ( target - beta * offset ).ravel() #.flatten()
 
-def align_LSQ(reference, target, mask=None, pad=False, shift_function=fshift):
+def align_LSQ(reference, target, mask=None, pad=False, 
+              shift_function=fshift):
     '''
     LSQ optimization with option of shift alignment algorithm
     
@@ -292,7 +296,7 @@ def align_LSQ(reference, target, mask=None, pad=False, shift_function=fshift):
             a weighting function in performing the fit.
         shift_function : which function to use for sub-pixel shifting.
             Options are fourier_imshift or fshift.
-            fshift tends to be 3-5 times faster for similar results.s
+            fshift tends to be 3-5 times faster for similar results.
     Returns:
         results : list
             [x, y, beta] values from LSQ optimization, where (x, y) 
