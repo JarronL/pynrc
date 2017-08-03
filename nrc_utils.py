@@ -1476,7 +1476,7 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
         
         # Encircled energy
         rho_pix = dist_image(image)
-        bins = np.arange(rho.min(), rho.max() + 1, 1)
+        bins = np.arange(rho_pix.min(), rho_pix.max() + 1, 1)
         # Groups indices for each radial bin
         igroups, _, rad_pix = hist_indices(rho_pix, bins, True)
         # Sum of each radial annulus
