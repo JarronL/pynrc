@@ -857,7 +857,7 @@ def smooth_fft(data, delt, first_deriv=False, second_deriv=False):
         return Smoothed_Data
     
 
-def extract_pink(im, nchans=4, chmed=True, chflip=True, method='savgol'):
-
-    ny, nx = im.shape
-    chsize = nx / nchans
+#def extract_pink(im, nchans=4, chmed=True, chflip=True, method='savgol'):
+#
+#    ny, nx = im.shape
+#    chsize = nx / nchans

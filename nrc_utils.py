@@ -1032,7 +1032,7 @@ def gen_image_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     for obs in obs_list: obs.convert('counts')
 
     # Create a PSF for each wgood wavelength
-    psf_fit = jl_poly(wgood, coeff)
+    psf_fit = jl_poly(wgood, coeff, dim_reorder=True)
 
     # Multiply each monochromatic PSFs by the binned e/sec at each wavelength
     # Array broadcasting: [nx,ny,nwave] x [0,0,nwave]
