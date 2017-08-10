@@ -1387,7 +1387,7 @@ class NIRCam(object):
 
         return fzodi_pix
         
-    def saturation_levels(self, sp, full_size=False, ramp_sat=False):
+    def saturation_levels(self, sp, full_size=True, ngroup=0, **kwargs):
         """
         Create image showing level of saturation for each pixel.
         Can either show the saturation after one frame (default)
@@ -1397,22 +1397,37 @@ class NIRCam(object):
         ==========
         sp        : A pysynphot spectral object (normalized).
         full_size : Expand (or contract) to size of detector array?
-                    Otherwise, use fov_pix size (default).
-        ramp_sat  : Calculate saturation level at end of ramp?
-                    Otherwise, calculate after first frame (default).
+                    If False, use fov_pix size.
+        ngroup    : How many group times to determine saturation level?
+                    The default is ngroup=0, which corresponds to the
+                    so-called "zero-frame." This is the very first frame
+                    that is read-out and saved separately. If this number
+                    is higher than the total groups in ramp, then a
+                    warning is produced.
         
         """
-        image = self.gen_psf(sp)
+        
+        assert ngroup >= 0
 
-        if full_size:
-            xpix, ypix = (self.det_info['xpix'], self.det_info['ypix'])
-            image = pad_or_cut_to_size(image, (ypix, xpix))
-    
         t_frame = self.multiaccum_times['t_frame']
         t_int = self.multiaccum_times['t_int']
-        t_sat = t_int if ramp_sat else t_frame
+        if ngroup==0:
+            t_sat = t_frame
+        else:
+            ma = self.multiaccum
+            nf = ma.nf; nd1 = ma.nd1; nd2 = ma.nd2
+            t_sat = (nd1 + ngroup*nf + (ngroup-1)*nd2) * t_frame
+        
+        if t_sat>t_int:
+            _log.warning('ngroup*t_group is greater than t_int.')
     
-        # Saturation after 1 frame time
+        # Slope image of input source
+        image = self.gen_psf(sp)
+        if full_size:
+            shape = (self.det_info['ypix'], self.det_info['xpix'])
+            image = pad_or_cut_to_size(image, shape)
+
+        # Well levels after "saturation time"
         sat_level = image * t_sat / self.well_level
     
         return sat_level

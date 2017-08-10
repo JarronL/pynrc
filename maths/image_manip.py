@@ -1,5 +1,8 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
+# The six library is useful for Python 2 and 3 compatibility
+import six
+
 #__all__ = ['pad_or_cut_to_size', 'frebin', \
 #           'fshift', 'fourier_imshift', 'shift_subtract', 'align_LSQ']
 import numpy as np
@@ -8,8 +11,19 @@ _log = logging.getLogger('pynrc')
 
 from poppy.utils import krebin
 
+from pynrc.maths.coords import dist_image
+#from pynrc.nrc_utils import (hist_indices, binned_statistics)
+#    igroups = hist_indices(rho_good, bins)
+#    nbins = len(igroups)
+
+    # Standard deviation for each bin
+#    std1 = binned_statistic(igroups, diff1_good, func=std_func)
+
+
 from scipy.optimize import least_squares#, leastsq
 from scipy.ndimage import fourier_shift
+
+from astropy.io import fits
 
 
 def pad_or_cut_to_size(array, new_shape):
@@ -516,3 +530,313 @@ def fix_nans_with_med(im, niter_max=5, verbose=False):
         print('{} NaNs left after {} iterations.'.format(n_nans, niter_max))
         
     return im
+
+    
+def image_rescale(HDUlist_or_filename, args_in, args_out, cen_star=True):
+    """
+    Scale the flux and rebin the image with a give pixel scale and distance
+    to some output pixel scale and distance. The object's physical units (AU)
+    are assumed to be constant, so the angular size changes if the distance
+    to the object changes.
+
+    IT IS RECOMMENDED THAT UNITS BE IN PHOTONS/SEC/PIXEL (not mJy/arcsec)
+
+    Parameters
+    ==========
+    args_in  : Two parameters consisting of the input image pixel scale and distance
+        assumed to be in units of arcsec/pixel and parsecs, respectively
+    args_out : Same as above, but the new desired outputs
+    cen_star : Is the star placed in the central pixel?
+
+    Returns an HDUlist of the new image
+    """
+    im_scale, dist = args_in
+    pixscale_out, dist_new = args_out
+
+    if isinstance(HDUlist_or_filename, six.string_types):
+        hdulist = fits.open(HDUlist_or_filename)
+    elif isinstance(HDUlist_or_filename, fits.HDUList):
+        hdulist = HDUlist_or_filename
+    else:
+        raise ValueError("Input must be a filename or HDUlist")
+
+    # By moving the image closer, we increased the flux (inverse square law)
+    image = (hdulist[0].data) * (dist / dist_new)**2
+    #hdulist.close()
+
+    # We also increased the angle that the image subtends
+    # So, each pixel would have a large angular size
+    # New image scale in arcsec/pixel
+    imscale_new = im_scale * dist / dist_new
+
+    # Before rebinning, we want the flux in the central pixel to
+    # always be in the central pixel (the star). So, let's save
+    # and remove that flux then add back after the rebinning.
+    if cen_star:
+        mask_max = image==image.max()
+        star_flux = image[mask_max][0]
+        image[mask_max] = 0
+
+    # Rebin the image to get a pixel scale that oversamples the detector pixels
+    fact = imscale_new / pixscale_out
+    image_new = frebin(image, scale=fact)
+
+    # Restore stellar flux to the central pixel.
+    ny,nx = image_new.shape
+    if cen_star:
+        image_new[ny//2, nx//2] += star_flux
+
+    hdu_new = fits.PrimaryHDU(image_new)
+    hdu_new.header = hdulist[0].header.copy()
+    hdulist_new = fits.HDUList([hdu_new])
+    hdulist_new[0].header['PIXELSCL'] = (pixscale_out, 'arcsec/pixel')
+    hdulist_new[0].header['DISTANCE'] = (dist_new, 'parsecs')
+
+    return hdulist_new
+
+
+def scale_ref_image(im1, im2, mask=None, smooth_imgs=False,
+                    return_shift_values=False):
+    """
+    Find value to scale a reference image by minimizing residuals.
+    This assumed everything is already aligned. Or simply turn on
+    return_shift_values to return (dx,dy,scl). Then fshift(im2,dx,dy)
+    to shift the reference image.
+    
+    Inputs
+    ======
+    im1 - Science star observation.
+    im2 - Reference star observation.
+    mask - Use this mask to exclude pixels for performing standard deviation.
+           Boolean mask where True is included and False is excluded
+    smooth_imgs - Smooth the images with nearest neighbors to remove bad pixels.
+    return_shift_values - Option to return x and y shift values
+    """
+    
+    # Mask for generating standard deviation
+    if mask is None:
+        mask = np.ones(im1.shape, dtype=np.bool)
+    nan_mask = ~(np.isnan(im1) | np.isnan(im2))
+    mask = (mask & nan_mask)
+
+    # Spatial averaging to remove bad pixels
+    if smooth_imgs:
+        im1_smth = []#np.zeros_like(im1)
+        im2_smth = []#np.zeros_like(im2)
+        for i in [-1,0,1]:
+            for j in [-1,0,1]:
+                im1_smth.append(fshift(im1, i, j))
+                im2_smth.append(fshift(im2, i, j))
+
+        im1 = np.nanmedian(np.array(im1_smth), axis=0)
+        im2 = np.nanmedian(np.array(im2_smth), axis=0)
+        
+    # Perform linear least squares fit on difference function
+    if return_shift_values:
+        return align_LSQ(im2[mask], im1[mask], shift_function=fshift)
+    else:
+        _, _, scl = align_LSQ(im2[mask], im1[mask], shift_function=None)
+        return scl
+
+###     ind = np.where(im1==im1[mask].max())
+###     ind = [ind[0][0], ind[1][0]]
+### 
+###     # Initial Guess
+###     scl = np.nanmean(im1[ind[0]-3:ind[0]+3,ind[1]-3:ind[1]+3]) / \
+###           np.nanmean(im2[ind[0]-3:ind[0]+3,ind[1]-3:ind[1]+3])
+###           
+###     # Wider range
+###     # Check a range of scale values
+###     # Want to minimize the standard deviation of the differenced images
+###     scl_arr = np.linspace(0.2*scl,2*scl,10)
+###     mad_arr = []
+###     for val in scl_arr:
+###         diff = im1 - val*im2
+###         mad_arr.append(robust.medabsdev(diff[mask]))
+###     mad_arr = np.array(mad_arr)
+###     scl = scl_arr[mad_arr==mad_arr.min()][0]
+### 
+###     # Check a range of scale values
+###     # Want to minimize the standard deviation of the differenced images
+###     scl_arr = np.linspace(0.85*scl,1.15*scl,50)
+###     mad_arr = []
+###     for val in scl_arr:
+###         diff = im1 - val*im2
+###         mad_arr.append(robust.medabsdev(diff[mask]))
+###     mad_arr = np.array(mad_arr)
+### 
+###     #plt.plot(scl_arr,mad_arr)
+###     return scl_arr[mad_arr==mad_arr.min()][0]
+
+
+def optimal_difference(im_sci, im_ref, scale, binsize=1, center=None, 
+                       mask_good=None, sub_mean=True, std_func=np.std):
+    """
+    Scale factors from scale_ref_image work great for subtracting
+    a reference PSF from a science image where there are plenty
+    of photons, but perform poorly in the noise-limited regime. If
+    we simply perform a difference by scaling the reference image,
+    then we also amplify the noise. In the background, it's better to
+    simply subtract the unscaled reference pixels. This routine finds
+    the radial cut-off of the dominant noise source.
+    """
+
+    diff1 = im_sci - im_ref
+    diff2 = im_sci - im_ref * scale
+    
+    rho = dist_image(im_sci, center=center)
+    
+    # Only perform operations on pixels where mask_good=True
+    if mask_good is None:
+        mask_good = np.ones(rho.shape, dtype=np.bool)
+    nan_mask1 = np.isnan(diff1)
+    nan_mask2 = np.isnan(diff2)
+    mask_good = mask_good & (~nan_mask1) & (~nan_mask2)
+        
+    rho_good = rho[mask_good]
+    diff1_good = diff1[mask_good]
+    diff2_good = diff2[mask_good]
+
+    # Get the histogram indices
+    bins = np.arange(rho_good.min(), rho_good.max() + binsize, binsize)
+    igroups = hist_indices(rho_good, bins)
+    nbins = len(igroups)
+
+    # Standard deviation for each bin
+    std1 = binned_statistic(igroups, diff1_good, func=std_func)
+    std2 = binned_statistic(igroups, diff2_good, func=std_func)
+
+    # Subtract the mean at each radius
+    if sub_mean:
+        med1 = binned_statistic(igroups, diff1_good, func=np.median)
+        med2 = binned_statistic(igroups, diff2_good, func=np.median)
+        for i in range(nbins):
+            diff1_good[igroups[i]] -= med1[i]
+            diff2_good[igroups[i]] -= med2[i]
+
+    # Replace values in diff1 with better ones in diff2
+    ibin_better = np.where(std2 < std1)[0]
+    for ibin in ibin_better:
+        diff1_good[igroups[ibin]] = diff2_good[igroups[ibin]]
+            
+    diff1[mask_good] = diff1_good
+    return diff1
+
+
+def hist_indices(values, bins=10, return_more=False):
+    """
+    This function bins an input of values and returns the indices for
+    each bin. This is similar to the reverse indices functionality
+    of the IDL histogram routine. It's also much faster than doing
+    a for loop and creating masks/indice at each iteration, because
+    we utilize a sparse matrix constructor. It's kinda magical...
+    
+    Returns of a list of indices grouped together according to the bin.
+    Only works for evenly spaced bins.
+    
+    Parameters
+    ==========
+    values  - Input numpy array. Should be a single dimension.
+    bins    - If bins is an int, it defines the number of equal-width bins 
+              in the given range (10, by default). If bins is a sequence, 
+              it defines the bin edges, including the rightmost edge.
+   
+    return_more - Option to also return the values organized by bin and 
+                  the value of the centers (igroups, vgroups, center_vals).
+    
+    Example
+    ==========
+        # Find the standard deviation at each radius of an image
+        rho = dist_image(image)
+        binsize = 1
+        bins = np.arange(rho.min(), rho.max() + binsize, binsize)
+        igroups, vgroups, center_vals = hist_indices(rho, bins, True)
+        # Get the standard deviation of image at each bin
+        std = binned_statistic(igroups, image, np.std)
+
+    """
+    
+    from scipy.sparse import csr_matrix
+    
+    values_flat = values.ravel()
+
+    v0 = values_flat.min()
+    v1 = values_flat.max()
+    N  = len(values_flat)   
+    
+    try: # if bins is an integer
+        binsize = (v1 - v0) / bins
+        bins = np.arange(v0, v1 + binsize, binsize)
+    except: # otherwise assume it's already an array
+        binsize = bins[1] - bins[0]
+    
+    # Central value of each bin
+    center_vals = bins[:-1] + binsize / 2.
+    nbins = center_vals.size
+
+    digitized = ((nbins-1.0) / (v1-v0) * (values_flat-v0)).astype(np.int)
+    csr = csr_matrix((values_flat, [digitized, np.arange(N)]), shape=(nbins, N))
+
+    # Split indices into their bin groups    
+    igroups = np.split(csr.indices, csr.indptr[1:-1])
+    
+    if return_more:
+        vgroups = np.split(csr.data, csr.indptr[1:-1])
+        return (igroups, vgroups, center_vals)
+    else:
+        return igroups
+    
+
+def binned_statistic(x, values, func=np.mean, bins=10):
+    """
+    Compute a binned statistic for a set of data. Drop-in replacement
+    for scipy.stats.binned_statistic.
+
+    Parameters
+    ==========
+    x      - A sequence of values to be binned. Or a list of binned 
+             indices from hist_indices().
+    values - The values on which the statistic will be computed.
+    func   - The function to use for calculating the statistic. 
+    bins   - If bins is an int, it defines the number of equal-width bins 
+             in the given range (10, by default). If bins is a sequence, 
+             it defines the bin edges, including the rightmost edge.
+             This doens't do anything if x is a list of indices.
+             
+    Example
+    ==========
+        # Find the standard deviation at each radius of an image
+        rho = dist_image(image)
+        binsize = 1
+        bins = np.arange(rho.min(), rho.max() + binsize, binsize)
+        igroups, vgroups, center_vals = hist_indices(rho, bins, True)
+        # Get the standard deviation of image at each bin
+        std = binned_statistic(igroups, image, np.std)
+    
+    """
+
+    values_flat = values.ravel()
+    
+    try: # This will be successful if x is not already a list of indices
+    
+        # Check if bins is a single value
+        if (len(np.array(bins))==1) and (bins is not None):
+            igroups = hist_indices(x, bins)
+            res = np.array([func(values_flat[ind]) for ind in igroups])
+        # Otherwise we assume bins is a list or array defining edge locations
+        else:
+            bins = np.array(bins)
+            # Check if binsize is the same for all bins
+            bsize = bins[1:] - bins[:-1]
+            if np.isclose(bsize.min(), bsize.max()):
+                igroups = hist_indices(x, bins)
+                res = np.array([func(values_flat[ind]) for ind in igroups])
+            else:
+                # If non-uniform bins, just use scipy.stats.binned_statistic
+                from scipy import stats 
+                res, _, _ = stats.binned_statistic(x, values, func, bins)
+    except:
+        igroups = x
+        res = np.array([func(values_flat[ind]) for ind in igroups])
+    
+    return res

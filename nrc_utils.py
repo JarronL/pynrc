@@ -17,7 +17,7 @@ rcvals = {'xtick.minor.visible': True, 'ytick.minor.visible': True,
           'xtick.major.size': 6, 'ytick.major.size': 6,
           'xtick.minor.size': 3, 'ytick.minor.size': 3,
           'image.interpolation': 'none', 'image.origin': 'lower',
-          'figure.figsize': [8,6]}#,
+          'figure.figsize': [8,6], 'mathtext.fontset':'cm'}#,
           #'text.usetex': True, 'text.latex.preamble': ['\usepackage{gensymb}']}
 matplotlib.rcParams.update(rcvals)
 cmap_pri, cmap_alt = ('viridis', 'gist_heat')
@@ -44,6 +44,7 @@ from .logging_utils import setup_logging
 from .maths import robust
 from .maths.image_manip import *
 from .maths.fast_poly import *
+from .maths.coords import *
 
 ###########################################################################
 #
@@ -1927,420 +1928,6 @@ def pix_noise(ngroup=2, nf=1, nd2=0, tf=10.737, rn=15.0, ktc=29.0, p_excess=(0,0
     return noise
 
 
-###########################################################################
-#
-#    Image Manipulation and Maths
-#
-###########################################################################
-
-def image_rescale(HDUlist_or_filename, args_in, args_out, cen_star=True):
-    """
-    Scale the flux and rebin the image with a give pixel scale and distance
-    to some output pixel scale and distance. The object's physical units (AU)
-    are assumed to be constant, so the angular size changes if the distance
-    to the object changes.
-
-    IT IS RECOMMENDED THAT UNITS BE IN PHOTONS/SEC/PIXEL (not mJy/arcsec)
-
-    Parameters
-    ==========
-    args_in  : Two parameters consisting of the input image pixel scale and distance
-        assumed to be in units of arcsec/pixel and parsecs, respectively
-    args_out : Same as above, but the new desired outputs
-    cen_star : Is the star placed in the central pixel?
-
-    Returns an HDUlist of the new image
-    """
-    im_scale, dist = args_in
-    pixscale_out, dist_new = args_out
-
-    if isinstance(HDUlist_or_filename, six.string_types):
-        hdulist = fits.open(HDUlist_or_filename)
-    elif isinstance(HDUlist_or_filename, fits.HDUList):
-        hdulist = HDUlist_or_filename
-    else:
-        raise ValueError("Input must be a filename or HDUlist")
-
-    # By moving the image closer, we increased the flux (inverse square law)
-    image = (hdulist[0].data) * (dist / dist_new)**2
-    #hdulist.close()
-
-    # We also increased the angle that the image subtends
-    # So, each pixel would have a large angular size
-    # New image scale in arcsec/pixel
-    imscale_new = im_scale * dist / dist_new
-
-    # Before rebinning, we want the flux in the central pixel to
-    # always be in the central pixel (the star). So, let's save
-    # and remove that flux then add back after the rebinning.
-    if cen_star:
-        mask_max = image==image.max()
-        star_flux = image[mask_max][0]
-        image[mask_max] = 0
-
-    # Rebin the image to get a pixel scale that oversamples the detector pixels
-    fact = imscale_new / pixscale_out
-    image_new = frebin(image, scale=fact)
-
-    # Restore stellar flux to the central pixel.
-    ny,nx = image_new.shape
-    if cen_star:
-        image_new[ny//2, nx//2] += star_flux
-
-    hdu_new = fits.PrimaryHDU(image_new)
-    hdu_new.header = hdulist[0].header.copy()
-    hdulist_new = fits.HDUList([hdu_new])
-    hdulist_new[0].header['PIXELSCL'] = (pixscale_out, 'arcsec/pixel')
-    hdulist_new[0].header['DISTANCE'] = (dist_new, 'parsecs')
-
-    return hdulist_new
-
-
-def scale_ref_image(im1, im2, mask=None, smooth_imgs=False,
-                    return_shift_values=False):
-    """
-    Find value to scale a reference image by minimizing residuals.
-    This assumed everything is already aligned. Or simply turn on
-    return_shift_values to return (dx,dy,scl). Then fshift(im2,dx,dy)
-    to shift the reference image.
-    
-    Inputs
-    ======
-    im1 - Science star observation.
-    im2 - Reference star observation.
-    mask - Use this mask to exclude pixels for performing standard deviation.
-           Boolean mask where True is included and False is excluded
-    smooth_imgs - Smooth the images with nearest neighbors to remove bad pixels.
-    return_shift_values - Option to return x and y shift values
-    """
-    
-    # Mask for generating standard deviation
-    if mask is None:
-        mask = np.ones(im1.shape, dtype=np.bool)
-    nan_mask = ~(np.isnan(im1) | np.isnan(im2))
-    mask = (mask & nan_mask)
-
-    # Spatial averaging to remove bad pixels
-    if smooth_imgs:
-        im1_smth = []#np.zeros_like(im1)
-        im2_smth = []#np.zeros_like(im2)
-        for i in [-1,0,1]:
-            for j in [-1,0,1]:
-                im1_smth.append(fshift(im1, i, j))
-                im2_smth.append(fshift(im2, i, j))
-
-        im1 = np.nanmedian(np.array(im1_smth), axis=0)
-        im2 = np.nanmedian(np.array(im2_smth), axis=0)
-        
-    # Perform linear least squares fit on difference function
-    if return_shift_values:
-        return align_LSQ(im2[mask], im1[mask], shift_function=fshift)
-    else:
-        _, _, scl = align_LSQ(im2[mask], im1[mask], shift_function=None)
-        return scl
-
-###     ind = np.where(im1==im1[mask].max())
-###     ind = [ind[0][0], ind[1][0]]
-### 
-###     # Initial Guess
-###     scl = np.nanmean(im1[ind[0]-3:ind[0]+3,ind[1]-3:ind[1]+3]) / \
-###           np.nanmean(im2[ind[0]-3:ind[0]+3,ind[1]-3:ind[1]+3])
-###           
-###     # Wider range
-###     # Check a range of scale values
-###     # Want to minimize the standard deviation of the differenced images
-###     scl_arr = np.linspace(0.2*scl,2*scl,10)
-###     mad_arr = []
-###     for val in scl_arr:
-###         diff = im1 - val*im2
-###         mad_arr.append(robust.medabsdev(diff[mask]))
-###     mad_arr = np.array(mad_arr)
-###     scl = scl_arr[mad_arr==mad_arr.min()][0]
-### 
-###     # Check a range of scale values
-###     # Want to minimize the standard deviation of the differenced images
-###     scl_arr = np.linspace(0.85*scl,1.15*scl,50)
-###     mad_arr = []
-###     for val in scl_arr:
-###         diff = im1 - val*im2
-###         mad_arr.append(robust.medabsdev(diff[mask]))
-###     mad_arr = np.array(mad_arr)
-### 
-###     #plt.plot(scl_arr,mad_arr)
-###     return scl_arr[mad_arr==mad_arr.min()][0]
-
-def hist_indices(values, bins=10, return_more=False):
-    """
-    This function bins an input of values and returns the indices for
-    each bin. This is similar to the reverse indices functionality
-    of the IDL histogram routine. It's also much faster than doing
-    a for loop and creating masks/indice at each iteration, because
-    we utilize a sparse matrix constructor. It's kinda magical...
-    
-    Returns of a list of indices grouped together according to the bin.
-    
-    Parameters
-    ==========
-    values  - Input numpy array. Should be a single dimension.
-    bins    - If bins is an int, it defines the number of equal-width bins 
-              in the given range (10, by default). If bins is a sequence, 
-              it defines the bin edges, including the rightmost edge.
-   
-    return_more - Option to also return the values organized by bin and 
-                  the value of the centers (igroups, vgroups, center_vals).
-    
-    Example
-    ==========
-        # Find the standard deviation at each radius of an image
-        rho = dist_image(image)
-        binsize = 1
-        bins = np.arange(rho.min(), rho.max() + binsize, binsize)
-        igroups, vgroups, center_vals = hist_indices(rho, bins, True)
-        # Get the standard deviation of image at each bin
-        std = binned_statistic(igroups, image, np.std)
-
-    """
-    
-    from scipy.sparse import csr_matrix
-    
-    values_flat = values.ravel()
-
-    v0 = values_flat.min()
-    v1 = values_flat.max()
-    N  = len(values_flat)   
-    
-    try: # if bins is an integer
-        binsize = (v1 - v0) / bins
-        bins = np.arange(v0, v1 + binsize, binsize)
-    except: # otherwise assume it's already an array
-        binsize = bins[1] - bins[0]
-    
-    # Central value of each bin
-    center_vals = bins[:-1] + binsize / 2.
-    nbins = center_vals.size
-
-    digitized = ((nbins-1.0) / (v1-v0) * (values_flat-v0)).astype(np.int)
-    csr = csr_matrix((values_flat, [digitized, np.arange(N)]), shape=(nbins, N))
-
-    # Split indices into their bin groups    
-    igroups = np.split(csr.indices, csr.indptr[1:-1])
-    
-    if return_more:
-        vgroups = np.split(csr.data, csr.indptr[1:-1])
-        return (igroups, vgroups, center_vals)
-    else:
-        return igroups
-    
-
-def binned_statistic(x, values, func=np.mean, bins=10):
-    """
-    Compute a binned statistic for a set of data. Drop-in replacement
-    for scipy.stats.binned_statistic.
-
-    Parameters
-    ==========
-    x      - A sequence of values to be binned. Or a list of binned 
-             indices from hist_indices().
-    values - The values on which the statistic will be computed.
-    func   - The function to use for calculating the statistic. 
-    bins   - If bins is an int, it defines the number of equal-width bins 
-             in the given range (10, by default). If bins is a sequence, 
-             it defines the bin edges, including the rightmost edge.
-             This doens't do anything if x is a list of indices.
-             
-    Example
-    ==========
-        # Find the standard deviation at each radius of an image
-        rho = dist_image(image)
-        binsize = 1
-        bins = np.arange(rho.min(), rho.max() + binsize, binsize)
-        igroups, vgroups, center_vals = hist_indices(rho, bins, True)
-        # Get the standard deviation of image at each bin
-        std = binned_statistic(igroups, image, np.std)
-    
-    """
-
-    values_flat = values.ravel()
-
-    from scipy.sparse import csr_matrix
-    try:
-        igroups = hist_indices(x, bins)
-    except:
-        igroups = x
-    
-    return np.array([func(values_flat[ind]) for ind in igroups])
-
-
-def optimal_difference(im_sci, im_ref, scale, binsize=1, center=None, 
-                       mask_good=None, sub_mean=True, std_func=np.std):
-    """
-    Scale factors from scale_ref_image work great for subtracting
-    a reference PSF from a science image where there are plenty
-    of photons, but perform poorly in the noise-limited regime. If
-    we simply perform a difference by scaling the reference image,
-    then we also amplify the noise. In the background, it's better to
-    simply subtract the unscaled reference pixels. This routine finds
-    the radial cut-off of the dominant noise source.
-    """
-
-    diff1 = im_sci - im_ref
-    diff2 = im_sci - im_ref * scale
-    
-    rho = dist_image(im_sci, center=center)
-    
-    # Only perform operations on pixels where mask_good=True
-    if mask_good is None:
-        mask_good = np.ones(rho.shape, dtype=np.bool)
-    nan_mask1 = np.isnan(diff1)
-    nan_mask2 = np.isnan(diff2)
-    mask_good = mask_good & (~nan_mask1) & (~nan_mask2)
-        
-    rho_good = rho[mask_good]
-    diff1_good = diff1[mask_good]
-    diff2_good = diff2[mask_good]
-
-    # Get the histogram indices
-    bins = np.arange(rho_good.min(), rho_good.max() + binsize, binsize)
-    igroups = hist_indices(rho_good, bins)
-    nbins = len(igroups)
-
-    # Standard deviation for each bin
-    std1 = binned_statistic(igroups, diff1_good, func=std_func)
-    std2 = binned_statistic(igroups, diff2_good, func=std_func)
-
-    # Subtract the mean at each radius
-    if sub_mean:
-        med1 = binned_statistic(igroups, diff1_good, func=np.median)
-        med2 = binned_statistic(igroups, diff2_good, func=np.median)
-        for i in range(nbins):
-            diff1_good[igroups[i]] -= med1[i]
-            diff2_good[igroups[i]] -= med2[i]
-
-    # Replace values in diff1 with better ones in diff2
-    ibin_better = np.where(std2 < std1)[0]
-    for ibin in ibin_better:
-        diff1_good[igroups[ibin]] = diff2_good[igroups[ibin]]
-    #for i in range(nbins):
-    #    if std2[i] < std1[i]:
-    #        diff1_good[igroups[i]] = diff2_good[igroups[i]]
-            
-    diff1[mask_good] = diff1_good
-    return diff1
-
-
-
-def dist_image(image, pixscale=None, center=None, return_theta=False):
-    """
-    Returns radial distance in units of pixels, unless pixscale is specified.
-    Use the center keyword to specify the position (in pixels) to measure from.
-    If not set, then the center of the image is used.
-
-    return_theta will also return the angular position of each pixel relative 
-    to the specified center
-    
-    center should be entered as (x,y)
-    """
-    y, x = np.indices(image.shape)
-    if center is None:
-        center = tuple((a - 1) / 2.0 for a in image.shape[::-1])
-    x = x - center[0]
-    y = y - center[1]
-
-    rho = np.sqrt(x**2 + y**2)
-    if pixscale is not None: rho *= pixscale
-
-    if return_theta:
-        return rho, np.arctan2(-x,y)*180/np.pi
-    else:
-        return rho
-
-def xy_to_rtheta(x, y):
-    """
-    Input (x,y) coordinates and return polar cooridnates that use
-    the WebbPSF convention (theta is CCW of +Y)
-    
-    Input can either be a single value or numpy array.
-    """
-    r = np.sqrt(x**2 + y**2)
-    theta = np.arctan2(-x,y)*180/np.pi
-
-    if np.size(r)==1:
-        if np.abs(x) < __epsilon: x = 0
-        if np.abs(y) < __epsilon: y = 0
-    else:
-        r[np.abs(r) < __epsilon] = 0
-        theta[np.abs(theta) < __epsilon] = 0
-
-    return r, theta
-
-def rtheta_to_xy(r, theta):
-    """
-    Input polar cooridnates (WebbPSF convention) and return Carteesian coords
-    in the imaging coordinate system (as opposed to RA/DEC)
-
-    Input can either be a single value or numpy array.
-
-    r     : Radial offset from the center in pixels
-    theta : Position angle for offset in degrees CCW (+Y).
-    """
-    x = -r * np.sin(theta*np.pi/180.)
-    y =  r * np.cos(theta*np.pi/180.)
-
-    if np.size(x)==1:
-        if np.abs(x) < __epsilon: x = 0
-        if np.abs(y) < __epsilon: y = 0
-    else:
-        x[np.abs(x) < __epsilon] = 0
-        y[np.abs(y) < __epsilon] = 0
-
-    return x, y
-
-###########################################################################
-#
-#    Coordinate Systems
-#
-###########################################################################
-
-def det_to_V2V3(image, detid):
-    """
-    Reorient image from detector coordinates to V2/V3 coordinate system.
-    This places +V3 up and +V2 to the LEFT. Detector pixel (0,0) is assumed 
-    to be in the bottom left. For now, we're simply performing axes flips. 
-    """
-    
-    # Check if SCA ID (481-489) where passed through detname rather than A1-B5
-    try:
-        detid = int(detid)
-    except ValueError:
-        detname = detid
-    else:
-        scaids = {481:'A1', 482:'A2', 483:'A3', 484:'A4', 485:'A5',
-                  486:'B1', 487:'B2', 488:'B3', 489:'B4', 490:'B5'}
-        detname = scaids[detid]
-    
-    xflip = ['A1','A3','A5','B2','B4']
-    yflip = ['A2','A4','B1','B3','B5']
-    
-    for s in xflip:
-        if detname in s:
-            image = image[:,::-1] 
-    for s in yflip:
-        if detname in s:
-            image = image[::-1,:] 
-    
-    return image
-    
-def V2V3_to_det(image, detid):
-    """
-    Reorient image from V2/V3 coordinates to detector coordinate system.
-    Assumes +V3 up and +V2 to the LEFT. The result plances the detector
-    pixel (0,0) in the bottom left. For now, we're simply performing 
-    axes flips.
-    """
-    
-    # Flips occur along the same axis and manner as in det_to_V2V3()
-    return det_to_V2V3(image, detid)
-    
 
 ###########################################################################
 #
@@ -2353,8 +1940,8 @@ def bin_spectrum(sp, wave, waveunits='um'):
     """
     Rebin a Pysynphot spectrum to a lower wavelenght grid.
     This function first converts the input spectrum to units
-    of photlam then combines the photon flux onto the 
-    desired wavelength bin
+    of counts then combines the photon flux onto the 
+    specified wavelength grid.
     
     Output spectrum units are the same as the input spectrum.
     
@@ -2370,22 +1957,13 @@ def bin_spectrum(sp, wave, waveunits='um'):
 
     # Convert wavelength of input spectrum to desired output units
     sp.convert(waveunits)
-    # We also want input to be in terms of photlam
-    sp.convert('photlam')
+    # We also want input to be in terms of counts to conserve flux 
+    sp.convert('flam')
 
     edges = S.binning.calculate_bin_edges(wave)
-    indices = np.searchsorted(sp.wave, edges)
-    i1_arr = indices[:-1]
-    i2_arr = indices[1:]
-
-    # This assumes the original wavelength grid is uniform
-    binflux = np.empty(shape=wave.shape, dtype=np.float64)
-    for i in range(len(wave)):
-        i1 = i1_arr[i]
-        i2 = i2_arr[i]
-        binflux[i] = sp.flux[i1:i2].sum() / (i2-i1)
+    binflux = binned_statistic(sp.wave, sp.flux, np.mean, bins=edges)
     
-    sp2 = S.ArraySpectrum(wave, binflux, waveunits=waveunits, fluxunits='photlam')
+    sp2 = S.ArraySpectrum(wave, binflux, waveunits=waveunits, fluxunits='flam')
     sp2.convert(waveunits0)
     sp2.convert(fluxunits0)
     
@@ -2396,6 +1974,141 @@ def bin_spectrum(sp, wave, waveunits='um'):
     return sp2
 
 
+def BOSZ_spectrum(Teff, metallicity, log_g, res=2000, interpolate=True, **kwargs):
+    """
+    Read in a spectrum from the BOSZ stellar atmosphere models database.
+    Returns a Pysynphot spectral object. Wavelength values range from 
+    1000-32000 Angstroms.
+    
+    This function interoplates the model grid by reading in those models
+    closest in temperature, metallicity, and log g to the desired parameters, 
+    then takes the weighted average of these models based on their relative 
+    offsets. Can also just read in the closest model by setting interpolate=False.
+    
+    Different spectral resolutions can also be specified, currently only
+    res=200 or res=2000.
+
+    Ref: https://archive.stsci.edu/prepds/bosz/
+    """
+    
+    model_dir = '/Volumes/NIRData/bosz_grids/'
+    res_dir = model_dir + 'R{}/'.format(res)
+    if not os.path.isdir(model_dir):
+        raise IOError('BOSZ model directory does not exist: {}'.format(model_dir))
+    if not os.path.isdir(res_dir):
+        raise IOError('Resolution directory does not exist: {}'.format(res_dir))
+
+    # Grid of computed temperature steps
+    teff_grid = range(3500,12000,250) + range(12000,20000,500) + range(20000,36000,1000)
+    teff_grid = np.array(teff_grid)
+    
+    # Grid of log g steps for desired Teff
+    lg_max = 5
+    lg_step = 0.5
+    if   Teff <   6250: lg_min = 0
+    elif Teff <   8250: lg_min = 1
+    elif Teff <  12500: lg_min = 2
+    elif Teff <  21000: lg_min = 3
+    elif Teff <= 30000: lg_min = 4
+    else: raise ValueError('Teff must be less than or equal to 30000.')
+    
+    if log_g<lg_min:
+        raise ValueError('log_g must be greater than {}'.format(lg_min))
+    if log_g>lg_max:
+        raise ValueError('log_g must be less than {}'.format(lg_max))
+    
+    # Grid of log g values
+    logg_grid = np.arange(lg_min, lg_max+lg_step, lg_step)
+    
+    # Grid of metallicity values
+    metal_grid = np.arange(-2.5,0.75,0.25)
+
+    # First, choose the two grid points closest in Teff
+    teff_diff = np.abs(teff_grid - Teff)
+    ind_sort = np.argsort(teff_diff)
+    if teff_diff[ind_sort[0]]==0: # Exact
+        teff_best = np.array([teff_grid[ind_sort[0]]])
+    else: # Want to interpolate
+        teff_best = teff_grid[ind_sort[0:2]]
+    
+    # Choose the two best log g values
+    logg_diff = np.abs(logg_grid - log_g)
+    ind_sort = np.argsort(logg_diff)
+    if logg_diff[ind_sort[0]]==0: # Exact
+        logg_best = np.array([logg_grid[ind_sort[0]]])
+    else: # Want to interpolate
+        logg_best = logg_grid[ind_sort[0:2]]
+    
+    # Choose the two best metallicity values
+    metal_diff = np.abs(metal_grid - metallicity)
+    ind_sort = np.argsort(metal_diff)
+    if metal_diff[ind_sort[0]]==0: # Exact
+        metal_best = np.array([metal_grid[ind_sort[0]]])
+    else: # Want to interpolate
+        metal_best = metal_grid[ind_sort[0:2]]
+        
+    # Build files names for all combinations
+    teff_names = np.array(['t{:04.0f}'.format(n) for n in teff_best])
+    logg_names = np.array(['g{:02.0f}'.format(int(n*10)) for n in logg_best])
+    metal_names = np.array(['mp{:02.0f}'.format(int(abs(n*10)+0.5)) for n in metal_best])
+    ind_n = np.where(metal_best<0)[0]
+    for i in range(len(ind_n)):
+        j = ind_n[i]
+        s = metal_names[j]
+        metal_names[j] = s.replace('p', 'm')
+               
+    # Build final file names
+    fnames = []
+    rstr = 'b{}'.format(res)
+    for t in teff_names:
+        for l in logg_names:
+            for m in metal_names:
+                fname = 'a{}cp00op00{}{}v20modrt0{}rs.fits'.format(m,t,l,rstr)
+                fnames.append(fname)
+
+    # Weight by relative distance from desired value
+    weights = []
+    teff_diff = np.abs(teff_best - Teff)
+    logg_diff = np.abs(logg_best - log_g)
+    metal_diff = np.abs(metal_best - metallicity)
+    for t in teff_diff:
+        wt = 1 if len(teff_diff)==1 else t / np.sum(teff_diff)
+        for l in logg_diff:
+            wl = 1 if len(logg_diff)==1 else l / np.sum(logg_diff)
+            for m in metal_diff:
+                wm = 1 if len(metal_diff)==1 else m / np.sum(metal_diff)
+                weights.append(wt*wl*wm)
+    weights = np.array(weights)
+    weights = weights / np.sum(weights)
+    
+    if interpolate:
+        wave_all = []
+        flux_all = []
+        for i, f in enumerate(fnames):
+            d = fits.getdata(res_dir+f, 1)
+            wave_all.append(d['Wavelength'])
+            flux_all.append(d['SpecificIntensity'] * weights[i])
+        
+        wfin = wave_all[0]
+        ffin = np.pi * np.array(flux_all).sum(axis=0) # erg/s/cm^2/A
+    else:
+        ind = np.where(weights==weights.max())[0][0]
+        f = fnames[ind]
+        d = fits.getdata(res_dir+f, 1)
+        wfin = d['Wavelength']
+        ffin = np.pi * d['SpecificIntensity'] # erg/s/cm^2/A
+        
+        Teff = teff_best[ind]
+        log_g = logg_best[ind]
+        metallicity = metal_best[ind]
+        
+    
+    name = 'BOSZ(Teff={},z={},logG={})'.format(Teff,metallicity,log_g)
+    sp = S.ArraySpectrum(wfin, ffin, 'angstrom', 'flam', name=name)
+    
+    return sp
+
+    
 
 def stellar_spectrum(sptype, *renorm_args, **kwargs):
     """
@@ -2415,6 +2128,7 @@ def stellar_spectrum(sptype, *renorm_args, **kwargs):
     Flat spectrum (in photlam) are also allowed via the 'flat' string.
     
     Use catname='ck04models' keyword for ck04 models
+    Use catname='bosz' for BOSZ stellar atmosphere (ATLAS9)
     
     """
 
@@ -2500,8 +2214,11 @@ def stellar_spectrum(sptype, *renorm_args, **kwargs):
         sp.name = 'Flat spectrum in photlam'
     elif sptype in sptype_list:
         v0,v1,v2 = lookuptable[sptype]
-    
-        sp = S.Icat(catname, v0, v1, v2)
+        
+        if 'bosz' in catname.lower():
+            sp = BOSZ_spectrum(v0, v1, v2, **kwargs)
+        else:
+            sp = S.Icat(catname, v0, v1, v2)
         sp.name = sptype
     else: # Interpolate values for undefined sptype
         # Sort the list and return their rank values
@@ -2517,8 +2234,11 @@ def stellar_spectrum(sptype, *renorm_args, **kwargs):
         v1 = np.interp(rank, rank_list, tup_list1)
         v2 = np.interp(rank, rank_list, tup_list2)
         
-        if ('ck04models' in catname.lower()) and (v0<3500): v0 = 3500
-        sp = S.Icat(catname, v0, v1, v2)
+        if 'bosz' in catname.lower():
+            sp = BOSZ_spectrum(v0, v1, v2, **kwargs)
+        else:
+            if ('ck04models' in catname.lower()) and (v0<3500): v0 = 3500
+            sp = S.Icat(catname, v0, v1, v2)
         sp.name = sptype
         
     #print(int(v0),v1,v2)
