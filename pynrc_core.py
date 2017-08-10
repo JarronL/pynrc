@@ -2066,4 +2066,3 @@ def nproc_use_ng(det):
     if nproc < 1: nproc = 1
 
     return int(nproc)
-
