@@ -147,7 +147,7 @@ class obs_coronagraphy(NIRCam):
             nrc.update_psf_coeff(opd=opd)
         except AttributeError:
             if verbose: print("Creating NIRCam reference class...")
-            nrc = NIRCam(self.filter, self.pupil, self.mask, \
+            nrc = NIRCam(self.filter, self.pupil, self.mask, module=self.module, \
                          wind_mode=wind_mode, xpix=xpix, ypix=ypix, \
                          fov_pix=fov_pix, oversample=oversample, opd=opd)        
             self.nrc_ref = nrc
@@ -474,7 +474,7 @@ class obs_coronagraphy(NIRCam):
 
 
     def calc_contrast(self, hdu_diff=None, roll_angle=10, nsig=1, 
-        exclude_disk=True, **kwargs):
+        exclude_disk=True, exclude_planets=True, **kwargs):
         """
         Generate n-sigma contrast curve for the current observation settings.
         Make sure that MULTIACCUM parameters are set in both the main
@@ -552,7 +552,8 @@ class obs_coronagraphy(NIRCam):
         return (rr, contrast, sen_mag)
 
     def gen_roll_image(self, PA1=0, PA2=10, zfact=None, oversample=None, 
-        exclude_disk=False, exclude_noise=False, opt_diff=True):
+        exclude_disk=False, exclude_planets=False, exclude_noise=False, 
+        opt_diff=True):
         """
         Create a final roll-subtracted slope image based on current observation
         settings. Coordinate convention is for +V3 up and +V2 to left.
@@ -634,6 +635,8 @@ class obs_coronagraphy(NIRCam):
             
         if exclude_disk:
             im_roll1 -= im_disk_r1
+        if exclude_planets:
+            im_roll1 -= im_pl_r1
     
         # Subtract reference star from Roll 1
         #im_roll1_sub = pad_or_cut_to_size(im_roll1, sub_shape)
@@ -668,7 +671,8 @@ class obs_coronagraphy(NIRCam):
 
             if exclude_disk:
                 im_roll2 -= im_disk_r2
-
+            if exclude_planets:
+                im_roll2 -= im_pl_r2
 
             # Subtract reference star from Roll 2
             #im_roll2_sub = pad_or_cut_to_size(im_roll2, sub_shape)

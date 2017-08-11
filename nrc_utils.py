@@ -2577,6 +2577,14 @@ class planets_sb12(object):
     def entropy(self):
         """Initial entropy (8.0-13.0)"""
         return self._entropy
+        
+    def sp_accr(self, mmdot, incl=0):
+        """
+        Return a Pysynphot spectra of the mass accretion
+        signature
+        """
+        
+        return 0
 
     def export_pysynphot(self, waveout='angstrom', fluxout='flam'):
         w = self.wave; f = self.flux        
@@ -2587,6 +2595,7 @@ class planets_sb12(object):
         sp.convert(fluxout)
 
         return sp
+        
         
 # Turns out the paper is Spiegel & Burrows (2012), not 2011
 class planets_sb11(planets_sb12):
@@ -2600,6 +2609,67 @@ class planets_sb11(planets_sb12):
         _log.warning('planets_sb11 is depcrecated. Use planets_sb12 instead.')
         planets_sb12.__init__(self, *args, **kwargs)
 
+
+def sp_accr(mmdot, rin=2, dist=10, truncated=False,
+            waveout='angstrom', fluxout='flam'):
+    
+    """
+    mmdot : Product of the exoplanet mass and mass accretion rate (MJup^2/yr)
+            Values range from 1e-7 to 1e-2.
+    rin   : disk inner radius in terms of R_Jup (values)
+            Values rnage from 1 to 4.
+    dist  : Distance to object (pc)
+    
+    truncated : If True, then the values are for a disk with Rout=50 RJup,
+                otherwise, values were calculated for a full disk (Rout=1000 RJup).
+                Accretion from a "tuncated disk" is due mainly to MRI.
+                Luminosities for full and truncated disks are very similar.
+    """
+        
+    base_dir = conf.PYNRC_PATH + 'spiegel/'
+    fname = base_dir + 'zhu15_accr.txt'
+
+    names = ('MMdot', 'Rin', 'Tmax', 'J', 'H', 'K', 'L', 'M', 'N', 'J2', 'H2', 'K2', 'L2', 'M2', 'N2')
+    tbl = ascii.read(fname, guess=True, names=names)
+
+    # Inner radius values and Mdot values
+    rin_vals = np.unique(tbl['Rin'])
+    mdot_vals = np.unique(tbl['MMdot'])
+
+    assert (rin >=rin_vals.min())  & (rin <=rin_vals.max())
+    assert (mmdot>=mdot_vals.min()) & (mmdot<=mdot_vals.max())
+
+    if truncated:
+        mag_names = ('J2', 'H2', 'K2', 'L2', 'M2', 'N2')
+    else:
+        mag_names = ('J', 'H', 'K', 'L', 'M', 'N')
+    wcen = np.array([ 1.2,  1.6, 2.2, 3.8, 4.8, 10.0])
+    zpt  = np.array([1600, 1020, 657, 252, 163, 39.8])
+        
+    mag_arr = np.zeros([6,nm])        
+    for i, mv in enumerate(mdot_vals):
+        for j, mag in enumerate(mag_names):
+            tbl_sub = tbl[tbl['MMdot']==mv]
+            rinvals = tbl_sub['Rin']
+            magvals = tbl_sub[mag]
+
+            mag_arr[j,i] = np.interp(rin, rinvals, magvals)
+
+    mag_vals = np.zeros(6)
+    for j in range(6):
+        xi = 10**(mmdot)
+        xp = 10**(mdot_vals)
+        yp = 10**(mag_arr[j])
+        mag_vals[j] = np.log10(np.interp(xi, xp, yp))
+        
+    mag_vals += 5*np.log10(dist/10)
+    flux_Jy = 10**(-mag_vals/2.5) * zpt
+    
+    sp = S.ArraySpectrum(w*1e4, f, fluxunits='Jy')
+    sp.convert(waveout)
+    sp.convert(fluxout)
+        
+    return sp
 
 
 
