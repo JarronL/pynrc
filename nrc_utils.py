@@ -2457,10 +2457,13 @@ class planets_sb12(object):
         base_dir: Location of atmospheric model sub-directories.
     """
 
+	# Define default self.base_dir
     base_dir = conf.PYNRC_PATH + 'spiegel/'
 
     def __init__(self, atmo='hy1s', mass=1, age=100, entropy=10.0, 
-                 distance=10, base_dir=None, **kwargs):
+                 distance=10, base_dir=None, 
+                 accr=False, accr_rin=2.0, accr_mmdot=None, 
+                 **kwargs):
 
         self._atmo = atmo
         self._mass = mass
@@ -2580,7 +2583,7 @@ class planets_sb12(object):
         
     def sp_accr(self, mmdot, incl=0):
         """
-        Return a Pysynphot spectra of the mass accretion
+        Return a Pysynphot spectrum of the mass accretion
         signature
         """
         
