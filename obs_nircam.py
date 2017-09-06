@@ -140,6 +140,9 @@ class obs_coronagraphy(NIRCam):
         xpix = self.det_info['xpix']
         ypix = self.det_info['ypix']
         
+        offset_r = self.psf_info['offset_r']
+        offset_theta = self.psf_info['offset_theta']
+        
         # Create a NIRCam reference class
         # If it already exists, just update OPD info
         try:
@@ -149,7 +152,8 @@ class obs_coronagraphy(NIRCam):
             if verbose: print("Creating NIRCam reference class...")
             nrc = NIRCam(self.filter, self.pupil, self.mask, module=self.module, \
                          wind_mode=wind_mode, xpix=xpix, ypix=ypix, \
-                         fov_pix=fov_pix, oversample=oversample, opd=opd)        
+                         fov_pix=fov_pix, oversample=oversample, opd=opd,
+                         offset_r=offset_r, offset_theta=offset_theta)        
             self.nrc_ref = nrc
 
         
@@ -241,15 +245,22 @@ class obs_coronagraphy(NIRCam):
         to distance of current target.
         
         Parameters:
-            Av : Extinction magnitude (assumes Rv=4.0)
+            Av:   Extinction magnitude (assumes Rv=4.0)
             atmo: A string consisting of one of four atmosphere types:
                 hy1s = hybrid clouds, solar abundances
                 hy3s = hybrid clouds, 3x solar abundances
                 cf1s = cloud-free, solar abundances
                 cf3s = cloud-free, 3x solar abundances
-            mass: Integer number 1 to 15 Jupiter masses.
-            age: Age in millions of years (1-1000)
+            mass:    Integer number 1 to 15 Jupiter masses.
+            age:     Age in millions of years (1-1000)
             entropy: Initial entropy (8.0-13.0) in increments of 0.25
+            
+            accr:      Include accretion (default: False)?
+            mmdot:     From Zhu et al. (2015), the Mjup^2/yr value.
+                       If set to None then calculated from age and mass.
+            mdot:      Or use mdot (Mjup/yr) instead of mmdot.
+            accr_rin:  Inner radius of accretion disk (units of RJup; default: 2)
+            truncated: Full disk or truncated (ie., MRI; default: False)?
         """
         # Create planet class and convert to Pysynphot spectrum
         planet = planets_sb12(distance=self.distance, **kwargs)
@@ -268,7 +279,8 @@ class obs_coronagraphy(NIRCam):
         return self._planets
 
     def add_planet(self, atmo='hy3s', mass=10, age=100, entropy=10,
-        rtheta=(0,0), runits='AU', Av=0, renorm_args=None, sptype=None):
+        rtheta=(0,0), runits='AU', Av=0, renorm_args=None, sptype=None,
+        accr=False, mmdot=None, mdot=None, accr_rin=2, truncated=False):
         """
         Add exoplanet information that will be used to generate a point
         source image using a spectrum from Spiegel & Burrows (2012).
@@ -329,7 +341,9 @@ class obs_coronagraphy(NIRCam):
         # Dictionary of planet info
         if sptype is None:
             d = {'xyoff_pix':(xoff,yoff), 'atmo':atmo, 'mass':mass, 'age':age, 
-                 'entropy':entropy, 'Av':Av, 'renorm_args':renorm_args}
+                 'entropy':entropy, 'Av':Av, 'renorm_args':renorm_args, 
+                 'accr':accr, 'mmdot':mmdot, 'mdot':mdot, 'accr_rin':accr_rin, 
+                 'truncated':truncated}
         else:
             d = {'xyoff_pix':(xoff,yoff), 'sptype':sptype, 'Av':Av, 
                  'renorm_args':renorm_args}
@@ -367,6 +381,11 @@ class obs_coronagraphy(NIRCam):
             
             xoff_asec, yoff_asec = np.array(pl['xyoff_pix']) * self.pix_scale
             if len(self.offset_list) > 1:
+                if 'WB' in self.mask: # Bar mask
+                    roff_asec = np.abs(yoff_asec)
+                else: # Circular symmetric
+                    roff_asec = np.sqrt(xoff_asec**2 + yoff_asec**2)
+
                 roff_asec = np.sqrt(xoff_asec**2 + yoff_asec**2)
                 abs_diff = np.abs(np.array(self.offset_list)-roff_asec)
                 ind = np.where(abs_diff == abs_diff.min())[0][0]
@@ -431,7 +450,11 @@ class obs_coronagraphy(NIRCam):
         else:
             noff = len(self.offset_list)
 
-            image_rho = dist_image(disk_image, pixscale=header['PIXELSCL'])
+            if 'WB' in self.mask: # Bar mask
+                ind1, ind2 = np.indices(image_shape)
+                image_rho = np.abs(ind1 - ypix/2)
+            else: # Circular symmetric
+                image_rho = dist_image(disk_image, pixscale=header['PIXELSCL'])
             worker_arguments = [(psf, disk_image, image_rho, self.offset_list, i) 
                                 for i,psf in enumerate(self.psf_list)]
                                 
@@ -492,8 +515,9 @@ class obs_coronagraphy(NIRCam):
         **kwargs
         ==========
         zfact : Zodiacal background factor (default=2.5)
-        exclude_disk  : Ignore disk when generating image
-        exclude_noise : Don't add random Gaussian noise (detector+photon)
+        exclude_disk    : Ignore disk when generating image
+        exclude_planets : Ignore planets when generating image
+        exclude_noise   : Don't add random Gaussian noise (detector+photon)
 
 
         Returns 3 arrays in a tuple:
@@ -509,7 +533,8 @@ class obs_coronagraphy(NIRCam):
             PA1 = 0
             PA2 = None if abs(roll_angle) < eps else roll_angle
             hdu_diff = self.gen_roll_image(PA1=PA1, PA2=PA2, 
-                                           exclude_disk=exclude_disk, **kwargs)
+                                           exclude_disk=exclude_disk, 
+                                           exclude_planets=exclude_planets, **kwargs)
         
     
         # Radial noise

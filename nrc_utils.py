@@ -2462,7 +2462,7 @@ class planets_sb12(object):
 
     def __init__(self, atmo='hy1s', mass=1, age=100, entropy=10.0, 
                  distance=10, base_dir=None, 
-                 accr=False, accr_rin=2.0, accr_mmdot=None, 
+                 accr=False, mmdot=None, mdot=None, accr_rin=2.0, truncated=False,
                  **kwargs):
 
         self._atmo = atmo
@@ -2477,6 +2477,20 @@ class planets_sb12(object):
         self.get_file()
         self.read_file()
         self.distance = distance
+        
+        self.accr = accr
+        if not accr:
+            self.mmdot = 0
+        elif mmdot is not None:
+            self.mmdot = mmdot
+        elif mdot is not None:
+            self.mmdot = self.mass * mdot # MJup^2/yr
+        else:
+            mdot = self.mass / (1e6 * self.age) # Assumed MJup/yr
+            self.mmdot = self.mass * mdot # MJup^2/yr
+            
+        self.rin = accr_rin
+        self.truncated = truncated
 
     def get_file(self):
         files = []; masses = []; ages = []
@@ -2536,6 +2550,10 @@ class planets_sb12(object):
         self._distance = 10
 
     @property
+    def mdot(self):
+        return self.mmdot / self.mass
+
+    @property
     def wave(self):
         return self._wave
     @property
@@ -2581,23 +2599,26 @@ class planets_sb12(object):
         """Initial entropy (8.0-13.0)"""
         return self._entropy
         
-    def sp_accr(self, mmdot, incl=0):
-        """
-        Return a Pysynphot spectrum of the mass accretion
-        signature
-        """
-        
-        return 0
-
     def export_pysynphot(self, waveout='angstrom', fluxout='flam'):
         w = self.wave; f = self.flux        
-        name = (re.split('[\.]', self.file))[5:]        
+        name = (re.split('[\.]', self.file))[0]#[5:]        
         sp = S.ArraySpectrum(w, f, name=name, waveunits=self.waveunits, fluxunits=self.fluxunits)
-
+        
         sp.convert(waveout)
         sp.convert(fluxout)
 
-        return sp
+        if self.accr and (self.mmdot>0):
+            sp_mdot = sp_accr(self.mmdot, rin=self.rin, 
+                              dist=self.distance, truncated=self.truncated, 
+                              waveout=waveout, fluxout=fluxout)
+            # Interpolate accretion spectrum at each wavelength
+            # and create new composite spectrum
+            fnew = np.interp(sp.wave, sp_mdot.wave, sp_mdot.flux)
+            sp_new = S.ArraySpectrum(sp.wave, sp.flux+fnew, 
+                                     waveunits=waveout, fluxunits=fluxout)
+            return sp_new
+        else:
+            return sp
         
         
 # Turns out the paper is Spiegel & Burrows (2012), not 2011
@@ -2619,7 +2640,7 @@ def sp_accr(mmdot, rin=2, dist=10, truncated=False,
     """
     mmdot : Product of the exoplanet mass and mass accretion rate (MJup^2/yr)
             Values range from 1e-7 to 1e-2.
-    rin   : disk inner radius in terms of R_Jup (values)
+    rin   : disk inner radius in terms of R_Jup.
             Values rnage from 1 to 4.
     dist  : Distance to object (pc)
     
@@ -2638,6 +2659,7 @@ def sp_accr(mmdot, rin=2, dist=10, truncated=False,
     # Inner radius values and Mdot values
     rin_vals = np.unique(tbl['Rin'])
     mdot_vals = np.unique(tbl['MMdot'])
+    nmdot = len(mdot_vals)
 
     assert (rin >=rin_vals.min())  & (rin <=rin_vals.max())
     assert (mmdot>=mdot_vals.min()) & (mmdot<=mdot_vals.max())
@@ -2649,7 +2671,7 @@ def sp_accr(mmdot, rin=2, dist=10, truncated=False,
     wcen = np.array([ 1.2,  1.6, 2.2, 3.8, 4.8, 10.0])
     zpt  = np.array([1600, 1020, 657, 252, 163, 39.8])
         
-    mag_arr = np.zeros([6,nm])        
+    mag_arr = np.zeros([6,nmdot])        
     for i, mv in enumerate(mdot_vals):
         for j, mag in enumerate(mag_names):
             tbl_sub = tbl[tbl['MMdot']==mv]
@@ -2668,7 +2690,7 @@ def sp_accr(mmdot, rin=2, dist=10, truncated=False,
     mag_vals += 5*np.log10(dist/10)
     flux_Jy = 10**(-mag_vals/2.5) * zpt
     
-    sp = S.ArraySpectrum(w*1e4, f, fluxunits='Jy')
+    sp = S.ArraySpectrum(wcen*1e4, flux_Jy, fluxunits='Jy')
     sp.convert(waveout)
     sp.convert(fluxout)
         
