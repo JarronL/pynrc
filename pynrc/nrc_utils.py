@@ -403,7 +403,7 @@ from webbpsf import NIRCam as webbpsf_NIRCam
 class webbpsf_NIRCam_mod(webbpsf_NIRCam):
     def __init__(self):
         webbpsf_NIRCam.__init__(self)
-
+        
     def _addAdditionalOptics(self,optsys, oversample=2):
         """ Slight re-write of the webbpsf version of this function -JML
         
@@ -445,15 +445,20 @@ class webbpsf_NIRCam_mod(webbpsf_NIRCam):
 
         #optsys.add_image(name='null for debugging NIRcam _addCoron') # for debugging
         from webbpsf.optics import NIRCam_BandLimitedCoron
+        
+        nd_squares = self.options.get('nd_squares', True)
 
         if ((self.image_mask == 'MASK210R') or (self.image_mask == 'MASK335R') or
                 (self.image_mask == 'MASK430R')):
-            optsys.add_image( NIRCam_BandLimitedCoron( name=self.image_mask, module=self.module),
-                    index=2)
+            optsys.add_image( NIRCam_BandLimitedCoron(name=self.image_mask, module=self.module,
+                    nd_squares=nd_squares), index=2)
             trySAM = False # FIXME was True - see https://github.com/mperrin/poppy/issues/169
             SAM_box_size = 5.0
         elif ((self.image_mask == 'MASKSWB') or (self.image_mask == 'MASKLWB')):
-            optsys.add_image( NIRCam_BandLimitedCoron(name=self.image_mask, module=self.module),
+            bar_offset = self.options.get('bar_offset',None)
+            auto_offset = self.filter if bar_offset is None else None
+            optsys.add_image( NIRCam_BandLimitedCoron(name=self.image_mask, module=self.module,
+                    nd_squares=nd_squares, bar_offset=bar_offset, auto_offset=auto_offset),
                     index=2)
             trySAM = False #True FIXME
             SAM_box_size = [5,20]
@@ -480,11 +485,11 @@ class webbpsf_NIRCam_mod(webbpsf_NIRCam):
 
         #optsys.add_pupil( name='null for debugging NIRcam _addCoron') # debugging
         if self.pupil_mask == 'CIRCLYOT':
-            optsys.add_pupil(transmission=self._datapath+"/optics/NIRCam_Lyot_Somb.fits", name=self.pupil_mask,
+            optsys.add_pupil(transmission=self._datapath+"/optics/NIRCam_Lyot_Somb.fits.gz", name=self.pupil_mask,
                     flip_y=True, shift=shift, index=3)
             optsys.planes[3].wavefront_display_hint='intensity'
         elif self.pupil_mask == 'WEDGELYOT':
-            optsys.add_pupil(transmission=self._datapath+"/optics/NIRCam_Lyot_Sinc.fits", name=self.pupil_mask,
+            optsys.add_pupil(transmission=self._datapath+"/optics/NIRCam_Lyot_Sinc.fits.gz", name=self.pupil_mask,
                     flip_y=True, shift=shift, index=3)
             optsys.planes[3].wavefront_display_hint='intensity'
         elif self.pupil_mask == 'WEAK LENS +4':
@@ -646,7 +651,8 @@ def _wrap_coeff_for_mp(args):
 
 def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A', 
     fov_pix=11, oversample=None, npsf=None, ndeg=7, opd=None, tel_pupil=None,
-    offset_r=0, offset_theta=0, save=True, force=False, **kwargs):
+    include_si_wfe=False, offset_r=0, offset_theta=0,
+    save=True, force=False, **kwargs):
     """
     Creates a set of coefficients that will generate a simulated PSF at any
     arbitrary wavelength. This function first uses webbPSF to simulate
@@ -684,7 +690,10 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
            2. ('OPD_RevV_nircam_150.fits', 0, 10) - specifies 10 nm WFE drift
            3. HDUlist
            
-    tel_pupil : Telescope entrance pupil mask. By default pupil_RevV.fits. 
+    include_si_wfe: Include SI WFE measurements in si_zernikes_isim_cv3.fits?
+        Default = False. 
+           
+    tel_pupil : Telescope entrance pupil mask. Default: jwst_pupil_RevW_npix1024.fits.gz. 
         Should either be a filename string or HDUList.
            
     offset_r     :
@@ -702,8 +711,10 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         oversample = 2 if coron_obs else 4
 
     # Default OPD
-    if opd is None: opd = ('OPD_RevV_nircam_132.fits', 0)
-       
+    #if opd is None: opd = ('OPD_RevV_nircam_132.fits', 0)
+    if opd is None: opd = ('OPD_RevW_ote_for_NIRCam_requirements.fits', 0, 0)
+
+      
     # Get filter throughput and create bandpass 
     if isinstance(filter_or_bp, six.string_types):
         filter = filter_or_bp
@@ -720,11 +731,16 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     inst = webbpsf_NIRCam_mod()
     inst.options['output_mode'] = 'oversampled'
     inst.options['parity'] = 'odd'
-    #inst.options['source_offset_r'] = offset_r
-    #inst.options['source_offset_theta'] = offset_theta
-    #inst.pupilopd = opd
     inst.filter = filter
     setup_logging(log_prev, verbose=False)
+
+    # Should we include field-dependent aberrations? 
+    zernike_file = os.path.join(webbpsf.utils.get_webbpsf_data_path(),
+                                'si_zernikes_isim_cv3.fits')
+    if (not os.path.exists(zernike_file)) and (inst.include_si_wfe==True):
+        _log.warn('File si_zernikes_isim_cv3.fits does not exist. \
+                   Setting include_si_wfe=False.')
+        inst.include_si_wfe = False
 
     # Check if mask and pupil names exist in WebbPSF lists.
     # We don't want to pass values that WebbPSF does not recognize,
@@ -734,7 +750,6 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     
     # Telescope Pupil
     if tel_pupil is not None:
-        #print('Adding telescope pupil')
         inst.pupil = tel_pupil
 
 
@@ -766,7 +781,7 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
             wfe_drift = opd[2]
             opd = (opd[0], opd[1])
         else:
-            raise ValueError("OPD passed as tuple must have length of 2 or 3.")
+            raise ValueError("opd passed as tuple must have length of 2 or 3.")
          # Filename info
         opd_nm = opd[0][-8:-5] # RMS WFE (e.g., 132)
         opd_num = opd[1]       # OPD slice
@@ -798,8 +813,8 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     # to be a companion source that we're trying to detect, so the
     # PSF WFE difference has negligible bearing on the outcome.
     # 
-    # Need to look at functions inside speckle_noise to see if
-    # I can speed up this process. Might be running some unnecessary
+    # To Do: Need to look at functions inside speckle_noise to see if
+    # I can speed up this section. Might be running some unnecessary
     # processes.
     if (rtemp == 0) and (not isinstance(opd, fits.HDUList)):
         from . import speckle_noise as sn
@@ -908,20 +923,6 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     # Turn results into an numpy array (npsf,nx,ny)
     #   Or is it (npsf,ny,nx)? Depends on WebbPSF's coord system...
     images = np.array(images)
-
-###     # Simultaneous polynomial fits to all pixels using linear least squares
-###     # 7th-degree polynomial seems to do the trick
-###     #ndeg = 8 # 7+1
-###     x = waves
-###     #a = np.vstack((np.ones(npsf), x, x**2, x**3, x**4, x**5, x**6, x**7)).T
-###     a = np.array([x**num for num in range(ndeg+1)]).T
-###     #b = images.reshape([-1,npsf]).T
-###     b = images.reshape([npsf,-1])
-###     coeff_all, _, _, _ = np.linalg.lstsq(a, b)
-### 
-###     # The number of pixels to span spatially
-###     fov_pix_over = fov_pix * oversample	
-###     coeff_all = coeff_all.reshape([ndeg+1,fov_pix_over,fov_pix_over])
     
     # Simultaneous polynomial fits to all pixels using linear least squares
     # 7th-degree polynomial seems to do the trick
@@ -2697,85 +2698,6 @@ def sp_accr(mmdot, rin=2, dist=10, truncated=False,
     return sp
 
 
-
-###########################################################################
-#
-#    Coronagraphic Disk Imaging Routines
-#
-###########################################################################
-
-def nproc_use_convolve(fov_pix, oversample, npsf=None):
-    """ 
-    Attempt to estimate a reasonable number of processes to use for multiple 
-    simultaneous convolve_fft calculations.
-
-    Here we attempt to estimate how many such calculations can happen in
-    parallel without swapping to disk, with a mixture of empiricism and conservatism.
-    One really does not want to end up swapping to disk with huge arrays.
-
-    NOTE: Requires psutil package. Otherwise defaults to mp.cpu_count() / 2
-
-    Parameters
-    -----------
-    fov_pix : int
-        Square size in detector-sampled pixels of final PSF image.
-    oversample : int
-        The optical system that we will be calculating for.
-    nwavelengths : int
-        Number of wavelengths. Sets maximum # of processes.
-    """
-
-    try:
-        import psutil
-    except ImportError:
-        nproc = int(mp.cpu_count() // 2)
-        if nproc < 1: nproc = 1
-
-        _log.info("No psutil package available, cannot estimate optimal nprocesses.")
-        _log.info("Returning nproc=ncpu/2={}.".format(nproc))
-        return nproc
-
-    mem = psutil.virtual_memory()
-    avail_GB = mem.available / (1024**3) - 1.0 # Leave 1 GB
-
-    fov_pix_over = fov_pix * oversample
-
-    # Memory formulas are based on fits to memory usage stats for:
-    #   fov_arr = np.array([16,32,128,160,256,320,512,640,1024,2048])
-    #   os_arr = np.array([1,2,4,8])
-    # In MBytes
-    mem_total = 300*(fov_pix_over)**2 * 8 / (1024**2)
-
-    # Convert to GB
-    mem_total /= 1024
-
-    # How many processors to split into?
-    nproc = avail_GB // mem_total
-    nproc = np.min([nproc, mp.cpu_count(), poppy.conf.n_processes])
-    if npsf is not None:
-        nproc = np.min([nproc, npsf])
-        # Resource optimization:
-        # Split iterations evenly over processors to free up minimally used processors.
-        # For example, if there are 5 processes only doing 1 iteration, but a single
-        #   processor doing 2 iterations, those 5 processors (and their memory) will not
-        #   get freed until the final processor is finished. So, to minimize the number
-        #   of idle resources, take the total iterations and divide by two (round up),
-        #   and that should be the final number of processors to use.
-        np_max = np.ceil(npsf / nproc)
-        nproc = int(np.ceil(npsf / np_max))
-
-    if nproc < 1: nproc = 1
-
-    return int(nproc)
-
-###########################################################################
-#
-#    OPD Stuff for High Contrast Imaging Models
-#
-###########################################################################
-
-
-
 ###########################################################################
 #
 #    Coronagraphic Mask Transmission
@@ -2783,7 +2705,7 @@ def nproc_use_convolve(fov_pix, oversample, npsf=None):
 ###########################################################################
 
 
-def coron_trans(name, module='A', pixscale=None, fov=20):
+def coron_trans(name, module='A', pixscale=None, fov=20, nd_squares=True):
     """
     Build a transmission image of a coronagraphic mask spanning
     the 20" coronagraphic FoV.
@@ -2817,100 +2739,121 @@ def coron_trans(name, module='A', pixscale=None, fov=20):
     x -= shape[1] / 2.0
     y,x = (pixscale * y, pixscale * x)
 
-    if 'WB' in name:
+    if 'WB' in name: # Wedge Masks
         scalefact = (2 + (-x + 7.5) * 4 / 15).clip(2, 6)
-        if name == 'MASKSWB': #np.abs(self.wavelength - 2.1e-6) < 0.1e-6:
+        if name == 'MASKSWB':
             polyfitcoeffs = np.array([2.01210737e-04, -7.18758337e-03, 1.12381516e-01,
                                       -1.00877701e+00, 5.72538509e+00, -2.12943497e+01,
                                       5.18745152e+01, -7.97815606e+01, 7.02728734e+01])
             scalefact = scalefact[:, ::-1] # flip orientation left/right for SWB mask
-        elif name == 'MASKLWB': #elif np.abs(self.wavelength - 4.6e-6) < 0.1e-6:
+        elif name == 'MASKLWB':
             polyfitcoeffs = np.array([9.16195583e-05, -3.27354831e-03, 5.11960734e-02,
                                       -4.59674047e-01, 2.60963397e+00, -9.70881273e+00,
                                       2.36585911e+01, -3.63978587e+01, 3.20703511e+01])
 
         sigmas = scipy.poly1d(polyfitcoeffs)(scalefact)
         sigmar = sigmas * np.abs(y)
+        # clip sigma: The minimum is to avoid divide by zero
+        #             the maximum truncates after the first sidelobe to match the hardware
         sigmar.clip(min=np.finfo(sigmar.dtype).tiny, max=2*np.pi, out=sigmar)
         transmission = (1 - (np.sin(sigmar) / sigmar) ** 2)
         #transmission[x==0] = 0
         woutside = np.where(np.abs(x) > 10)
         transmission[woutside] = 1.0
 
-    else:
+    else: # Circular Masks
         r = np.sqrt(x ** 2 + y ** 2)
         sigmar = sigma * r
         sigmar.clip(np.finfo(sigmar.dtype).tiny, 2*np.pi, out=sigmar)  # avoid divide by zero -> NaNs
         transmission = (1 - (2 * scipy.special.jn(1, sigmar) / sigmar) ** 2)
         transmission[r==0] = 0   # special case center point (value based on L'Hopital's rule)
 
-
-    # add in the ND squares
-    x = x[::-1, ::-1]
-    y = y[::-1, ::-1]
-    if ((module=='A' and name=='MASKLWB') or
-        (module=='B' and name=='MASK210R')):
-        wnd_5 = np.where(
-            ((y > 5)&(y<10)) &
-            (
-                ((x < -5) & (x > -10)) |
-                ((x > 7.5) & (x < 12.5))
+    if nd_squares:
+        # add in the ND squares. Note the positions are not exactly the same in the two wedges.
+        # See the figures  in Krist et al. of how the 6 ND squares are spaced among the 5
+        # corongraph regions
+        # Note: 180 deg rotation needed relative to Krist's figures for the flight SCI orientation:
+        # We flip the signs of X and Y here as a shortcut to avoid recoding all of the below...
+        x *= -1
+        y *= -1
+        #x = x[::-1, ::-1]
+        #y = y[::-1, ::-1]
+        if ((module=='A' and name=='MASKLWB') or
+            (module=='B' and name=='MASK210R')):
+            wnd_5 = np.where(
+                ((y > 5)&(y<10)) &
+                (
+                    ((x < -5) & (x > -10)) |
+                    ((x > 7.5) & (x < 12.5))
+                )
             )
-        )
-        wnd_2 = np.where(
-            ((y > -10)&(y<-8)) &
-            (
-                ((x < -8) & (x > -10)) |
-                ((x > 9) & (x < 11))
+            wnd_2 = np.where(
+                ((y > -10)&(y<-8)) &
+                (
+                    ((x < -8) & (x > -10)) |
+                    ((x > 9) & (x < 11))
+                )
             )
-        )
-    elif ((module=='A' and name=='MASK210R') or
-          (module=='B' and name=='MASKSWB')):
-        wnd_5 = np.where(
-            ((y > 5)&(y<10)) &
-            (
-                ((x > -12.5) & (x < -7.5)) |
-                ((x > 5) & (x <10))
+        elif ((module=='A' and name=='MASK210R') or
+              (module=='B' and name=='MASKSWB')):
+            wnd_5 = np.where(
+                ((y > 5)&(y<10)) &
+                (
+                    ((x > -12.5) & (x < -7.5)) |
+                    ((x > 5) & (x <10))
+                )
             )
-        )
-        wnd_2 = np.where(
-            ((y > -10)&(y<-8)) &
-            (
-                ((x > -11) & (x < -9)) |
-                ((x > 8) & (x<10))
+            wnd_2 = np.where(
+                ((y > -10)&(y<-8)) &
+                (
+                    ((x > -11) & (x < -9)) |
+                    ((x > 8) & (x<10))
+                )
             )
-        )
-    else:
-        wnd_5 = np.where(
-            ((y > 5)&(y<10)) &
-            (np.abs(x) > 7.5) &
-            (np.abs(x) < 12.5)
-        )
-        wnd_2 = np.where(
-            ((y > -10)&(y<-8)) &
-            (np.abs(x) > 9) &
-            (np.abs(x) < 11)
-        )
+        else:
+            wnd_5 = np.where(
+                ((y > 5)&(y<10)) &
+                (np.abs(x) > 7.5) &
+                (np.abs(x) < 12.5)
+            )
+            wnd_2 = np.where(
+                ((y > -10)&(y<-8)) &
+                (np.abs(x) > 9) &
+                (np.abs(x) < 11)
+            )
 
 
-    transmission[wnd_5] = np.sqrt(1e-3)
-    transmission[wnd_2] = np.sqrt(1e-3)
+        transmission[wnd_5] = np.sqrt(1e-3)
+        transmission[wnd_2] = np.sqrt(1e-3)
 
-    # Add in the opaque border of the coronagraph mask holder.
-    if ((module=='A' and name=='MASKLWB') or
-        (module=='B' and name=='MASK210R')):
-        woutside = np.where((x < -10) & (y < 11.5 ))
+        # Add in the opaque border of the coronagraph mask holder.
+        if ((module=='A' and name=='MASKLWB') or
+            (module=='B' and name=='MASK210R')):
+            # left edge
+            woutside = np.where((x < -10) & (y < 11.5 ))
+            transmission[woutside] = 0.0
+        elif ((module=='A' and name=='MASK210R') or
+              (module=='B' and name=='MASKSWB')):
+            # right edge
+            woutside = np.where((x > 10) & (y < 11.5))
+            transmission[woutside] = 0.0
+        # mask holder edge
+        woutside = np.where(y < -10)
         transmission[woutside] = 0.0
-    elif ((module=='A' and name=='MASK210R') or
-          (module=='B' and name=='MASKSWB')):
-        woutside = np.where((x > 10) & (y < 11.5))
-        transmission[woutside] = 0.0
-    woutside = np.where(y < -10)
-    transmission[woutside] = 0.0
 
-    # edge of mask itself
-    wedge = np.where(( y > 11.5) & (y < 13))
-    transmission[wedge] = 0.7
+        # edge of mask itself
+        # TODO the mask edge is complex and partially opaque based on CV3 images?
+        # edge of glass plate rather than opaque mask I believe. To do later.
+        # The following is just a temporary placeholder with no quantitative accuracy.
+        # but this is outside the coronagraph FOV so that's fine - this only would matter in
+        # modeling atypical/nonstandard calibration exposures.
+
+        wedge = np.where(( y > 11.5) & (y < 13))
+        transmission[wedge] = 0.7
+
+    if not np.isfinite(transmission.sum()):
+        _log.warn("There are NaNs in the BLC mask - correcting to zero. (DEBUG LATER?)")
+        transmission[np.where(np.isfinite(transmission) == False)] = 0
 
     return transmission
 
@@ -2938,7 +2881,7 @@ def build_mask(module='A', pixscale=0.03):
 ###########################################################################
 
 def nrc_header(det_class, filter=None, pupil=None, obs_time=None, header=None,
-               DMS=True,targ_name=None):
+               DMS=True, targ_name=None):
     """
     Create a generic NIRCam FITS header from a detector_ops class.
 
