@@ -57,7 +57,7 @@ try:
 except ImportError:
     raise ImportError('WebbPSF is not installed. pyNRC depends on its inclusion.')
 # Check that minimum required version meets requirements
-_webbpsf_version_min = (0,5,0)
+_webbpsf_version_min = (0,6,0)
 _ = webbpsf.utils.get_webbpsf_data_path(_webbpsf_version_min)
 
 # Link to WebbPSF's instance of poppy
@@ -102,6 +102,8 @@ nc_temp = webbpsf.NIRCam()
 pixscale_SW = nc_temp._pixelscale_short
 pixscale_LW = nc_temp._pixelscale_long
 del nc_temp
+
+opd_default = ('OPD_RevW_ote_for_NIRCam_requirements.fits', 0, 0)
 
 ###########################################################################
 #
@@ -712,7 +714,7 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
 
     # Default OPD
     #if opd is None: opd = ('OPD_RevV_nircam_132.fits', 0)
-    if opd is None: opd = ('OPD_RevW_ote_for_NIRCam_requirements.fits', 0, 0)
+    if opd is None: opd = opd_default
 
       
     # Get filter throughput and create bandpass 
@@ -1976,10 +1978,11 @@ def bin_spectrum(sp, wave, waveunits='um'):
 
 
 def BOSZ_spectrum(Teff, metallicity, log_g, res=2000, interpolate=True, **kwargs):
-    """
+    """BOSZ stellar atmospheres.
+    
     Read in a spectrum from the BOSZ stellar atmosphere models database.
-    Returns a Pysynphot spectral object. Wavelength values range from 
-    1000-32000 Angstroms.
+    Returns a Pysynphot spectral object. Wavelength values range between 
+    1000-32000 Angstroms. Teff range from 3500K to 36000K.
     
     This function interoplates the model grid by reading in those models
     closest in temperature, metallicity, and log g to the desired parameters, 
@@ -1989,7 +1992,9 @@ def BOSZ_spectrum(Teff, metallicity, log_g, res=2000, interpolate=True, **kwargs
     Different spectral resolutions can also be specified, currently only
     res=200 or res=2000.
 
-    Ref: https://archive.stsci.edu/prepds/bosz/
+    References
+    ----------
+    https://archive.stsci.edu/prepds/bosz/
     """
     
     model_dir = '/Volumes/NIRData/bosz_grids/'
@@ -2113,7 +2118,7 @@ def BOSZ_spectrum(Teff, metallicity, log_g, res=2000, interpolate=True, **kwargs
 
 def stellar_spectrum(sptype, *renorm_args, **kwargs):
     """
-    Get Pysynphot Spectrum object from a user-friendly spectral type string.
+    Pysynphot spectral object from a user-friendly spectral type string.
 
     Similar to specFromSpectralType() in WebbPSF/Poppy, this function uses
     a fixed dictionary to determine an appropriate spectral model using the
@@ -2123,13 +2128,14 @@ def stellar_spectrum(sptype, *renorm_args, **kwargs):
     the input spectral type is not found.
 
     You can also specify renormalization arguments to pass to sp.renorm. The
-    order (after `sptype`) should be (value, units, bandpass):
-        ie., sp = stellar_spectrum('G2V', 10, 'vegamag', bp)
+    order (after ``sptype``) should be (``value, units, bandpass``):
+    
+    >>>sp = stellar_spectrum('G2V', 10, 'vegamag', bp)
     
     Flat spectrum (in photlam) are also allowed via the 'flat' string.
     
-    Use catname='ck04models' keyword for ck04 models
-    Use catname='bosz' for BOSZ stellar atmosphere (ATLAS9)
+    Use ``catname='ck04models'`` keyword for ck04 models
+    Use ``catname='bosz'`` for BOSZ stellar atmosphere (ATLAS9)
     
     """
 
@@ -2238,7 +2244,9 @@ def stellar_spectrum(sptype, *renorm_args, **kwargs):
         if 'bosz' in catname.lower():
             sp = BOSZ_spectrum(v0, v1, v2, **kwargs)
         else:
-            if ('ck04models' in catname.lower()) and (v0<3500): v0 = 3500
+            if ('ck04models' in catname.lower()) and (v0<3500):
+                _log.warn("ck04 models stop at 3500K. Setting v0=3500.")
+                v0 = 3500
             sp = S.Icat(catname, v0, v1, v2)
         sp.name = sptype
         
@@ -2433,8 +2441,7 @@ def zodi_euclid(locstr, year, day, wavelengths=[1,5.5], ido_viewin=0, **kwargs):
 
 # Class for reading in planet spectra
 class planets_sb12(object):
-    """
-    Exoplanet spectrum from Spiegel & Burrows (2012)
+    """Exoplanet spectrum from Spiegel & Burrows (2012)
 
     This contains 1680 files, one for each of 4 atmosphere types, each of
     15 masses, and each of 28 ages.  Wavelength range of 0.8 - 15.0 um at
@@ -2445,26 +2452,45 @@ class planets_sb12(object):
     is changed by the user. All other properties (atmo, mass, age, entropy) are 
     not adjustable once loaded.
 
-    Arguments:
-        atmo: A string consisting of one of four atmosphere types:
-            hy1s = hybrid clouds, solar abundances
-            hy3s = hybrid clouds, 3x solar abundances
-            cf1s = cloud-free, solar abundances
-            cf3s = cloud-free, 3x solar abundances
-        mass: Integer number 1 to 15 Jupiter masses.
-        age: Age in millions of years (1-1000)
-        entropy: Initial entropy (8.0-13.0) in increments of 0.25
-        distance: Assumed distance in pc (default is 10pc)
-        base_dir: Location of atmospheric model sub-directories.
+    Parameters
+    ----------
+    atmo: str
+        A string consisting of one of four atmosphere types:
+
+            - 'hy1s' = hybrid clouds, solar abundances
+            - 'hy3s' = hybrid clouds, 3x solar abundances
+            - 'cf1s' = cloud-free, solar abundances
+            - 'cf3s' = cloud-free, 3x solar abundances
+            
+    mass: float
+        A number 1 to 15 Jupiter masses.
+    age: float
+        Age in millions of years (1-1000)
+    entropy: float
+        Initial entropy (8.0-13.0) in increments of 0.25
+    distance: float
+        Assumed distance in pc (default is 10pc)
+    accr : bool
+        Include accretion (default: False)?
+    mmdot : float
+        From Zhu et al. (2015), the Mjup^2/yr value.
+        If set to None then calculated from age and mass.
+    mdot : float
+        Or use mdot (Mjup/yr) instead of mmdot.
+    accr_rin : float
+        Inner radius of accretion disk (units of RJup; default: 2)
+    truncated: bool
+         Full disk or truncated (ie., MRI; default: False)?
+    base_dir: str, None
+        Location of atmospheric model sub-directories.
     """
 
 	# Define default self.base_dir
-    base_dir = conf.PYNRC_PATH + 'spiegel/'
+    _base_dir = conf.PYNRC_PATH + 'spiegel/'
 
-    def __init__(self, atmo='hy1s', mass=1, age=100, entropy=10.0, 
-                 distance=10, base_dir=None, 
+    def __init__(self, atmo='hy1s', mass=1, age=100, entropy=10.0, distance=10,
                  accr=False, mmdot=None, mdot=None, accr_rin=2.0, truncated=False,
-                 **kwargs):
+                 base_dir=None, **kwargs):
 
         self._atmo = atmo
         self._mass = mass
@@ -2472,11 +2498,11 @@ class planets_sb12(object):
         self._entropy = entropy
 
         if base_dir is not None:
-            self.base_dir = base_dir
-        self.sub_dir = self.base_dir  + 'SB.' + self.atmo + '/'
+            self._base_dir = base_dir
+        self.sub_dir = self._base_dir  + 'SB.' + self.atmo + '/'
 
-        self.get_file()
-        self.read_file()
+        self._get_file()
+        self._read_file()
         self.distance = distance
         
         self.accr = accr
@@ -2493,7 +2519,8 @@ class planets_sb12(object):
         self.rin = accr_rin
         self.truncated = truncated
 
-    def get_file(self):
+    def _get_file(self):
+        """Find the file closest to the input parameters"""
         files = []; masses = []; ages = []
         for file in os.listdir(self.sub_dir):
             files.append(file)
@@ -2517,7 +2544,8 @@ class planets_sb12(object):
         # Get the final file name
         self.file = ((files[ind_mass])[ind_age])[0]
 
-    def read_file(self):
+    def _read_file(self):
+        """Read in the file data"""
         # Read in the file's content row-by-row (saved as a string)
         with open(self.sub_dir + self.file) as f:
             content = f.readlines()
@@ -2552,20 +2580,25 @@ class planets_sb12(object):
 
     @property
     def mdot(self):
+        """Accretion rate in MJup/yr"""
         return self.mmdot / self.mass
 
     @property
     def wave(self):
+        """Wavelength of spectrum"""
         return self._wave
     @property
     def waveunits(self):
+        """Wavelength units"""
         return self._waveunits
 
     @property
     def flux(self):
+        """Spectral flux"""
         return self._flux
     @property
     def fluxunits(self):
+        """Flux units"""
         return self._fluxunits
 
     @property
@@ -2579,17 +2612,12 @@ class planets_sb12(object):
 
     @property
     def atmo(self):
-        """
-        A string consisting of one of four atmosphere types:
-            hy1s = hybrid clouds, solar abundances
-            hy3s = hybrid clouds, 3x solar abundances
-            cf1s = cloud-free, solar abundances
-            cf3s = cloud-free, 3x solar abundances
+        """Atmosphere type
         """
         return self._atmo
     @property
     def mass(self):
-        """Jupiter masses"""
+        """Mass of planet (MJup)"""
         return self._mass
     @property
     def age(self):
@@ -2601,6 +2629,7 @@ class planets_sb12(object):
         return self._entropy
         
     def export_pysynphot(self, waveout='angstrom', fluxout='flam'):
+        """Output to :mod:`pysynphot.spectrum` object"""
         w = self.wave; f = self.flux        
         name = (re.split('[\.]', self.file))[0]#[5:]        
         sp = S.ArraySpectrum(w, f, name=name, waveunits=self.waveunits, fluxunits=self.fluxunits)
@@ -2622,13 +2651,10 @@ class planets_sb12(object):
             return sp
         
         
-# Turns out the paper is Spiegel & Burrows (2012), not 2011
+
 class planets_sb11(planets_sb12):
-
-    """
-    Deprecated version of planets_sb12 class. Use that instead.
-    """
-
+    """Deprecated class. Use :class:`planets_sb12` instead."""
+    # Turns out the paper is Spiegel & Burrows (2012), not 2011
     def __init__(self, *args, **kwargs):
                  
         _log.warning('planets_sb11 is depcrecated. Use planets_sb12 instead.')
@@ -2636,22 +2662,39 @@ class planets_sb11(planets_sb12):
 
 
 def sp_accr(mmdot, rin=2, dist=10, truncated=False,
-            waveout='angstrom', fluxout='flam'):
+            waveout='angstrom', fluxout='flam', base_dir=None):
     
-    """
-    mmdot : Product of the exoplanet mass and mass accretion rate (MJup^2/yr)
-            Values range from 1e-7 to 1e-2.
-    rin   : disk inner radius in terms of R_Jup.
-            Values rnage from 1 to 4.
-    dist  : Distance to object (pc)
+    """Exoplanet accretion flux values (Zhu et al., 2015).
     
-    truncated : If True, then the values are for a disk with Rout=50 RJup,
-                otherwise, values were calculated for a full disk (Rout=1000 RJup).
-                Accretion from a "tuncated disk" is due mainly to MRI.
-                Luminosities for full and truncated disks are very similar.
+    Calculated the wavelength-dependent flux of an exoplanet accretion disk/shock
+    from Zhu et al. (2015). A 
+    
+    Note
+    ----
+    This function only uses the table of photometric values to calculate 
+    overall brightness from a source, so not very useful for simulating
+    spectral observations.
+    
+    
+    Parameters
+    ----------
+    mmdot : float
+        Product of the exoplanet mass and mass accretion rate (MJup^2/yr).
+        Values range from 1e-7 to 1e-2.
+    rin : float
+        Inner radius of accretion disk (units of RJup; default: 2).
+    dist : float
+        Distance to object (pc).
+    truncated: bool
+        If True, then the values are for a disk with Rout=50 RJup,
+        otherwise, values were calculated for a full disk (Rout=1000 RJup).
+        Accretion from a "tuncated disk" is due mainly to MRI.
+        Luminosities for full and truncated disks are very similar.
+    base_dir: str, None
+        Location of accretion model sub-directories.
     """
-        
-    base_dir = conf.PYNRC_PATH + 'spiegel/'
+
+    base_dir = conf.PYNRC_PATH + 'spiegel/' if base_dir is None else base_dir
     fname = base_dir + 'zhu15_accr.txt'
 
     names = ('MMdot', 'Rin', 'Tmax', 'J', 'H', 'K', 'L', 'M', 'N', 'J2', 'H2', 'K2', 'L2', 'M2', 'N2')
@@ -2732,7 +2775,7 @@ def coron_trans(name, module='A', pixscale=None, fov=20, nd_squares=True):
 
     #pixscale=0.03
 
-    s = int(round(fov/pixscale))
+    s = int(fov/pixscale + 0.5)
     shape = (s,s)
     y, x = np.indices(shape, dtype=float)
     y -= shape[0] / 2.0

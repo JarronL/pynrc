@@ -54,7 +54,7 @@ def pad_or_cut_to_size(array, new_shape):
         array = array.reshape((-1,1))
         ny, nx = array.shape
         if isinstance(new_shape, float) or isinstance(new_shape, int):
-            ny_new = int(round(new_shape))
+            ny_new = int(new_shape+0.5)
             nx_new = 1
             new_shape = (ny_new, nx_new)
         elif len(new_shape) < 2:
@@ -68,7 +68,7 @@ def pad_or_cut_to_size(array, new_shape):
         is_1d = False
         ny, nx = array.shape
         if isinstance(new_shape, float) or isinstance(new_shape, int):
-            ny_new = nx_new = int(round(new_shape))
+            ny_new = nx_new = int(new_shape+0.5)
             new_shape = (ny_new, nx_new)
         elif len(new_shape) < 2:
             ny_new = nx_new = new_shape[0]
@@ -89,8 +89,8 @@ def pad_or_cut_to_size(array, new_shape):
         n1 = n0 + nx_new
     else:
         n0 = 0; n1 = nx		
-    n0 = int(round(n0))
-    n1 = int(round(n1))
+    n0 = int(n0+0.5)
+    n1 = int(n1+0.5)
 
     if ny_new>ny:
         m0 = (ny_new - ny) / 2
@@ -100,8 +100,8 @@ def pad_or_cut_to_size(array, new_shape):
         m1 = m0 + ny_new
     else:
         m0 = 0; m1 = ny		
-    m0 = int(round(m0))
-    m1 = int(round(m1))
+    m0 = int(m0+0.5)
+    m1 = int(m1+0.5)
 
     if (nx_new>=nx) and (ny_new>=ny):
         #print('Case 1')
@@ -362,7 +362,7 @@ def frebin(image, dimensions=None, scale=None, total=True):
             raise RuntimeError("The number of input dimensions don't match the image shape.")
     elif scale is not None:
         if isinstance(scale, float) or isinstance(scale, int):
-            dimensions = map(int, map(round, map(lambda x: x*scale, image.shape)))
+            dimensions = map(int, map(lambda x: x+0.5, map(lambda x: x*scale, image.shape)))
         elif len(scale) != len(image.shape):
             raise RuntimeError("The number of input dimensions don't match the image shape.")
         else:
@@ -376,12 +376,12 @@ def frebin(image, dimensions=None, scale=None, total=True):
     if len(shape)==1:
         nlout = 1
         nsout = dimensions[0]
-        nsout = int(round(nsout))
+        nsout = int(nsout+0.5)
         dimensions = [nsout]
     elif len(shape)==2:
         nlout, nsout = dimensions
-        nlout = int(round(nlout))
-        nsout = int(round(nsout))
+        nlout = int(nlout+0.5)
+        nsout = int(nsout+0.5)
         dimensions = [nlout, nsout]
     if len(shape) > 2:
         raise ValueError('Input image can only have 1 or 2 dimensions. Found {} dimensions.'.format(len(shape)))

@@ -1,30 +1,4 @@
-"""
-pyNRC - Python ETC and Simulator for JWST NIRCam
-
-Modification History:
-
-v0.1.0 - Aug 2016 - J.M. Leisenring, UA/Steward
-  - Rewrite of SimNRC
-  - Object oriented Multiaccum, Detector, and NIRCam classes
-  - Create a detector property instance for each detector
-v0.2.0 - Sep 2016 - J.M. Leisenring, UA/Steward
-  - Add support for LW slitless grism
-  - Add support for extended sources
-v0.3.0 - Jan 2017 - J.M. Leisenring, UA/Steward
-  - Observations subclass for coronagraphs and direct imaging
-v0.4.0 - N/A
-v0.5.0 - Feb 2017 - J.M. Leisenring, UA/Steward
-  - ND Acquisition filters
-  - Ramp settings optimizer
-  - Ability to create simulated ramps with detector noise
-  - Query Euclid's IPAC server for position-dependent Zodiacal emission
-  - Added example notebooks
-
-To Be Completed:
- - Support for SW DHS
- - Validate detector array sizes compared to WebbPSF sizes
-   - Is there an issue if WebbPSF image is larger than detector size?
-"""
+"""pyNRC - Python ETC and Simulator for JWST NIRCam"""
 
 from __future__ import division, print_function, unicode_literals
 
@@ -42,25 +16,45 @@ _log = logging.getLogger('pynrc')
 class multiaccum(object):
     """
     A class for defining MULTIACCUM ramp settings.
+    See `NIRCam MULTIACCUM documentation
+    <https://jwst-docs.stsci.edu/display/JTI/NIRCam+Detector+Readout+Patterns>`_
+    for more details.
 
     Parameters
     ----------------
-    read_mode (string) : NIRCam Ramp Readout mode such as 'RAPID', 'BRIGHT1', 'BRIGHT2', etc.
-    nint, ngroup, nf, nd1, nd2, nd3 (int) : Ramp parameters, some of which may be
-        overwritten by read_mode. See JWST MULTIACCUM documentation for more details.
+    read_mode : str
+        NIRCam Ramp Readout mode such as 'RAPID', 'BRIGHT1', DEEP8, etc.
+    nint : int
+        Number of integrations (ramps).
+    ngroup : int
+        Number of groups in a integration.
+    nf : int
+        Number of frames per group.
+    nd1 : int
+        Number of drop frame after reset (before first group read). 
+    nd2 : int
+        Number of drop frames within a group (ie., groupgap). 
+    nd3 : int
+        Number of drop frames after final read frame in ramp.
 
-    NIRCam-specific readout modes:
-      PATTERN  NF ND2
-      ---------------
-      RAPID     1   0
-      BRIGHT1   1   1
-      BRIGHT2   2   0
-      SHALLOW2  2   3
-      SHALLOW4  4   1
-      MEDIUM2   2   8
-      MEDIUM8   8   2
-      DEEP2     2  18
-      DEEP8     8  12
+    Notes
+    -----
+
+    **NIRCam-specific readout modes**
+    
+    ========  ===  ===
+    Pattern    NF  ND2
+    ========  ===  ===
+    RAPID      1    0
+    BRIGHT1    1    1
+    BRIGHT2    2    0
+    SHALLOW2   2    3
+    SHALLOW4   4    1
+    MEDIUM2    2    8
+    MEDIUM8    8    2
+    DEEP2      2   18
+    DEEP8      8   12
+    ========  ===  ===
     """
 
     def __init__(self, read_mode='RAPID', nint=1, ngroup=1, nf=1, nd1=0, nd2=0, nd3=0, 
@@ -165,7 +159,7 @@ class multiaccum(object):
             value = 'CUSTOM'
 
         value = value.upper()
-        check_list(value, self.patterns_list, var_name='read_mode')
+        _check_list(value, self.patterns_list, var_name='read_mode')
 
         self._read_mode = value
         self._validate_readout()
@@ -230,22 +224,52 @@ class multiaccum(object):
 class DetectorOps(object):
     """ 
     Class to hold detector operations information. Includes SCA attributes such as
-    detector names and IDs as well as a subclass multiaccum for ramp settings.
+    detector names and IDs as well as :class:`multiaccum` class for ramp settings.
+    Use keyword args to setup m
 
     Parameters
     ----------------
-    detector (int or str) : NIRCam detector/SCA ID, either 481-490 or A1-B5.
-    wind_mode (str)       : Window mode type 'FULL', 'STRIPE', 'WINDOW'.
-    xpix, ypix (int)      : Size of window in pixels for frame time calculation.
-    x0, y0 (int)          : Lower-left window position in detector coords (0,0).
+    detector : int, str
+        NIRCam detector ID (481-490) or SCA ID (A1-B5).
+    wind_mode : str
+        Window mode type 'FULL', 'STRIPE', 'WINDOW'.
+    xpix : int
+        Size of window in x-pixels for frame time calculation.
+    ypix : int
+        Size of window in y-pixels for frame time calculation.
+    x0 : int
+        Lower-left x-coord position of detector window.
+    y0 : int
+        Lower-left y-coord position of detector window.
 
-    One can also use the **kwargs functionality to pass keywords to the 
-    multiaccum class, in one of two ways:
-        1. Send via a dictionary of keywords and values:
-           kwargs = {'read_mode':'RAPID', 'nint':5, 'ngroup':10}
-           d = DetectorOps(**kwargs)
-        2. Set the keywords directly:
-           d = DetectorOps(read_mode='RAPID', nint=5, ngroup=10)
+    Keyword Args
+    ------------
+    read_mode : str
+        NIRCam Ramp Readout mode such as 'RAPID', 'BRIGHT1', etc.
+    nint : int
+        Number of integrations (ramps).
+    ngroup : int
+        Number of groups in a integration.
+    nf : int
+        Number of frames per group.
+    nd1 : int
+        Number of drop frame after reset (before first group read). 
+    nd2 : int
+        Number of drop frames within a group (ie., groupgap). 
+    nd3 : int
+        Number of drop frames after final read frame in ramp. 
+
+
+    Examples
+    --------
+    Use kwargs functionality to pass keywords to the multiaccum class.
+    
+    Send via a dictionary of keywords and values:
+        >>> kwargs = {'read_mode':'RAPID', 'nint':5, 'ngroup':10}
+        >>> d = DetectorOps(**kwargs)
+    
+    Set the keywords directly:   
+        >>> d = DetectorOps(read_mode='RAPID', nint=5, ngroup=10)
     """
 
     def __init__(self, detector=481, wind_mode='FULL', xpix=2048, ypix=2048, x0=0, y0=0,
@@ -319,7 +343,7 @@ class DetectorOps(object):
     @scaid.setter
     def scaid(self, value):
         """Set SCA ID (481, 482, ..., 489, 490). Automatically updates other relevant attributes."""
-        check_list(value, self.scaid_list, var_name='scaid')
+        _check_list(value, self.scaid_list, var_name='scaid')
 
         self._scaid = value
         self._detid = self._scaids.get(self._scaid)
@@ -346,7 +370,7 @@ class DetectorOps(object):
     @detid.setter
     def detid(self, value):
         """Set detector ID (A1, A2, ..., B4, B5). Automatically updates other relevant attributes."""
-        check_list(value, self.detid_list, var_name='detid')
+        _check_list(value, self.detid_list, var_name='detid')
 
         # Switch dictioary keys and values, grab the corresponding SCA ID,
         # and then call scaid.setter
@@ -385,9 +409,7 @@ class DetectorOps(object):
 
     @property
     def ref_info(self):
-        """
-        Array of reference pixel borders being read out: [lower, upper, left, right].
-        """
+        """Array of reference pixel borders being read out [lower, upper, left, right]."""
         det_size = self._detector_pixels
         x1 = self.x0; x2 = x1 + self.xpix
         y1 = self.y0; y2 = y1 + self.ypix
@@ -602,14 +624,22 @@ class DetectorOps(object):
         the final noise
 
         Parameters
-        ===========
-        fsrc (float)  : Flux of source in e-/sec/pix
-        fzodi (float) : Flux of the zodiacal background in e-/sec/pix
-        fbg (float)   : Flux of telescope background in e-/sec/pix
-        ideal_Poisson : If set to True, use total signal for noise estimate,
-                        otherwise MULTIACCUM equation is used.
+        ----------
+        fsrc : float
+            Flux of source in e-/sec/pix
+        fzodi : float
+            Flux of the zodiacal background in e-/sec/pix
+        fbg : float
+            Flux of telescope background in e-/sec/pix
+        ideal_Poisson : bool
+            If set to True, use total signal for noise estimate,
+            otherwise MULTIACCUM equation is used.
+        verbose : bool
+            Print out results at the end.
 
-        These three components are functionally the same as they are immediately summed.
+        Notes
+        -----
+        fsrc, fzodi, and fbg are functionally the same as they are immediately summed.
         They can also be single values or multiple elements (list, array, tuple, etc.).
         If multiple inputs are arrays, make sure their array sizes match.
         
@@ -634,22 +664,26 @@ class DetectorOps(object):
         Create a generic NIRCam FITS header.
 
         Parameters
-        ===========
-        filter (str) : Name of filter element.
-        pupil  (str) : Name of pupil element.
-        obs_time (datetime): 
+        ----------
+        filter :str
+            Name of filter element.
+        pupil : str
+            Name of pupil element.
+        obs_time : datetime 
             Specifies when the observation was considered to be executed.
             If not specified, then it will choose the current time.
             This must be a datetime object:
-                datetime.datetime(2016, 5, 9, 11, 57, 5, 796686)
+            
+            >>> datetime.datetime(2016, 5, 9, 11, 57, 5, 796686)
         """
         return nrc_header(self, filter=filter, pupil=pupil, obs_time=obs_time, **kwargs)
 
 
 class NIRCam(object):
 
-    """
-    Create a NIRCam instrument class that holds all the information pertinent to
+    """NIRCam instrument class
+    
+    Creates a NIRCam instrument class that holds all the information pertinent to
     an observation using a given channel/module (SWA, SWB, LWA, LWB). 
 
     The user merely inputs the filter name, pupil element, coronagraphic mask,
@@ -658,45 +692,100 @@ class NIRCam(object):
     of 'F210M' paired with module='A' will generate four detector objects, one
     for each of the four SWA SCAs 481-484 (A1-A4, if you prefer).
 
-    A number of other options are passed via the **kwargs parameter that allow
+    A number of other options are passed via the kwargs parameter that allow
     setting of the detector readout mode, MULTIACCUM settings, and settings
     for the PSF calculation to be passed to WebbPSF.
 
     Parameters
-    ==========
-
-    Instrument
     ----------
-    filter (str) : Name of NIRCam filter.
-    pupil  (str) : NIRCam pupil elements such as grisms or lyot stops
-    mask   (str) : Specify the coronagraphic occulter (spots or bar)
-    module (str) : NIRCam Module 'A' or 'B'
-    ND_acq (bool): ND square acquisition (True/False).
+    filter : str
+        Name of NIRCam filter.
+    pupil : str, None
+        NIRCam pupil elements such as grisms or lyot stops (default: None).
+    mask : str, None
+        Specify which coronagraphic occulter (default: None).
+    module : str
+        NIRCam Module 'A' or 'B' (default: 'A').
+    ND_acq : bool
+        ND square acquisition (default: False).
+        
+    Notes
+    -----
+    **Detector Settings**
+    
+    The following keyword arguments will be passed to both the :class:`DetectorOps` and
+    :class:`multiaccum` instances. These can be set directly upon initialization of the
+    of the NIRCam instances or updated later using the :meth:`update_detectors`
+    method. All detector instances will be considered to operate in this mode.
+    
+    Keyword Args
+    ------------
+    wind_mode : str
+        Window mode type 'FULL', 'STRIPE', 'WINDOW'.
+    xpix : int
+        Size of window in x-pixels for frame time calculation.
+    ypix : int
+        Size of window in y-pixels for frame time calculation.
+    x0 : int
+        Lower-left x-coord position of detector window.
+    y0 : int
+        Lower-left y-coord position of detector window.
+    read_mode : str
+        NIRCam Ramp Readout mode such as 'RAPID', 'BRIGHT1', etc.
+    nint : int
+        Number of integrations (ramps).
+    ngroup : int
+        Number of groups in a integration.
+    nf : int
+        Number of frames per group.
+    nd1 : int
+        Number of drop frame after reset (before first group read). 
+    nd2 : int
+        Number of drop frames within a group (ie., groupgap). 
+    nd3 : int
+        Number of drop frames after final read frame in ramp. 
+        
+    Notes
+    -----
+    **PSF Settings**
 
-    Detector
+    The following keyword arguments will be passed to the PSF generation function
+    :func:`~pynrc.nrc_utils.psf_coeff` which calls :mod:`webbpsf`.  These can be set directly 
+    upon initialization of the of the NIRCam instances or updated later using the 
+    :meth:`update_psf_coeff` method. 
+
+    Keyword Args
+    ------------
+    fov_pix : int
+        Size of the FoV in pixels (real SW or LW pixels).
+    oversample : int
+        Factor to oversample during WebbPSF calculations.
+        Default 2 for coronagraphy and 4 otherwise.
+    offset_r : float
+        Radial offset from the center in arcsec.
+    offset_theta :float
+        Position angle for radial offset, in degrees CCW.
+    opd : tuple
+        Tuple containing WebbPSF specific OPD file name and slice.
+    tel_pupil : str
+        File name or HDUList specifying telescope entrance pupil.
+    save : bool
+        Save the resulting PSF coefficients to a file? (default: True)
+    force : bool
+        Forces a recalcuation of PSF even if saved PSF exists. (default: False)
+        
+    Examples
     --------
-    The following keyword arguments will be passed to both the DetectorOps and
-    Multiaccum instances. These can be set directly upon initialization of the
-    of the NIRCam instances or updated later using the nrc.update_detectors()
-    function. All detector instances will be considered to operate in this mode.
+    Basic example of generating a full frame NIRCam observation:
+    
+    >>> inst = pynrc.NIRCam('F210M', module='A', read_mode='DEEP8', nint=10, ngroup=5)
 
-    wind_mode  (str) : Window mode type 'FULL', 'STRIPE', 'WINDOW'.
-    xpix, ypix (int) : Size of window in pixels for frame time calculation.
-    x0, y0     (int) : Lower-left window position in detector coords (0,0).
-    read_mode  (str) : NIRCam Ramp Readout mode such as 'RAPID', 'BRIGHT1', etc.
-    nint, ngroup, nf, nd1, nd2, nd3 (int) : Ramp parameters, some of which may be
-        overwritten by read_mode. See JWST MULTIACCUM documentation.
+    is the same as:
 
-    PSF Info
-    --------
-    fov_pix      (int) : Size of the FoV in pixels (real SW or LW pixels).
-    oversample   (int) : Factor to oversample during WebbPSF calculations.
-                         Default 2 for coronagraphy and 4 otherwise.
-    offset_r     (flt) : Radial offset from the center in arcsec.
-    offset_theta (flt) : Position angle for radial offset, in degrees CCW.
-    opd          (tup) : Tuple containing WebbPSF specific OPD file name and slice.
-    save        (bool) : Save the resulting PSF coefficients to a file?
-    force       (bool) : Forces a recalcuation of PSF even if saved PSF exists.
+    >>> inst = pynrc.NIRCam('F210M', module='A')
+    >>> inst.update_detectors(read_mode='DEEP8', nint=10, ngroup=5)
+
+
     """
 
     def __init__(self, filter='F210M', pupil=None, mask=None, module='A', ND_acq=False,
@@ -739,10 +828,10 @@ class NIRCam(object):
 
         # Validate all values, set values, and update bandpass
         # Test and set the intrinsic/hidden variables directly rather than through setters
-        check_list(filter, self.filter_list, 'filter')
-        check_list(module, ['A','B'], 'module')
-        check_list(pupil, self.pupil_list, 'pupil')
-        check_list(mask, self.mask_list, 'mask')
+        _check_list(filter, self.filter_list, 'filter')
+        _check_list(module, ['A','B'], 'module')
+        _check_list(pupil, self.pupil_list, 'pupil')
+        _check_list(mask, self.mask_list, 'mask')
         self._filter = filter
         self._module = module
         self._pupil = pupil
@@ -758,12 +847,15 @@ class NIRCam(object):
     # Allowed values for filters, coronagraphic masks, and pupils
     @property
     def filter_list(self):
+        """List of allowable filters."""
         return self._filters_sw + self._filters_lw
     @property
     def mask_list(self):
+        """List of allowable coronagraphic mask values."""
         return self._coron_masks
     @property
     def pupil_list(self):
+        """List of allowable pupil mask values."""
         return ['CLEAR','FLAT'] + self._lyot_masks + self._grism + self._dhs + self._weak_lens
 
     @property
@@ -774,7 +866,7 @@ class NIRCam(object):
     def filter(self, value):
         """Set the filter name"""
         value = value.upper()
-        check_list(value, self.filter_list, 'filter')
+        _check_list(value, self.filter_list, 'filter')
 
         # Store original settings of filter name and SW or LW channel
         vold = self._filter; ch_old = self.channel
@@ -795,7 +887,7 @@ class NIRCam(object):
     def pupil(self, value):
         """Set the pupil name"""
         value = 'CLEAR' if value is None else value.upper()
-        check_list(value, self.pupil_list, 'pupil')
+        _check_list(value, self.pupil_list, 'pupil')
         vold = self._pupil; self._pupil = value
         if vold != self._pupil: 
             self._update_bp()
@@ -810,7 +902,7 @@ class NIRCam(object):
     def mask(self, value):
         """Set the coronagraphic mask"""
         if value is not None: value = value.upper()
-        check_list(value, self.mask_list, 'mask')
+        _check_list(value, self.mask_list, 'mask')
         vold = self._mask; self._mask = value
         if vold != self._mask: 
             self._update_bp()
@@ -825,7 +917,7 @@ class NIRCam(object):
     @module.setter
     def module(self, value):
         """Set the which NIRCam module (A or B)"""
-        check_list(value, ['A','B'], 'module')
+        _check_list(value, ['A','B'], 'module')
         vold = self._module; self._module = value
         if vold != self._module:
             self._update_bp()
@@ -834,12 +926,12 @@ class NIRCam(object):
     
     @property
     def ND_acq(self):
-        """Coronagraphic ND acquisition square"""
+        """Use Coronagraphic ND acquisition square?"""
         return self._ND_acq
     @ND_acq.setter
     def ND_acq(self, value):
-        """Set whether or not we're placed on an ND acquisition square"""
-        check_list(value, [True, False], 'ND_acq')
+        """Set whether or not we're placed on an ND acquisition square."""
+        _check_list(value, [True, False], 'ND_acq')
         vold = self._ND_acq; self._ND_acq = value
         if vold != self._ND_acq:
             self._update_bp()
@@ -847,7 +939,7 @@ class NIRCam(object):
 
     @property
     def channel(self):
-        """NIRCam channel 'SW' or 'LW'"""
+        """NIRCam wavelength channel ('SW' or 'LW')."""
         if self.filter in self._filters_sw: return 'SW'
         if self.filter in self._filters_lw: return 'LW'
 
@@ -861,9 +953,7 @@ class NIRCam(object):
         """The wavelength dependent bandpass."""
         return self._bandpass
     def _update_bp(self):
-        """
-        Update bandpass based on filter, pupil, and module, etc.
-        """
+        """Update bandpass based on filter, pupil, and module, etc."""
         self._bandpass = read_filter(self.filter, self.pupil, self.mask, 
                                      self.module, self.ND_acq,
                                      ice_scale=self._ice_scale, nvr_scale=self._nvr_scale)
@@ -871,7 +961,21 @@ class NIRCam(object):
     def plot_bandpass(self, ax=None, color=None, title=None, **kwargs):
         """
         Plot the instrument bandpass on a selected axis.
-        Returns the axis.
+        Can pass various keywords to ``matplotlib.plot`` function.
+        
+        Parameters
+        ----------
+        ax : matplotlib.axes, optional
+            Axes on which to plot bandpass.
+        color : 
+            Color of bandpass curve.
+        title : str
+            Update plot title.
+        
+        Returns
+        -------
+        matplotlib.axes
+            Updated axes
         """
 
         if ax is None:
@@ -893,13 +997,16 @@ class NIRCam(object):
     
     @property
     def multiaccum(self):
+        """:class:`multiaccum` object"""
         return self.Detectors[0].multiaccum
     @property
     def multiaccum_times(self):
+        """Exposure timings in dictionary"""
         return self.Detectors[0].times_to_dict()
 
     @property
     def det_info(self):
+        """Dictionary housing detector info parameters and keywords."""
         return self._det_info
 
     @property
@@ -916,23 +1023,48 @@ class NIRCam(object):
         """
         Generates a list of detector objects depending on module and channel.
         This function will get called any time a filter, pupil, mask, or
-        module is modified by the user. 
+        module is modified by the user directly:
+        
+        >>> nrc = pynrc.NIRCam('F430M', ngroup=10, nint=5)
+        >>> nrc.filter = 'F444W'
 
         If the user wishes to change any properties of the multiaccum ramp
         or detector readout mode, pass those arguments through this function
         rather than creating a whole new NIRCam() instance. For example:
-            nrc = pynrc.NIRCam('F430M', ngroup=10, nint=5) # Initial instance
-            nrc.update_detectors(ngroup=2, nint=10, wind_mode='STRIPE', ypix=64)
+        
+        >>> nrc = pynrc.NIRCam('F430M', ngroup=10, nint=5)
+        >>> nrc.update_detectors(ngroup=2, nint=10, wind_mode='STRIPE', ypix=64)
     
-        A dictionary of the keyword settings can be referenced in nrc.det_info. 
-        Valid keywords include:
-          wind_mode  (str) : Window mode type 'FULL', 'STRIPE', 'WINDOW'.
-          xpix, ypix (int) : Size of window in pixels for frame time calculation.
-          x0, y0     (int) : Lower-left window position in detector coords (0,0).
-          read_mode  (str) : NIRCam Ramp Readout mode such as 'RAPID', 'BRIGHT1', etc.
-          nint, ngroup, nf (int) : Number of integrations, groups, and frames/group
-          nd1, nd2, nd3    (int) : Number of drops before 1st group, between groups,
-            and after final group, respectively. Only 'nd2' is valid for NIRCam.
+        A dictionary of the keyword settings can be referenced in :attr:`det_info`.
+        This dictionary cannot be modified directly.
+        
+        Keyword Args
+        ------------
+        wind_mode : str
+            Window mode type 'FULL', 'STRIPE', 'WINDOW'.
+        xpix : int
+            Size of window in x-pixels for frame time calculation.
+        ypix : int
+            Size of window in y-pixels for frame time calculation.
+        x0 : int
+            Lower-left x-coord position of detector window.
+        y0 : int
+            Lower-left y-coord position of detector window.
+        read_mode : str
+            NIRCam Ramp Readout mode such as 'RAPID', 'BRIGHT1', etc.
+        nint : int
+            Number of integrations (ramps).
+        ngroup : int
+            Number of groups in a integration.
+        nf : int
+            Number of frames per group.
+        nd1 : int
+            Number of drop frame after reset (before first group read). 
+        nd2 : int
+            Number of drop frames within a group (ie., groupgap). 
+        nd3 : int
+            Number of drop frames after final read frame in ramp. 
+
         """
 
         if self.module=='A':
@@ -995,6 +1127,10 @@ class NIRCam(object):
         """ 
         Validation to make sure the selected filters and pupils are allowed to be in parallel.
         """
+        
+        def do_warn(wstr):
+            _log.warning(wstr)
+            _log.warning('Proceed at your own risk!')
 
         filter  = self.filter
         pupil   = self.pupil
@@ -1006,99 +1142,101 @@ class NIRCam(object):
         warn_flag = False
         # Weak lenses can only occur in SW modules
         if ('WEAK LENS' in pupil) and (channel=='LW'):
-            _log.warning('%s in pupil is not valid with filter %s. Weak lens only in SW module.' % (pupil,filter))
-            warn_flag = True
+            wstr = '{} in pupil is not valid with filter {}.'.format(pupil,filter)
+            wstr = wstr + '\nWeak lens only in SW module.'
+            do_warn(wstr)
 
         # DHS in SW modules
         if ('DHS' in pupil) and (channel=='LW'):
-            _log.warning('%s in pupil is not valid with filter %s. DHS only in SW module.' % (pupil,filter))
-            warn_flag = True
+            wstr = '{} in pupil is not valid with filter {}.'.format(pupil,filter)
+            wstr = wstr + '\nDHS only in SW module.'
+            do_warn(wstr)
+            
         # DHS cannot be paird with F164N or F162M
         flist = ['F164N', 'F162M']
         if ('DHS' in pupil) and (filter in flist):
-            _log.warning('Both %s and filter %s are in the pupil wheel.' % (pupil,filter))
-            warn_flag = True
+            wstr = 'Both {} and filter {} exist in same pupil wheel.'.format(pupil,filter)
+            do_warn(wstr)
 
         # Grisms in LW modules
         if ('GRISM' in pupil) and (channel=='SW'):
-            _log.warning('%s in pupil is not valid with filter %s. Grisms only in LW module.' % (pupil,filter))
-            warn_flag = True
+            wstr = '{} in pupil is not valid with filter {}.'.format(pupil,filter)
+            wstr = wstr + '\nGrisms only in LW module.'
+            do_warn(wstr)
+            
         # Grisms cannot be paired with any Narrowband filters
         flist = ['F323N', 'F405N', 'F466N', 'F470N']
         if ('GRISM' in pupil) and (filter in flist):
-            _log.warning('Both %s and filter %s are in the pupil wheel.' % (pupil,filter))
-            warn_flag = True
+            wstr = 'Both {} and filter {} exist in same pupil wheel.'.format(pupil,filter)
+            do_warn(wstr)
 
         # MASK430R falls in SW SCA gap and cannot be seen by SW module
         if ('MASK430R' in mask) and (channel=='SW'):
-            _log.warning('%s mask is not visible in SW module (filter is %s).' % (mask,filter))
-            warn_flag = True
+            wstr = '{} mask is no visible in SW module (filter is {})'.format(mask,filter)
+            do_warn(wstr)
 
         # WEAK LENS +4 only valid with F210M
+        # Or is is F210M???
         wl_list = ['WEAK LENS +12 (=4+8)', 'WEAK LENS -4 (=4-8)', 'WEAK LENS +4']
         if (pupil in wl_list) and (filter!='F212N'):
-            _log.warning('%s is only valid with filter F212N.' % (pupil))
-            # Or is is F210M???
-            warn_flag = True
+            wstr = '{} is only valid with filter F212N.'.format(pupil)
+            do_warn(wstr)
 
+        # Items in the same SW pupil wheel
         sw2 = ['WEAK LENS +8', 'WEAK LENS -8', 'F162M', 'F164N', 'CIRCLYOT', 'WEDGELYOT']
         if (filter in sw2) and (pupil in sw2):
-            _log.warning('%s and %s are both in the SW Pupil wheel.' % (filter,pupil))
-            warn_flag = True
+            wstr = '{} and {} are both in the SW Pupil wheel.'.format(filter,pupil)
+            do_warn(wstr)
 
+        # Items in the same LW pupil wheel
         lw2 = ['F323N', 'F405N', 'F466N', 'F470N', 'CIRCLYOT', 'WEDGELYOT']
         if (filter in lw2) and (pupil in lw2):
-            _log.warning('%s and %s are both in the LW Pupil wheel.' % (filter,pupil))
-            warn_flag = True
+            wstr = '{} and {} are both in the LW Pupil wheel.'.format(filter,pupil)
+            do_warn(wstr)
     
         # ND_acq must have a LYOT stop, otherwise coronagraphic mask is not in FoV
         if self.ND_acq and ('LYOT' not in pupil):
-            _log.warning('CIRCLYOT or WEDGELYOT must be in pupil wheel if ND_acq=True.')
-            warn_flag = True
+            wstr = 'CIRCLYOT or WEDGELYOT must be in pupil wheel if ND_acq=True.'
+            do_warn(wstr)
 
         # ND_acq and coronagraphic mask are mutually exclusive
         if self.ND_acq and (mask != ''):
-            _log.warning('If ND_acq is set, then mask must be None.')
-            warn_flag = True
+            wstr = 'If ND_acq is set, then mask must be None.'
+            do_warn(wstr)
 
-        if warn_flag:
-            _log.warning('Proceed at your own risk!')
 
     @property
     def psf_coeff(self):
-        """Cube of polynomial coefficients used to generate a PSF"""
+        """Cube of polynomial coefficients used to generate a PSF."""
         return self._psf_coeff
     @property
     def psf_info(self):
-        """
-        Info used to create psf_coeff
-        """
+        """Info used to create psf_coeff."""
         return self._psf_info
 
     @property
     def psf_coeff_bg(self):
-        """Cube of polynomial coefficients used to generate a PSF"""
+        """Cube of polynomial coefficients used to generate a PSF."""
         return self._psf_coeff_bg
     @property
     def psf_info_bg(self):
-        """
-        Info used to create psf_coeff
-        """
+        """Info used to create psf_coeff for faint background sources."""
         return self._psf_info_bg
 
 
     def update_psf_coeff(self, fov_pix=None, oversample=None, 
         offset_r=None, offset_theta=None, tel_pupil=None, opd=None,
         save=None, force=False, **kwargs):
-        """
+        """Create new PSF coefficients.
+        
         Generates a set of PSF coefficients from a sequence of WebbPSF images.
         These coefficients can then be used to generate a sequence of
         monochromatic PSFs (useful if you need to make hundreds of PSFs
         for slitless grism or DHS observations) that are subsequenty
         convolved with the the instrument throughput curves and stellar
-        spectrum. The coefficients are stored in psf_coeffs attribute.
+        spectrum. The coefficients are stored in :attr:`psf_coeffs` attribute.
 
-        A corresponding dictionary psf_info is also saved that contains
+        A corresponding dictionary :attr:`psf_info` is also saved that contains
         the size of the FoV (in detector pixels) and oversampling factor 
         that was used to generate the coefficients.
 
@@ -1108,16 +1246,25 @@ class NIRCam(object):
 
         Parameters
         ----------
-        fov_pix      : Size of the FoV in pixels (real SW or LW pixels).
-                       The defaults depend on the type of observation.
-        oversample   : Factor to oversample during WebbPSF calculations.
-                       Default 2 for coronagraphy and 4 otherwise.
-        offset_r     : Radial offset from the center in pixels
-        offset_theta : Position angle for that offset, in degrees CCW.
-        tel_pupil    : File name or HDUList specifying telescope entrance pupil.
-        opd          : Tuple or HDUList specifying OPD.
-        save         : Whether or not to save the resulting PSF coefficients to file.
-        force        : Forces a recalcuation of PSFs even if saved coefficients exist.
+        fov_pix : int
+            Size of the FoV in pixels (real SW or LW pixels).
+            The defaults depend on the type of observation.
+        oversample : int
+            Factor to oversample during WebbPSF calculations.
+            Default 2 for coronagraphy and 4 otherwise.
+        offset_r : float
+            Radial offset from the center in arcsec.
+        offset_theta :float
+            Position angle for radial offset, in degrees CCW.
+        opd : tuple
+            Tuple (file, slice, nm wfe) or HDUList specifying OPD.
+        tel_pupil : str
+            File name or HDUList specifying telescope entrance pupil.
+        save : bool
+            Save the resulting PSF coefficients to a file? (default: True)
+        force : bool
+            Forces a recalcuation of PSF even if saved PSF exists. (default: False)
+
         """
 
         if oversample is None: 
@@ -1163,7 +1310,8 @@ class NIRCam(object):
             except (AttributeError, KeyError): tel_pupil = None
         if opd is None:
             try: opd = self._psf_info['opd']
-            except (AttributeError, KeyError): opd = ('OPD_RevV_nircam_132.fits', 0)
+            except (AttributeError, KeyError): 
+                opd = opd_default
         if save is None:
             try: save = self._psf_info['save']
             except (AttributeError, KeyError): save = True
@@ -1191,7 +1339,8 @@ class NIRCam(object):
 
 
     def gen_psf(self, sp=None, return_oversample=False, use_bg_psf=False, **kwargs):
-        """
+        """PSF image.
+        
         Create a PSF image from instrument settings. The image is noiseless and
         doesn't take into account any non-linearity or saturation effects, but is
         convolved with the instrument throughput. Pixel values are in counts/sec.
@@ -1203,16 +1352,19 @@ class NIRCam(object):
         also return a set of oversampled images as a second output.
 
         Parameters
-        ==========
-        sp : A normalized Pysynphot spectrum. If not specified, the default is flat 
-             in phot lam (equal number of photons per spectral bin).
-             The default is normalized to produce 1 count/sec within that bandpass,
-             assuming the telescope collecting area and instrument bandpass. 
-             Coronagraphic PSFs will further decrease this due to the smaller pupil
-             size and coronagraphic spot. DHS and grism observations do no yet have
-             pupil size reductions accounted for.
-        return_oversample : If True, then also returns the oversampled version of the PSF
-        use_bg_psf : If a coronagraphic observation, off-center PSF is different.
+        ----------
+        sp : :mod:`pysynphot.spectrum`
+            If not specified, the default is flat in phot lam 
+            (equal number of photons per spectral bin).
+            The default is normalized to produce 1 count/sec within that bandpass,
+            assuming the telescope collecting area and instrument bandpass. 
+            Coronagraphic PSFs will further decrease this due to the smaller pupil
+            size and coronagraphic spot. DHS and grism observations do no yet have
+            pupil size reductions accounted for.
+        return_oversample : bool
+            If True, then also returns the oversampled version of the PSF
+        use_bg_psf : bool
+            If a coronagraphic observation, off-center PSF is different.
 
         """
 
@@ -1234,7 +1386,8 @@ class NIRCam(object):
 
     def sat_limits(self, sp=None, bp_lim=None, units='vegamag', well_frac=0.8,
         verbose=False, **kwargs):
-        """
+        """Saturation limits.        
+        
         Generate the limiting magnitude (80% saturation) with the current instrument
         parameters (filter and ramp settings) assuming some spectrum. If no spectrum
         is defined, then a G2V star is assumed.
@@ -1243,24 +1396,27 @@ class NIRCam(object):
         limiting magnitude that will cause the current NIRCam bandpass to saturate.
 
         Parameters
-        ==========
-        sp        : Pysynphot spectrum to determine saturation limit
-        bp_lim    : Bandpass to report limiting magnitude
-        units     : Output units (defaults to vegamag)
-        well_frac : Fraction of full well to consider 'saturated'
-        verbose   : Print result details
+        ----------
+        sp : :mod:`pysynphot.spectrum`
+            Spectrum to determine saturation limit.
+        bp_lim : :mod:`pysynphot.obsbandpass`
+            Bandpass to report limiting magnitude.
+        units : str
+            Output units (defaults to vegamag).
+        well_frac : float
+            Fraction of full well to consider 'saturated'.
+        verbose : bool
+            Print result details.
 
         Example
-        ----------
-        # Initiate NIRCam observation
-        nrc = pynrc.NIRCam('F430M')        
-        # Define stellar spectral type (pysynphot wrapper)
-        sp_A0V = pynrc.stellar_spectrum('A0V') 
-        # Pynsynphot K-Band bandpass
-        bp_k = S.ObsBandpass('johnson,k')
-        bp_k.name = 'K-Band'
-        mag_lim = nrc.sat_limits(sp_A0V, bp_k, verbose=True)
-        # Returns K-Band Limiting Magnitude for F430M assuming A0V source
+        -------
+        >>> nrc = pynrc.NIRCam('F430M') # Initiate NIRCam observation
+        >>> sp_A0V = pynrc.stellar_spectrum('A0V') # Define stellar spectral type
+        >>> bp_k = S.ObsBandpass('steward,k') # Pysynphot K-Band bandpass
+        >>> bp_k.name = 'K-Band'
+        >>> mag_lim = nrc.sat_limits(sp_A0V, bp_k, verbose=True)
+        
+        Returns K-Band Limiting Magnitude for F430M assuming A0V source.
         """	
 
         if bp_lim is None: bp_lim = self.bandpass
@@ -1280,37 +1436,41 @@ class NIRCam(object):
 
 
     def sensitivity(self, nsig=10, units=None, sp=None, verbose=False, **kwargs):
-        """
+        """Sensitivity limits.
+        
         Convenience function for returning the point source (and surface brightness)
         sensitivity for the given instrument setup. See bg_sensitivity() for more
         details.
 
         Parameters
-        ==========
-        sp    : A pysynphot spectral object to calculate sensitivity 
-                (default: Flat spectrum in photlam)
-        nsig  : Desired nsigma sensitivity (default 10)
-        units : Output units (defaults to uJy for grisms, nJy for imaging)
+        ----------
+        sp : :mod:`pysynphot.spectrum`
+            Input spectrum to use for determining sensitivity.
+            Only the spectral shape matters, unless ``forwardSNR=True``.
+        nsig : int, float
+            Desired nsigma sensitivity (default 10).
+        units : str
+            Output units (defaults to uJy for grisms, nJy for imaging).
+        verbose : bool
+            Print result details.
+            
 
-        **kwargs
-        ==========
-        forwardSNR    : Find the SNR of the input spectrum instead of sensitivity.
-        zfact         : Factor to scale Zodiacal spectrum (default 2.5)
-        ideal_Poisson : If set to True, use total signal for noise estimate,
-                        otherwise MULTIACCUM equation is used.
-
-        rad_EE  : Extraction aperture radius (in pixels) for imaging mode.
-        dw_bin  : Delta wavelength to calculate spectral sensitivities (grisms & DHS).
-        ap_spec : Instead of dw_bin, specify the spectral extraction aperture in pixels.
-                  Takes priority over dw_bin. Value will get rounded up to nearest int.
-
-        Representative values for zfact:
-            0.0 - No zodiacal emission
-            1.0 - Minimum zodiacal emission from JWST-CALC-003894 (Figure 2-2)
-            1.2 - Required NIRCam performance
-            2.5 - Average (default)
-            5.0 - High
-            10. - Maximum
+        Keyword Args
+        ------------
+        forwardSNR : bool
+            Find the SNR of the input spectrum instead of sensitivity.
+        zfact : float
+            Factor to scale Zodiacal spectrum (default 2.5)
+        ideal_Poisson : bool
+            If set to True, use total signal for noise estimate,
+            otherwise MULTIACCUM equation is used.
+        rad_EE : float
+            Extraction aperture radius (in pixels) for imaging mode.
+        dw_bin : float
+            Delta wavelength for spectral sensitivities (grisms & DHS).
+        ap_spec : int, float
+            Instead of dw_bin, specify the spectral extraction aperture in pixels.
+            Takes priority over dw_bin. Value will get rounded up to nearest int.
         """	
 
         quiet = False if verbose else True
@@ -1339,22 +1499,42 @@ class NIRCam(object):
         return bglim
 
     def bg_zodi(self, zfact=None, **kwargs):
-        """
-        Return the Zodiacal background flux in e-/sec/pixel.
-        Representative values for zfact:
-            0.0 - No zodiacal emission
-            1.0 - Minimum zodiacal emission from JWST-CALC-003894 (Figure 2-2)
-            1.2 - Required NIRCam performance
-            2.5 - Average (default)
-            5.0 - High
-            10. - Maximum
+        """Zodiacal background flux.
+        
+        There are options to query the IPAC Euclid Background Model
+        (http://irsa.ipac.caltech.edu/applications/BackgroundModel/),
+        but this method takes a while. Instead, if the keywords
+        locstr, year, day are specified, this function will print
+        information on an equivalent zfact value that produces the
+        same flux within the bandpass. Values may be filter dependent.
+        
+        Returned values are in units of e-/sec/pixel
 
-        **kwargs
-        ==========
-        Other option for specifying zodiacal emisison using location and time of year
-          locstr : Object name, RA/DEC in decimal degrees or sexigesimal input
-          year   : Year of observation
-          day    : Day of observation
+        Parameters
+        ----------
+        zfact : float
+            Factor to scale Zodiacal spectrum (default 2.5)
+
+        Keyword Args
+        ------------
+        locstr : 
+            Object name or RA/DEC (decimal degrees or sexigesimal)
+        year : int
+            Year of observation
+        day : float
+            Day of observation
+
+        Notes
+        -----
+        
+        Representative values for zfact:
+
+            - 0.0 - No zodiacal emission
+            - 1.0 - Minimum zodiacal emission from JWST-CALC-003894
+            - 1.2 - Required NIRCam performance
+            - 2.5 - Average (default)
+            - 5.0 - High
+            - 10.0 - Maximum
 
         """
     
@@ -1388,22 +1568,26 @@ class NIRCam(object):
         return fzodi_pix
         
     def saturation_levels(self, sp, full_size=True, ngroup=0, **kwargs):
-        """
+        """Saturation levels.
+        
         Create image showing level of saturation for each pixel.
         Can either show the saturation after one frame (default)
         or after the ramp has finished integrating (ramp_sat=True).
-        
+
         Parameters
-        ==========
-        sp        : A pysynphot spectral object (normalized).
-        full_size : Expand (or contract) to size of detector array?
-                    If False, use fov_pix size.
-        ngroup    : How many group times to determine saturation level?
-                    The default is ngroup=0, which corresponds to the
-                    so-called "zero-frame." This is the very first frame
-                    that is read-out and saved separately. If this number
-                    is higher than the total groups in ramp, then a
-                    warning is produced.
+        ----------
+        sp : :mod:`pysynphot.spectrum`
+            A pysynphot spectral object (normalized).
+        full_size : bool
+            Expand (or contract) to size of detector array?
+            If False, use fov_pix size.
+        ngroup : int
+            How many group times to determine saturation level?
+            The default is ngroup=0, which corresponds to the
+            so-called "zero-frame." This is the very first frame
+            that is read-out and saved separately. If this number
+            is higher than the total groups in ramp, then a
+            warning is produced.
         
         """
         
@@ -1435,11 +1619,15 @@ class NIRCam(object):
     def gen_exposures(self, sp=None, im_slope=None, file_out=None, return_results=None,
                       targ_name=None, timeFileNames=False, DMS=True,
                       dark=True, bias=True, nproc=None, **kwargs):
-        """
+        """Generate raw mock data.
+        
         Create a series of ramp integration saved to FITS files based on
-        the current NIRCam settings. 
+        the current NIRCam settings. This method calls the :func:`gen_fits`
+        function, which in turn calls the detector noise generator 
+        :mod:`~pynrc.simul.ngNRC`
 
         Currently, this image simulator does NOT take into account:
+        
             - QE variations across a pixel's surface
             - Intrapixel Capacitance (IPC)
             - Post-pixel Coupling (PPC) due to ADC "smearing"
@@ -1452,38 +1640,51 @@ class NIRCam(object):
 
 
         Parameters
-        ==========
-        im_slope : Pass the slope image directly. If not set, then a slope
+        ----------
+        im_slope : numpy array, None
+            Pass the slope image directly. If not set, then a slope
             image will be created from the input spectrum keyword. This
             should include zodiacal light emission, but not dark current.
-            Make sure this is in detector coordinates.
-        sp : A pysynphot spectral object. If not specified, then it is
+            Make sure this array is in detector coordinates.
+        sp : :mod:`pysynphot.spectrum`, None
+            A pysynphot spectral object. If not specified, then it is
             assumed that we're looking at blank sky.
-        file_out : Path and name of output FITs files. Time stamps will
-            be automatically inserted for unique file names.
-        return_results : By default, we return results if file_out is
-            not set. The results are not returned by this function if
-            file_out is set. This is because returning a massive amount of
-            data can lead to large memory usage. Save the FITs files to
-            disk if NINTs is large. We include the return_results keyword
-            if the user would like to do both (or neither??).
-            
-        targ_name     : A target name for the exposure file's header.
-        timeFileNames : Save the exposure times in the file name? This is 
-            useful to see the timing, but also makes it a little harder 
-            to combine INTs later for DMS simulations.
-            
-        dark : Include the super dark current?
-        bias : Include the super bias frame?
+        targ_name     : str, None
+            A target name for the exposure file's header.
+        file_out : str, None
+            Path and name of output FITs files. Time stamps will
+            be automatically inserted for unique file names if
+            ``timeFileNames=True``.
+        timeFileNames : bool
+            Save the exposure times in the file name? This is useful to see 
+            the timing, but also makes it a little harder to combine INTs 
+            later for DMS simulations.
+        DMS : bool
+            Create DMS data file and header format? Otherwise, the output is
+            more similar to ISIM CV2/3 and OTIS campaigns.
+        return_results : bool, None
+            By default, we return results if file_out is not set and
+            the results are not returned if file_out is set. This decision
+            is based on the large amount of data and memory usage this 
+            method may incur if the results were always returned by default.
+            Instead, it's better to save the FITs to disk, especially if 
+            NINTs is large. We include the return_results keyword if the 
+            user would like to do both (or neither).
+        dark : bool
+            Include the dark current?
+        bias : bool
+            Include the bias frame?
 
-        **kwargs
-        ==========
-        zfact           : Factor to scale Zodiacal spectrum (default 2.5)
-        locstr,year,day : Another option for specifying zodiacal emisison rate
-          - locstr : Object name, RA/DEC in decimal degrees or sexigesimal input
-          - year   : Year of observation
-          - day    : Day of observation
-
+        Keyword Args
+        ------------
+        zfact : float
+            Factor to scale Zodiacal spectrum (default 2.5)
+        locstr : 
+            Object name or RA/DEC (decimal degrees or sexigesimal)
+        year : int
+            Year of observation
+        day : float
+            Day of observation
 
         """
 
@@ -1580,8 +1781,7 @@ class NIRCam(object):
         snr_goal=None, snr_frac=0.02, tacq_max=None, tacq_frac=0.1,
         well_frac_max=0.8, nint_min=1, nint_max=5000, ng_min=2, ng_max=None,
         return_full_table=False, even_nints=False, verbose=False, **kwargs):
-        """
-        Set either snr_goal or tacq_max.
+        """Optimize ramp settings.
         
         Find the optimal ramp settings to observe spectrum based input constraints.
         This function quickly runs through each detector readout pattern and 
@@ -1598,50 +1798,81 @@ class NIRCam(object):
         The result is an AstroPy Table.
 
         Parameters
-        ==========
-        sp          : A pysynphot spectral object to calculate SNR.
-        sp_bright   : Same as sp, but optionaly used to calculate the saturation limit
-                      (treated as brightest source in field). If a coronagraphic mask 
-                      observation, then this source is assumed to be occulted and 
-                      sp is not occulted.
-        is_extended : Treat source(s) as extended objects, then in units/arcsec^2
+        ----------
+        sp : :mod:`pysynphot.spectrum`
+            A pysynphot spectral object to calculate SNR.
+        sp_bright : :mod:`pysynphot.spectrum`, None
+            Same as sp, but optionally used to calculate the saturation limit
+            (treated as brightest source in field). If a coronagraphic mask 
+            observation, then this source is assumed to be occulted and 
+            sp is fully unocculted.
+        is_extended : bool
+            Treat source(s) as extended objects, then in units/arcsec^2
 
-        snr_goal      : Minimum required SNR for source. For grism, this is the average
-                        SNR for all wavelength.
-        snr_frac      : Give fractional buffer room rather than strict SNR cut-off.
-        tacq_max      : Maximum amount of acquisition time in seconds to consider.
-        tacq_frac     : Fractional amount of time to consider exceeding tacq_max.
+        snr_goal : float
+            Minimum required SNR for source. For grism, this is the average
+            SNR for all wavelength.
+        snr_frac : float
+            Give fractional buffer room rather than strict SNR cut-off.
+        tacq_max : float
+            Maximum amount of acquisition time in seconds to consider.
+        tacq_frac : float
+            Fractional amount of time to consider exceeding tacq_max.
 
-        patterns      : Subset of MULTIACCUM patterns to check, otherwise check all.
-        nint_min/max  : Min/max number of desired integrations.
-        ng_min/max    : Min/max number of desired groups in a ramp.
-        well_frac_max : Maximum level that the pixel well is allowed to be filled. 
-                        Fractions greater than 1 imply hard saturation, but the reported 
-                        SNR will not be aware of any saturation that may occur to sp.
+        patterns : numpy array
+            Subset of MULTIACCUM patterns to check, otherwise check all.
+        nint_min/max  : int
+            Min/max number of desired integrations.
+        ng_min/max : int
+            Min/max number of desired groups in a ramp.
+        well_frac_max : float
+            Maximum level that the pixel well is allowed to be filled. 
+            Fractions greater than 1 imply hard saturation, but the reported 
+            SNR will not be aware of any saturation that may occur to sp.
 
-        even_nints        : Return only the even NINTS
-        return_full_table : Don't filter or sort the final results (ingores event_ints).
-        verbose           : Prints out top 10 results.
+        even_nints  : bool
+            Return only the even NINTS
+        return_full_table : bool
+            Don't filter or sort the final results (ingores event_ints).
+        verbose : bool
+            Prints out top 10 results.
 
+        Keyword Args
+        ------------
+        zfact : float
+            Factor to scale Zodiacal spectrum (default 2.5)
+        locstr : 
+            Object name or RA/DEC (decimal degrees or sexigesimal)
+        year : int
+            Year of observation
+        day : float
+            Day of observation
 
-        **kwargs
-        ==========
-        zfact           : Factor to scale Zodiacal spectrum (default 2.5)
-        locstr,year,day : Another option for specifying zodiacal emisison.
-            These are not recommended for use given the amount of time it
-            takes to query the Euclid web server. Instead, use NIRCam.bg_zodi()
-            to match a zfact estimate.
-            locstr - Object name, RA/DEC in decimal degrees or sexigesimal input
-            year   - Year of observation
-            day    - Day of observation
+        ideal_Poisson : bool
+            Use total signal for noise estimate?
+            Otherwise MULTIACCUM equation is used. 
+            Default = True
             
-        ideal_Poisson   : Default=True. Use total signal for noise estimate,
-                          otherwise MULTIACCUM equation is used. 
-                          
-        rad_EE  : Extraction aperture radius (in pixels) for imaging mode.
-        dw_bin  : Delta wavelength to calculate spectral sensitivities (grisms & DHS).
-        ap_spec : Instead of dw_bin, specify the spectral extraction aperture in pixels.
-                  Takes priority over dw_bin. Value will get rounded up to nearest int.
+        rad_EE : int
+            Extraction aperture radius (in pixels) for imaging mode.
+        dw_bin : float
+            Delta wavelength to calculate spectral sensitivities 
+            for grisms & DHS.
+        ap_spec : float, int
+            Instead of dw_bin, specify the spectral extraction 
+            aperture in pixels. Takes priority over dw_bin. Value 
+            will get rounded up to nearest int.
+        
+        Note
+        ----
+        The keyword arguments locstr, year, day are not recommended for use 
+        given the amount of time it takes to query the Euclid web server. 
+        Instead, use :meth:`bg_zodi` to match a zfact estimate.
+                  
+        Returns
+        -------
+        astropy table
+            A sorted and filtered table of ramp options.
 
         """
 
@@ -1887,12 +2118,18 @@ class NIRCam(object):
 
 
 def table_filter(t, topn=None, **kwargs):
-    """
+    """Filter and sort table.
+    
     Filter a resulting ramp table to exclude those with worse SNR for the same
     or larger tacq. This is performed on a pattern-specific basis and returns
     the Top N rows for each readout patten. The rows are ranked by an efficiency
     metric, which is simply SNR / sqrt(tacq). If topn is set to None, then all
-    values that make the cut are returned (sorted by the efficiency metric.
+    values that make the cut are returned (sorted by the efficiency metric).
+    
+    Args
+    ----
+    topn : int, None
+        Maximum number of rows to keep.
     """
 
     if topn is None: topn = len(t)
@@ -1947,7 +2184,7 @@ def table_filter(t, topn=None, **kwargs):
 
 
 
-def check_list(value, temp_list, var_name=None):
+def _check_list(value, temp_list, var_name=None):
     """
     Helper function to test if a value exists within a list. 
     If not, then raise ValueError exception.
@@ -1966,6 +2203,15 @@ def tuples_to_dict(pairs, verbose=False):
     Take a list of paired tuples and convert to a dictionary
     where the first element of each tuple is the key and the 
     second element is the value.
+    
+    Args
+    ----
+    pairs : list
+        List of tuples - [(a1,a2), (b1,b2), (c1,c2), ...]
+    
+    Returns
+    -------
+    dict
     """
     d={}
     for (k, v) in pairs:
@@ -1978,7 +2224,7 @@ def tuples_to_dict(pairs, verbose=False):
 def merge_dicts(*dict_args):
     """
     Given any number of dicts, shallow copy and merge into a new dict.
-    If the same key appars mutile times, priority goes to key/value 
+    If the same key appars multiple times, priority goes to key/value 
     pairs in latter dicts.
     """
     result = {}
@@ -2010,24 +2256,18 @@ def gen_fits(args):
     return res
 
 def nproc_use_ng(det):
-    """ 
+    """Optimize processor usage.
+    
     Attempt to estimate a reasonable number of processes to use for multiple 
-    simultaneous slope_to_ramp() calculations.
-
-    Here we attempt to estimate how many such calculations can happen in
-    parallel without swapping to disk, with a mixture of empiricism and conservatism.
-    One really does not want to end up swapping to disk with huge arrays.
+    simultaneous slope_to_ramp() calculations. We attempt to estimate how many 
+    calculations can happen in parallel without swapping to disk.
 
     NOTE: Requires psutil package. Otherwise defaults to mp.cpu_count() / 2
 
     Parameters
     -----------
-    fov_pix : int
-        Square size in detector-sampled pixels of final PSF image.
-    oversample : int
-        The optical system that we will be calculating for.
-    nwavelengths : int
-        Number of wavelengths. Sets maximum # of processes.
+    det : :class:`DetectorOps`
+        Input detector class
     """
     import multiprocessing as mp
     try:
@@ -2040,13 +2280,13 @@ def nproc_use_ng(det):
         _log.info("Returning nproc=ncpu/2={}.".format(nproc))
         return nproc
 
-    ma  = det.multiaccum
+    ma      = det.multiaccum
     nd1     = ma.nd1
     nd2     = ma.nd2
     nf      = ma.nf
     ngroup  = ma.ngroup
     nint    = ma.nint
-    naxis3 = nd1 + ngroup*nf + (ngroup-1)*nd2
+    naxis3  = nd1 + ngroup*nf + (ngroup-1)*nd2
 
     # Compute the number of time steps per integration, per output
     nstep_frame = (det.chsize+12) * (det.ypix+1)

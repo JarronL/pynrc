@@ -14,36 +14,59 @@ _log = logging.getLogger('pynrc')
 eps = np.finfo(float).eps
 
 class obs_coronagraphy(NIRCam):
-    """
+    """NIRCam coronagraphy (and direct imaging)
+    
     Subclass of the NIRCam instrument class used to observe stars 
-    (plus exoplanets and disks) with either a coronagraph or direct imaging.
+    (plus exoplanets and disks) with either a coronagraph or direct 
+    imaging. 
+    
+    The main concept is to generate a science target of the primary
+    source along with a simulated disk structure. Planets are further
+    added to the astronomical scene. A separate reference source is 
+    also defined for PSF subtraction, which contains a specified WFE. 
+    A variety of methods exist to generate slope images and analyze 
+    the PSF-subtracted results via images and contrast curves.
 
     Parameters
-    ==========
-    sp_sci/sp_ref : Pysynphot spectra of science and reference sources
-    distance      : Distance in parsecs
-    wfe_drift     : WFE drift of OPDs in nm
-    offset_list   : For coronagraph, incremental offset positions to build PSFs
-                    for accurately determining contrast curves. A default is
-                    applied if set to None.
-    wind_mode     : 'FULL', 'STRIPE', or 'WINDOW'
-    xpix, ypix    : Size of detector readout (assumes subarray).
-    oversample    : PSF oversampling (default=2)
-    disk_hdu      : A model of the disk in photons/sec. This requires header
-                    keywords PIXSCALE (in arcsec/pixel) and DISTANCE (in pc).
+    ----------
+    sp_sci : :mod:`pysynphot.spectrum`
+        A pysynphot spectrum of science target (e.g., central star).
+        Should already be normalized to the apparent flux.
+    sp_ref : :mod:`pysynphot.spectrum`
+        A pysynphot spectrum of reference target (e.g., central star).
+        Should already be normalized to the apparent flux.
+    distance : float
+        Distance in parsecs to the science target. This is used for
+        flux normalization of the planets and disk.
+    wfe_drift: float
+        WFE drift in nm between the science and reference targets.
+        Expected values are between ~3-10 nm
+    xpix : int
+        Size of the detector readout along the x-axis. The detector is
+        assumed to be in window mode  unless the user explicitly 
+        sets wind_mode='FULL'.
+    ypix : int
+        Size of the detector readout along the y-axis. The detector is
+        assumed to be in window mode  unless the user explicitly 
+        sets wind_mode='FULL'.
+    wind_mode : str
+        'FULL', 'STRIPE', or 'WINDOW'
+    disk_hdu : HDUList
+        A model of the disk in photons/sec. This requires header
+        keywords PIXSCALE (in arcsec/pixel) and DISTANCE (in pc).
+        
     """
     
     def __init__(self, sp_sci, sp_ref, distance, wfe_drift=10, offset_list=None, 
-                 wind_mode='WINDOW', xpix=320, ypix=320, oversample=2, 
-                 disk_hdu=None, verbose=False, **kwargs):
+                 wind_mode='WINDOW', xpix=320, ypix=320, disk_hdu=None, 
+                 verbose=False, **kwargs):
                  
         if 'FULL'   in wind_mode: xpix = ypix = 2048
         if 'STRIPE' in wind_mode: xpix = 2048
 
         #super(NIRCam,self).__init__(**kwargs)
         # Not sure if this works for both Python 2 and 3
-        NIRCam.__init__(self, wind_mode=wind_mode, xpix=xpix, ypix=ypix, 
-                        oversample=2, **kwargs)
+        NIRCam.__init__(self, wind_mode=wind_mode, xpix=xpix, ypix=ypix, **kwargs)
         
         # Spectral models
         self.sp_sci = sp_sci
@@ -240,27 +263,39 @@ class obs_coronagraphy(NIRCam):
 
 
     def planet_spec(self, Av=0, **kwargs):
-        """
-        Return the planet spectrum from Spiegel & Burrows (2012) normalized
-        to distance of current target.
+        """Exoplanet spectrum.
         
-        Parameters:
-            Av:   Extinction magnitude (assumes Rv=4.0)
-            atmo: A string consisting of one of four atmosphere types:
-                hy1s = hybrid clouds, solar abundances
-                hy3s = hybrid clouds, 3x solar abundances
-                cf1s = cloud-free, solar abundances
-                cf3s = cloud-free, 3x solar abundances
-            mass:    Integer number 1 to 15 Jupiter masses.
-            age:     Age in millions of years (1-1000)
-            entropy: Initial entropy (8.0-13.0) in increments of 0.25
+        Return the planet spectrum from Spiegel & Burrows (2012) normalized
+        to distance of current target. Output is a :mod:`pysynphot.spectrum`.
+        
+        Parameters
+        ----------
+        Av : float
+            Extinction magnitude (assumes Rv=4.0).
             
-            accr:      Include accretion (default: False)?
-            mmdot:     From Zhu et al. (2015), the Mjup^2/yr value.
-                       If set to None then calculated from age and mass.
-            mdot:      Or use mdot (Mjup/yr) instead of mmdot.
-            accr_rin:  Inner radius of accretion disk (units of RJup; default: 2)
-            truncated: Full disk or truncated (ie., MRI; default: False)?
+        Keyword Args
+        ------------
+        atmo : str
+            A string consisting of one of four atmosphere types:
+            ['hy1s', 'hy3s', 'cf1s', 'cf3s'].
+        mass: int
+            Number 1 to 15 Jupiter masses.
+        age: float
+            Age in millions of years (1-1000).
+        entropy: float
+            Initial entropy (8.0-13.0) in increments of 0.25
+
+        accr : bool
+            Include accretion (default: False)?
+        mmdot : float
+            From Zhu et al. (2015), the Mjup^2/yr value.
+            If set to None then calculated from age and mass.
+        mdot : float
+            Or use mdot (Mjup/yr) instead of mmdot.
+        accr_rin : float
+            Inner radius of accretion disk (units of RJup; default: 2)
+        truncated: bool
+             Full disk or truncated (ie., MRI; default: False)?
         """
         # Create planet class and convert to Pysynphot spectrum
         planet = planets_sb12(distance=self.distance, **kwargs)
@@ -281,32 +316,54 @@ class obs_coronagraphy(NIRCam):
     def add_planet(self, atmo='hy3s', mass=10, age=100, entropy=10,
         rtheta=(0,0), runits='AU', Av=0, renorm_args=None, sptype=None,
         accr=False, mmdot=None, mdot=None, accr_rin=2, truncated=False):
-        """
+        """Insert a planet into observation.
+        
         Add exoplanet information that will be used to generate a point
         source image using a spectrum from Spiegel & Burrows (2012).
         Use self.kill_planets() to delete them.
         
         Coordinate convention is for +V3 up and +V2 to left.
         
-        Parameters:
-            atmo: A string consisting of one of four atmosphere types:
-                hy1s = hybrid clouds, solar abundances
-                hy3s = hybrid clouds, 3x solar abundances
-                cf1s = cloud-free, solar abundances
-                cf3s = cloud-free, 3x solar abundances
-            mass    : Integer number 1 to 15 Jupiter masses.
-            age     : Age in millions of years (1-1000)
-            entropy : Initial entropy (8.0-13.0) in increments of 0.25
-            
-            sptype : Instead of using a exoplanet spectrum, specify a stellar type.
-            
-            renorm_args : Pysynphot renormalization arguments in case you want
-                very specific luminosity in some bandpass
-                Includes (value, units, bandpass). 
+        Parameters
+        ----------
+        atmo : str
+            A string consisting of one of four atmosphere types:
+            ['hy1s', 'hy3s', 'cf1s', 'cf3s'].
+        mass: int
+            Number 1 to 15 Jupiter masses.
+        age: float
+            Age in millions of years (1-1000).
+        entropy: float
+            Initial entropy (8.0-13.0) in increments of 0.25
 
-            rtheta : Radius and position angle relative to star (center).
-            runits : What units is radius? Valid values are 'AU', 'asec', or 'pix'.
-            Av     : Extinction magnitude (assumes Rv=4.0).
+        sptype : str
+            Instead of using a exoplanet spectrum, specify a stellar type.        
+        renorm_args : dict
+            Pysynphot renormalization arguments in case you want
+            very specific luminosity in some bandpass.
+            Includes (value, units, bandpass). 
+            
+        Av : float
+            Extinction magnitude (assumes Rv=4.0) of the exoplanet
+            due to being embedded in a disk.
+
+        rtheta : tuple
+            Radius and position angle relative to stellar position.
+        runits : str
+            What units is radius? Valid values are 'AU', 'asec', or 'pix'.
+
+        accr : bool
+            Include accretion (default: False)?
+        mmdot : float
+            From Zhu et al. (2015), the Mjup^2/yr value.
+            If set to None then calculated from age and mass.
+        mdot : float
+            Or use mdot (Mjup/yr) instead of mmdot.
+        accr_rin : float
+            Inner radius of accretion disk (units of RJup; default: 2)
+        truncated: bool
+             Full disk or truncated (ie., MRI; default: False)?
+
          """
 
         # Size of subarray image in terms of pixels
@@ -351,13 +408,17 @@ class obs_coronagraphy(NIRCam):
         
         
     def gen_planets_image(self, PA_offset=0):
-        """
+        """Create image of just planets.
+        
         Use info stored in self.planets to create a noiseless slope image 
         of just the exoplanets (no star).
         
         Coordinate convention is for +V3 up and +V2 to left.
         
-        PA_offset (float) : Rotate entire scene by some position angle.
+        Parameters
+        ----------        
+        PA_offset : float
+            Rotate entire scene by some position angle.
             Positive values are counter-clockwise from +Y direction.
             Corresponds to instrument aperture PA.
         """
@@ -420,15 +481,24 @@ class obs_coronagraphy(NIRCam):
         return image
         
     def kill_planets(self):
+        """Remove planet info"""
         self._planets = []
     
     
     def gen_disk_image(self, PA_offset=0):
-        """
+        """Create image of just disk.
+        
         Generate a (noiseless) convolved image of the disk at some PA offset. 
         The PA offset value will rotate the image CCW. Units of e-/sec.
         
         Coordinate convention is for +V3 up and +V2 to left.
+        
+        Parameters
+        ----------        
+        PA_offset : float
+            Rotate entire scene by some position angle.
+            Positive values are counter-clockwise from +Y direction.
+            Corresponds to instrument aperture PA.
         """
             
         if self.disk_hdulist is None:
@@ -484,7 +554,8 @@ class obs_coronagraphy(NIRCam):
 
 
     def star_flux(self, fluxunit='counts'):
-        """
+        """ Stellar flux.
+        
         Return the stellar flux in whatever units, such as 
         vegamag, counts, or Jy.
         """
@@ -498,32 +569,44 @@ class obs_coronagraphy(NIRCam):
 
     def calc_contrast(self, hdu_diff=None, roll_angle=10, nsig=1, 
         exclude_disk=True, exclude_planets=True, **kwargs):
-        """
-        Generate n-sigma contrast curve for the current observation settings.
-        Make sure that MULTIACCUM parameters are set in both the main
-        class (self.update_detectors()) as well as the reference target
-        class (self.nrc_ref.update_detectors()).
+        """Create contrast curve.
         
-        roll_angle : Telescope roll angle (deg) between two observations.
+        Generate n-sigma contrast curve for the current observation settings.
+        Make sure that MULTIACCUM parameters are set for both the main
+        class (``self.update_detectors()``) as well as the reference target
+        class (``self.nrc_ref.update_detectors()``).
+        
+        Parameters
+        ----------
+        hdu_diff : HDUList
+            Option to pass an already pre-made difference image.
+        
+        roll_angle : float
+            Telescope roll angle (deg) between two observations.
             If set to 0 or None, then only one roll will be performed.
             If value is >0, then two rolls are performed, each using the
             specified MULTIACCUM settings (doubling the effective exposure
             time).
-        nsig  : n-sigma contrast curve
+        nsig  : float
+            n-sigma contrast curve.
+        exclude_disk : bool
+            Ignore disk when generating image?
+        exclude_planets : bool
+            Ignore planets when generating image?
         
         
-        **kwargs
-        ==========
-        zfact : Zodiacal background factor (default=2.5)
-        exclude_disk    : Ignore disk when generating image
-        exclude_planets : Ignore planets when generating image
-        exclude_noise   : Don't add random Gaussian noise (detector+photon)
+        Keyword Args
+        ------------
+        zfact : float
+            Zodiacal background factor (default=2.5)
+        exclude_noise : bool
+            Don't add random Gaussian noise (detector+photon)?
 
-
-        Returns 3 arrays in a tuple:
-            radius in arcsec
-            n-sigma contrast
-            n-sigma magnitude limit (vega mags)        
+        Returns
+        -------
+        tuple
+            Three arrays in a tuple: the radius in arcsec, n-sigma contrast,
+            and n-sigma magnitude limit (vega mag). 
         """
         from astropy.convolution import convolve, Gaussian1DKernel
         
@@ -579,33 +662,42 @@ class obs_coronagraphy(NIRCam):
     def gen_roll_image(self, PA1=0, PA2=10, zfact=None, oversample=None, 
         exclude_disk=False, exclude_planets=False, exclude_noise=False, 
         opt_diff=True):
-        """
+        """Make roll-subtracted image.
+        
         Create a final roll-subtracted slope image based on current observation
         settings. Coordinate convention is for +V3 up and +V2 to left.
         
         Procedure:
-          - Create Roll 1 and Roll 2 slope images (star+exoplanets)
-          - Create Reference Star slope image
-          - Add random Gaussian noise to all images
-          - Subtract ref image from both rolls
-          - De-rotate Roll 2 by roll_angle amplitude
-          - Average Roll 1 and de-rotated Roll 2
+        
+        - Create Roll 1 and Roll 2 slope images (star+exoplanets)
+        - Create Reference Star slope image
+        - Add random Gaussian noise to all images
+        - Subtract ref image from both rolls
+        - De-rotate Roll 2 by roll_angle amplitude
+        - Average Roll 1 and de-rotated Roll 2
+
+        Returns an HDUList of final image (North rotated upwards).
+
           
         Parameters
-        ==========
-        PA1 : Position angle of first roll position (clockwise, from East to West)
-        PA2 : Position angle of second roll position (optional)
-              If set equal to PA1 (or to None), then only one roll will be performed.
-              Otherwise, two rolls are performed, each using the specified 
-              MULTIACCUM settings (doubling the effective exposure time).
-        zfact      : Zodiacal background factor (default=2.5)
-        oversample : Set oversampling of final image.
+        ----------
+        PA1 : float
+            Position angle of first roll position (clockwise, from East to West)
+        PA2 : float, None
+            Position angle of second roll position. If set equal to PA1 
+            (or to None), then only one roll will be performed.
+            Otherwise, two rolls are performed, each using the specified 
+            MULTIACCUM settings (doubling the effective exposure time).
+        zfact : float
+            Zodiacal background factor (default=2.5)
+        oversample : float
+            Set oversampling of final image.
+        exclude_disk : bool
+            Ignore disk when subtracted image (for radial contrast),
+            but still add Poisson noise from disk.
+        exclude_noise : bool
+            Don't add random Gaussian noise (detector+photon)
         
-        exclude_disk  : Ignore disk when subtracted image (for radial contrast),
-                        but still add Poisson noise from disk.
-        exclude_noise : Don't add random Gaussian noise (detector+photon)
-        
-        Returns an HDUList of final image (North rotated upwards).
         """
     
         # Final image shape
@@ -763,21 +855,24 @@ class obs_coronagraphy(NIRCam):
         return hdulist
         
     def saturation_levels(self, full_size=True, ngroup=0, **kwargs):
-        """
+        """Saturation levels.
+        
         Create image showing level of saturation for each pixel.
         Can either show the saturation after one frame (default)
         or after the ramp has finished integrating (ramp_sat=True).
         
         Parameters
-        ==========
-        full_size : Expand (or contract) to size of detector array?
-                    If False, use fov_pix size.
-        ngroup    : How many group times to determine saturation level?
-                    The default is ngroup=0, which corresponds to the
-                    so-called "zero-frame." This is the very first frame
-                    that is read-out and saved separately. If this number
-                    is higher than the total groups in ramp, then a
-                    warning is produced.
+        ----------
+        full_size : bool
+            Expand (or contract) to size of detector array?
+            If False, use fov_pix size.
+        ngroup : int
+            How many group times to determine saturation level?
+            The default is ngroup=0, which corresponds to the
+            so-called "zero-frame." This is the very first frame
+            that is read-out and saved separately. If this number
+            is higher than the total groups in ramp, then a
+            warning is produced.
         
         """
         
@@ -811,28 +906,47 @@ class obs_coronagraphy(NIRCam):
 
 
 
-def model_to_hdulist(args_model, sp_star, filter, pupil=None, mask=None):
+def model_to_hdulist(args_model, sp_star, filter, 
+    pupil=None, mask=None, module=None):
 
-    """
+    """HDUList from model FITS file.
+    
     Convert disk model to an HDUList with units of photons/sec/pixel.
     If observed filter is different than input filter, we assume that
     the disk has a flat scattering, meaning it scales with stellar
     continuum. Pixel sizes and distances are left unchanged, and 
     stored in header.
     
-    args_model - Arguments describing the necessary model information
-        fname   : Name of model file
-        scale0  : Pixel scale (in arcsec/pixel)
-        dist0   : Assumed model distance
-        wave_um : Wavelength of observation
-        units0  : Assumed flux units (ie., Jy/arcsec^2, 
+    Parameters
+    ----------
+    args_model - tuple
+        Arguments describing the necessary model information:
+            - fname   : Name of model file
+            - scale0  : Pixel scale (in arcsec/pixel)
+            - dist0   : Assumed model distance
+            - wave_um : Wavelength of observation
+            - units0  : Assumed flux units (ie., MJy/arcsec^2 or muJy/pixel)
+    sp_star : :mod:`pysynphot.spectrum`
+        A pysynphot spectrum of central star. Used to adjust observed
+        photon flux if filter differs from model input
+    filter : str
+        NIRCam filter used in observation to determine final photon flux.
+    pupil : str, None
+        Instrument pupil setting (Lyot mask, grism, DHS, etc.)
+    mask : str, None
+        Coronagraphic mask.
+    module : str
+        NIRCam module 'A' or 'B'.
     """
 
     #filt, mask, pupil = args_inst
     fname, scale0, dist0, wave_um, units0 = args_model
     wave0 = wave_um * 1e4
     
-    bp = read_filter(filter, pupil=pupil, mask=mask)
+    # Get the bandpass for the filter, pupil, and mask
+    # This corresponds to the flux at the entrance pupil
+    # for the particular filter.
+    bp = read_filter(filter, pupil=pupil, mask=mask, module=module)
 
     # Detector pixel scale and PSF oversample
     #detscale = channel_select(bp)[0]

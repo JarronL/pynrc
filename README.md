@@ -14,7 +14,7 @@ simulator, and full-blown DMS simulator.
 The module works for a vareity NIRCam observing modes including direct imaging, 
 coronagraphic imaging, slitless grism spectroscopy, ~~DHS observations~~ (TBI), 
 and weak lens imaging.
-All PSFs are generated via WebbPSF (https://webbpsf.readthedocs.io/en/stable/) to reproduce 
+All PSFs are generated via WebbPSF (https://webbpsf.readthedocs.io) to reproduce 
 realistic JWST images and spectra.
 
 **Note**: pyNRC allows for more modes than are officially allowed by the Observatory,

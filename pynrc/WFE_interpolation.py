@@ -66,7 +66,7 @@ for mod in ['SW', 'LW', 'SWA', 'LWA', 'SWB', 'LWB']:
     hdr['ymax'] = Y.max()
     hdr['ydel'] = dstep
     
-    hdr['wave'] = 
+    #hdr['wave'] = 
 
     hdr['comment'] = 'X and Y values correspond to V2 and V3 coordinates (arcsec).'
     hdr['comment'] = 'Slices in the cube correspond to Zernikes 1 to 36.'
