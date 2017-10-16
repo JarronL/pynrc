@@ -8,9 +8,15 @@ Documentation for pyNRC (pynrc)
 
 .. automodule:: pynrc
     :members:
+    
 
 Getting Started with pyNRC
 ==========================
+
+Stuff here.
+
+-----------------------
+
 
 .. toctree::
    :caption: Reference Info
@@ -33,5 +39,5 @@ see :ref:`LICENSE <license>`.
 .. admonition:: Citing pyNRC
 
     If you make use of pyNRC in your work, please cite the following paper: 
-    `"Leisenring et al. 2017, "pyNRC: A JWST NIRCam ETC and Simulation Toolset"`
+    `"Leisenring et al. 2017, "pyNRC: A NIRCam ETC and Simulation Toolset"`
 

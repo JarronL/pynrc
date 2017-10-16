@@ -279,7 +279,7 @@ class HXRGNoise:
         # Pad nsteps to a power of 2, which is much faster
         self.nstep2 = int(2**np.ceil(np.log2(self.nstep)))
 
-        # Computer frame time and ramp time
+        # Compute frame time and ramp time
         self.tframe = self.nstep_frame * self.dt
         self.inttime = self.tframe * self.naxis3
 

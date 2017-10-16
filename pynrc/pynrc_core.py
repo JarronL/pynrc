@@ -225,7 +225,6 @@ class DetectorOps(object):
     """ 
     Class to hold detector operations information. Includes SCA attributes such as
     detector names and IDs as well as :class:`multiaccum` class for ramp settings.
-    Use keyword args to setup m
 
     Parameters
     ----------------
@@ -571,7 +570,7 @@ class DetectorOps(object):
 
     @property
     def time_int(self):
-        """Same as time_ramp, except that time_int follows the JWST nomenclature"""
+        """Same as time_ramp, but follows the JWST nomenclature."""
         return self.time_ramp
 
     @property
@@ -581,8 +580,8 @@ class DetectorOps(object):
 
     @property
     def time_total_int(self):
-        """
-        Total time for all frames in a ramp.
+        """Total time for all frames in a ramp.
+        
         Includes resets and excess drops, as well as NFF Rows Reset.
         """
 
@@ -607,7 +606,7 @@ class DetectorOps(object):
         return tuples_to_dict(p, verbose)
 
     def times_to_dict(self, verbose=False):
-        """Export ramp times as dictionary with option to print output to terminal."""
+        """Export ramp times as dictionary."""
 
         times = [('t_frame',self.time_frame), ('t_group',self.time_group), \
                  ('t_int',self.time_int), ('t_exp',self.time_exp), \
@@ -615,7 +614,8 @@ class DetectorOps(object):
         return tuples_to_dict(times, verbose)
 
     def pixel_noise(self, fsrc=0.0, fzodi=0.0, fbg=0.0, verbose=False, **kwargs):
-        """
+        """Noise values per pixel.
+        
         Return theoretical noise calculation for the specified MULTIACCUM exposure 
         in terms of e-/sec. This uses the pre-defined detector-specific noise 
         properties. Can specify flux of a source as well as background and 
@@ -677,6 +677,149 @@ class DetectorOps(object):
             >>> datetime.datetime(2016, 5, 9, 11, 57, 5, 796686)
         """
         return nrc_header(self, filter=filter, pupil=pupil, obs_time=obs_time, **kwargs)
+
+    def pixel_timing_map(self, same_scan_direction=False, reverse_scan_direction=False,
+        avg_groups=True, return_flat=True):
+        """
+        Create array of pixel times for a single ramp. 
+        
+        Each pixel value corresponds to the precise time at which
+        that pixel was read out during the ramp acquisiton. The first
+        pixel(s) have t=0.
+        
+        Parameters
+        ----------
+        same_scan_direction : bool
+            Are all the output channels read in the same direction?
+            By default fast-scan readout direction is ``[-->,<--,-->,<--]``
+            If ``same_scan_direction``, then all ``-->``
+        reverse_scan_direction : bool
+            If ``reverse_scan_direction``, then ``[<--,-->,<--,-->]`` or all ``<--``
+        avg_groups : bool
+            For groups where nf>1, the telescope data gets averaged via a 
+            bit-shifter. Setting ``avg_groups=True`` also averages the
+            pixel times in a similar manner. Default is True.
+        return_flat : bool
+            
+            
+        Returns
+        -------
+        array
+            If ``return_flat=True`` then the data is a flattened array for a
+            single channel output. Otherwise, the output is a data cube of the
+            same size and shape of the raw data with these detector settings.
+            
+        Example
+        -------
+        Assume you have a cube of raw full frame data (RAPID, ngroup=5).
+        Create a Detector instance:
+        
+        >>> d = DetectorOps(ngroup=5)
+        >>> time = d.pixel_timing_map()
+        
+        >>> nx = ny = 2048
+        >>> nout = 4            # Number of amplifier output channels
+        >>> chsize = nx // nout # Channel size (x-direction)
+        >>> # Reshape into (nz, ny, nout, chsize)
+        >>> data = data.reshape([-1,ny,nout,chsize])
+        >>> # Reverse odd channels in x-direction to match even
+        >>> for ch in range(nout):
+        >>>     if np.mod(ch,2)==1:
+        >>>         data[:,:,ch,:] = data[:,:,ch,::-1]
+        >>> # Final data reshaped into 4 flattened output channels
+        >>> data = data.transpose([0,1,3,2]).reshape([-1,nout])
+        
+
+        """
+        xpix = self.xpix
+        ypix = self.ypix
+        nout = self.nout
+
+        chsize = self.chsize                   # Number of x-pixels within a channel
+        xticks = chsize + self._line_overhead  # Clock ticks per line
+        flines = ypix + self._extra_lines # Lines per frame
+
+        # Add a single pix offset for full frame and stripe.
+        pix_offset = self._frame_overhead_pix
+
+        # Total number of clock ticks per frame (reset, read, and drops)
+        fticks = xticks*flines + pix_offset
+
+        # Total ticks in a ramp (exclude nd3 drop frames)
+        ma = self.multiaccum
+        nf = ma.nf; nd1 = ma.nd1; nd2 = ma.nd2
+        ngroup = ma.ngroup
+
+        nframes = nd1 + ngroup*nf + (ngroup-1)*nd2
+        nticks = fticks * nframes
+        
+        # Make large array of pixel timing
+        arr = np.arange(nticks).reshape([nframes,-1])
+        
+        # Chop off single pix overhead
+        if self._frame_overhead_pix>0:
+            arr = arr[:,:-self._frame_overhead_pix]
+            
+        # Reshape to 3D array
+        arr = arr.reshape([nframes, flines, xticks])
+        
+        # Chop off x & y overheads
+        arr = arr[:,:ypix,:chsize]
+
+        # By default fast-scan readout direction is [-->,<--,-->,<--]
+        # If same_scan_direction, then all --> 
+        # If reverse_scan_direction, then [<--,-->,<--,-->] or all <--
+        if reverse_scan_direction:
+            arr = arr[::-1]
+        
+        if same_scan_direction: # Everything in same direction 
+            if nout>1:
+                data = arr.repeat(nout,2)
+            else:
+                data = arr
+        else: # Consecutive outputs reversed
+            if nout>1:
+                arr_list = []
+                for ch in range(nout):
+                    if np.mod(ch,2) == 0: arr_list.append(arr)
+                    else: arr_list.append(arr[:,:,::-1])
+                data = np.concatenate(arr_list, axis=2)
+            else:
+                data = arr
+                
+        del arr, arr_list
+
+        # Timing for averaged (bit-shifted) frames
+        # Remove drops and average grouped data
+        if avg_groups and (nf>1 or nd2>0):
+            # Trailing drop frames already excluded
+            # so need to pull off last group of avg'ed frames
+            data_end = data[-nf:,:,:].mean(axis=0) if nf>1 else data[-1:,:,:]
+            data_end = data_end.reshape([1,ypix,xpix])
+
+            # Only care about first (n-1) groups
+            # Last group is handled separately
+            # Cut off last set of nf frames
+            data = data[:-nf,:,:]
+
+            # Reshape for easy group manipulation
+            data = data.reshape([-1,nf+nd2,ypix,xpix])
+
+            # Trim off the dropped frames (nd2)
+            if nd2>0: data = data[:,:nf,:,:]
+
+            # Average the frames within groups
+            # In reality, the 16-bit data is bit-shifted
+            data = data.reshape([-1,ypix,xpix]) if nf==1 else data.mean(axis=1)
+
+            # Add back the last group (already averaged)
+            data = np.append(data,data_end,axis=0)
+            
+        if return_flat:
+            data = data[:,:,:chsize].ravel()
+
+        return data.squeeze() / self._pixel_rate
+
 
 
 class NIRCam(object):
@@ -1526,15 +1669,14 @@ class NIRCam(object):
 
         Notes
         -----
-        
         Representative values for zfact:
 
-            - 0.0 - No zodiacal emission
-            - 1.0 - Minimum zodiacal emission from JWST-CALC-003894
-            - 1.2 - Required NIRCam performance
-            - 2.5 - Average (default)
-            - 5.0 - High
-            - 10.0 - Maximum
+            * 0.0 - No zodiacal emission
+            * 1.0 - Minimum zodiacal emission from JWST-CALC-003894
+            * 1.2 - Required NIRCam performance
+            * 2.5 - Average (default)
+            * 5.0 - High
+            * 10.0 - Maximum
 
         """
     

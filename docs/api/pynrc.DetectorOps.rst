@@ -35,6 +35,7 @@ pynrc.DetectorOps
 
       ~DetectorOps.make_header
       ~DetectorOps.pixel_noise
+      ~DetectorOps.pixel_timing_map
       ~DetectorOps.times_to_dict
       ~DetectorOps.to_dict
 
@@ -63,5 +64,6 @@ pynrc.DetectorOps
 
    .. automethod:: make_header
    .. automethod:: pixel_noise
+   .. automethod:: pixel_timing_map
    .. automethod:: times_to_dict
    .. automethod:: to_dict

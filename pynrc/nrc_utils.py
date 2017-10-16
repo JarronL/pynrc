@@ -1941,18 +1941,26 @@ def pix_noise(ngroup=2, nf=1, nd2=0, tf=10.737, rn=15.0, ktc=29.0, p_excess=(0,0
 
 def bin_spectrum(sp, wave, waveunits='um'):
     """
-    Rebin a Pysynphot spectrum to a lower wavelenght grid.
+    Rebin a :mod:`pysynphot.spectrum` to a lower wavelength grid.
     This function first converts the input spectrum to units
     of counts then combines the photon flux onto the 
     specified wavelength grid.
     
     Output spectrum units are the same as the input spectrum.
     
-    sp        - Pysynphot spectrum to rebin.
-    wave      - Wavelength grid to rebin onto.
-    waveunits - Units of wave input. Must be recognizeable by Pysynphot.
+    Parameters
+    -----------
+    sp : :mod:`pysynphot.spectrum`
+        Spectrum to rebin.
+    wave : array_like
+        Wavelength grid to rebin onto.
+    waveunits : str
+        Units of wave input. Must be recognizeable by Pysynphot.
     
-    Returns rebinned Pysynphot spectrum in same units as input spectrum.
+    Returns
+    -------
+    :mod:`pysynphot.spectrum`
+        Rebinned spectrum in same units as input spectrum.
     """
 
     waveunits0 = sp.waveunits
@@ -2127,20 +2135,36 @@ def stellar_spectrum(sptype, *renorm_args, **kwargs):
     interpolates the effective temperature, metallicity, and log g values if
     the input spectral type is not found.
 
-    You can also specify renormalization arguments to pass to sp.renorm. The
-    order (after ``sptype``) should be (``value, units, bandpass``):
+    You can also specify renormalization arguments to pass to ``sp.renorm()``. 
+    The order (after ``sptype``) should be (``value, units, bandpass``):
     
-    >>>sp = stellar_spectrum('G2V', 10, 'vegamag', bp)
+    >>> sp = stellar_spectrum('G2V', 10, 'vegamag', bp)
     
     Flat spectrum (in photlam) are also allowed via the 'flat' string.
     
+    Use ``catname='bosz'`` for BOSZ stellar atmosphere (ATLAS9) (default)
     Use ``catname='ck04models'`` keyword for ck04 models
-    Use ``catname='bosz'`` for BOSZ stellar atmosphere (ATLAS9)
+    Use ``catname='phoenix'`` keyword for Phoenix models
+    
+    Parameters
+    ----------
+    sptype : str
+        Spectral type, such as 'A0V' or 'K2III'.
+    renorm_args : tuple
+        Renormalization arguments to pass to ``sp.renorm()``.
+        The order (after ``sptype``) should be (``value, units, bandpass``)
+        Bandpass should be a :mod:`pysynphot.obsbandpass` type.
+    
+    Keyword Args
+    ------------
+    catname : str
+        Catalog name, including 'bosz', 'ck04models', and 'phoenix'.
+        Default is 'bosz', which comes from :func:`~nrc_utils.BOSZ_spectrum`.
     
     """
 
     catname = kwargs.get('catname')
-    if catname is None: catname = 'phoenix'
+    if catname is None: catname = 'bosz'
     lookuptable = {
         "O0V": (50000, 0.0, 4.0), # Bracketing for interpolation
         "O3V": (45000, 0.0, 4.0),
@@ -2262,7 +2286,8 @@ def stellar_spectrum(sptype, *renorm_args, **kwargs):
 
         
 def zodi_spec(zfact=None, locstr=None, year=None, day=None, **kwargs):
-    """
+    """Zodiacal light spectrum.
+    
     Create a spectrum of the zodiacal light emission in order to estimate the
     in-band sky background flux. This is simply the addition of two blackbodies
     at T=5300K (solar scattered light) and T=282K (thermal dust emission)
@@ -2276,25 +2301,42 @@ def zodi_spec(zfact=None, locstr=None, year=None, day=None, **kwargs):
     then the each component gets scaled where T=5300K corresponds to the first
     elements and T=282K is the second element of the array.
 
-    Output is a Pysynphot spectrum with default units of flam (erg/s/cm^2/A/sr).
-    Note: Pysynphot doesn't recognize that it's per steradian, but we must keep 
-    that in mind when integrating the flux per pixel.
-
     Representative values for zfact:
-        0.0 - No zodiacal emission
-        1.0 - Minimum zodiacal emission from JWST-CALC-003894 (Figure 2-2)
-        1.2 - Required NIRCam performance
-        2.5 - Average (default)
-        5.0 - High
-        10. - Maximum
-    
-    Added the ability to query the Euclid background model for a specific
-    location and observing time. The two blackbodies will be scaled to the
-    1.0 and 5.5 um emission. See the help website for more details:
-        http://irsa.ipac.caltech.edu/applications/BackgroundModel/docs/dustProgramInterface.html
-        locstr - Object name, RA/DEC in decimal degrees or sexigesimal input
-        year   - Year of observation
-        day    - Day of observation
+
+        * 0.0 - No zodiacal emission
+        * 1.0 - Minimum zodiacal emission from JWST-CALC-003894
+        * 1.2 - Required NIRCam performance
+        * 2.5 - Average (default)
+        * 5.0 - High
+        * 10.0 - Maximum
+
+
+    Parameters
+    ----------
+    zfact : float
+        Factor to scale Zodiacal spectrum (default 2.5).
+
+    Returns
+    -------
+    :mod:`pysynphot.spectrum`
+        Output is a Pysynphot spectrum with default units of flam (erg/s/cm^2/A/sr).
+        Note: Pysynphot doesn't recognize that it's per steradian, but we must keep 
+        that in mind when integrating the flux per pixel.
+
+    Notes
+    -----
+    Added the ability to query the Euclid background model using 
+    :func:`nrc_utils.zodi_euclid` for a specific location and observing 
+    time. The two blackbodies will be scaled to the 1.0 and 5.5 um emission. 
+
+    Keyword Args
+    ------------
+    locstr :
+        Object name or RA/DEC (decimal degrees or sexigesimal).
+    year : int
+        Year of observation.
+    day : float
+        Day of observation.
         
     """
 
@@ -2341,21 +2383,26 @@ def zodi_spec(zfact=None, locstr=None, year=None, day=None, **kwargs):
 
 def zodi_euclid(locstr, year, day, wavelengths=[1,5.5], ido_viewin=0, **kwargs):
     """
-    Queries the IPAC Euclid Background Model at
-    http://irsa.ipac.caltech.edu/applications/BackgroundModel/
+    Queries the `IPAC Euclid Background Model
+    <http://irsa.ipac.caltech.edu/applications/BackgroundModel/>`_
     in order to get date and position-specific zodiacal dust emission.
 
-    The program relies on urllib2 to download the page in XML format.
+    The program relies on ``urllib2`` to download the page in XML format.
     However, the website only allows single wavelength queries, so
     this program implements a multithreaded procedure to query
     multiple wavelengths simultaneously. However, due to the nature
-    of urllib2 library, only so many requests are allowed to go out
-    at a time, so this process can take some time to complete.
-    Testing shows about 500 wavelengths in 10 seconds as a rough
-    ballpark.
+    of ``urllib2`` library, only so many requests are allowed to go
+    out at a time, so this process can take some time to complete.
+    Testing shows about 500 wavelengths in 10 seconds as a rough ballpark.
 
-    Recommended to grab only a few wavelengths and use for normalization
-    purposes. 
+    Recommended to grab only a few wavelengths for normalization purposes. 
+
+    References
+    ----------
+    See the `Euclid Help Website
+    <http://irsa.ipac.caltech.edu/applications/BackgroundModel/docs/dustProgramInterface.html>`_
+    for more details.
+
     """
 
     from urllib2 import urlopen
