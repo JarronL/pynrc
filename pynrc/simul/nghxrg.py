@@ -117,7 +117,7 @@ warnings.filterwarnings('ignore')
 import logging
 _log = logging.getLogger('nghxrg')
 
-class HXRGNoise:
+class HXRGNoise(object):
     """
     HXRGNoise is a class for making realistic Teledyne HxRG system
     noise. The noise model includes correlated, uncorrelated,
@@ -574,13 +574,12 @@ class HXRGNoise:
         self.u_pink   = u_pink
         self.acn      = None if acn      == 0.0  else acn
         self.pca0_amp = None if pca0_amp == 0.0  else pca0_amp
-
-
+        
         # Change this only if you know that your detector is different from a
         # typical H2RG.
         self.reference_pixel_noise_ratio = 0.8 if \
             reference_pixel_noise_ratio is None else reference_pixel_noise_ratio
-
+        
         # These are used only when generating cubes. They are
         # completely removed when the data are calibrated to
         # correlated double sampling or slope images. We include
@@ -595,24 +594,24 @@ class HXRGNoise:
         self.ref_f2f_corr  = None   if ref_f2f_corr  is None else ref_f2f_corr
         self.ref_f2f_ucorr = None   if ref_f2f_ucorr is None else ref_f2f_ucorr
         self.ref_inst      = None   if ref_inst      is None else ref_inst
-
+        
         # ======================================================================
 
         # Initialize the result cube and add a bias pattern.
         self.message('Initializing results cube')
         result = np.zeros((self.naxis3, self.naxis2, self.naxis1), dtype=np.float32)
-                  
+        
         # Inject a bias pattern.
         bias_pattern = self.bias_image*self.bias_amp
 
         # Add overall bias offset plus random component
         bias_pattern += self.bias_off_avg + self.bias_off_sig * np.random.randn()	
-            
+        
         # Add in some kTC noise. Since this should always come out
         # in calibration, we do not attempt to model it in detail.
         if self.ktc_noise > 0:
             bias_pattern += self.ktc_noise * np.random.standard_normal((self.naxis2, self.naxis1))
-
+        
         # Add pedestal offset to each output channel
         # Check if self.ch_off is a numpy array or list
         if isinstance(self.ch_off, (np.ndarray,list)):
@@ -653,11 +652,11 @@ class HXRGNoise:
         for ch in range(self.n_out):
             chan = bias_pattern[:,self.xsize*ch:self.xsize*(ch+1)]
             chan[:,indb] += temp[ch]
-    
+        
         # Add in the bias pattern
         for z in np.arange(self.naxis3):
             result[z,:,:] += bias_pattern
-
+        
         # Add in random frame-to-frame bias offsets
         # First, correlated bias between channels
         if self.ref_f2f_corr is not None:

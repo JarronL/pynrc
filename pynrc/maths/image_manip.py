@@ -82,10 +82,10 @@ def pad_or_cut_to_size(array, new_shape):
                           Found {} dimensions.'.format(ndim))
 
     if nx_new>nx:
-        n0 = (nx_new - nx) / 2
+        n0 = (nx_new - nx) // 2
         n1 = n0 + nx
     elif nx>nx_new:
-        n0 = (nx - nx_new) / 2
+        n0 = (nx - nx_new) // 2
         n1 = n0 + nx_new
     else:
         n0 = 0; n1 = nx		
@@ -93,10 +93,10 @@ def pad_or_cut_to_size(array, new_shape):
     n1 = int(round(n1))
 
     if ny_new>ny:
-        m0 = (ny_new - ny) / 2
+        m0 = (ny_new - ny) // 2
         m1 = m0 + ny
     elif ny>ny_new:
-        m0 = (ny - ny_new) / 2
+        m0 = (ny - ny_new) // 2
         m1 = m0 + ny_new
     else:
         m0 = 0; m1 = ny		

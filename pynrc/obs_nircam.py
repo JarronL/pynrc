@@ -717,8 +717,8 @@ class obs_coronagraphy(NIRCam):
             # Convention for rotate() is opposite PA_offset
             im_diff1_r2_rot = rotate(im_diff1_r2, roll_angle, reshape=False, cval=np.nan)
             im_diff2_r2_rot = rotate(im_diff2_r2, roll_angle, reshape=False, cval=np.nan)
-            final1 = (im_diff1_r1 + im_diff1_r2_rot) / 2
-            final2 = (im_diff2_r1 + im_diff2_r2_rot) / 2
+            final1 = (im_diff1_r1 + im_diff1_r2_rot) // 2
+            final2 = (im_diff2_r1 + im_diff2_r2_rot) // 2
             
             # Replace NaNs with values from im_diff_r1
             nan_mask1 = np.isnan(final1)
@@ -1240,7 +1240,7 @@ def model_to_hdulist(args_model, sp_star, filter, pupil=None, mask=None):
 ###         # Create HDUList of observations and grab radial stdev
 ###         hdulist = self.obs_images(wfe_drift=wfe_drift, zfact=zfact)
 ###         rr, stds = radial_profile(hdulist, ext='NOISE', center=cen)
-###         xsize = hdulist['NOISE'].header['PIXELSCL'] * hdulist['NOISE'].data.shape[0] / 2
+###         xsize = hdulist['NOISE'].header['PIXELSCL'] * hdulist['NOISE'].data.shape[0] // 2
 ###         mask = rr<xsize
 ###         rr = rr[mask]
 ###         stds = stds[mask]

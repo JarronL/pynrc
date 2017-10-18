@@ -195,8 +195,8 @@ class OPD_extract(object):
 
         pix_rad = np.int(np.ceil(((pmask.side+pmask.gap) / pixelscale).value))
         pix_cen = pmask._hex_center(i+1)
-        xc = pix_cen[1] / pixelscale.value + outmask.shape[1] / 2
-        yc = pix_cen[0] / pixelscale.value + outmask.shape[0] / 2
+        xc = pix_cen[1] / pixelscale.value + outmask.shape[1] // 2
+        yc = pix_cen[0] / pixelscale.value + outmask.shape[0] // 2
 
         # Grab the pixel ranges
         x1 = np.int(xc - pix_rad)
@@ -627,7 +627,7 @@ def get_contrast_old(psf0,psf1,psf2):
     rho = dist_image(data, pixscale=pixelscale)
     binsize = pixelscale
     bins = np.arange(rho.min(), rho.max() + binsize, binsize)
-    rr0 = bins[:-1] + binsize / 2
+    rr0 = bins[:-1] + binsize // 2
 
     stds0 = binned_statistic(rho, data, func=np.std, bins=bins)
     contrast = stds0 / np.max(psf0[0].data)
@@ -658,7 +658,7 @@ def get_contrast(speckle_noise_image, planet_psf):
     rho = dist_image(data, pixscale=pixelscale, center=(xcen,ycen))
     binsize = pixelscale
     bins = np.arange(rho.min(), rho.max() + binsize, binsize)
-    rr0 = bins[:-1] + binsize / 2
+    rr0 = bins[:-1] + binsize // 2
 
     stds0 = binned_statistic(rho, data, func=np.mean, bins=bins)
     contrast = stds0 / np.max(planet_psf[0].data)
@@ -769,7 +769,7 @@ def opd_drift_nogood(opd, drift, nterms=8, defocus_frac=0.8):
     y *= pix_m; x *= pix_m
 
     # Convert to polar coordinates
-    rho = np.sqrt(x**2 + y**2) / (diam / 2)
+    rho = np.sqrt(x**2 + y**2) / (diam // 2)
     theta = np.arctan2(y,x)
 
     # Generate Zernike maps
