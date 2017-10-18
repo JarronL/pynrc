@@ -27,12 +27,10 @@ PSF Related
     - WebbPSF needs to center PSF in pixel center
     - PSF Jitter options
     - Bar Mask offsets (using nrc.options['bar_offset'])
-    - PSF updates (convolution) based on geometric spot size
+    - PSF convolution based on geometric spot size
 
 Miscellaneous
 +++++++++++++
-    - Option to exclude flat field noise
-    - Option to exclude cosmic ray noise
+    - Random cosmic ray hits in exposure simulator
     - Ramp optimizer warning for large number of group loops?
     - multi-thread ramp optimizer?
-    - Random cosmic ray hits in exposure simulator

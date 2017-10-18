@@ -715,7 +715,7 @@ class DetectorOps(object):
         Create a Detector instance:
         
         >>> d = DetectorOps(ngroup=5)
-        >>> time = d.pixel_timing_map()
+        >>> tarr = d.pixel_timing_map(return_flat=True, avg_groups=True)
         
         >>> nx = ny = 2048
         >>> nout = 4            # Number of amplifier output channels
@@ -728,7 +728,7 @@ class DetectorOps(object):
         >>>         data[:,:,ch,:] = data[:,:,ch,::-1]
         >>> # Final data reshaped into 4 flattened output channels
         >>> data = data.transpose([0,1,3,2]).reshape([-1,nout])
-        
+        >>> # Can plot this like plt.plot(tarr, data) to make 4 line plots
 
         """
         xpix = self.xpix
@@ -815,10 +815,14 @@ class DetectorOps(object):
             # Add back the last group (already averaged)
             data = np.append(data,data_end,axis=0)
             
-        if return_flat:
-            data = data[:,:,:chsize].ravel()
-
-        return data.squeeze() / self._pixel_rate
+        # Put into time
+        data /= self._pixel_rate
+            
+        # Return timing info
+        if return_flat: # Flatten array
+            return data.ravel()
+        else: # Get rid of dimensions of length 1
+            return data.squeeze()
 
 
 
