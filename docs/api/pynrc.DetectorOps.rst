@@ -16,6 +16,7 @@ pynrc.DetectorOps
       ~DetectorOps.detid_list
       ~DetectorOps.detname
       ~DetectorOps.module
+      ~DetectorOps.nff
       ~DetectorOps.nout
       ~DetectorOps.ref_info
       ~DetectorOps.scaid
@@ -38,27 +39,6 @@ pynrc.DetectorOps
       ~DetectorOps.pixel_timing_map
       ~DetectorOps.times_to_dict
       ~DetectorOps.to_dict
-
-   .. rubric:: Attributes Documentation
-
-   .. autoattribute:: channel
-   .. autoattribute:: chsize
-   .. autoattribute:: detid
-   .. autoattribute:: detid_list
-   .. autoattribute:: detname
-   .. autoattribute:: module
-   .. autoattribute:: nout
-   .. autoattribute:: ref_info
-   .. autoattribute:: scaid
-   .. autoattribute:: scaid_list
-   .. autoattribute:: time_exp
-   .. autoattribute:: time_frame
-   .. autoattribute:: time_group
-   .. autoattribute:: time_int
-   .. autoattribute:: time_ramp
-   .. autoattribute:: time_row_reset
-   .. autoattribute:: time_total
-   .. autoattribute:: time_total_int
 
    .. rubric:: Methods Documentation
 

@@ -34,7 +34,7 @@ def pad_or_cut_to_size(array, new_shape):
 
     Parameters
     ----------
-    array :  ndarray
+    array : ndarray
         A 1D or 2D array representing some image
     padded_shape :  tuple of 2 elements
         Desired size for the output array. For 2D case, if a single value, 
@@ -124,19 +124,27 @@ def pad_or_cut_to_size(array, new_shape):
 
 
 def fshift(image, delx=0, dely=0, pad=False):
-    """
+    """ Fractional image shift
+    
     Ported from IDL function fshift.pro.
     Routine to shift an image by non-integer values.
 
-    INPUTS:
-        image - 2D image to be shifted
-        delx  - shift in x (same direction as IDL SHIFT function)
-        dely  - shift in y
-        pad   - Should we pad the array before shifting, then truncate?
-                Otherwise, the image is wrapped.
-    OUTPUTS:
-        shifted image is returned as the function results
-
+    Parameters
+    ----------
+    image: ndarray
+        1D or 2D array to be shifted
+    delx : float
+        shift in x (same direction as IDL SHIFT function)
+    dely: float
+        shift in y
+    pad : bool
+        Should we pad the array before shifting, then truncate?
+        Otherwise, the image is wrapped.
+        
+    Returns
+    -------
+    ndarray
+        Shifted image
     """
     
     if len(image.shape) == 1:
@@ -224,22 +232,28 @@ def fshift(image, delx=0, dely=0, pad=False):
                           
                           
 def fourier_imshift(image, xshift, yshift, pad=False):
-    '''
+    """Fourier shift image
+    
     Shift an image by use of Fourier shift theorem
-    Parameters:
-        image : nd array
-            N x K image
-        xshift : float
-            Pixel value by which to shift image in the x direction
-        yshift : float
-            Pixel value by which to shift image in the x direction
-        pad : bool
-            Should we pad the array before shifting, then truncate?
-            Otherwise, the image is wrapped.
-    Returns:
-        offset : nd array
-            Shifted image
-    '''
+
+    Parameters
+    ----------
+    image : nd array
+        N x K image
+    xshift : float
+        Pixel value by which to shift image in the x direction
+    yshift : float
+        Pixel value by which to shift image in the y direction
+    pad : bool
+        Should we pad the array before shifting, then truncate?
+        Otherwise, the image is wrapped.
+
+    Returns
+    -------
+    ndarray
+        Shifted image
+    """
+    
     # Pad ends with zeros
     if pad:
         padx = np.abs(np.int(xshift)) + 1
@@ -259,29 +273,33 @@ def fourier_imshift(image, xshift, yshift, pad=False):
     
 def shift_subtract(params, reference, target, mask=None, pad=False, 
                    shift_function=fshift):
-    '''
+    """Shift and subtract image
+    
     Use Fourier Shift theorem for subpixel shifts for 
     input into least-square optimizer.
     
-    Parameters:
-        params : tuple
-            xshift, yshift, beta
-        reference : nd array
-            See align_fourierLSQ
-        target : nd array
-            See align_fourierLSQ
-        mask : nd array, optional
-            See align_fourierLSQ
-        pad  : bool
-            Should we pad the array before shifting, then truncate?
-            Otherwise, the image is wrapped.
+    Parameters
+    ----------
+    params : tuple
+        xshift, yshift, beta
+    reference : ndarray
+        See align_fourierLSQ
+    target : ndarray
+        See align_fourierLSQ
+    mask : ndarray, optional
+        See align_fourierLSQ
+    pad : bool
+        Should we pad the array before shifting, then truncate?
+        Otherwise, the image is wrapped.
+    shift_function : func
+        which function to use for sub-pixel shifting
             
-        shift_function : which function to use for sub-pixel shifting
-            
-    Returns:
-        1D nd array of target-reference residual after
+    Returns
+    -------
+    ndarray
+        1D array of target-reference residual after
         applying shift and intensity fraction.
-    '''
+    """
     xshift, yshift, beta = params
 
     if shift_function is not None:
@@ -296,28 +314,33 @@ def shift_subtract(params, reference, target, mask=None, pad=False,
 
 def align_LSQ(reference, target, mask=None, pad=False, 
               shift_function=fshift):
-    '''
+    """Find best shift value
+    
     LSQ optimization with option of shift alignment algorithm
     
-    Parameters:
-        reference : nd array
-            N x K image to be aligned to
-        target : nd array
-            N x K image to align to reference
-        mask : nd array, optional
-            N x K image indicating pixels to ignore when
-            performing the minimization. The masks acts as
-            a weighting function in performing the fit.
-        shift_function : which function to use for sub-pixel shifting.
-            Options are fourier_imshift or fshift.
-            fshift tends to be 3-5 times faster for similar results.
-    Returns:
-        results : list
-            [x, y, beta] values from LSQ optimization, where (x, y) 
-            are the misalignment of target from reference and beta
-            is the fraction by which the target intensity must be
-            reduced to match the intensity of the reference.
-    '''
+    Parameters
+    ----------
+    reference : ndarray
+        N x K image to be aligned to
+    target : ndarray
+        N x K image to align to reference
+    mask : ndarray, optional
+        N x K image indicating pixels to ignore when
+        performing the minimization. The masks acts as
+        a weighting function in performing the fit.
+    shift_function : func
+        which function to use for sub-pixel shifting.
+        Options are fourier_imshift or fshift.
+        fshift tends to be 3-5 times faster for similar results.
+
+    Returns
+    -------
+    list
+        (x, y, beta) values from LSQ optimization, where (x, y) 
+        are the misalignment of target from reference and beta
+        is the fraction by which the target intensity must be
+        reduced to match the intensity of the reference.
+    """
 
     init_pars = [0.0, 0.0, 1.0]
 
@@ -335,22 +358,30 @@ def align_LSQ(reference, target, mask=None, pad=False,
 
 
 def frebin(image, dimensions=None, scale=None, total=True):
-    """
+    """Fractional rebin
+    
     Python port from the IDL frebin.pro
     Shrink or expand the size of a 1D or 2D array by an arbitary amount 
     using bilinear interpolation. Conserves flux by ensuring that each 
     input pixel is equally represented in the output array.
 
     Parameters
-    ==========
-    image      : Input image, 1-d or 2-d ndarray
-    dimensions : Size of output array (take priority over scale)
-    scale      : Factor to scale output array
-    total      : Conserves the surface flux. If True, the output pixels 
-                 will be the sum of pixels within the appropriate box of 
-                 the input image. Otherwise, they will be the average.
-         
-    Returns the binned ndarray
+    ----------
+    image : ndarray
+        Input image, 1-d or 2-d ndarray
+    dimensions : tuple or None
+        Desired size of output array (take priority over scale)
+    scale : tuple or None
+        Factor to scale output array
+    total : bool
+        Conserves the surface flux. If True, the output pixels 
+         will be the sum of pixels within the appropriate box of 
+         the input image. Otherwise, they will be the average.
+    
+    Returns
+    -------
+    ndarray
+        The binned ndarray
     """
 
     if dimensions is not None:
@@ -597,20 +628,28 @@ def image_rescale(HDUlist_or_filename, args_in, args_out, cen_star=True):
 
 def scale_ref_image(im1, im2, mask=None, smooth_imgs=False,
                     return_shift_values=False):
-    """
-    Find value to scale a reference image by minimizing residuals.
-    This assumed everything is already aligned. Or simply turn on
-    return_shift_values to return (dx,dy,scl). Then fshift(im2,dx,dy)
-    to shift the reference image.
+    """Reference image scaling
     
-    Inputs
-    ======
-    im1 - Science star observation.
-    im2 - Reference star observation.
-    mask - Use this mask to exclude pixels for performing standard deviation.
-           Boolean mask where True is included and False is excluded
-    smooth_imgs - Smooth the images with nearest neighbors to remove bad pixels.
-    return_shift_values - Option to return x and y shift values
+    Find value to scale a reference image by minimizing residuals.
+    This assumed everything is already aligned if 
+    return_shift_values=False.
+    
+    Or simply turn on return_shift_values to return (dx,dy,scl). 
+    Then fshift(im2,dx,dy) to shift the reference image.
+    
+    Parameters
+    ----------
+    im1 : ndarray
+        Science star observation.
+    im2 : ndarray
+        Reference star observation.
+    mask : bool array or None
+        Use this mask to exclude pixels for performing standard deviation.
+        Boolean mask where True is included and False is excluded.
+    smooth_imgs : bool
+        Smooth the images with nearest neighbors to remove bad pixels?
+    return_shift_values : bool
+        Option to return x and y shift values
     """
     
     # Mask for generating standard deviation
@@ -671,7 +710,8 @@ def scale_ref_image(im1, im2, mask=None, smooth_imgs=False,
 
 def optimal_difference(im_sci, im_ref, scale, binsize=1, center=None, 
                        mask_good=None, sub_mean=True, std_func=np.std):
-    """
+    """Optimize reference subtraction
+    
     Scale factors from scale_ref_image work great for subtracting
     a reference PSF from a science image where there are plenty
     of photons, but perform poorly in the noise-limited regime. If
@@ -679,6 +719,31 @@ def optimal_difference(im_sci, im_ref, scale, binsize=1, center=None,
     then we also amplify the noise. In the background, it's better to
     simply subtract the unscaled reference pixels. This routine finds
     the radial cut-off of the dominant noise source.
+
+    Parameters
+    ----------
+    im_sci : ndarray
+        Science star observation.
+    im_ref : ndarray
+        Reference star observation.
+    scale : float
+        Scale factor from :func:`scale_ref_image`
+    binsize : int
+        Radial binsize (in pixels) to perform calculations
+    center : tuple or None
+        Location (x,y) to calculate radial distances.
+        Default is center of image.
+    mask_good : bool array
+        Only perform operations on pixels where mask_good=True.
+    sub_mean : bool
+        Subtract mean (median, actually) of pixels in each
+        radial bin? Basically a background subtraction.
+    std_func : func
+        What function do we want to use for calculating
+        the standard deviation in each radial bin?
+        After comparing the standard deviation between the
+        two scaled differences in each radial bin, we only
+        keep the better of the two.
     """
 
     diff1 = im_sci - im_ref
@@ -724,35 +789,39 @@ def optimal_difference(im_sci, im_ref, scale, binsize=1, center=None,
 
 
 def hist_indices(values, bins=10, return_more=False):
-    """
+    """Histogram indices
+    
     This function bins an input of values and returns the indices for
     each bin. This is similar to the reverse indices functionality
     of the IDL histogram routine. It's also much faster than doing
     a for loop and creating masks/indice at each iteration, because
     we utilize a sparse matrix constructor. It's kinda magical...
     
-    Returns of a list of indices grouped together according to the bin.
+    Returns a list of indices grouped together according to the bin.
     Only works for evenly spaced bins.
     
     Parameters
-    ==========
-    values  - Input numpy array. Should be a single dimension.
-    bins    - If bins is an int, it defines the number of equal-width bins 
-              in the given range (10, by default). If bins is a sequence, 
-              it defines the bin edges, including the rightmost edge.
-   
-    return_more - Option to also return the values organized by bin and 
-                  the value of the centers (igroups, vgroups, center_vals).
+    ----------
+    values : ndarray
+        Input numpy array. Should be a single dimension.
+    bins : int or ndarray
+        If bins is an int, it defines the number of equal-width bins 
+        in the given range (10, by default). If bins is a sequence, 
+        it defines the bin edges, including the rightmost edge.
+    return_more : bool
+        Option to also return the values organized by bin and 
+        the value of the centers (igroups, vgroups, center_vals).
     
     Example
-    ==========
-        # Find the standard deviation at each radius of an image
-        rho = dist_image(image)
-        binsize = 1
-        bins = np.arange(rho.min(), rho.max() + binsize, binsize)
-        igroups, vgroups, center_vals = hist_indices(rho, bins, True)
-        # Get the standard deviation of image at each bin
-        std = binned_statistic(igroups, image, np.std)
+    -------
+    Find the standard deviation at each radius of an image
+    
+    >>> rho = dist_image(image)
+    >>> binsize = 1
+    >>> bins = np.arange(rho.min(), rho.max() + binsize, binsize)
+    >>> igroups, vgroups, center_vals = hist_indices(rho, bins, True)
+    >>> # Get the standard deviation of each bin in image
+    >>> std = binned_statistic(igroups, image, func=np.std)
 
     """
     
@@ -788,30 +857,34 @@ def hist_indices(values, bins=10, return_more=False):
     
 
 def binned_statistic(x, values, func=np.mean, bins=10):
-    """
+    """Binned statistic
+    
     Compute a binned statistic for a set of data. Drop-in replacement
     for scipy.stats.binned_statistic.
 
     Parameters
-    ==========
-    x      - A sequence of values to be binned. Or a list of binned 
-             indices from hist_indices().
-    values - The values on which the statistic will be computed.
-    func   - The function to use for calculating the statistic. 
-    bins   - If bins is an int, it defines the number of equal-width bins 
-             in the given range (10, by default). If bins is a sequence, 
-             it defines the bin edges, including the rightmost edge.
-             This doens't do anything if x is a list of indices.
+    ----------
+    x : ndarray
+        A sequence of values to be binned. Or a list of binned 
+        indices from hist_indices().
+    values : ndarray
+        The values on which the statistic will be computed.
+    func : func
+        The function to use for calculating the statistic. 
+    bins : int or ndarray
+        If bins is an int, it defines the number of equal-width bins 
+        in the given range (10, by default). If bins is a sequence, 
+        it defines the bin edges, including the rightmost edge.
+        This doens't do anything if x is a list of indices.
              
     Example
-    ==========
-        # Find the standard deviation at each radius of an image
-        rho = dist_image(image)
-        binsize = 1
-        bins = np.arange(rho.min(), rho.max() + binsize, binsize)
-        igroups, vgroups, center_vals = hist_indices(rho, bins, True)
-        # Get the standard deviation of image at each bin
-        std = binned_statistic(igroups, image, np.std)
+    -------
+    Find the standard deviation at each radius of an image
+    
+    >>> rho = dist_image(image)
+    >>> binsize = 1
+    >>> radial_bins = np.arange(rho.min(), rho.max() + binsize, binsize)
+    >>> radial_stds = binned_statistic(igroups, image, func=np.std, bins=radial_bins)
     
     """
 

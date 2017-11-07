@@ -4,10 +4,11 @@ Detailed API
 ============
 
 .. toctree::
-    :maxdepth: 2
+    :maxdepth: 3
 
-    api/obs_classes.rst
     api/detector_classes.rst
-    api/spectral_tools.rst
-    
+    api/obs_classes.rst
+    api/simul.rst
+    api/reduction.rst
+    api/utils.rst
     

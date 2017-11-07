@@ -16,7 +16,7 @@ rcvals = {'xtick.minor.visible': True, 'ytick.minor.visible': True,
           'xtick.top': True, 'ytick.right': True, 'font.family': ['serif'],
           'xtick.major.size': 6, 'ytick.major.size': 6,
           'xtick.minor.size': 3, 'ytick.minor.size': 3,
-          'image.interpolation': 'none', 'image.origin': 'lower',
+          'image.interpolation': 'nearest', 'image.origin': 'lower',
           'figure.figsize': [8,6], 'mathtext.fontset':'cm'}#,
           #'text.usetex': True, 'text.latex.preamble': ['\usepackage{gensymb}']}
 matplotlib.rcParams.update(rcvals)
@@ -676,8 +676,8 @@ def _wrap_coeff_for_mp(args):
 
 def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A', 
     fov_pix=11, oversample=None, npsf=None, ndeg=7, opd=None, tel_pupil=None,
-    include_si_wfe=False, offset_r=0, offset_theta=0, jitter=True, jitter_sigma=0.007,
-    save=True, force=False, **kwargs):
+    include_si_wfe=False, offset_r=0, offset_theta=0, jitter=None, 
+    jitter_sigma=0.007, save=True, force=False, **kwargs):
     """Generate PSF coefficients
     
     Creates a set of coefficients that will generate a simulated PSF at any
@@ -720,7 +720,7 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         Radial offset from the center in arcsec.
     offset_theta :float
         Position angle for radial offset, in degrees CCW.
-    opd  : tuple, HDUList
+    opd : tuple, HDUList
         OPD file info. Acceptable forms:
         
             1. ('OPD_RevV_nircam_150.fits', 0)
@@ -733,6 +733,10 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     tel_pupil : str or HDUList
         Telescope entrance pupil mask. Default: jwst_pupil_RevW_npix1024.fits.gz. 
         Should either be a filename string or HDUList.
+    jitter : str or None
+        Currently either 'gaussian' or None.
+    jitter_sigma : float
+        If ``jitter = 'gaussian'``, then this is the size of the blurring effect.
     save : bool
         Save the resulting PSF coefficients to a file? (default: True)
     force : bool
@@ -754,7 +758,10 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
 
     # Default OPD
     #if opd is None: opd = ('OPD_RevV_nircam_132.fits', 0)
-    if opd is None: opd = opd_default
+    if opd is None: 
+        opd = opd_default
+    elif isinstance(opd, six.string_types):
+        opd = (opd, 0, 0)
 
       
     # Get filter throughput and create bandpass 
@@ -838,7 +845,7 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         # A custom OPD is passed. Consider using force=True.
         otemp = 'OPDcustom'
     else:
-        raise ValueError("opd must be a tuple or HDUList.")
+        raise ValueError("OPD must be a tuple or HDUList.")
     
     # Name to save array of oversampled coefficients
     save_dir = conf.PYNRC_PATH + 'psf_coeffs/'
@@ -864,6 +871,7 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     # processes.
     if (rtemp == 0) and (not isinstance(opd, fits.HDUList)):
         from . import speckle_noise as sn
+        setup_logging('WARN', verbose=False)
 
         # Read in a specified OPD file and slice
         opd_im, header = sn.read_opd_slice(opd, header=True)
@@ -897,6 +905,14 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         hdu.header = header.copy()
         opd_hdulist = fits.HDUList([hdu]) 
         inst.pupilopd = opd_hdulist
+        
+        setup_logging(log_prev, verbose=False)
+    elif isinstance(opd, fits.HDUList):
+        opd_hdulist = opd
+        hdu = fits.PrimaryHDU(opd_hdulist[0].data)
+        hdu.header = opd_hdulist[0].header
+        #opd_hdulist.close()
+        inst.pupilopd = fits.HDUList([hdu])
     else:
         inst.pupilopd = opd
 
@@ -984,7 +1000,7 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
 def gen_image_coeff(filter_or_bp, pupil=None, mask=None, module='A', 
     sp_norm=None, coeff=None, fov_pix=11, oversample=4, 
     return_oversample=False, **kwargs):
-    """Generate PSF from coefficient.
+    """Generate PSF from coefficient
     
     Create an image (direct, coronagraphic, grism, or DHS) based on a set of
     instrument parameters and PSF coefficients. The image is noiseless and
@@ -1185,6 +1201,18 @@ def gen_image_coeff(filter_or_bp, pupil=None, mask=None, module='A',
 
 
 def channel_select(bp):
+    """Select wavelength channel
+    
+    Based on input bandpass, return the pixel scale, dark current, and 
+    excess read noise parameters. These values are typical for either
+    a SW or LW NIRCam detector.
+    
+    Parameters
+    ----------
+    bp : :mod:`pysynphot.obsbandpass`
+        NIRCam filter bandpass.
+    """
+
     if bp.avgwave()/1e4 < 2.3:
         pix_scale = pixscale_SW # pixel scale (arcsec/pixel)
         idark = 0.003      # dark current (e/sec)
@@ -1197,9 +1225,17 @@ def channel_select(bp):
     return (pix_scale, idark, pex)
 
 def grism_res(pupil='GRISM', module='A'):
-    """
+    """Grism information
+    
     Based on the pupil input and module, return the spectral
     dispersion and resolution as a tuple (res, dw).
+    
+    Parameters
+    ----------
+    pupil : str
+        'GRISM0' or 'GRISM90', otherwise assume res=1000 pix/um
+    module : str
+        'A' or 'B'
     """
     # Mean spectral dispersion in number of pixels per um
     res = 1000.0
@@ -1220,7 +1256,8 @@ def grism_res(pupil='GRISM', module='A'):
 def get_SNR(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=None,
     sp=None, tf=10.737, ngroup=2, nf=1, nd2=0, nint=1,
     coeff=None, fov_pix=11, oversample=4, quiet=True, **kwargs):
-    """
+    """SNR per pixel
+    
     Obtain the SNR of an input source spectrum with specified instrument setup.
     This is simply a wrapper for bg_sensitivity(forwardSNR=True).
     """
@@ -1671,7 +1708,8 @@ def sat_limit_webbpsf(filter_or_bp, pupil=None, mask=None, module='A',
     sp=None, bp_lim=None, int_time=21.47354, full_well=81e3, well_frac=0.8, 
     coeff=None, fov_pix=11, oversample=4, quiet=True, units='vegamag', 
     offset_r=0, offset_theta=0, **kwargs):
-    """
+    """Saturation limits
+    
     Estimate the saturation limit of a point source for some bandpass.
     By default, it outputs the max K-Band magnitude assuming a G2V star,
     following the convention on the UA NIRCam webpage. This can be useful if 
@@ -1868,7 +1906,8 @@ def sat_limit_webbpsf(filter_or_bp, pupil=None, mask=None, module='A',
 def pix_noise(ngroup=2, nf=1, nd2=0, tf=10.737, rn=15.0, ktc=29.0, p_excess=(0,0),
     fsrc=0.0, idark=0.003, fzodi=0, fbg=0, ideal_Poisson=False, 
     ff_noise = True, **kwargs):
-    """
+    """Noise per pixel
+    
     Theoretical noise calculation of a generalized MULTIACCUM ramp in terms of e-/sec.
     Includes flat field errors from JWST-CALC-003894.
 
@@ -2014,7 +2053,8 @@ def pix_noise(ngroup=2, nf=1, nd2=0, tf=10.737, rn=15.0, ktc=29.0, p_excess=(0,0
 
 
 def bin_spectrum(sp, wave, waveunits='um'):
-    """
+    """Rebin spectrum
+    
     Rebin a :mod:`pysynphot.spectrum` to a lower wavelength grid.
     This function first converts the input spectrum to units
     of counts then combines the photon flux onto the 
@@ -2060,7 +2100,7 @@ def bin_spectrum(sp, wave, waveunits='um'):
 
 
 def BOSZ_spectrum(Teff, metallicity, log_g, res=2000, interpolate=True, **kwargs):
-    """BOSZ stellar atmospheres.
+    """BOSZ stellar atmospheres (Bohlin et al 2017).
     
     Read in a spectrum from the BOSZ stellar atmosphere models database.
     Returns a Pysynphot spectral object. Wavelength values range between 
@@ -2199,8 +2239,7 @@ def BOSZ_spectrum(Teff, metallicity, log_g, res=2000, interpolate=True, **kwargs
     
 
 def stellar_spectrum(sptype, *renorm_args, **kwargs):
-    """
-    Pysynphot spectral object from a user-friendly spectral type string.
+    """Stellar spectrum
 
     Similar to specFromSpectralType() in WebbPSF/Poppy, this function uses
     a fixed dictionary to determine an appropriate spectral model using the
@@ -2456,7 +2495,8 @@ def zodi_spec(zfact=None, locstr=None, year=None, day=None, **kwargs):
     return sp_zodi
 
 def zodi_euclid(locstr, year, day, wavelengths=[1,5.5], ido_viewin=0, **kwargs):
-    """
+    """IPAC Euclid Background Model
+    
     Queries the `IPAC Euclid Background Model
     <http://irsa.ipac.caltech.edu/applications/BackgroundModel/>`_
     in order to get date and position-specific zodiacal dust emission.
@@ -2750,7 +2790,17 @@ class planets_sb12(object):
         return self._entropy
         
     def export_pysynphot(self, waveout='angstrom', fluxout='flam'):
-        """Output to :mod:`pysynphot.spectrum` object"""
+        """Output to :mod:`pysynphot.spectrum` object
+        
+        Export object settings to a :mod:`pysynphot.spectrum`.
+        
+        Parameters
+        ----------
+        waveout : str
+            Wavelength units for output
+        fluxout : str
+            Flux units for output
+        """
         w = self.wave; f = self.flux        
         name = (re.split('[\.]', self.file))[0]#[5:]        
         sp = S.ArraySpectrum(w, f, name=name, waveunits=self.waveunits, fluxunits=self.fluxunits)
@@ -2867,6 +2917,50 @@ def sp_accr(mmdot, rin=2, dist=10, truncated=False,
 #    Coronagraphic Mask Transmission
 #
 ###########################################################################
+
+def offset_bar(filt, mask):
+    """Bar mask offset locations
+    
+    Get the appropriate offset in the x-position to place a source on a bar mask.
+    Each bar is 20" long with edges and centers corresponding to::
+    
+        SWB: [1.03, 2.10, 3.10] (um) => [-10, 0, +10] (asec)
+        LWB: [2.30, 4.60, 6.90] (um) => [+10, 0, -10] (asec)
+    """
+
+    if (mask is not None) and ('WB' in mask):		
+        # What is the effective wavelength of the filter?	
+        #bp = pynrc.read_filter(filter)
+        #w0 = bp.avgwave() / 1e4
+        w0 = np.float(filt[1:-1])/100
+    
+        # Choose wavelength from dictionary
+        wdict = {'F182M': 1.84, 'F187N': 1.88, 'F210M': 2.09, 'F212N': 2.12, 
+                 'F250M': 2.50, 'F300M': 2.99, 'F335M': 3.35, 'F360M': 3.62, 
+                 'F410M': 4.09, 'F430M': 4.28, 'F460M': 4.63, 'F480M': 4.79,
+                 'F200W': 2.23, 'F277W': 3.14, 'F356W': 3.97, 'F444W': 4.99}
+        w = wdict.get(filt, w0)
+
+        # Get appropriate x-offset
+        #xoff_asec = np.interp(w,wpos,xpos)
+    
+        if 'SWB' in mask:
+            if filt[-1]=="W": xoff_asec = 6.83 * (w - 2.196)
+            else:             xoff_asec = 7.14 * (w - 2.100)
+        elif 'LWB' in mask:
+            if filt[-1]=="W": xoff_asec = -3.16 * (w - 4.747)
+            else:             xoff_asec = -3.26 * (w - 4.600)
+        
+        #print(w, xoff_asec)
+        
+        yoff_asec = 0.0
+    
+        r, theta = xy_to_rtheta(xoff_asec, yoff_asec)
+    else:
+        r, theta = (0.0, 0.0)
+    
+    #print(r, theta)
+    return r, theta
 
 
 def coron_trans(name, module='A', pixscale=None, fov=20, nd_squares=True):
@@ -3023,7 +3117,8 @@ def coron_trans(name, module='A', pixscale=None, fov=20, nd_squares=True):
 
 
 def build_mask(module='A', pixscale=0.03):
-    """
+    """Create coronagraphic mask image
+    
     Return an image of the full coronagraphic mask layout for a given module.
     +V3 is up, and +V2 is to the left.
     """
@@ -3046,7 +3141,8 @@ def build_mask(module='A', pixscale=0.03):
 
 def nrc_header(det_class, filter=None, pupil=None, obs_time=None, header=None,
                DMS=True, targ_name=None):
-    """
+    """Simulated header
+    
     Create a generic NIRCam FITS header from a detector_ops class.
 
     Parameters
@@ -3056,12 +3152,14 @@ def nrc_header(det_class, filter=None, pupil=None, obs_time=None, header=None,
     pupil : str
         Name of pupil element.
     DMS : bool 
-        Make the header in a format used by Data Management Systems
+        Make the header in a format used by Data Management Systems.
     obs_time : datetime 
         Specifies when the observation was considered to be executed.
         If not specified, then it will choose the current time.
         This must be a datetime object:
-            datetime.datetime(2016, 5, 9, 11, 57, 5, 796686)
+            
+            >>> datetime.datetime(2016, 5, 9, 11, 57, 5, 796686)
+            
     header : obj
         Can pass an existing header that will be updated.
         This has not been fully tested.
@@ -3092,6 +3190,8 @@ def nrc_header(det_class, filter=None, pupil=None, obs_time=None, header=None,
 
     # Are we in subarray?
     sub_bool = True if d.wind_mode != 'FULL' else False
+    # Horizontal window mode?
+    hwinmode = 'ENABLE' if d.wind_mode=='WINDOW' else 'DISABLE'
 
     # Window indices (0-indexed)
     x1 = d.x0; x2 = x1 + d.xpix
@@ -3261,9 +3361,10 @@ def nrc_header(det_class, filter=None, pupil=None, obs_time=None, header=None,
             subName = 'SUBGRISM64'
         else:
             subName = 'UNKNOWN'
-        hdr['SUBARRAY']= (subName,     'Detector subarray string')
+        hdr['SUBARRAY']= (subName, 'Detector subarray string')
     else:
-        hdr['SUBARRAY']= (sub_bool,    'T if subarray used, F if not')
+        hdr['SUBARRAY']= (sub_bool, 'T if subarray used, F if not')
+        hdr['HWINMODE']= (hwinmode, 'If enabled, single output mode used, otherwise')
     
     if DMS == True:
         hdr['READPATT']= (ma.read_mode, 'Readout pattern name')
@@ -3311,7 +3412,176 @@ def nrc_header(det_class, filter=None, pupil=None, obs_time=None, header=None,
 
     return hdr
 
+def config2(input, intype='int'):
+    """NIRCam CONFIG2 (0x4011) Register
+    
+    Return a dictionary of configuration parameters depending on the 
+    value of CONFIG2 register (4011).
+    
+    Parameters
+    ----------
+    input : int, str
+        Value of CONFIG2, nominally as an int. Binary and Hex values 
+        can also be passed as strings.
+    intype: str 
+        Input type (int, hex, or bin) for integer, hex, string, 
+        or binary string.
+        
+    """
+    if 'hex' in intype:
+        if '0x' in input:
+            input = int(input, 0)
+        else:
+            input = int(input, 16)
+    if 'bin' in intype:
+        if '0b' in input:
+            input = int(input, 0)
+        else:
+            input = int(input, 2)
+            
+    # Convert to 16-bit binary string
+    input = "{0:016b}".format(input)
+    
+    # Config2 Bits (Right to Left)
+    # ----------------------------
+    # 0 : Vertical Enable
+    # 1 : Horizontal Enable
+    # 2 : Global reset per integration
+    # 3 : Enable Fast row-by-row reset (only in window/stripe)
+    # 6-4 : Number of fast row resets per int
+    # 7 : Window mode in Idle when window enabled?
+    # 8 : 0 = Preamp reset per frame; 1 = reset per row
+    # 9 : Permanent Reset
+    # 10 : Single step mode
+    # 11 : Test pattern
+    # 12 : FGS window mode
+    # 13 : Power down preamp, adc, and ap during Idle
+    # 14 : Power down preamp, adc, and ap during Drop
+    # 15 : 0 = Preamp reset per frame; 1 = reset per integration
+    
+    # NFF Rows Reset
+    # --------------
+    # 000 = 1
+    # 001 = 4
+    # 010 = 16
+    # 011 = 64
+    # 100 = 256
+    # 101 = 512
+    # 110 = 1024
+    # 111 = 2048
+    
+    nff_dict = {'000':   1, '001':   4, '010':  16, '011':  64,
+                '100': 256, '101': 512, '110':1024, '111':2048}
+    
+    # Reverse for easier indexing of single values
+    input2 = input[::-1]
 
+    d = {}
+    d['00_window_vert']  = True if bool(int(input2[0])) else False
+    d['01_window_horz']  = True if bool(int(input2[1])) else False
+    d['02_global_reset'] = True if bool(int(input2[2])) else False
+    d['03_rows_reset']   = True if bool(int(input2[3])) else False
+    d['04_rows_nff']     = nff_dict.get(input2[4:7][::-1])
+    d['07_idle_window']  = True if bool(int(input2[7])) else False
+    d['08_pa_reset']     = 'row' if bool(int(input2[8])) else 'frame'
+    d['09_perm_reset']   = True if bool(int(input2[9])) else False
+    d['10_single_step']  = True if bool(int(input2[10])) else False
+    d['11_test_patt']    = True if bool(int(input2[11])) else False
+    d['12_fgs_wind']     = True if bool(int(input2[12])) else False
+    d['13_power_idl']    = True if bool(int(input2[13])) else False
+    d['14_power_drop']   = True if bool(int(input2[14])) else False
+    d['15_pa_reset']     = 'int' if bool(int(input2[15])) else 'frame'
+    
+    return d
+    
+def create_detops(header, DMS=False, read_mode=None, nint=None, ngroup=None,
+    detector=None, wind_mode=None, xpix=None, ypix=None, x0=None, y0=None,
+    nff=None):
+    """Detector class from header
+    
+    Create a detector class based on header settings.
+    Can override settings with a variety of keyword arguments.
+    
+    Parameters
+    ----------
+    header : obj
+        Header from NIRCam FITS file
+    DMS : bool
+        Is header format from Data Management Systems? Otherwises, ISIM-like.
+    
+    Keyword Args
+    ------------
+    read_mode : str
+        NIRCam Ramp Readout mode such as 'RAPID', 'BRIGHT1', etc.
+    nint : int
+        Number of integrations (ramps).
+    ngroup : int
+        Number of groups in a integration.
+    detector : int, str
+        NIRCam detector ID (481-490) or SCA ID (A1-B5).
+    wind_mode : str
+        Window mode type 'FULL', 'STRIPE', 'WINDOW'.
+    xpix : int
+        Size of window in x-pixels for frame time calculation.
+    ypix : int
+        Size of window in y-pixels for frame time calculation.
+    x0 : int
+        Lower-left x-coord position of detector window.
+    y0 : int
+        Lower-left y-coord position of detector window.
+    nff : int
+        Number of fast row resets.
+
+    """
+    # Detector ID
+    detector = header['SCA_ID'] if detector is None else detector
+
+    # Detector size
+    xpix = header['SUBSIZE1'] if DMS else header['NAXIS1'] if xpix is None else xpix
+    ypix = header['SUBSIZE2'] if DMS else header['NAXIS2'] if ypix is None else ypix
+
+    # Subarray position
+    # Headers are 1-indexed, while detector class is 0-indexed
+    if x0 is None:
+        x1 = header['SUBSTRT1'] if DMS else header['COLCORNR']
+        x0 = x1 - 1
+    if y0 is None:
+        y1 = header['SUBSTRT2'] if DMS else header['ROWCORNR']
+        y0 = y1 - 1
+        
+    # Subarray setting, Full, Stripe, or Window
+    if wind_mode is None:
+        if DMS:
+            if 'FULL' in header['SUBARRAY']:
+                wind_mode = 'FULL'
+            elif 'GRISM' in header['SUBARRAY']:
+                wind_mode = 'STRIPE'
+            else:
+                wind_mode = 'WINDOW'
+        else:
+            if not header['SUBARRAY']:
+                wind_mode = 'FULL'
+            elif 'DISABLE' in header['HWINMODE']:
+                wind_mode = 'STRIPE'
+            else:
+                wind_mode = 'WINDOW'
+
+    # Add MultiAccum info
+    if DMS: hnames = ['READPATT', 'NINTS', 'NGROUPS']  
+    else:   hnames = ['READOUT',  'NINT',  'NGROUP']
+
+    read_mode = header[hnames[0]] if read_mode is None else read_mode
+    nint      = header[hnames[1]] if nint      is None else nint
+    ngroup    = header[hnames[2]] if ngroup    is None else ngroup
+
+    ma_args = {'read_mode':read_mode, 'nint':nint, 'ngroup':ngroup}
+            
+    # Create detector class
+    from pynrc.pynrc_core import DetectorOps
+    
+    return DetectorOps(detector, wind_mode, xpix, ypix, x0, y0, nff, **ma_args)
+
+    
 
 # Unused function
 # def lazy_thunkif y(f):

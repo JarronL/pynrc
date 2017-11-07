@@ -45,29 +45,40 @@ from pynrc.maths import robust
 
 class NRC_refs(object):
 
-    """
+    """Reference pixel correction object
+    
     Object class for reference pixel correction of NIRCam data (single integration).
     Specify the data cube, header, and whether or not the header is in DMS format.
 
-    Init Parameters
-    ===============
-    data   : Input datacube. Can be two or three dimensions (nz,ny,nx).
-    header : NIRCam Header associated with data
-    DMS    : Is the header in DMS format?
-    altcol : Calculate separate reference values for even/odd columns.
-    
     General usage of functions:
-    1. Create instance: ref = NRC_refs(data, header)
-    2. Determine reference offset values: ref.calc_avg_amps()
-        - Stored at ref.refs_amps_avg
-    3. Fix amplifier offsets: ref.correct_amp_refs()
-        - Removes offsets that are stored at ref.refs_amps_avg
-    4. Determine average of column references tracking 1/f noise: ref.calc_avg_cols()
-        - Reference values offset for a mean value of 0.0
-        - Averages are stored at ref.refs_side_avg
-    5. Optimal smoothing of side reference values: ref.calc_col_smooth()
-        - Stores smoothed version at ref.refs_side_smth
-    6. Remove approximation of 1/f noise: ref.correct_col_refs()
+    
+    1. Create instance: ``ref = NRC_refs(data, header)``
+    2. Determine reference offset values: ``ref.calc_avg_amps()``.
+       Stored at ``ref.refs_amps_avg``.
+    3. Fix amplifier offsets: ``ref.correct_amp_refs()``.
+       Removes offsets that are stored at ``ref.refs_amps_avg``.
+    4. Determine average of column references tracking 1/f noise: ``ref.calc_avg_cols()``.
+       Reference values offset for a mean value of 0.
+       Averages are stored at ``ref.refs_side_avg``.
+    5. Optimal smoothing of side reference values: ``ref.calc_col_smooth()``.
+       Stores smoothed version at ``ref.refs_side_smth``.
+    6. Remove approximation of 1/f noise: ``ref.correct_col_refs()``.
+
+
+    Parameters
+    ----------
+    data : ndarray
+        Input datacube. Can be two or three dimensions (nz,ny,nx).
+    header : obj
+        NIRCam Header associated with data.
+    DMS : bool
+        Is the header in DMS format?
+    altcol : bool
+        Calculate separate reference values for even/odd columns? 
+        Default=True.
+    do_all : bool
+        Perform the default pixel correction procedures.
+    
     """
 
     def __init__(self, data, header, DMS=False, altcol=True, do_all=False):
@@ -183,10 +194,11 @@ class NRC_refs(object):
 
     @property
     def multiaccum(self):
+        """A :class:`~pynrc.multiaccum` object"""
         return self.detector.multiaccum
-
     @property
     def multiaccum_times(self):
+        """Exposure timings in dictionary"""
         return self.detector.times_to_dict()
 
     @property
@@ -220,12 +232,18 @@ class NRC_refs(object):
 
     
     def calc_avg_amps(self, top_ref=True, bot_ref=True):
-        """
+        """Calculate amplifier averages
+        
         Save the average reference value for each amplifier in each frame.
-        Each array has a size of (namp, ngroup).
-
-        top_ref   (bool) : Include top reference rows when correcting channel offsets.
-        bot_ref   (bool) : Include bottom reference rows when correcting channel offsets.
+        Each array has a size of (namp, ngroup). Average values are 
+        saved at ``self.refs_amps_avg``. 
+        
+        Parameters
+        ----------
+        top_ref : bool
+            Include top reference rows when correcting channel offsets.
+        bot_ref : bool
+            Include bottom reference rows when correcting channel offsets.
         """
         nchans = self.detector.nout
         #chsize = self.detector.chsize
@@ -248,10 +266,14 @@ class NRC_refs(object):
         self.refs_amps_avg = calc_avg_amps(refs_all, data_shape, nchans, self.altcol)
 
     def correct_amp_refs(self, supermean=False):
-        """
-        Use values from calc_avg_amps to correct amplifier offsets.
+        """Correct amplifier offsets
+        
+        Use values in ``self.refs_amps_avg`` to correct amplifier offsets.
 
-        supermean (bool) : Add back the overall mean of the reference pixels.
+        Parameters
+        ----------
+        supermean : bool
+            Add back the overall mean of the reference pixels.
         """
     
         # Check to make sure refs_amps_avg is valid
@@ -284,15 +306,22 @@ class NRC_refs(object):
         
     
     def calc_avg_cols(self, left_ref=True, right_ref=True, avg_type='frame'):
-        """
-        Create a copy of the left and right reference pixels, removing the average
-        value of the reference pixels on an int, frame, or pixel basis. Do this
-        after correcting the amplifier offsets with self.corr_col_refs().
+        """Calculate average of column references
         
-        left_ref  (bool) : Include left reference cols when correcting 1/f noise.
-        right_ref (bool) : Include right reference cols when correcting 1/f noise.
-        avg_type   (str) : Type of ref col averaging to perform. Allowed values are
-                           'pixel', 'frame', or 'int'.
+        Create a copy of the left and right reference pixels, removing the 
+        average value of the reference pixels on an int, frame, or pixel basis. 
+        Do this after correcting the amplifier offsets with ``correct_amp_refs()``.
+        Averages are stored in ``self.refs_side_avg``.
+        
+        Parameters
+        ----------
+        left_ref : bool
+            Include left reference cols when correcting 1/f noise.
+        right_ref : bool
+            Include right reference cols when correcting 1/f noise.
+        avg_type : str
+            Type of ref col averaging to perform. Allowed values are
+            'pixel', 'frame', or 'int'.
         """
         
         if self.nref_l==0: left_ref = False
@@ -309,13 +338,19 @@ class NRC_refs(object):
                     
 
     def calc_col_smooth(self, perint=False, edge_wrap=False):
-        """
+        """Optimal smoothing of side reference pixels
+        
         Geneated smoothed version of column reference values.
-        Smooths calc_col_refs() to determine approx 1/f noise in data.
-
-        perint    (bool) : Smooth side reference pixel per int, otherwise per frame.
-        edge_wrap (bool) : Add a partial frames to the beginning and end of each averaged
-                           time series pixels in order to get rid of edge effects.          
+        Uses :func:`calc_avg_cols` to determine approx 1/f noise in data
+        and store in ``self.refs_side_smth``.
+        
+        Parameters
+        ----------
+        perint : bool
+            Smooth side reference pixel per int, otherwise per frame.
+        edge_wrap : bool
+            Add a partial frames to the beginning and end of each averaged
+            time series pixels in order to get rid of edge effects.          
         """
         
         refvals = self.refs_side_avg
@@ -335,8 +370,10 @@ class NRC_refs(object):
                                               perint, edge_wrap, delt)
 
     def correct_col_refs(self):
-        """
-        Correct approximation of 1/f noise stored in refs_side_smth.
+        """Remove 1/f noise from data
+        
+        Correct 1/f noise using the approximation stored in 
+        ``self.refs_side_smth``.
         """
         
         # Final correction
@@ -344,42 +381,56 @@ class NRC_refs(object):
         nz, ny, nx = self.data.shape
         self.data -= self.refs_side_smth.reshape([nz,ny,1])
         
-        
-        
+
 
 def reffix_hxrg(cube, nchans=4, in_place=True, fixcol=False, **kwargs):
-    """
-    This program performs a reference pixel correction
+    """Reference pixel correction function
+    
+    This function performs a reference pixel correction
     on HAWAII-[1,2,4]RG detector data read out using N outputs.
     Top and bottom reference pixels are used first to remove 
     channel offsets.
 
     Parameters
-    ===========
-    cube   (ndarray) : Input datacube. Can be two or three dimensions (nz,ny,nx).
-    in_place  (bool) : Perform calculations in place. Input array is overwritten.
-    nchans     (int) : Number of output amplifier channels in the detector. Default=4.
-    fix_col   (bool) : Perform reference column corrections?
+    ----------
+    cube : ndarray
+        Input datacube. Can be two or three dimensions (nz,ny,nx).
+    in_place : bool
+        Perform calculations in place. Input array is overwritten.
+    nchans : int
+        Number of output amplifier channels in the detector. Default=4.
+    fix_col : bool
+        Perform reference column corrections?
+        
+    Keyword Args
+    ------------
+    altcol : bool
+        Calculate separate reference values for even/odd columns.
+    supermean : bool
+        Add back the overall mean of the reference pixels.
+    top_ref : bool
+        Include top reference rows when correcting channel offsets.
+    bot_ref : bool
+        Include bottom reference rows when correcting channel offsets.
+    ntop : int
+        Specify the number of top reference rows.
+    nbot : int
+        Specify the number of bottom reference rows.
 
-    Channel amplifier keywords
-    --------------------------
-    altcol    (bool) : Calculate separate reference values for even/odd columns.
-    supermean (bool) : Add back the overall mean of the reference pixels.
-    top_ref   (bool) : Include top reference rows when correcting channel offsets.
-    bot_ref   (bool) : Include bottom reference rows when correcting channel offsets.
-    ntop       (int) : Specify the number of top reference rows.
-    nbot       (int) : Specify the number of bottom reference rows.
-
-    Reference column keywords
-    --------------------------
-    left_ref  (bool) : Include left reference cols when correcting 1/f noise.
-    right_ref (bool) : Include right reference cols when correcting 1/f noise.
-    nleft      (int) : Specify the number of left reference columns.
-    nright     (int) : Specify the number of right reference columns.
-    perint    (bool) : Smooth side reference pixel per integration, 
-                       otherwise do frame-by-frame.
-    avg_type   (str) : Type of ref col averaging to perform. Allowed values are
-                       'pixel', 'frame', or 'int'.    
+    left_ref : bool
+        Include left reference cols when correcting 1/f noise.
+    right_ref : bool
+        Include right reference cols when correcting 1/f noise.
+    nleft : int
+        Specify the number of left reference columns.
+    nright : int
+        Specify the number of right reference columns.
+    perint : bool
+        Smooth side reference pixel per integration, 
+        otherwise do frame-by-frame.
+    avg_type :str
+        Type of ref col averaging to perform. Allowed values are
+        'pixel', 'frame', or 'int'.    
     """
 
     # Check the number of dimensions are valid.
@@ -407,8 +458,9 @@ def reffix_hxrg(cube, nchans=4, in_place=True, fixcol=False, **kwargs):
     
     
 def reffix_amps(cube, nchans=4, in_place=True, altcol=True, supermean=False,
-                top_ref=True, bot_ref=True, ntop=4, nbot=4, **kwargs):
-    """
+    top_ref=True, bot_ref=True, ntop=4, nbot=4, **kwargs):
+    """Correct amplifier offsets
+    
     Matches all amplifier outputs of the detector to a common level.
 
     This routine subtracts the average of the top and bottom reference rows
@@ -418,16 +470,25 @@ def reffix_amps(cube, nchans=4, in_place=True, altcol=True, supermean=False,
     faster and consumes less memory.
 
     Parameters
-    ===========
-    cube   (ndarray) : Input datacube. Can be two or three dimensions (nz,ny,nx).
-    nchans     (int) : Number of output amplifier channels in the detector. Default=4.
-    altcol    (bool) : Calculate separate reference values for even/odd columns.
-    supermean (bool) : Add back the overall mean of the reference pixels.
-    in_place  (bool) : Perform calculations in place. Input array is overwritten.
-    top_ref   (bool) : Include top reference rows when correcting channel offsets.
-    bot_ref   (bool) : Include bottom reference rows when correcting channel offsets.
-    ntop       (int) : Specify the number of top reference rows.
-    nbot       (int) : Specify the number of bottom reference rows.
+    ----------
+    cube : ndarray
+        Input datacube. Can be two or three dimensions (nz,ny,nx).
+    nchans : int
+        Number of output amplifier channels in the detector. Default=4.
+    altcol : bool
+        Calculate separate reference values for even/odd columns.
+    supermean : bool
+        Add back the overall mean of the reference pixels.
+    in_place : bool
+        Perform calculations in place. Input array is overwritten.
+    top_ref : bool
+        Include top reference rows when correcting channel offsets.
+    bot_ref : bool
+        Include bottom reference rows when correcting channel offsets.
+    ntop : int
+        Specify the number of top reference rows.
+    nbot : int
+        Specify the number of bottom reference rows.
     """
 
     if not in_place:
@@ -496,9 +557,10 @@ def reffix_amps(cube, nchans=4, in_place=True, altcol=True, supermean=False,
     else: return cube
 
 
-def ref_filter(cube, nchans=4, in_place=True, avg_type='frame', perint=False, edge_wrap=False,
-               left_ref=True, right_ref=True, nleft=4, nright=4, **kwargs):
-    """
+def ref_filter(cube, nchans=4, in_place=True, avg_type='frame', perint=False, 
+    edge_wrap=False, left_ref=True, right_ref=True, nleft=4, nright=4, **kwargs):
+    """Optimal Smoothing
+    
     Performs an optimal filtering of the vertical reference pixel to 
     reduce 1/f noise (horizontal stripes).
 
@@ -506,18 +568,27 @@ def ref_filter(cube, nchans=4, in_place=True, avg_type='frame', perint=False, ed
     http://www.stsci.edu/~robberto/Main/Software/IDL4pipeline/
 
     Parameters
-    ===========
-    cube   (ndarray) : Input datacube. Can be two or three dimensions (nz,ny,nx).
-    nchans     (int) : Number of output amplifier channels in the detector. Default=4.
-    in_place  (bool) : Perform calculations in place. Input array is overwritten.    
-    perint    (bool) : Smooth side reference pixel per integration, 
-                       otherwise do frame-by-frame.
-    avg_type   (str) : Type of ref col averaging to perform. Allowed values are
-                       'pixel', 'frame', or 'int'.
-    left_ref  (bool) : Include left reference cols when correcting 1/f noise.
-    right_ref (bool) : Include right reference cols when correcting 1/f noise.
-    nleft      (int) : Specify the number of left reference columns.
-    nright     (int) : Specify the number of right reference columns.
+    ----------
+    cube : ndarray
+        Input datacube. Can be two or three dimensions (nz,ny,nx).
+    nchans : int
+        Number of output amplifier channels in the detector. Default=4.
+    in_place : bool
+        Perform calculations in place. Input array is overwritten.    
+    perint : bool
+        Smooth side reference pixel per integration, 
+        otherwise do frame-by-frame.
+    avg_type : str
+        Type of ref col averaging to perform. Allowed values are
+        'pixel', 'frame', or 'int'.
+    left_ref : bool
+        Include left reference cols when correcting 1/f noise.
+    right_ref : bool
+        Include right reference cols when correcting 1/f noise.
+    nleft : int
+        Specify the number of left reference columns.
+    nright : int
+        Specify the number of right reference columns.
     """               
            
     if not in_place:
@@ -566,14 +637,25 @@ def ref_filter(cube, nchans=4, in_place=True, avg_type='frame', perint=False, ed
     
 
 def calc_avg_amps(refs_all, data_shape, nchans=4, altcol=True):
-    """
+    """Calculate amplifier averages
+    
     Save the average reference value for each amplifier in each frame.
-    This assumes that alternating columns are offset from each other,
-    so we save two arrays: self.refs_amps_avg1 and self.refs_amps_avg2. Each array
-    has a size of (namp, ngroup).
+    Assume by default that alternating columns are offset from each other,
+    so we save two arrays: self.refs_amps_avg1 and self.refs_amps_avg2. 
+    Each array has a size of (namp, ngroup).
 
-    top_ref   (bool) : Include top reference rows when correcting channel offsets.
-    bot_ref   (bool) : Include bottom reference rows when correcting channel offsets.
+    Parameters
+    ----------
+    refs_all : ndarray
+        The top and/or bottom references pixels order 
+        in a shape (nz, nref_rows, nx)
+    data_shape : tuple
+        Shape of the data array: (nz, ny, nx).
+    nchans : int
+        Number of amplifier output channels.
+    altcol : bool
+        Calculate separate reference values for even/odd columns? 
+        Default=True.
     """
         
     nz, ny, nx = data_shape
@@ -617,15 +699,33 @@ def calc_avg_amps(refs_all, data_shape, nchans=4, altcol=True):
         
         
 def calc_avg_cols(refs_left=None, refs_right=None, avg_type='frame'):
-    """
-    Determine the average values for the column references in order
-    to estimate the 1/f noise contribution.
-    """
+    """Calculate average of column references
+    
+    Determine the average values for the column references, which
+    is subsequently used to estimate the 1/f noise contribution.
 
+    Parameters
+    ----------
+    refs_left : ndarray
+        Left reference columns.
+    refs_right : ndarray
+        Right reference columns.
+    avg_type : str
+        Type of ref col averaging to perform. Allowed values are
+        'pixel', 'frame', or 'int'.
+
+    """
+    
+    # Which function to use for calculating averages?
+    #mean_func = robust.mean
+    mean_func = np.median
+
+    # In this context, nl and nr are either 0 (False) or 1 (True)
     nl = 0 if refs_left is None else 1
     nr = 0 if refs_right is None else 1
 
     # Left and right reference pixels
+    # Make a copy so as to not modify the original data?
     if nl>0: refs_left  = np.copy(refs_left)
     if nr>0: refs_right = np.copy(refs_right)
 
@@ -633,32 +733,34 @@ def calc_avg_cols(refs_left=None, refs_right=None, avg_type='frame'):
     # By default, pixel averaging is best for large groups
     if avg_type is None:
         avg_type = 'frame'
-    # If there is only 1 frame, then we have to do per frame averaging.
-    # Set to per int, which produces the same result as per frame for nz=1.
+
     if refs_left is not None:
         nz, ny, nchan = refs_left.shape
     else:
         nz, ny, nchan = refs_right.shape
+
+    # If there is only 1 frame, then we have to do "per frame" averaging.
+    # Set to "per int", which produces the same result as "per frame" for nz=1.
     if nz==1:
         avg_type = 'int'
 
     # Remove average ref pixel values
     # Average over entire integration
     if 'int' in avg_type:
-        if nl>0: refs_left  -= np.median(refs_left)
-        if nr>0: refs_right -= np.median(refs_right)
+        if nl>0: refs_left  -= mean_func(refs_left)
+        if nr>0: refs_right -= mean_func(refs_right)
     # Average over each frame
     elif 'frame' in avg_type:
-        if nl>0: refs_left_mean  = np.median(refs_left.reshape((nz,-1)), axis=1)
-        if nr>0: refs_right_mean = np.median(refs_right.reshape((nz,-1)), axis=1)
+        if nl>0: refs_left_mean  = mean_func(refs_left.reshape((nz,-1)), axis=1)
+        if nr>0: refs_right_mean = mean_func(refs_right.reshape((nz,-1)), axis=1)
         # Subtract estimate of each ref pixel "intrinsic" value
         for i in range(nz):
             if nl>0: refs_left[i]  -= refs_left_mean[i]
             if nr>0: refs_right[i] -= refs_right_mean[i]
     # Take the average of each reference pixel 
     elif 'pix' in avg_type:
-        if nl>0: refs_left_mean  = np.median(refs_left, axis=0)
-        if nr>0: refs_right_mean = np.median(refs_right, axis=0)
+        if nl>0: refs_left_mean  = mean_func(refs_left, axis=0)
+        if nr>0: refs_right_mean = mean_func(refs_right, axis=0)
         # Subtract estimate of each ref pixel "intrinsic" value
         for i in range(nz):
             if nl>0: refs_left[i]  -= refs_left_mean
@@ -676,13 +778,24 @@ def calc_avg_cols(refs_left=None, refs_right=None, avg_type='frame'):
 
 
 def calc_col_smooth(refvals, data_shape, perint=False, edge_wrap=False, delt=5.24E-4):
-    """
+    """Perform optimal smoothing of side ref pix
+    
     Geneated smoothed version of column reference values.
-    Smooths values from calc_col_refs() via FFT.
+    Smooths values from calc_avg_cols() via FFT.
 
-    perint    (bool) : Smooth side reference pixel per int, otherwise per frame.
-    edge_wrap (bool) : Add a partial frames to the beginning and end of each averaged
-                       time seires pixels in order to get rid of edge effects.          
+    Parameters
+    ----------
+    refvals : ndarray
+        Averaged column reference pixels
+    data_shape : 
+        Shape of original data (nz,ny,nx)
+    perint : bool
+        Smooth side reference pixel per int, otherwise per frame.
+    edge_wrap : bool
+        Add a partial frames to the beginning and end of each averaged
+        time seires pixels in order to get rid of edge effects.
+    delt : float
+        Time between reference pixel samples. 
     """
     
     nz,ny,nx = data_shape
@@ -713,22 +826,30 @@ def calc_col_smooth(refvals, data_shape, perint=False, edge_wrap=False, delt=5.2
 
     
 def smooth_fft(data, delt, first_deriv=False, second_deriv=False):
-    """
+    """Optimal smoothing algorithm
+    
     Smoothing algorithm to perform optimal filtering of the 
     vertical reference pixel to reduce 1/f noise (horizontal stripes),
     based on the Kosarev & Pantos algorithm. This assumes that the
     data to be filtered/smoothed has been sampled evenly.
 
-    Parameters
-    ===========
-    data (ndarray) : Signal to be filtered.
-    delt   (float) : Delta time between samples.
-
-    first_deriv  (bool) : Return the first derivative.    
-    second_deriv (bool) : Return the second derivative (along with first).
-
     If first_deriv is set, then returns two results
     if second_deriv is set, then returns three results.
+
+    Adapted from M. Robberto IDL code:
+    http://www.stsci.edu/~robberto/Main/Software/IDL4pipeline/
+
+    Parameters
+    ----------
+    data : ndarray
+        Signal to be filtered.
+    delt : float
+        Delta time between samples.
+    first_deriv : bool
+        Return the first derivative.    
+    second_deriv : bool
+        Return the second derivative (along with first).
+
     """
 
     Dat = data.flatten()

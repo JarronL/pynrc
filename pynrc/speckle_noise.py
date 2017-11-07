@@ -5,7 +5,7 @@ import numpy as np
 
 import pynrc
 from pynrc import nrc_utils
-from pynrc.nrc_utils import webbpsf, poppy
+from pynrc.nrc_utils import webbpsf, poppy, offset_bar
 
 import astropy.io.fits as fits
 import multiprocessing as mp
@@ -19,9 +19,22 @@ from pynrc.maths.image_manip import pad_or_cut_to_size
 
 class OPD_extract(object):
 
-    """
+    """Decompose OPD to Zernike/Hexike coefficients
+    
     For a given JWST OPD image and header, extract the Zernike/Hexike 
-    components for the overall pupil and each mirror segment.
+    components for the overall pupil and each mirror segment. Makes
+    use of function in webbpsf.
+    
+    Parameters
+    ----------
+    opd : ndarray
+        OPD image map.
+    header : obj
+        Header extracted from OPD FITS files.
+    seg_terms : int
+        Number of Hexike terms to fit to each mirror segment.
+    verbose : bool
+        Print information as fittings are performed.
     """
 
     def __init__(self, opd, header, seg_terms=30, verbose=False):
@@ -67,26 +80,35 @@ class OPD_extract(object):
 
     @property
     def mask_pupil(self):
+        """Tricontagon mask"""
         outmask, _ = self._sample_mask(self._mask_pupil)
         return outmask
 
     @property
     def mask_opd(self):
+        """Mask from generated OPD map"""
         mask = np.ones(self.opd.shape)
         mask[self.opd==0] = 0
         return mask
 
     @property
     def coeff_pupil(self):
+        """Pupil Zernike coefficients"""
         return self._coeff_pupil
 
     @property
     def coeff_segs(self):
-        """Hexike coefficients for a given segment index"""
+        """Hexike coefficients for each segment"""
         return self._coeff_segs
 
     def mask_seg(self, i):
-        """Return a sampled subsection of the analytic segment mask"""
+        """Return a sampled subsection of the analytic segment mask
+        
+        Parameters
+        ----------
+        i : int
+            Segment index
+        """
         # Mask off everything but the segment of interest
         pmask = self._mask_segs[i]
         outmask, _ = self._sample_mask(pmask)
@@ -96,7 +118,16 @@ class OPD_extract(object):
         return self.opd_seg(i,outmask)
 
     def opd_seg(self, i, opd_pupil=None):
-        """Return a subsection of some OPD image for the provided segment index"""
+        """Return a subsection of some OPD image for the provided segment index
+        
+        Parameters
+        ----------
+        i : int
+            Segment index
+        opd_pupil : mask
+            Optional pupil mask to modify resulting segment OPD
+        """
+
         if opd_pupil is None: opd_pupil = self.opd_diff_pupil
 
         # Subsection the image, then pad to equal xy size
@@ -216,6 +247,24 @@ def opd_extract_helper(args):
     return OPD_extract(args[0], args[1], verbose=False)
 
 def opd_extract_mp(opds, header, nproc=None):
+    """Generate multiple OPD_extract objects
+    
+    If you have multiple opd maps to perform Zernike/Hexike
+    extractions on, this function calls Python's multiprocessor
+    routines to perform calculations in parallel.
+    
+    Parameters
+    ----------
+    opds : ndarray
+        Data cube of size (nopds, ny, nx)
+    header : obj
+        Header information
+    nproc : int, None
+        Number of simultaneous processes to perform.
+        If not set, then: 
+        
+        >>> nproc = int(np.min([nopd,mp.cpu_count()*0.75]))
+    """
     if nproc is None:
         nopd = opds.shape[0]
         nproc = int(np.min([nopd,mp.cpu_count()*0.75]))
@@ -229,7 +278,15 @@ def opd_extract_mp(opds, header, nproc=None):
     return opds_all
 
 def opd_sci_gen(opd):
-    """Function to go through an OPD class and generate a science OPD image"""
+    """OPD image for science observation
+    
+    Function to go through an OPD class and generate a science OPD image.
+    
+    Parameters
+    ----------
+    opd : obj
+        OPD_extract object    
+    """
     mask_pupil = opd.mask_pupil * opd.mask_opd
     opd_pupil  = opd.opd_new_pupil * mask_pupil
     opd_segs   = opd.combine_opd_segs(opd.opd_new_segs) * mask_pupil
@@ -242,6 +299,22 @@ def opd_sci_gen(opd):
     return (opd_sci, opd_resid)
 
 def opd_sci_gen_mp(opds_all, nproc=None):
+    """Multiple OPD images for science observations
+    
+    Function to go through multiple OPD classes and generate
+    science OPD images.
+    
+    Parameters
+    ----------
+    opds_all : obj list
+        List of OPD_extract objects
+    nproc : int, None
+        Number of simultaneous processes to perform.
+        If not set, then: 
+        
+        >>> nproc = int(np.min([nopd,mp.cpu_count()*0.75]))
+    """
+
     if nproc is None:
         nopd = len(opds_all)
         nproc = int(np.min([nopd,mp.cpu_count()*0.75]))
@@ -380,15 +453,22 @@ def opd_ref_gen(args, verbose=False):
 
 # Function to drift a list of  OPDs 
 def ODP_drift_all(wfe_drift, opds_all, pup_cf_std, seg_cf_std, opd_resid_list):
-    """
-    Drift a list of OPDs by some RMS WFE (multiprocess function)
+    """Drift list of OPDs
+    
+    Drift a list of OPDs by some RMS WFE (multiprocess function).
 
-    Args:
-        wfe_drift - Singel value in nm
-        opds_all - List of OPD objects (usually 10 from RevV OPDs)
-        pup_cf_std - Zernike sigma for overall pupil
-        seg_cf_std - Hexike sigma for segments
-        opd_resid_list - List of residual images (from opd_sci_gen) for each OPD
+    Parameters
+    ----------
+    wfe_drift : float
+        Single value in nm
+    opds_all : list
+        List of OPD objects (usually 10 from RevV OPDs)
+    pup_cf_std : float
+        Zernike sigma for overall pupil
+    seg_cf_std : float
+        Hexike sigma for segments
+    opd_resid_list : list
+        List of residual images (from opd_sci_gen) for each OPD
     """
 
     case = 1 # Only drift full pupil; no segment drifts
@@ -410,7 +490,8 @@ def ODP_drift_all(wfe_drift, opds_all, pup_cf_std, seg_cf_std, opd_resid_list):
 
 def get_psf(opd, header, filter='F410M', mask=None, pupil=None, 
     jitter=False, njit=10, jitter_sigma=0.005, r=None, theta=None, **kwargs):
-    """
+    """Generate PSF
+    
     Create a NIRCam PSF based on the input opd, header, and other info.
 
     The jitter model recomputes the PSF at random positional offsets with
@@ -532,54 +613,57 @@ def get_psf(opd, header, filter='F410M', mask=None, pupil=None,
     return hdulist
 
 
-def offset_bar(filt, mask):
-    """
-    Get the appropriate offset in the x-position to place a source on a bar mask.
-    Each bar is 20" long with edges and centers corresponding to:
-      SWB: [1.03, 2.10, 3.10] (um) => [-10, 0, +10] (asec)
-      LWB: [2.30, 4.60, 6.90] (um) => [+10, 0, -10] (asec)
-    """
-
-    if (mask is not None) and ('WB' in mask):		
-        # What is the effective wavelength of the filter?	
-        #bp = pynrc.read_filter(filter)
-        #w0 = bp.avgwave() / 1e4
-        w0 = np.float(filt[1:-1])/100
-    
-        # Choose wavelength from dictionary
-        wdict = {'F182M': 1.84, 'F187N': 1.88, 'F210M': 2.09, 'F212N': 2.12, 
-                 'F250M': 2.50, 'F300M': 2.99, 'F335M': 3.35, 'F360M': 3.62, 
-                 'F410M': 4.09, 'F430M': 4.28, 'F460M': 4.63, 'F480M': 4.79,
-                 'F200W': 2.23, 'F277W': 3.14, 'F356W': 3.97, 'F444W': 4.99}
-        w = wdict.get(filt, w0)
-
-        # Get appropriate x-offset
-        #xoff_asec = np.interp(w,wpos,xpos)
-    
-        if 'SWB' in mask:
-            if filt[-1]=="W": xoff_asec = 6.83 * (w - 2.196)
-            else:             xoff_asec = 7.14 * (w - 2.100)
-        elif 'LWB' in mask:
-            if filt[-1]=="W": xoff_asec = -3.16 * (w - 4.747)
-            else:             xoff_asec = -3.26 * (w - 4.600)
-        
-        #print(w, xoff_asec)
-        
-        yoff_asec = 0.0
-    
-        r, theta = nrc_utils.xy_to_rtheta(xoff_asec, yoff_asec)
-    else:
-        r, theta = (0.0, 0.0)
-    
-    #print(r, theta)
-    return r, theta
+#def offset_bar(filt, mask):
+#    """
+#    
+#    Get the appropriate offset in the x-position to place a source on a bar mask.
+#    Each bar is 20" long with edges and centers corresponding to:
+#      SWB: [1.03, 2.10, 3.10] (um) => [-10, 0, +10] (asec)
+#      LWB: [2.30, 4.60, 6.90] (um) => [+10, 0, -10] (asec)
+#    """
+#
+#    if (mask is not None) and ('WB' in mask):		
+#        # What is the effective wavelength of the filter?	
+#        #bp = pynrc.read_filter(filter)
+#        #w0 = bp.avgwave() / 1e4
+#        w0 = np.float(filt[1:-1])/100
+#    
+#        # Choose wavelength from dictionary
+#        wdict = {'F182M': 1.84, 'F187N': 1.88, 'F210M': 2.09, 'F212N': 2.12, 
+#                 'F250M': 2.50, 'F300M': 2.99, 'F335M': 3.35, 'F360M': 3.62, 
+#                 'F410M': 4.09, 'F430M': 4.28, 'F460M': 4.63, 'F480M': 4.79,
+#                 'F200W': 2.23, 'F277W': 3.14, 'F356W': 3.97, 'F444W': 4.99}
+#        w = wdict.get(filt, w0)
+#
+#        # Get appropriate x-offset
+#        #xoff_asec = np.interp(w,wpos,xpos)
+#    
+#        if 'SWB' in mask:
+#            if filt[-1]=="W": xoff_asec = 6.83 * (w - 2.196)
+#            else:             xoff_asec = 7.14 * (w - 2.100)
+#        elif 'LWB' in mask:
+#            if filt[-1]=="W": xoff_asec = -3.16 * (w - 4.747)
+#            else:             xoff_asec = -3.26 * (w - 4.600)
+#        
+#        #print(w, xoff_asec)
+#        
+#        yoff_asec = 0.0
+#    
+#        r, theta = nrc_utils.xy_to_rtheta(xoff_asec, yoff_asec)
+#    else:
+#        r, theta = (0.0, 0.0)
+#    
+#    #print(r, theta)
+#    return r, theta
 
 
 def gen_psf_ref_all(opd_ref_list_all, opd_header, filt, mask, pupil, verbose=False, **kwargs):
-    """
+    """Calculate a series of reference PSFs
+    
     Given a list of reference OPD, calculate a series of PSFs.
-    Assume that opd_ref_list_all is a nested list of OPDs.
-    For instance:
+    Assume that opd_ref_list_all is a nested list of drifted OPDs.
+    For instance::
+    
         [[10 OPDs with 1nm drift], [10 OPDs with 5nm drift], [10 OPDs with 10nm drift]]
     """
     psf_ref_all = []
@@ -636,10 +720,10 @@ def get_contrast_old(psf0,psf1,psf2):
 
 
 def get_contrast(speckle_noise_image, planet_psf):
-    """
-    Return the contrast for curve for a speckle noise map
-
-    Both inputs are HDULists
+    """Output single contrast curve
+    
+    Return the contrast for curve for a speckle noise map.
+    Both inputs are HDULists.
     """
 
     # Radial profile of the noise image
@@ -670,14 +754,16 @@ def get_contrast(speckle_noise_image, planet_psf):
 
 
 def get_contrast_all_old(psf_planet, psf_star_all, psf_ref_all):
-    """
+    """Multiple contrast curves
+    
     Return a list of contrast curves based on a list of PSFs
     """
     nopd = len(psf_star_all)
     return [get_contrast_old(psf_planet,psf_star_all[i],psf_ref_all[i]) for i in range(nopd)]
 
 def residual_speckle_image(psf_star_all, psf_ref_all):
-    """
+    """Create residual speckle images
+    
     For a list of science and reference PSFs, create residual speckle images
     """
     nopd = len(psf_star_all)
@@ -698,7 +784,8 @@ def residual_speckle_image(psf_star_all, psf_ref_all):
     return diff_all0, diff_all1
 
 def speckle_noise_image(psf_star_all, psf_ref_all):
-    """
+    """Create a speckle noise image map
+    
     For a list of science and reference PSFs, create a speckle noise image map
     """
 
@@ -734,13 +821,17 @@ def opd_drift_nogood(opd, drift, nterms=8, defocus_frac=0.8):
 
     Parameters
     ------------
-    opd    : OPD images (can be an array of images).
-    header : Header file
-    drift  : WFE drift in nm
+    opd : ndarray
+        OPD images (can be an array of images).
+    header : obj
+        Header file
+    drift : float
+        WFE drift in nm
 
     Returns
     --------
-    Returns an HDUList, which can be passed to webbpsf
+    HDUList :
+        Returns an HDUList, which can be passed to webbpsf
     """
 
 
@@ -814,13 +905,17 @@ def _opd_drift_nogood(opd, header, drift, nterms=8, defocus_frac=0.8):
 
     Parameters
     ------------
-    opd    : OPD images (can be an array of images).
-    header : Header file
-    drift  : WFE drift in nm
+    opd : ndarray
+        OPD images (can be an array of images).
+    header : obj
+        Header file
+    drift : float
+        WFE drift in nm
 
     Returns
     --------
-    Returns an HDUList, which can be passed to webbpsf
+    HDUList :
+        Returns an HDUList, which can be passed to webbpsf
     """
 
 

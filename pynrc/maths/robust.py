@@ -39,9 +39,12 @@ __delta = 5.0e-7
 __epsilon = np.finfo(float).eps # 2.22E-16
 
 def medabsdev(data, axis=None, keepdims=False):
-    """
-    Median Absolute Deviation: a "Robust" version of standard deviation.
+    """Median Absolute Deviation
     
+    A "robust" version of standard deviation.
+    
+    Parameters
+    ----------
     axis : None or int or tuple of ints, optional
         Axis or axes along which the deviation is computed. The
         default is to compute the deviation of the flattened array.
@@ -76,7 +79,8 @@ def medabsdev(data, axis=None, keepdims=False):
 
 
 def biweightMean(inputData, axis=None, dtype=None):
-    """
+    """Biweight Mean
+    
     Calculate the mean of a data set using bisquare weighting.  
 
     Based on the biweight_mean routine from the AstroIDL User's 
@@ -130,7 +134,8 @@ def biweightMean(inputData, axis=None, dtype=None):
 
 
 def mean(inputData, Cut=3.0, axis=None, dtype=None):
-    """
+    """Robust mean
+    
     Robust estimator of the mean of a data set.  Based on the 
     resistant_mean function from the AstroIDL User's Library.
 
@@ -294,6 +299,7 @@ def checkfit(inputData, inputFit, epsilon, delta, BisquareLimit=6.0):
     """
     Determine the quality of a fit and biweights.  Returns a tuple
     with elements:
+    
       0. Robust standard deviation analog
       1. Fractional median absolute deviation of the residuals
       2. Number of input points given non-zero weight in the calculation

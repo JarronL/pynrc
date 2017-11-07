@@ -53,7 +53,8 @@ _log = logging.getLogger('pynrc')
 def SCAnoise(det=None, scaid=None, params=None, caldir=None, file_out=None, 
     dark=True, bias=True, out_ADU=False, verbose=False, use_fftw=False, ncores=None,
     **kwargs):
-    """
+    """NIRCam SCA noise generator
+    
     Create a data cube consisting of realistic NIRCam detector noise.
 
     This is essentially a wrapper for nghxrg.py that selects appropriate values
@@ -62,19 +63,29 @@ def SCAnoise(det=None, scaid=None, params=None, caldir=None, file_out=None,
 
     Parameters
     ----------
-    det    : Option to specify already existing NIRCam detector object class
-             Otherwise, use scaid and params
-    scaid  : NIRCam SCA number (481, 482, ..., 490)
-    params : A set of MULTIACCUM parameters such as:
-        params = {'ngroup': 2, 'wind_mode': 'FULL', 
-                'xpix': 2048, 'ypix': 2048, 'x0':0, 'y0':0}
+    det : object
+        Option to specify already existing NIRCam detector object class
+        Otherwise, use scaid and params
+    scaid : int
+        NIRCam SCA number (481, 482, ..., 490)
+    params : dictionary
+        A set of MULTIACCUM parameters such as:
+        
+        >>> params = {'ngroup': 2, 'wind_mode': 'FULL', 
+        >>>           'xpix': 2048, 'ypix': 2048, 'x0':0, 'y0':0}
+
         wind_mode can be FULL, STRIPE, or WINDOW
-    file_out : Folder name and destination to place optional FITS output. 
+    file_out : str
+        Folder name and destination to place optional FITS output. 
         A timestamp will be appended to the end of the file name (and before .fits').
-    caldir : Directory location housing the super bias and super darks for each SCA.
-    dark : Use super dark? If True, then reads in super dark slope image.
-    bias : Use super bias? If True, then reads in super bias image.
-    out_ADU : Noise values are calculated in terms of equivalent electrons. This
+    caldir : str
+        Directory location housing the super bias and super darks for each SCA.
+    dark : bool
+        Use super dark? If True, then reads in super dark slope image.
+    bias : bool
+        Use super bias? If True, then reads in super bias image.
+    out_ADU : bool
+        Noise values are calculated in terms of equivalent electrons. This
         gives the option of converting to ADU (True) or keeping in term of e- (False).
         ADU values are converted to 16-bit UINT. Keep in e- if applying to a ramp
         observation then convert combined data to ADU later.
@@ -85,22 +96,25 @@ def SCAnoise(det=None, scaid=None, params=None, caldir=None, file_out=None,
 
     Examples 
     ----------
-    import ngNRC
-    params = {'ngroup': 108, 'wind_mode': 'FULL', 
-            'xpix': 2048, 'ypix': 2048, 'x0':0, 'y0':0}
     
-    # Output to a file
-    scaid = 481
-    caldir = '/data/darks_sim/nghxrg/sca_images/'
-    file_out = '/data/darks_sim/dark_sim_481.fits'
-    hdu = ngNRC.SCAnoise(scaid, params, file_out=file_out, caldir=caldir, \
-        dark=True, bias=True, out_ADU=True, use_fftw=False, ncores=None, verbose=False)
+    >>> import ngNRC
+    >>> params = {'ngroup': 108, 'wind_mode': 'FULL', 
+    >>>           'xpix': 2048, 'ypix': 2048, 'x0':0, 'y0':0}
+    
+    Output to a file:
+    
+    >>> scaid = 481
+    >>> caldir = '/data/darks_sim/nghxrg/sca_images/'
+    >>> file_out = '/data/darks_sim/dark_sim_481.fits'
+    >>> hdu = ngNRC.SCAnoise(scaid, params, file_out=file_out, caldir=caldir, \
+    >>>    dark=True, bias=True, out_ADU=True, use_fftw=False, ncores=None, verbose=False)
 
-    # Don't save file, but keep hdu in e- for adding to simulated observation ramp
-    scaid = 481
-    caldir = '/data/darks_sim/nghxrg/sca_images/'
-    hdu = ngNRC.SCAnoise(scaid, params, file_out=None, caldir=caldir, \
-        dark=True, bias=True, out_ADU=False, use_fftw=False, ncores=None, verbose=False)
+    Don't save file, but keep hdu in e- for adding to simulated observation ramp:
+
+    >>> scaid = 481
+    >>> caldir = '/data/darks_sim/nghxrg/sca_images/'
+    >>> hdu = ngNRC.SCAnoise(scaid, params, file_out=None, caldir=caldir, \
+    >>>    dark=True, bias=True, out_ADU=False, use_fftw=False, ncores=None, verbose=False)
 
     """
 
@@ -262,11 +276,13 @@ def SCAnoise(det=None, scaid=None, params=None, caldir=None, file_out=None,
 def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None, 
                   filter=None, pupil=None, obs_time=None, targ_name=None,
                   DMS=True, dark=True, bias=True, return_results=True):
-    """
+    """Convert slope image to simulated ramp
+    
     For a given detector operations class and slope image, create a
     ramp integration using Poisson noise and detector noise. 
 
     Currently, this image simulator does NOT take into account:
+    
         - QE variations across a pixel's surface
         - Intrapixel Capacitance (IPC)
         - Post-pixel Coupling (PPC) due to ADC "smearing"
@@ -274,21 +290,31 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
         - Persistence/latent image
         - Optical distortions
         - Zodiacal background roll off for grism edges
+        - Telescope jitter
+        - Cosmic Rays
 
     Parameters
-    ===========
-    det      : Detector operations object
-    im_slope : Idealized slope image
+    ----------
+    det : object
+        Detector operations object.
+    im_slope : ndarray
+        Idealized slope image.
 
-    out_ADU  : If true, divide by gain and convert to 16-bit UINT.
-    file_out : Name (including directory) to save FITS file
-
-    filter   : Name of filter element for header
-    pupil    : Name of pupil element for header
-    obs_time : Specifies when the observation was considered to be executed.
+    out_ADU : bool
+        If true, divide by gain and convert to 16-bit UINT.
+    file_out : str
+        Name (including directory) to save FITS file
+    filter : str
+        Name of filter element for header
+    pupil : str
+        Name of pupil element for header
+    obs_time : datetime 
+        Specifies when the observation was considered to be executed.
         If not specified, then it will choose the current time.
         This must be a datetime object:
-            datetime.datetime(2016, 5, 9, 11, 57, 5, 796686)
+            
+            >>> datetime.datetime(2016, 5, 9, 11, 57, 5, 796686)
+            
         This information is added to the header.
     targ_name : str
         Target name (optional)

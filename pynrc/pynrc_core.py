@@ -240,6 +240,8 @@ class DetectorOps(object):
         Lower-left x-coord position of detector window.
     y0 : int
         Lower-left y-coord position of detector window.
+    nff : int
+        Number of fast row resets.
 
     Keyword Args
     ------------
@@ -271,8 +273,8 @@ class DetectorOps(object):
         >>> d = DetectorOps(read_mode='RAPID', nint=5, ngroup=10)
     """
 
-    def __init__(self, detector=481, wind_mode='FULL', xpix=2048, ypix=2048, x0=0, y0=0,
-                 **kwargs):
+    def __init__(self, detector=481, wind_mode='FULL', xpix=2048, ypix=2048, 
+                 x0=0, y0=0, nff=None, **kwargs):
 
         # Typical values for SW/LW detectors that get saved based on SCA ID
         # After setting the SCA ID, these various parameters can be updated,
@@ -308,6 +310,8 @@ class DetectorOps(object):
                 raise ValueError("Invalid detector: {0} \n\tValid names are: {1},\n\t{2}" \
                       .format(detector, ', '.join(self.detid_list), \
                       ', '.join(str(e) for e in self.scaid_list)))
+
+        self._nff = nff
 
         self._detector_pixels = 2048
         self.wind_mode = wind_mode.upper()
@@ -403,7 +407,7 @@ class DetectorOps(object):
 
     @property
     def chsize(self):
-        """"""
+        """Width of a single amplifier output channel"""
         return self.xpix / self.nout
 
     @property
@@ -419,6 +423,30 @@ class DetectorOps(object):
         ref_all = np.array([lower,upper,left,right])
         ref_all[ref_all<0] = 0
         return ref_all
+        
+    @property
+    def nff(self):
+        """Number of fast row resets that occur before Reset Frame"""
+        if self._nff is None:
+            if self.wind_mode=='WINDOW': 
+                if   self.ypix>256: nff = 2048
+                elif self.ypix>64:  nff = 512
+                elif self.ypix>16:  nff = 256
+                elif self.ypix>8:   nff = 64
+                else:               nff = 16
+            elif self.wind_mode=='STRIPE': 
+                if   self.ypix==2048: nff = 0
+                elif self.ypix>=256:  nff = 2048
+                else:                 nff = 512
+            elif self.wind_mode=='FULL':
+                nff = 0
+        else:
+            nff = self._nff
+        
+        return nff
+    @nff.setter
+    def nff(self, val):
+        self._nff = val
 
 
     def _validate_pixel_settings(self):
@@ -508,21 +536,10 @@ class DetectorOps(object):
         
     @property
     def time_row_reset(self):
-        """NFF Row Resets time"""
+        """NFF Row Resets time per INT"""
         
-        # Window Mode        
-        if self.nout == 1:
-            if   self.ypix>256: nff = 2048
-            elif self.ypix>64:  nff = 512
-            elif self.ypix>16:  nff = 256
-            elif self.ypix>8:   nff = 64
-            else:               nff = 16
-        # Full and Stripe
-        else: 
-            if   self.ypix==2048: nff = 0
-            elif self.ypix>=256:  nff = 2048
-            else:                 nff = 512
-            
+        nff = self.nff
+           
         xtra_lines = int(nff / (self.chsize))
         
         # Clock ticks per line
@@ -828,7 +845,7 @@ class DetectorOps(object):
 
 class NIRCam(object):
 
-    """NIRCam instrument class
+    """NIRCam base instrument class
     
     Creates a NIRCam instrument class that holds all the information pertinent to
     an observation using a given channel/module (SWA, SWB, LWA, LWB). 
@@ -916,6 +933,10 @@ class NIRCam(object):
         Tuple containing WebbPSF specific OPD file name and slice.
     tel_pupil : str
         File name or HDUList specifying telescope entrance pupil.
+    jitter : str or None
+        Currently either 'gaussian' or None.
+    jitter_sigma : float
+        If ``jitter = 'gaussian'``, then this is the size of the blurring effect.
     save : bool
         Save the resulting PSF coefficients to a file? (default: True)
     force : bool
@@ -971,6 +992,15 @@ class NIRCam(object):
         
         self._ice_scale = kwargs['ice_scale'] if 'ice_scale' in kwargs.keys() else None
         self._nvr_scale = kwargs['nvr_scale'] if 'nvr_scale' in kwargs.keys() else None
+
+        # If alternate Weak Lens values are specified
+        if 'WL' in pupil:
+            wl_alt = {'WLP4' :'WEAK LENS +4', 
+                      'WLP8' :'WEAK LENS +8', 
+                      'WLP12':'WEAK LENS +12 (=4+8)', 
+                      'WLM4' :'WEAK LENS -4 (=4-8)',
+                      'WLM8' :'WEAK LENS -8'}
+            pupil = wl_alt.get(pupil, pupil)
 
 
         # Validate all values, set values, and update bandpass
@@ -1034,6 +1064,16 @@ class NIRCam(object):
     def pupil(self, value):
         """Set the pupil name"""
         value = 'CLEAR' if value is None else value.upper()
+        
+        # If alternate Weak Lens values are specified
+        if 'WL' in value:
+            wl_alt = {'WLP4' :'WEAK LENS +4', 
+                      'WLP8' :'WEAK LENS +8', 
+                      'WLP12':'WEAK LENS +12 (=4+8)', 
+                      'WLM4' :'WEAK LENS -4 (=4-8)',
+                      'WLM8' :'WEAK LENS -8'}
+            value = wl_alt.get(value, value)
+        
         _check_list(value, self.pupil_list, 'pupil')
         vold = self._pupil; self._pupil = value
         if vold != self._pupil: 
@@ -1322,7 +1362,7 @@ class NIRCam(object):
             wstr = '{} mask is no visible in SW module (filter is {})'.format(mask,filter)
             do_warn(wstr)
 
-        # WEAK LENS +4 only valid with F210M
+        # WEAK LENS +4 only valid with F212N
         # Or is is F210M???
         wl_list = ['WEAK LENS +12 (=4+8)', 'WEAK LENS -4 (=4-8)', 'WEAK LENS +4']
         if (pupil in wl_list) and (filter!='F212N'):
@@ -1373,7 +1413,7 @@ class NIRCam(object):
 
     def update_psf_coeff(self, fov_pix=None, oversample=None, 
         offset_r=None, offset_theta=None, tel_pupil=None, opd=None,
-        save=None, force=False, **kwargs):
+        jitter=None, jitter_sigma=0.007, save=None, force=False, **kwargs):
         """Create new PSF coefficients.
         
         Generates a set of PSF coefficients from a sequence of WebbPSF images.
@@ -1403,10 +1443,14 @@ class NIRCam(object):
             Radial offset from the center in arcsec.
         offset_theta :float
             Position angle for radial offset, in degrees CCW.
-        opd : tuple
+        opd : tuple or HDUList
             Tuple (file, slice, nm wfe) or HDUList specifying OPD.
         tel_pupil : str
             File name or HDUList specifying telescope entrance pupil.
+        jitter : str or None
+            Currently either 'gaussian' or None.
+        jitter_sigma : float
+            If ``jitter = 'gaussian'``, then this is the size of the blurring effect.
         save : bool
             Save the resulting PSF coefficients to a file? (default: True)
         force : bool
@@ -1455,6 +1499,12 @@ class NIRCam(object):
         if tel_pupil is None:
             try: tel_pupil = self._psf_info['tel_pupil']
             except (AttributeError, KeyError): tel_pupil = None
+        if jitter is None:
+            try: jitter = self._psf_info['jitter']
+            except (AttributeError, KeyError): jitter = None
+        if jitter_sigma is None:
+            try: jitter_sigma = self._psf_info['jitter_sigma']
+            except (AttributeError, KeyError): jitter_sigma = 0.007
         if opd is None:
             try: opd = self._psf_info['opd']
             except (AttributeError, KeyError): 
@@ -1466,7 +1516,8 @@ class NIRCam(object):
         #print(opd)
         self._psf_info={'fov_pix':fov_pix, 'oversample':oversample, 
             'offset_r':offset_r, 'offset_theta':offset_theta, 
-            'opd':opd, 'tel_pupil':tel_pupil, 'save':save, 'force':force}
+            'opd':opd, 'tel_pupil':tel_pupil, 'save':save, 'force':force,
+            'jitter':jitter, 'jitter_sigma':jitter_sigma}
         self._psf_coeff = psf_coeff(self.bandpass, self.pupil, self.mask, self.module, 
             **self._psf_info)
     
@@ -1477,7 +1528,7 @@ class NIRCam(object):
         if self.mask is not None:
             self._psf_info_bg={'fov_pix':31, 'oversample':oversample, 
                 'offset_r':0, 'offset_theta':0, 'opd':opd, 'tel_pupil':tel_pupil,
-                'save':save, 'force':force}
+                'jitter':None, 'save':save, 'force':force}
             self._psf_coeff_bg = psf_coeff(self.bandpass, self.pupil, None, self.module, 
                 **self._psf_info_bg)
         else:
@@ -2073,7 +2124,7 @@ class NIRCam(object):
         # Correctly format patterns
         pattern_settings = self.multiaccum._pattern_settings
         if patterns is None:
-            patterns = pattern_settings.keys()
+            patterns = list(pattern_settings.keys())
         if not isinstance(patterns, list):
             patterns = [patterns]
     

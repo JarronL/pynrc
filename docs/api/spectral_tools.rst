@@ -3,29 +3,29 @@
 Spectral Tools
 ==============
 
-nrc_utils.bin_spectrum
---------------------------
+.. rubric:: Class Summary
+
+.. autosummary::
+
+    ~nrc_utils.planets_sb12
+
+.. rubric:: Functions Summary
+
+.. autosummary::
+
+    ~nrc_utils.bin_spectrum
+    ~nrc_utils.stellar_spectrum
+    ~nrc_utils.BOSZ_spectrum
+    ~nrc_utils.planets_sb12
+    ~nrc_utils.sp_accr
+    ~nrc_utils.zodi_spec
+    ~nrc_utils.zodi_euclid
+
+.. rubric:: Documentation
 
 .. autofunction:: pynrc.nrc_utils.bin_spectrum
-
-nrc_utils.BOSZ_spectrum
-------------------------
-
-.. autofunction:: pynrc.nrc_utils.BOSZ_spectrum
-
-nrc_utils.stellar_spectrum
---------------------------
-
 .. autofunction:: pynrc.nrc_utils.stellar_spectrum
-
-nrc_utils.sp_accr
------------------
-
-.. autofunction:: pynrc.nrc_utils.sp_accr
-
-nrc_utils.planets_sb12
-----------------------
-
+.. autofunction:: pynrc.nrc_utils.BOSZ_spectrum
 .. autoclass:: pynrc.nrc_utils.planets_sb12
    :show-inheritance:
 
@@ -50,29 +50,10 @@ nrc_utils.planets_sb12
 
       ~planets_sb12.export_pysynphot
 
-   .. rubric:: Attributes Documentation
-
-   .. autoattribute:: age
-   .. autoattribute:: atmo
-   .. autoattribute:: distance
-   .. autoattribute:: entropy
-   .. autoattribute:: flux
-   .. autoattribute:: fluxunits
-   .. autoattribute:: mass
-   .. autoattribute:: mdot
-   .. autoattribute:: wave
-   .. autoattribute:: waveunits
-
    .. rubric:: Methods Documentation
 
    .. automethod:: export_pysynphot
 
-nrc_utils.zodi_spec
---------------------------
-
+.. autofunction:: pynrc.nrc_utils.sp_accr
 .. autofunction:: pynrc.nrc_utils.zodi_spec
-
-nrc_utils.zodi_euclid
---------------------------
-
 .. autofunction:: pynrc.nrc_utils.zodi_euclid

@@ -9,7 +9,8 @@ _log = logging.getLogger('pynrc')
 __epsilon = np.finfo(float).eps
 
 def dist_image(image, pixscale=None, center=None, return_theta=False):
-    """
+    """Pixel distances
+    
     Returns radial distance in units of pixels, unless pixscale is specified.
     Use the center keyword to specify the position (in pixels) to measure from.
     If not set, then the center of the image is used.
@@ -17,7 +18,19 @@ def dist_image(image, pixscale=None, center=None, return_theta=False):
     return_theta will also return the angular position of each pixel relative 
     to the specified center
     
-    center should be entered as (x,y)
+    Parameters
+    ----------
+    image : ndarray
+        Input image to find pixel distances (and theta).
+    pixscale : int, None
+        Pixel scale (such as arcsec/pixel or AU/pixel) that
+        dictates the units of the output distances. If None,
+        then values are in units of pixels.
+    center : tuple
+        Location (x,y) in the array calculate distance. If set 
+        to None, then the default is the array center pixel.
+    return_theta : bool
+        Also return the angular positions as a 2nd element.
     """
     y, x = np.indices(image.shape)
     if center is None:
@@ -34,11 +47,19 @@ def dist_image(image, pixscale=None, center=None, return_theta=False):
         return rho
 
 def xy_to_rtheta(x, y):
-    """
+    """Convert (x,y) to (r,theta)
+    
     Input (x,y) coordinates and return polar cooridnates that use
     the WebbPSF convention (theta is CCW of +Y)
     
     Input can either be a single value or numpy array.
+
+    Parameters
+    ---------
+    x : float or array
+        X location values
+    y : float or array
+        Y location values
     """
     r = np.sqrt(x**2 + y**2)
     theta = np.arctan2(-x,y)*180/np.pi
@@ -53,14 +74,19 @@ def xy_to_rtheta(x, y):
     return r, theta
 
 def rtheta_to_xy(r, theta):
-    """
+    """Convert (r,theta) to (x,y)
+    
     Input polar cooridnates (WebbPSF convention) and return Carteesian coords
     in the imaging coordinate system (as opposed to RA/DEC)
 
     Input can either be a single value or numpy array.
 
-    r     : Radial offset from the center in pixels
-    theta : Position angle for offset in degrees CCW (+Y).
+    Parameters
+    ---------
+    r : float or array
+        Radial offset from the center in pixels
+    theta : float or array
+        Position angle for offset in degrees CCW (+Y).
     """
     x = -r * np.sin(theta*np.pi/180.)
     y =  r * np.cos(theta*np.pi/180.)
@@ -76,9 +102,19 @@ def rtheta_to_xy(r, theta):
     
 def xy_rot(x, y, ang):
 
-    """
+    """Rotate (x,y) positions to new coords
+    
     Rotate (x,y) values by some angle. 
     Positive ang values rotate counter-clockwise.
+    
+    Parameters
+    -----------
+    x : float or array
+        X location values
+    y : float or array
+        Y location values
+    ang : float or array
+        Rotation angle in degrees CCW
     """
 
     r, theta = xy_to_rtheta(x, y)    
@@ -91,10 +127,18 @@ def xy_rot(x, y, ang):
 ###########################################################################
 
 def det_to_V2V3(image, detid):
-    """
+    """Detector to V2/V3 coordinates
+    
     Reorient image from detector coordinates to V2/V3 coordinate system.
     This places +V3 up and +V2 to the LEFT. Detector pixel (0,0) is assumed 
-    to be in the bottom left. For now, we're simply performing axes flips. 
+    to be in the bottom left. For now, we're simply performing axes flips.
+    
+    Parameters
+    ----------
+    image : ndarray
+        Input image to tranform.
+    detid : int or str
+        NIRCam detector/SCA ID, either 481-490 or A1-B5.
     """
     
     # Check if SCA ID (481-489) where passed through detname rather than A1-B5
@@ -120,11 +164,19 @@ def det_to_V2V3(image, detid):
     return image
     
 def V2V3_to_det(image, detid):
-    """
+    """V2/V3 coordinate to detector orientation
+    
     Reorient image from V2/V3 coordinates to detector coordinate system.
-    Assumes +V3 up and +V2 to the LEFT. The result plances the detector
+    Assumes +V3 up and +V2 to the LEFT. The result places the detector
     pixel (0,0) in the bottom left. For now, we're simply performing 
     axes flips.
+
+    Parameters
+    ----------
+    image : ndarray
+        Input image to tranform.
+    detid : int or str
+        NIRCam detector/SCA ID, either 481-490 or A1-B5.
     """
     
     # Flips occur along the same axis and manner as in det_to_V2V3()
@@ -133,26 +185,37 @@ def V2V3_to_det(image, detid):
     
 def plotAxes(ax, position=(0.9,0.1), label1='V2', label2='V3', dir1=[-1,0], dir2=[0,1],
              angle=0, alength=0.12, width=2, headwidth=8, color='w'):
-    """
+    """Compass arrows
+    
     Show V2/V3 coordinate axis on a plot. By default, this function will plot
     the compass arrows in the lower right position in sky-right coordinates
     (ie., North/V3 up, and East/V2 to the left). 
     
     Parameters
     ==========
-    ax - matplotlib axis to plot coordiante arrows.
-    position - XY-location of joined arrows as a fraction (0.0-1.0).
-    label1 - Label string for horizontal axis (ie., 'E' or 'V2').
-    label2 - Label string for vertical axis (ie, 'N' or 'V3').
-    dir1 - XY-direction values to point "horizontal" arrow.
-    dir2 - XY-direction values to point "vertical" arrow.
-    angle - Rotate coordinate axis by some angle. 
-            Positive values rotate counter-clockwise.
-    
-    alength   - Length of arrow vectors as fraction of plot axis.
-    width     - Width of the arrow in points.
-    headwidth - Width of the base of the arrow head in points.
-    color     - Self-explanatory.
+    ax : axis
+        matplotlib axis to plot coordiante arrows.
+    position : tuple
+        XY-location of joined arrows as a fraction (0.0-1.0).
+    label1 : str
+        Label string for horizontal axis (ie., 'E' or 'V2').
+    label2 : str
+        Label string for vertical axis (ie, 'N' or 'V3').
+    dir1 : array like
+        XY-direction values to point "horizontal" arrow.
+    dir2 : array like 
+        XY-direction values to point "vertical" arrow.
+    angle : float
+        Rotate coordinate axis by some angle. 
+        Positive values rotate counter-clockwise.
+    alength : float
+        Length of arrow vectors as fraction of plot axis.
+    width : float
+        Width of the arrow in points.
+    headwidth : float
+        Width of the base of the arrow head in points.
+    color : color
+        Self-explanatory.
     """
     arrowprops={'color':color, 'width':width, 'headwidth':headwidth}
     

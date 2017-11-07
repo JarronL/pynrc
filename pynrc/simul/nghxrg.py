@@ -118,13 +118,62 @@ import logging
 _log = logging.getLogger('nghxrg')
 
 class HXRGNoise:
-    """
+    """Simulate Teledyne HxRG + SIDECAR ASIC noise
+    
     HXRGNoise is a class for making realistic Teledyne HxRG system
     noise. The noise model includes correlated, uncorrelated,
     stationary, and non-stationary components. The default parameters
     make noise that resembles Channel 1 of JWST NIRSpec. NIRSpec uses
     H2RG detectors. They are read out using four video outputs at
     1.e+5 pix/s/output.
+    
+    Parameters
+    ----------
+    naxis1 : int
+        X-dimension of the FITS cube.
+    naxis2 : int
+        Y-dimension of the FITS cube.
+    naxis3 : int
+        Z-dimension of the FITS cube (number of up-the-ramp samples).
+    n_out : int
+        Number of detector amplifiers/channels/outputs.
+    nroh : int
+        New row overhead in pixels. This allows for a short
+        wait at the end of a row before starting the next one.
+    nfoh : int
+        New frame overhead in rows. This allows for a short
+        wait at the end of a frame before starting the next one.
+    nfoh_pix(TBD) : int
+        New frame overhead in pixels. This allows for a short
+        wait at the end of a frame before starting the next one.
+        Generally a single pix offset for full frame and stripe
+        for JWST ASIC systems.
+    dt : float
+        Pixel dwell time in seconds (10e-6 sec, for instance).
+    bias_file : str
+        Name of a FITS file that contains bias pattern, also used for PCA-zero.
+    dark_file : str
+        Name of a FITS file that contains dark current values per pixel.
+    verbose : bool
+        Enable this to provide status reporting.
+    wind_mode : str
+        'FULL', 'STRIPE', or 'WINDOW'.
+    x0/y0 : int
+        Pixel positions of subarray mode.
+    det_size : int
+        Pixel dimension of full detector (square).
+    reference_pixel_border_width : int
+        Width of reference pixel border around image area.
+    reverse_scan_direction : bool
+        Enable this to reverse the fast scanner readout directions. 
+        This capability was added to support Teledyne's programmable 
+        fast scan readout directions. The default setting of False 
+        corresponds to what HxRG detectors default to upon power up.
+    use_fftw : bool
+        If pyFFTW is installed, you can use this in place of np.fft.
+    ncores : int
+        Specify number of cores (threads, actually) to use for pyFFTW.
+    
     """
 
     # These class variables are common to all HxRG detectors
@@ -136,42 +185,6 @@ class HXRGNoise:
                  reverse_scan_direction=False, reference_pixel_border_width=None,
                  wind_mode='FULL', x0=0, y0=0, det_size=None, 
                  use_fftw=False, ncores=None):
-        """
-        Simulate Teledyne HxRG+SIDECAR ASIC system noise.
-
-        Parameters:
-            naxis1      - X-dimension of the FITS cube
-            naxis2      - Y-dimension of the FITS cube
-            naxis3      - Z-dimension of the FITS cube
-                          (number of up-the-ramp samples)
-            n_out       - Number of detector outputs
-            nroh        - New row overhead in pixels. This allows for a short
-                          wait at the end of a row before starting the next one.
-            nfoh        - New frame overhead in rows. This allows for a short
-                          wait at the end of a frame before starting the next one.
-            nfoh_pix(TBD)- New frame overhead in pixels. This allows for a short
-                          wait at the end of a frame before starting the next one.
-                          Generally a single pix offset for full frame and stripe.
-            dt          - Pixel dwell time in seconds
-            bias_file   - Name of a FITS file that contains bias pattern, also used for PCA-zero
-            dark_file   - Name of a FITS file that contains dark current values per pixel
-            verbose     - Enable this to provide status reporting
-            wind_mode   - 'FULL', 'STRIPE', or 'WINDOW'
-            x0/y0       - Pixel positions of subarray mode
-            det_size    - Pixel dimension of full detector (square)
-            reference_pixel_border_width - Width of reference pixel border
-                                           around image area
-            reverse_scan_direction - Enable this to reverse the fast scanner
-                                     readout directions. This
-                                     capability was added to support
-                                     Teledyne's programmable fast scan
-                                     readout directions. The default
-                                     setting =False corresponds to
-                                     what HxRG detectors default to
-                                     upon power up.
-            use_fftw    - If pyFFTW is installed, you can use this in place of np.fft
-            ncores      - Specify number of cores (threads, actually) to use for pyFFTW
-        """
 
         # pyFFTW usage
         self.use_fftw = True if (use_fftw and pyfftw_available) else False
@@ -409,28 +422,30 @@ class HXRGNoise:
 
 
     def message(self, message_text):
-        """
-        Used for status reporting
-        """
+        """Used for status reporting"""
         if self.verbose is True:
             print('NG: ' + message_text + ' at DATETIME = ', (datetime.datetime.now().time()))
 
     def white_noise(self, nstep=None):
-        """
+        """Gaussian noise
+        
         Generate white noise for an HxRG including all time steps
         (actual pixels and overheads).
 
-        Parameters:
-            nstep - Length of vector returned
+        Parameters
+        ----------
+        nstep : int
+            Length of vector returned
         """
         return(np.random.standard_normal(nstep))    
 
     def pink_noise(self, mode):
-        """
-        Generate a vector of non-periodic pink noise.
+        """Generate a vector of non-periodic pink noise.
 
-        Parameters:
-            mode - Selected from {'pink', 'acn', 'ref_inst'}
+        Parameters
+        ----------
+        mode : str
+            Selected from 'pink', 'acn', or 'ref_inst'.
         """
 
         # Configure depending on mode setting
@@ -498,51 +513,72 @@ class HXRGNoise:
                 bias_off_avg=None, bias_off_sig=None, bias_amp=None,
                 ch_off=None, ref_f2f_corr=None, ref_f2f_ucorr=None, ref_inst=None,
                 out_ADU=True):
-        """
-        Generate a FITS cube containing only noise.
+        """Create FITS cube containing only noise
 
-        Parameters:
-            o_file   - Output filename
-            gain     - Gain in e/ADU. Defaults to 1.0.
-            Pixel Noise values:
-              ktc_noise- kTC noise in electrons. Set this equal to
-                         sqrt(k*T*C_pixel)/q_e, where k is Boltzmann's constant, 
-                         T is detector temperature, and C_pixel is pixel 
-                         capacitance. For an H2RG, the pixel capacitance is 
-                         typically about 40 fF.
-              rd_noise - Standard deviation of read noise in electrons
-              c_pink   - Standard deviation of correlated pink noise in electrons
-              u_pink   - Standard deviation of uncorrelated pink noise in electrons
-              acn      - Standard deviation of alterating column noise in electrons
-              pca0_amp - Standard deviation of pca0 in electrons
-              reference_pixel_noise_ratio - Ratio of the standard deviation of the
-                         reference pixels to the regular pixels. Reference pixels 
-                         are usually a little lower noise.                                          
-            Offset values:
-              bias_off_avg - On average, integrations start here in electrons. Set
-                             this so that all pixels are in range.
-              bias_off_sig - bias_off_avg has some variation. This is its std dev.
-              bias_amp     - A multiplicative factor that we multiply bias_image by
-                             to simulate a bias pattern. This is completely
-                             independent from adding in "picture frame" noise. Set to
-                             0.0 remove bias pattern. For NIRCam, default is 1.0.
-              ch_off       - Offset of each channel relative to bias_off_avg.
-              ref_f2f_corr - Random frame-to-frame reference offsets due to PA reset,
-                             correlated between channels.
-              ref_f2f_ucorr- Random frame-to-frame reference offsets due to PA reset,
-                             per channel.
-              aco_a        - Relative offsets of altnernating columns "a"
-              aco_b        - Relative offsets of altnernating columns "b"
-              ref_inst     - Reference instability relative to active pixels.
-              out_ADU      - Boolean to return as converted to ADU (True) or raw electrons
+        Parameters
+        ----------
+        o_file : str, None
+            Output filename. If None, then no output.
+        gain : float
+            Gain in e/ADU. Defaults to 1.0.
+        ktc_noise : float
+            kTC noise in electrons. Set this equal to 
+            sqrt(k*T*C_pixel)/q_e, where k is Boltzmann's constant, 
+            T is detector temperature, and C_pixel is pixel capacitance. 
+            For an H2RG, the pixel capacitance is typically about 40 fF.
+        rd_noise : float
+            Standard deviation of read noise in electrons. 
+            Can be an array for individual amplifiers. 
+        c_pink :float
+            Standard deviation of correlated pink noise in electrons.
+        u_pink : float
+            Standard deviation of uncorrelated pink noise in electrons.
+            Can be an array for individual amplifiers. 
+        acn : float
+            Standard deviation of alterating column noise in electrons
+        pca0_amp : float
+            Standard deviation of pca0 in electrons
+        reference_pixel_noise_ratio : float
+            Ratio of the standard deviation of the reference pixels to 
+            the science pixels. Reference pixels are usually a little 
+            lower noise.                                          
+        bias_off_avg : float
+            On average, integrations start here in electrons. 
+            Set this so that all pixels are in range.
+        bias_off_sig : float
+            bias_off_avg has some variation. This is its std dev.
+        bias_amp : float
+            A multiplicative factor that we multiply bias_image by
+            to simulate a bias pattern. This is completely
+            independent from adding in "picture frame" noise. Set to
+            0.0 remove bias pattern. For NIRCam, default is 1.0.
+        ch_off : float
+            Offset of each channel relative to bias_off_avg.
+            Can be an array for individual amplifiers. 
+        ref_f2f_corr : float
+            Random frame-to-frame reference offsets due to PA reset,
+            correlated between channels.
+        ref_f2f_ucorr : float
+            Random frame-to-frame reference offsets due to PA reset,
+            per channel. Can be an array for individual amplifiers.
+        aco_a : float
+            Relative offsets of altnernating columns "a".
+            Can be an array for individual amplifiers.
+        aco_b : float
+            Relative offsets of altnernating columns "b".
+            Can be an array for individual amplifiers.
+        ref_inst : float
+            Reference instability relative to active pixels.
+        out_ADU : bool
+            Return as converted to ADU (True) or raw electrons?
               
-        Note1:
+        Notes
+        -----
         Because of the noise correlations, there is no simple way to
         predict the noise of the simulated images. However, to a
         crude first approximation, these components add in
         quadrature.
 
-        Note2:
         The units in the above are mostly "electrons". This follows convention
         in the astronomical community. From a physics perspective, holes are
         actually the physical entity that is collected in Teledyne's p-on-n

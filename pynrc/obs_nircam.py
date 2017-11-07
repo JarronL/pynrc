@@ -169,6 +169,7 @@ class obs_coronagraphy(NIRCam):
         # Create a NIRCam reference class
         # If it already exists, just update OPD info
         try:
+            if verbose: print("Updating NIRCam reference OPD...")
             nrc = self.nrc_ref
             nrc.update_psf_coeff(opd=opd)
         except AttributeError:
@@ -628,8 +629,8 @@ class obs_coronagraphy(NIRCam):
         # Get radial profiles
         binsize = header['OVERSAMP'] * header['PIXELSCL']
         bins = np.arange(rho.min(), rho.max() + binsize, binsize)
-        igroups, _, rr = nrc_utils.hist_indices(rho, bins, True)
-        stds = nrc_utils.binned_statistic(igroups, data, func=np.std)
+        igroups, _, rr = hist_indices(rho, bins, True)
+        stds = binned_statistic(igroups, data, func=np.std)
         stds = convolve(stds, Gaussian1DKernel(1))
 
         # Ignore corner regions

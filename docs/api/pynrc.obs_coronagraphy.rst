@@ -27,11 +27,6 @@ pynrc.obs_coronagraphy
       ~obs_coronagraphy.saturation_levels
       ~obs_coronagraphy.star_flux
 
-   .. rubric:: Attributes Documentation
-
-   .. autoattribute:: planets
-   .. autoattribute:: wfe_drift
-
    .. rubric:: Methods Documentation
 
    .. automethod:: add_planet

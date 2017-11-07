@@ -5,25 +5,32 @@ import numpy as np
 #_log = logging.getLogger('pynrc')
 
 def jl_poly(xvals, coeff, dim_reorder=False):
-    """
+    """Evaluate polynomial
+    
     Replacement for np.polynomial.polynomial.polyval(wgood, coeff)
     to evaluate y-values given a set of xvals and coefficients.
     Uses matrix multiplication, which is much faster. Beware, the
     default output array shapes organization may differ from the 
     polyval routine for 2D and 3D results.
 
-    Inputs:
-        xvals - 1D array (time, for instance)
-        coeff - 1D, 2D, or 3D array of coefficients from a polynomial fit.
-                The first dimension should have a number of elements equal
-                to the polynomial degree + 1. Order such that lower degrees
-                are first, and higher degrees are last.
-        dim_reorder - Reorder output shape to mimic the polyval routine,
-                where the first dimensions correspond to the coeff latter 
-                dimensions, and the final dimension is equal to the number 
-                of xvals.
+    Parameters
+    ----------
+    xvals : ndarray
+        1D array (time, for instance)
+    coeff : ndarray
+        1D, 2D, or 3D array of coefficients from a polynomial fit.
+        The first dimension should have a number of elements equal
+        to the polynomial degree + 1. Order such that lower degrees
+        are first, and higher degrees are last.
+    dim_reorder : bool
+        Reorder output shape to mimic the polyval routine,
+        where the first dimensions correspond to the coeff latter 
+        dimensions, and the final dimension is equal to the number 
+        of xvals.
                        
-    Returns:
+    Returns
+    -------
+    float array
         An array of values where each xval has been evaluated at each
         set of supplied coefficients. The output shape has the first 
         dimension equal to the number of xvals, and the final dimensions
@@ -72,8 +79,12 @@ def jl_poly(xvals, coeff, dim_reorder=False):
 
 
 def jl_poly_fit(x, yvals, deg=1, QR=True):
-    """
+    """Fast polynomial fitting
+    
     Fit a polynomial to a function using linear least-squares.
+    This function is particularly useful if you have a data cube
+    and want to simultaneously fit a slope to all pixels in order
+    to produce a slope image.
     
     Gives the option of performing QR decomposition, which provides
     a considerable speed-up compared to simply using np.linalg.lstsq().
@@ -82,11 +93,29 @@ def jl_poly_fit(x, yvals, deg=1, QR=True):
     
     Returns the coefficients of the fit for each pixel.
     
-    # Example: Fit all pixels in a data cube to get slope image
-    # in terms of ADU/sec
-    nz, ny, nx = cube.shape
-    tvals = (np.arange(nz) + 1) * 10.737
-    slope = jl_poly_fit(tvals, cube)
+    Parameters
+    ----------
+    x : ndarray
+        X-values of the data array (1D).
+    yvals : ndarray 
+        Y-values (1D, 2D, or 3D) where the first dimension
+        must have equal length of x. For instance, if x is
+        a time series of a data cube with size NZ, then the 
+        data cube must follow the Python convention (NZ,NY,NZ).
+    deg : int
+        Degree of polynomial to fit to the data.
+    QR : bool
+        Perform QR decomposition? Default=True.
+    
+    Example
+    -------
+    Fit all pixels in a data cube to get slope image in terms of ADU/sec
+    
+    >>> nz, ny, nx = cube.shape
+    >>> tvals = (np.arange(nz) + 1) * 10.737
+    >>> coeff = jl_poly_fit(tvals, cube, deg=1)
+    >>> bias = coeff[0]  # Bias image (y-intercept)
+    >>> slope = coeff[1] # Slope image (DN/sec)
     """
 
     orig_shape = yvals.shape
