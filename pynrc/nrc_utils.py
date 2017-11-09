@@ -858,7 +858,7 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         format(filter,mtemp,ptemp,module,fov_pix,oversample,rtemp,ttemp,otemp)
     save_name = save_dir + fname
 
-    if (not force) and (save and os.path.exists(save_name)):
+    if (not force) and os.path.exists(save_name):
         return np.load(save_name)
 
     # Only drift OPD if PSF is in nominal position (rtemp=0).
@@ -2127,7 +2127,9 @@ def BOSZ_spectrum(Teff, metallicity, log_g, res=2000, interpolate=True, **kwargs
         raise IOError('Resolution directory does not exist: {}'.format(res_dir))
 
     # Grid of computed temperature steps
-    teff_grid = range(3500,12000,250) + range(12000,20000,500) + range(20000,36000,1000)
+    teff_grid = list(range(3500,12000,250)) 
+                + list(range(12000,20000,500))
+                + list(range(20000,36000,1000))
     teff_grid = np.array(teff_grid)
     
     # Grid of log g steps for desired Teff

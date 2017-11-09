@@ -2175,7 +2175,7 @@ class NIRCam(object):
                     nint1 = np.max([nint1,nint_min])
                     nint2 = np.min([nint2,nint_max])
             
-                    nint_all = range(nint1, nint2+1)
+                    nint_all = np.arange(nint1, nint2+1)
                     
                     narr = len(nint_all)
                     # Sometimes there are a lot of nint values to check

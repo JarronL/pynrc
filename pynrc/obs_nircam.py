@@ -33,7 +33,7 @@ class obs_coronagraphy(NIRCam):
         A pysynphot spectrum of science target (e.g., central star).
         Should already be normalized to the apparent flux.
     sp_ref : :mod:`pysynphot.spectrum`
-        A pysynphot spectrum of reference target (e.g., central star).
+        A pysynphot spectrum of reference target.
         Should already be normalized to the apparent flux.
     distance : float
         Distance in parsecs to the science target. This is used for
