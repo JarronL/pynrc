@@ -46,7 +46,7 @@ setup(
         #   3 - Alpha
         #   4 - Beta
         #   5 - Production/Stable
-        'Development Status :: 3 - Alpha',
+        'Development Status :: 4 - Beta',
 
         # Indicate who your project is intended for
         'Intended Audience :: Developers',
@@ -76,9 +76,10 @@ setup(
           'numpy>=1.10.0',
           'matplotlib>=1.5.0',
           'scipy>=0.16.0',
+          'astropy>=1.2.0',
+          'pysynphot>=0.9.8.0',
           'poppy>=0.6.1',
           'webbpsf>=0.6.0',
-          'astropy>=1.2.0',
           'jwxml>=0.3.0'
       ],
 
