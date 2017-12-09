@@ -78,7 +78,7 @@ def jl_poly(xvals, coeff, dim_reorder=False):
     return yfit
 
 
-def jl_poly_fit(x, yvals, deg=1, QR=True):
+def jl_poly_fit(x, yvals, deg=1, QR=True, robust_fit=False, niter=25):
     """Fast polynomial fitting
     
     Fit a polynomial to a function using linear least-squares.
@@ -106,6 +106,12 @@ def jl_poly_fit(x, yvals, deg=1, QR=True):
         Degree of polynomial to fit to the data.
     QR : bool
         Perform QR decomposition? Default=True.
+    robust_fit : bool
+        Perform robust fitting, iteratively kicking out 
+        outliers until convergence.
+    niter : int
+        Maximum number of iterations for robust fitting.
+        If convergence is attained first, iterations will stop.
     
     Example
     -------
@@ -117,6 +123,33 @@ def jl_poly_fit(x, yvals, deg=1, QR=True):
     >>> bias = coeff[0]  # Bias image (y-intercept)
     >>> slope = coeff[1] # Slope image (DN/sec)
     """
+    
+    from pynrc.maths.robust import medabsdev
+    
+#     nz = 1000
+#     tarr = (np.arange(nz) + 1) * 10.737
+# 
+#     cf_truth = np.array([3000., 1000.])
+#     xpix = 10
+#     ypix = 10
+#     npix = xpix * ypix
+#     
+#     deg = len(cf_truth)-1
+#     cf_all = np.broadcast_to(cf_truth, (npix,deg+1)).T.reshape(deg+1,npix)
+#     yvals = jl_poly(tarr, cf_all)
+#     yvals += 0.01 * np.median(yvals) * np.random.standard_normal(yvals.shape)
+#     x = tarr
+# 
+#     # create outliers
+#     outlier_prop = 0.3
+#     outlier_IND = np.random.permutation(yvals.size)
+#     outlier_IND = outlier_IND[0:int(np.floor(yvals.size * outlier_prop))]
+#     z_noise_outlier = yvals.flatten()
+#     z_noise_outlier[outlier_IND] += 10 * np.median(yvals) * np.random.standard_normal(z_noise_outlier[outlier_IND].shape)
+#     z_noise_outlier = z_noise_outlier.reshape(yvals.shape)
+# 
+#     yvals = z_noise_outlier
+
 
     orig_shape = yvals.shape
     ndim = len(orig_shape)
@@ -142,8 +175,57 @@ def jl_poly_fit(x, yvals, deg=1, QR=True):
         # computing Q^T*b (project b onto the range of A)
         qTb = np.dot(q.T, b)
         # solving R*x = Q^T*b
-        coeff_all, _, _, _ = np.linalg.lstsq(r, qTb)
+        coeff_all = np.linalg.lstsq(r, qTb)[0]
     else:
-        coeff_all, _, _, _ = np.linalg.lstsq(a.T, b)
+        coeff_all = np.linalg.lstsq(a.T, b)[0]
+        
+    if robust_fit:
+        # Normally, we would weight both the x and y (ie., a and b) values
+        # then plug those into the lstsq() routine. However, this means we
+        # can no longer use the same x values for a series of y values. Each
+        # fit would have differently weight x-values, requiring us to fit
+        # each element individually, which would be very slow. 
+        # Instead, we will compromise by "fixing" outliers in order to 
+        # preserve the quickness of this routine. The fixed outliers become 
+        # the new data that we refit. 
+
+        close_factor = 0.03
+        close_enough = np.max([close_factor * np.sqrt(0.5/(x.size-1)), 1e-20])
+        for i in range(niter):
+            # compute absolute value of residuals (fit minus data)
+            yvals_mod = jl_poly(x, coeff_all)
+            abs_resid = np.abs(yvals_mod - b)
+
+            # compute the scaling factor for the standardization of residuals
+            # using the median absolute deviation of the residuals
+            # 6.9460 is a tuning constant (4.685/0.6745)
+            abs_res_scale = 6.9460 * np.median(abs_resid, axis=0)
+
+            # standardize residuals
+            w = abs_resid / abs_res_scale.reshape([1,-1])
+
+            # exclude outliers
+            outliers = w>1
+            
+            # Create a version with outliers fixed
+            # Se
+            yvals_fix = b.copy()
+            yvals_fix[outliers] = yvals_mod[outliers]
+            
+            # Ignore fits with no outliers
+            ind_fit = outliers.sum(axis=0) > 0
+            if ind_fit[ind_fit].size == 0: break
+            if QR:
+                qTb = np.dot(q.T, yvals_fix[:,ind_fit])
+                coeff_all[:,ind_fit] = np.linalg.lstsq(r, qTb)[0]
+            else:
+                coeff_all[:,ind_fit] = np.linalg.lstsq(a.T, yvals_fix[:,ind_fit])[0]
+
+            prev_err = medabsdev(abs_resid, axis=0) if i==0 else err
+            err = medabsdev(abs_resid, axis=0)
+            
+            diff = np.abs((prev_err - err)/err)
+            #print(coeff_all.mean(axis=1), coeff_all.std(axis=1), np.nanmax(diff), ind_fit[ind_fit].size)
+            if 0 < np.nanmax(diff) < close_enough: break
     
     return coeff_all.reshape(cf_shape)
