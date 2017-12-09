@@ -13,19 +13,16 @@ Spectral Tools
 
 .. autosummary::
 
-    ~nrc_utils.bin_spectrum
     ~nrc_utils.stellar_spectrum
     ~nrc_utils.BOSZ_spectrum
-    ~nrc_utils.planets_sb12
     ~nrc_utils.sp_accr
     ~nrc_utils.zodi_spec
     ~nrc_utils.zodi_euclid
+    ~nrc_utils.bp_2mass
+    ~nrc_utils.bin_spectrum
 
 .. rubric:: Documentation
 
-.. autofunction:: pynrc.nrc_utils.bin_spectrum
-.. autofunction:: pynrc.nrc_utils.stellar_spectrum
-.. autofunction:: pynrc.nrc_utils.BOSZ_spectrum
 .. autoclass:: pynrc.nrc_utils.planets_sb12
    :show-inheritance:
 
@@ -54,6 +51,10 @@ Spectral Tools
 
    .. automethod:: export_pysynphot
 
+.. autofunction:: pynrc.nrc_utils.stellar_spectrum
+.. autofunction:: pynrc.nrc_utils.BOSZ_spectrum
 .. autofunction:: pynrc.nrc_utils.sp_accr
 .. autofunction:: pynrc.nrc_utils.zodi_spec
 .. autofunction:: pynrc.nrc_utils.zodi_euclid
+.. autofunction:: pynrc.nrc_utils.bp_2mass
+.. autofunction:: pynrc.nrc_utils.bin_spectrum

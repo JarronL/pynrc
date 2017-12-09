@@ -29,6 +29,7 @@ pynrc.NIRCam
       ~NIRCam.pupil
       ~NIRCam.pupil_list
       ~NIRCam.well_level
+      ~NIRCam.wfe_drift
 
    .. rubric:: Methods Summary
 

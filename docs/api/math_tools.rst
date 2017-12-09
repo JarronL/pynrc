@@ -11,6 +11,7 @@ Math Tools
     ~pynrc.maths.coords.xy_to_rtheta
     ~pynrc.maths.coords.rtheta_to_xy
     ~pynrc.maths.coords.xy_rot
+    ~pynrc.maths.coords.Tel2Sci_info
     ~pynrc.maths.coords.det_to_V2V3
     ~pynrc.maths.coords.V2V3_to_det
     ~pynrc.maths.coords.plotAxes
@@ -61,6 +62,7 @@ Math Tools
 .. autofunction:: pynrc.maths.coords.xy_to_rtheta
 .. autofunction:: pynrc.maths.coords.rtheta_to_xy
 .. autofunction:: pynrc.maths.coords.xy_rot
+.. autofunction:: pynrc.maths.coords.Tel2Sci_info
 .. autofunction:: pynrc.maths.coords.det_to_V2V3
 .. autofunction:: pynrc.maths.coords.V2V3_to_det
 .. autofunction:: pynrc.maths.coords.plotAxes

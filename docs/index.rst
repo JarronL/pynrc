@@ -10,6 +10,13 @@ Documentation for pyNRC (pynrc)
     :members:
     
 
+.. toctree::
+   :caption: Getting Started
+   :maxdepth: 1
+   
+   installation.rst
+
+
 Getting Started with pyNRC
 ==========================
 
@@ -20,8 +27,6 @@ ETC Basic Usage
 ETC Advanced Usage
 
 Simulating Observations
-
------------------------
 
 
 .. toctree::
@@ -37,13 +42,12 @@ Simulating Observations
 License & Attribution
 ---------------------
 
-Copyright (c) 2017 Jarron Leisenring and contributors.
-
-pynrc is free software made available under the MIT License. For details
+pyNRC is free software made available under the MIT License. For details
 see :ref:`LICENSE <license>`.
 
-.. admonition:: Citing pyNRC
+.. attention:: Citing pyNRC
 
     If you make use of pyNRC in your work, please cite the following paper: 
-    `"Leisenring et al. 2017, "pyNRC: A NIRCam ETC and Simulation Toolset"`
+    `Leisenring et al. 2017, "pyNRC: A NIRCam ETC and Simulation Toolset"`
 
+Copyright (c) 2017 Jarron Leisenring and contributors.

@@ -22,8 +22,9 @@ class FilterLevelRange(object):
             return 0
 
 def restart_logging(verbose=True):
-    """
-    Restart logging using the same settings as that currently
+    """Restart Logging
+    
+    Restart logging using the same settings as those currently
     stored in conf.logging_level. This function was shamelessly
     stolen from WebbPSF utils.py.
 
@@ -92,7 +93,8 @@ def restart_logging(verbose=True):
             print("pyNRC log outputs will also be saved to file {}".format(filename))
 
 def setup_logging(level='INFO', filename=None, verbose=True):
-    """
+    """Setup Logging
+    
     Allows selection of logging detail and output locations
     (screen and/or file). Shamelessly stolen from WebbPSF utils.py.
 

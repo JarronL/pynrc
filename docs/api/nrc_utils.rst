@@ -9,6 +9,7 @@ NIRCam Tools
 
     ~nrc_utils.read_filter
     ~nrc_utils.psf_coeff
+    ~nrc_utils.wfed_coeff
     ~nrc_utils.gen_image_coeff
     ~nrc_utils.bg_sensitivity
     ~nrc_utils.sat_limit_webbpsf
@@ -26,6 +27,7 @@ NIRCam Tools
 
 .. autofunction:: pynrc.nrc_utils.read_filter
 .. autofunction:: pynrc.nrc_utils.psf_coeff
+.. autofunction:: pynrc.nrc_utils.wfed_coeff
 .. autofunction:: pynrc.nrc_utils.gen_image_coeff
 .. autofunction:: pynrc.nrc_utils.bg_sensitivity
 .. autofunction:: pynrc.nrc_utils.sat_limit_webbpsf

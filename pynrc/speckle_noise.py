@@ -23,7 +23,7 @@ class OPD_extract(object):
     
     For a given JWST OPD image and header, extract the Zernike/Hexike 
     components for the overall pupil and each mirror segment. Makes
-    use of function in webbpsf.
+    use of functions in webbpsf.
     
     Parameters
     ----------

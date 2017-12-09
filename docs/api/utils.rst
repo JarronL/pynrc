@@ -75,13 +75,14 @@ Utilities
 
 .. autosummary::
 
-    ~nrc_utils.bin_spectrum
     ~nrc_utils.stellar_spectrum
     ~nrc_utils.BOSZ_spectrum
     ~nrc_utils.planets_sb12
     ~nrc_utils.sp_accr
     ~nrc_utils.zodi_spec
     ~nrc_utils.zodi_euclid
+    ~nrc_utils.bp_2mass
+    ~nrc_utils.bin_spectrum
     
 .. rubric:: Speckle Noise Summary
 

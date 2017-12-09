@@ -11,7 +11,7 @@ pynrc.obs_coronagraphy
    .. autosummary::
 
       ~obs_coronagraphy.planets
-      ~obs_coronagraphy.wfe_drift
+      ~obs_coronagraphy.wfe_ref_drift
 
    .. rubric:: Methods Summary
 
