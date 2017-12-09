@@ -38,13 +38,15 @@ __delta = 5.0e-7
 #__epsilon = 1.0e-20
 __epsilon = np.finfo(float).eps # 2.22E-16
 
-def medabsdev(data, axis=None, keepdims=False):
+def medabsdev(data, axis=None, keepdims=False, nan=True):
     """Median Absolute Deviation
     
     A "robust" version of standard deviation.
     
     Parameters
     ----------
+    data : ndarray
+        The input data.
     axis : None or int or tuple of ints, optional
         Axis or axes along which the deviation is computed. The
         default is to compute the deviation of the flattened array.
@@ -57,20 +59,27 @@ def medabsdev(data, axis=None, keepdims=False):
         If this is set to True, the axes which are reduced are left
         in the result as dimensions with size one. With this option,
         the result will broadcast correctly against the original `arr`.
+    nan : bool, optional
+        Ignore NaNs? Default is True.
     """
-    med = np.median(data, axis=axis, keepdims=True)
+    medfunc = np.nanmedian if nan else np.median
+    meanfunc = np.nanmean if nan else np.mean
+    
+    # Scale factor to return result equivalent to standard deviation.
+    sig_scale = 0.6744897501960817
+    
+    med = medfunc(data, axis=axis, keepdims=True)
     abs = np.abs(data - med)
-    sigma = np.median(abs, axis=axis, keepdims=True)  / 0.6744897501960817
+    sigma = medfunc(abs, axis=axis, keepdims=True)  / sig_scale
     
     # Check if anything is near 0.0 (below machine precision)
     mask = sigma < __epsilon
     if np.any(mask):
-        sigma[mask] = (np.mean(abs, axis=axis, keepdims=True))[mask] / 0.8
+        sigma[mask] = (meanfunc(abs, axis=axis, keepdims=True))[mask] / 0.8
     mask = sigma < __epsilon
     if np.any(mask):
         sigma[mask] = 0.0
         
-    
     if not keepdims:
         return np.squeeze(sigma)
     else:
@@ -374,7 +383,7 @@ def linefit(inputX, inputY, iterMax=25, Bisector=False, BisquareLimit=6.0, Close
         s = np.argsort(x)
         u = x[s]
         v = y[s]
-        nHalf = n/2 -1
+        nHalf = n//2 -1
         x1 = np.median(u[0:nHalf])
         x2 = np.median(u[nHalf:])
         y1 = np.median(v[0:nHalf])
@@ -564,7 +573,7 @@ def polyfit(inputX, inputY, order, iterMax=25):
     u = x
     v = y
 
-    nSeg = order + 2
+    nSeg = int(order + 2)
     if (nSeg/2)*2 == nSeg:
         nSeg = nSeg + 1
     minPts = nSeg*3
@@ -577,11 +586,12 @@ def polyfit(inputX, inputY, order, iterMax=25):
         q = np.argsort(u)
         u = u[q]
         v = v[q]
-        nPerSeg = np.zeros(nSeg) + n/nSeg
+        nPerSeg = np.zeros(nSeg, dtype='int') + n//nSeg
         nLeft = n - nPerSeg[0]*nSeg
-        nPerSeg[nSeg/2] = nPerSeg[nSeg/2] + nLeft
+        nPerSeg[nSeg//2] = nPerSeg[nSeg//2] + nLeft
         r = np.zeros(nSeg)
         s = np.zeros(nSeg)
+        print(nPerSeg)
         r[0] = np.median(u[0:nPerSeg[0]])
         s[0] = np.median(v[0:nPerSeg[0]])
         i2 = nPerSeg[0]-1

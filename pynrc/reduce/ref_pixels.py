@@ -289,8 +289,8 @@ class NRC_refs(object):
         nz, ny, nx = self.data.shape
         for ch in range(nchans):
             # Channel indices
-            ich1 = ch*chsize
-            ich2 = ich1 + chsize
+            ich1 = int(ch*chsize)
+            ich2 = int(ich1 + chsize)
         
             # In-place subtraction of channel averages
             if self.altcol:

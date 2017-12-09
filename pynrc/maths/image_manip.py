@@ -393,7 +393,7 @@ def frebin(image, dimensions=None, scale=None, total=True):
             raise RuntimeError("The number of input dimensions don't match the image shape.")
     elif scale is not None:
         if isinstance(scale, float) or isinstance(scale, int):
-            dimensions = map(int, map(lambda x: x+0.5, map(lambda x: x*scale, image.shape)))
+            dimensions = list(map(int, map(lambda x: x+0.5, map(lambda x: x*scale, image.shape))))
         elif len(scale) != len(image.shape):
             raise RuntimeError("The number of input dimensions don't match the image shape.")
         else:
