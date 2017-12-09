@@ -26,14 +26,14 @@ class Conf(_config.ConfigNamespace):
     import os
     path = os.getenv('PYNRC_PATH')
     if path is None:
-        #export PYNRC_PATH='/Volumes/NIRData/pynrc_data'
         raise EnvironmentError("Environment variable $PYNRC_PATH is not set!")
     if not os.path.isdir(path):
         raise IOError("PYNRC_PATH ({}) is not a valid directory path!".format(path))
     # Make sure there is a '/' at the end of the path name
     if '/' not in path[-1]: 
         path += '/'
-    PYNRC_PATH = _config.ConfigItem(path, 'Directory path to data files required for pynrc calculations.')
+    PYNRC_PATH = _config.ConfigItem(path, 'Directory path to data files \
+                                    required for pynrc calculations.')
 
     logging_level = _config.ConfigItem(
         ['INFO', 'DEBUG', 'WARN', 'WARNING', 'ERROR', 'CRITICAL', 'NONE'],
@@ -56,7 +56,7 @@ conf = Conf()
 from .logging_utils import setup_logging#, restart_logging
 setup_logging(conf.default_logging_level, verbose=False)
 
-from .nrc_utils import (read_filter, pix_noise, nrc_header, stellar_spectrum)
+from .nrc_utils import (read_filter, pix_noise, nrc_header, stellar_spectrum, bp_2mass)
 
 from .pynrc_core import (multiaccum, DetectorOps, NIRCam, planets_sb11, planets_sb12)
 
@@ -69,3 +69,17 @@ from .maths import *
 from .simul import ngNRC
 
 from .reduce import ref_pixels
+
+
+def _reload(name="pynrc"):
+    """
+    Simple reload function to test code changes without restarting python.
+    There may be some weird consequences and bugs that show up, such as
+    functions and attributes deleted from the code still stick around after
+    the reload. Although, this is still true with ``importlib.reload(pynrc)``.
+    """
+    import imp
+    imp.load_module(name,*imp.find_module(name))
+
+    print("{} reloaded".format(name)) 
+
