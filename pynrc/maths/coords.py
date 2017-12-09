@@ -126,6 +126,59 @@ def xy_rot(x, y, ang):
 #
 ###########################################################################
 
+def Tel2Sci_info(channel, coords, output="Sci"):
+    """Telescope coords converted to Science coords
+    
+    Returns the detector name associated with these coordinates
+
+    Parameters
+    ----------
+    channel : str
+        'SW' or 'LW'
+    coords : tuple
+        Telescope coordinates (V2,V3) in arcsec.
+    output : str
+        Type of desired output coordinates. 
+
+            * Det: pixels, in raw detector read out axes orientation
+            * Sci: pixels, in conventional DMS axes orientation
+            * Idl: arcsecs relative to aperture reference location.
+            * Tel: arcsecs V2,V3
+    """
+    
+    V2, V3 = coords
+    
+    # Figure out the detector and pixel position for some (V2,V3) coord
+    mysiaf = webbpsf.webbpsf_core.SIAF('NIRCam')
+    swa = ['A1', 'A2', 'A3', 'A4']
+    swb = ['B1', 'B2', 'B3', 'B4']
+    lwa = ['A5']
+    lwb = ['B5']
+    
+    detnames = swa + swb if 'SW' in channel else lwa + lwb
+    apnames = ['NRC'+det+'_FULL' for det in detnames]
+    
+    # Find center positions for each apname
+    cens = []
+    for apname in apnames:
+        ap = mysiaf[apname]
+        cens.append(ap.Tel2Sci(V2, V3))
+    cens = np.array(cens)
+
+    # Select that with the closest position
+    dist = np.sqrt((cens[:,0]-1024)**2 + (cens[:,1]-1024)**2)
+    ind = np.where(dist==dist.min())[0][0]
+    
+    # Find detector "science" coordinates
+    detector = detnames[ind]
+    apname = apnames[ind]
+    ap = mysiaf[apname]
+    detector_position = ap.convert(V2, V3, frame_from='Tel', frame_to=output)
+    
+    return detector, detector_position
+    
+
+
 def det_to_V2V3(image, detid):
     """Detector to V2/V3 coordinates
     

@@ -571,7 +571,7 @@ class DetectorOps(object):
 
     @property
     def time_ramp(self):
-        """Photon collection time for a single ramp."""
+        """Photon collection time for a single ramp (integration)."""
 
         # How many total frames (incl. dropped and all) per ramp?
         # Exclude nd3 (drops that add nothing)
@@ -587,7 +587,7 @@ class DetectorOps(object):
 
     @property
     def time_int(self):
-        """Same as time_ramp, but follows the JWST nomenclature."""
+        """Photon collection time for a single integration (ramp)."""
         return self.time_ramp
 
     @property
@@ -922,6 +922,7 @@ class NIRCam(object):
     ------------
     fov_pix : int
         Size of the FoV in pixels (real SW or LW pixels).
+        The defaults depend on the type of observation.
     oversample : int
         Factor to oversample during WebbPSF calculations.
         Default 2 for coronagraphy and 4 otherwise.
@@ -929,8 +930,11 @@ class NIRCam(object):
         Radial offset from the center in arcsec.
     offset_theta :float
         Position angle for radial offset, in degrees CCW.
-    opd : tuple
-        Tuple containing WebbPSF specific OPD file name and slice.
+    opd : tuple or HDUList
+        Tuple (file, slice) or HDUList specifying OPD.
+    wfe_drift : float
+        Wavefront error drift amplitude in nm.
+        Updates :attr:`wfe_drift` attribute.
     tel_pupil : str
         File name or HDUList specifying telescope entrance pupil.
     jitter : str or None
@@ -1014,6 +1018,7 @@ class NIRCam(object):
         self._pupil = pupil
         self._mask = mask
         self._ND_acq = ND_acq
+        self._wfe_drift = 0
 
         self._update_bp()		
         self._validate_wheels()
@@ -1188,7 +1193,15 @@ class NIRCam(object):
         return self.Detectors[0].multiaccum
     @property
     def multiaccum_times(self):
-        """Exposure timings in dictionary"""
+        """Exposure timings in dictionary
+        
+        t_frame   : Time of a single frame.
+        t_group   : Time of a single group (read frames + drop frames).
+        t_int     : Photon collection time for a single ramp/integration.
+        t_int_tot : Total time for all frames (rest+read+drop) in a ramp/integration.
+        t_exp     : Total photon collection time for all ramps.
+        t_acq     : Total acquisition time to complete exposure with all overheads.
+        """
         return self.Detectors[0].times_to_dict()
 
     @property
@@ -1410,10 +1423,22 @@ class NIRCam(object):
         """Info used to create psf_coeff for faint background sources."""
         return self._psf_info_bg
 
+    @property
+    def wfe_drift(self):
+        """WFE drift relative to nominal PSF (nm)"""
+        return self._wfe_drift
+    @wfe_drift.setter
+    def wfe_drift(self, value):
+        """Set the WFE drift value and update coefficients"""
+        # Only update if the value changes
+        vold = self._wfe_drift; self._wfe_drift = value
+        if vold != self._wfe_drift: 
+            self.update_psf_coeff(wfe_drift=self._wfe_drift)
 
     def update_psf_coeff(self, fov_pix=None, oversample=None, 
         offset_r=None, offset_theta=None, tel_pupil=None, opd=None,
-        jitter=None, jitter_sigma=0.007, save=None, force=False, **kwargs):
+        wfe_drift=None, jitter='gaussian', jitter_sigma=0.007, 
+        save=None, force=False, **kwargs):
         """Create new PSF coefficients.
         
         Generates a set of PSF coefficients from a sequence of WebbPSF images.
@@ -1421,13 +1446,13 @@ class NIRCam(object):
         monochromatic PSFs (useful if you need to make hundreds of PSFs
         for slitless grism or DHS observations) that are subsequenty
         convolved with the the instrument throughput curves and stellar
-        spectrum. The coefficients are stored in :attr:`psf_coeffs` attribute.
+        spectrum. The coefficients are stored in :attr:`psf_coeff` attribute.
 
         A corresponding dictionary :attr:`psf_info` is also saved that contains
         the size of the FoV (in detector pixels) and oversampling factor 
         that was used to generate the coefficients.
 
-        While origianlly created for coronagraphy, grism, and DHS observations,
+        While originally created for coronagraphy, grism, and DHS observations,
         this method is actually pretty quick, so it has become the default
         for imaging as well.
 
@@ -1444,7 +1469,10 @@ class NIRCam(object):
         offset_theta :float
             Position angle for radial offset, in degrees CCW.
         opd : tuple or HDUList
-            Tuple (file, slice, nm wfe) or HDUList specifying OPD.
+            Tuple (file, slice) or HDUList specifying OPD.
+        wfe_drift : float
+            Wavefront error drift amplitude in nm.
+            Updates :attr:`wfe_drift` attribute.
         tel_pupil : str
             File name or HDUList specifying telescope entrance pupil.
         jitter : str or None
@@ -1465,7 +1493,7 @@ class NIRCam(object):
                 oversample = 2 if 'LYOT' in self.pupil else 4
 
         # Default size is 11 pixels
-        fov_default = 11
+        fov_default = 33
         # Use dictionary as case/switch statement
         pup_switch = {
             'WEAK LENS +4': 101,
@@ -1473,10 +1501,10 @@ class NIRCam(object):
             'WEAK LENS -8': 161,
             'WEAK LENS +12 (=4+8)': 221,
             'WEAK LENS -4 (=4-8)': 101,
-            'GRISM0': 31,
-            'GRISM90': 31,
-            'CIRCLYOT': 31,
-            'WEDGELYOT': 31,
+            'GRISM0': 33,
+            'GRISM90': 33,
+            'CIRCLYOT': 33,
+            'WEDGELYOT': 33,
         }
         # If fov_pix was not set, then choose here
         if fov_pix is None:
@@ -1487,8 +1515,10 @@ class NIRCam(object):
 
         oversample = int(oversample)
         fov_pix = int(fov_pix)
-        _log.info('Updating PSF with oversample={0} and fov_pix={1}'.\
-            format(oversample,fov_pix))
+        # Make sure fov_pix is odd
+        if np.mod(fov_pix,2)==0: fov_pix+=1
+        _log.info('Updating PSF coeff with fov_pix={} and oversample={}'.\
+            format(fov_pix,oversample))
     
         if offset_r is None:
             try: offset_r = self._psf_info['offset_r']
@@ -1507,8 +1537,7 @@ class NIRCam(object):
             except (AttributeError, KeyError): jitter_sigma = 0.007
         if opd is None:
             try: opd = self._psf_info['opd']
-            except (AttributeError, KeyError): 
-                opd = opd_default
+            except (AttributeError, KeyError): opd = opd_default
         if save is None:
             try: save = self._psf_info['save']
             except (AttributeError, KeyError): save = True
@@ -1516,19 +1545,41 @@ class NIRCam(object):
         #print(opd)
         self._psf_info={'fov_pix':fov_pix, 'oversample':oversample, 
             'offset_r':offset_r, 'offset_theta':offset_theta, 
-            'opd':opd, 'tel_pupil':tel_pupil, 'save':save, 'force':force,
-            'jitter':jitter, 'jitter_sigma':jitter_sigma}
+            'tel_pupil':tel_pupil, 'save':save, 'force':force,
+            'opd':opd, 'jitter':jitter, 'jitter_sigma':jitter_sigma}
         self._psf_coeff = psf_coeff(self.bandpass, self.pupil, self.mask, self.module, 
             **self._psf_info)
+
+        # WFE Drift is handled differently than the rest of the parameters
+        # This is because we use wfed_coeff() to determine the resid values
+        # for the PSF coefficients to generated a drifted PSF.
+        if wfe_drift is not None:
+            self._wfe_drift = wfe_drift
+            
+        wfe_drift = self._wfe_drift
+        if wfe_drift>0:
+            _log.info('Updating WFE drift for fov_pix={} and oversample={}'.\
+                format(fov_pix,oversample))
+            wfe_kwargs = dict(self._psf_info)
+            wfe_kwargs['pupil']  = self.pupil
+            wfe_kwargs['mask']   = self.mask
+            wfe_kwargs['module'] = self.module
+            #del wfe_kwargs['save'], wfe_kwargs['force']
+
+            wfe_cf = wfed_coeff(self.bandpass, **wfe_kwargs)
+            cf_fit = wfe_cf.reshape([wfe_cf.shape[0], -1])
+            cf_mod = jl_poly(np.array([wfe_drift]), cf_fit)
+            cf_mod = cf_mod.reshape(self._psf_coeff.shape)
+            self._psf_coeff += cf_mod
     
         # If there is a coronagraphic spot or bar, then we may need to
         # generate another background PSF for sensitivity information.
         # It's easiest just to ALWAYS do a small footprint without the
         # coronagraphic mask and save the PSF coefficients. 
         if self.mask is not None:
-            self._psf_info_bg={'fov_pix':31, 'oversample':oversample, 
-                'offset_r':0, 'offset_theta':0, 'opd':opd, 'tel_pupil':tel_pupil,
-                'jitter':None, 'save':save, 'force':force}
+            self._psf_info_bg={'fov_pix':33, 'oversample':oversample, 
+                'offset_r':0, 'offset_theta':0, 'tel_pupil':tel_pupil, 
+                'opd':opd, 'jitter':None, 'save':save, 'force':force}
             self._psf_coeff_bg = psf_coeff(self.bandpass, self.pupil, None, self.module, 
                 **self._psf_info_bg)
         else:
@@ -1557,8 +1608,7 @@ class NIRCam(object):
             The default is normalized to produce 1 count/sec within that bandpass,
             assuming the telescope collecting area and instrument bandpass. 
             Coronagraphic PSFs will further decrease this due to the smaller pupil
-            size and coronagraphic spot. DHS and grism observations do no yet have
-            pupil size reductions accounted for.
+            size and coronagraphic spot. 
         return_oversample : bool
             If True, then also returns the oversampled version of the PSF
         use_bg_psf : bool
@@ -1632,7 +1682,6 @@ class NIRCam(object):
 
         return satlim
 
-
     def sensitivity(self, nsig=10, units=None, sp=None, verbose=False, **kwargs):
         """Sensitivity limits.
         
@@ -1689,10 +1738,13 @@ class NIRCam(object):
         kwargs = merge_dicts(kwargs,kw1,kw2,kw3)
         if 'ideal_Poisson' not in kwargs.keys():
             kwargs['ideal_Poisson'] = True
+            
+        # Always use the bg coeff because it's smaller in size
+        psf_coeff = self._psf_coeff_bg
 
         bglim = bg_sensitivity(self.bandpass, self.pupil, self.mask, self.module,
             pix_scale=pix_scale, sp=sp, units=units, nsig=nsig, tf=tf, quiet=quiet, 
-            coeff=self._psf_coeff_bg, **kwargs)
+            coeff=psf_coeff, **kwargs)
     
         return bglim
 
@@ -1756,7 +1808,6 @@ class NIRCam(object):
                 .format(zf_rec)
             _log.warning(str1)
             _log.warning(str2)
-            
 
         # Don't forget about Lyot mask attenuation (not in bandpass throughput)
         if ('LYOT' in self.pupil):
@@ -1770,7 +1821,7 @@ class NIRCam(object):
         Create image showing level of saturation for each pixel.
         Can either show the saturation after one frame (default)
         or after the ramp has finished integrating (ramp_sat=True).
-
+        
         Parameters
         ----------
         sp : :mod:`pysynphot.spectrum`
@@ -1789,6 +1840,11 @@ class NIRCam(object):
         """
         
         assert ngroup >= 0
+        
+        if (self.pupil is not None) and ('GRISM' in self.pupil): 
+            is_grism = True
+        else:
+            is_grism = False
 
         t_frame = self.multiaccum_times['t_frame']
         t_int = self.multiaccum_times['t_int']
@@ -1804,14 +1860,24 @@ class NIRCam(object):
     
         # Slope image of input source
         image = self.gen_psf(sp)
+        if is_grism: 
+            wave, image = image
+            
         if full_size:
             shape = (self.det_info['ypix'], self.det_info['xpix'])
             image = pad_or_cut_to_size(image, shape)
+            
+        # Add in zodi background to full image
+        image += self.bg_zodi(**kwargs)
 
         # Well levels after "saturation time"
         sat_level = image * t_sat / self.well_level
     
-        return sat_level
+        if is_grism:
+            return (wave, sat_level)
+        else:
+            return sat_level
+
 
     def gen_exposures(self, sp=None, im_slope=None, file_out=None, return_results=None,
                       targ_name=None, timeFileNames=False, DMS=True,
@@ -1832,8 +1898,9 @@ class NIRCam(object):
             - Persistence/latent image
             - Optical distortions
             - Zodiacal background roll off for grism edges
-            - Telescope jitter
             - Cosmic Rays
+            
+        To Do: Double-check the output for grism data w.r.t V2V3_to_det().
 
 
         Parameters
@@ -1908,13 +1975,14 @@ class NIRCam(object):
     
             # Add in Zodi emission
             # Returns 0 if self.pupil='FLAT'
-            im_slope += self.bg_zodi(zfact, **kwargs)
+            im_slope += self.bg_zodi(**kwargs)
             
             targ_name = sp.name if targ_name is None else targ_name
             
             # Image coordinates have +V3 up and +V2 to left
             # Want to convert to detector coordinates
-            im_slope = V2V3_to_det(image, det.detid)
+            # Need to double-check the output for grism data.
+            #im_slope = V2V3_to_det(im_slope, det.detid)
 
         # Minimum value of slope
         im_min = im_slope[im_slope>=0].min()
@@ -1960,7 +2028,8 @@ class NIRCam(object):
 
         nproc = nproc_use_ng(det) if nproc is None else nproc
         if nproc<=1:
-            res = map(gen_fits, worker_arguments)
+            #map(gen_fits, worker_arguments)
+            res = [gen_fits(wa) for wa in worker_arguments]
         else:
             pool = mp.Pool(nproc)
             try:
@@ -1980,7 +2049,7 @@ class NIRCam(object):
         return_full_table=False, even_nints=False, verbose=False, **kwargs):
         """Optimize ramp settings.
         
-        Find the optimal ramp settings to observe spectrum based input constraints.
+        Find the optimal ramp settings to observe a spectrum based on input constraints.
         This function quickly runs through each detector readout pattern and 
         calculates the acquisition time and SNR for all possible settings of NINT
         and NGROUP that fulfill the SNR requirement (and other constraints). 
@@ -2053,12 +2122,12 @@ class NIRCam(object):
         rad_EE : int
             Extraction aperture radius (in pixels) for imaging mode.
         dw_bin : float
-            Delta wavelength to calculate spectral sensitivities 
-            for grisms & DHS.
+            Delta wavelength to calculate spectral sensitivities for
+            grisms and DHS.
         ap_spec : float, int
-            Instead of dw_bin, specify the spectral extraction 
-            aperture in pixels. Takes priority over dw_bin. Value 
-            will get rounded up to nearest int.
+            Instead of dw_bin, specify the spectral extraction aperture 
+            in pixels. Takes priority over dw_bin. Value will get rounded 
+            up to nearest int.
         
         Note
         ----

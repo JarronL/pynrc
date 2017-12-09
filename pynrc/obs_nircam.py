@@ -38,9 +38,9 @@ class obs_coronagraphy(NIRCam):
     distance : float
         Distance in parsecs to the science target. This is used for
         flux normalization of the planets and disk.
-    wfe_drift: float
+    wfe_ref_drift: float
         WFE drift in nm between the science and reference targets.
-        Expected values are between ~3-10 nm
+        Expected values are between ~3-10 nm.
     xpix : int
         Size of the detector readout along the x-axis. The detector is
         assumed to be in window mode  unless the user explicitly 
@@ -57,7 +57,7 @@ class obs_coronagraphy(NIRCam):
         
     """
     
-    def __init__(self, sp_sci, sp_ref, distance, wfe_drift=10, offset_list=None, 
+    def __init__(self, sp_sci, sp_ref, distance, wfe_ref_drift=10, offset_list=None, 
                  wind_mode='WINDOW', xpix=320, ypix=320, disk_hdu=None, 
                  verbose=False, **kwargs):
                  
@@ -71,7 +71,7 @@ class obs_coronagraphy(NIRCam):
         # Spectral models
         self.sp_sci = sp_sci
         self.sp_ref = sp_ref
-        self._wfe_drift = wfe_drift
+        self._wfe_ref_drift = wfe_ref_drift
         
         # Distance to source in pc
         self.distance = distance
@@ -105,15 +105,15 @@ class obs_coronagraphy(NIRCam):
         if verbose: print("Finished.")
         
     @property
-    def wfe_drift(self):
+    def wfe_ref_drift(self):
         """Assumed WFE drift"""
-        return self._wfe_drift
-    @wfe_drift.setter
-    def wfe_drift(self, value):
+        return self._wfe_ref_drift
+    @wfe_ref_drift.setter
+    def wfe_ref_drift(self, value):
         """Set the WFE drift value (updates self.nrc_ref)"""
         # Only update if the value changes
-        vold = self._wfe_drift; self._wfe_drift = value
-        if vold != self._wfe_drift: 
+        vold = self._wfe_ref_drift; self._wfe_ref_drift = value
+        if vold != self._wfe_ref_drift: 
             self._gen_ref()
 
     def _gen_disk_hdulist(self):
@@ -154,7 +154,7 @@ class obs_coronagraphy(NIRCam):
         """Function to generate Reference observation class"""
 
         # PSF information
-        opd = (self.psf_info['opd'][0], self.psf_info['opd'][1], self._wfe_drift)
+        opd = (self.psf_info['opd'][0], self.psf_info['opd'][1])
         fov_pix = self.psf_info['fov_pix']
         oversample = self.psf_info['oversample']
 
@@ -169,15 +169,15 @@ class obs_coronagraphy(NIRCam):
         # Create a NIRCam reference class
         # If it already exists, just update OPD info
         try:
-            if verbose: print("Updating NIRCam reference OPD...")
-            nrc = self.nrc_ref
-            nrc.update_psf_coeff(opd=opd)
+            if verbose: print("Updating NIRCam reference coefficients...")
+            self.nrc_ref.wfe_drift = self.wfe_ref_drift
         except AttributeError:
             if verbose: print("Creating NIRCam reference class...")
             nrc = NIRCam(self.filter, self.pupil, self.mask, module=self.module, \
                          wind_mode=wind_mode, xpix=xpix, ypix=ypix, \
                          fov_pix=fov_pix, oversample=oversample, opd=opd,
-                         offset_r=offset_r, offset_theta=offset_theta)        
+                         offset_r=offset_r, offset_theta=offset_theta,
+                         wfe_drift=self.wfe_ref_drift)
             self.nrc_ref = nrc
 
         
@@ -899,6 +899,9 @@ class obs_coronagraphy(NIRCam):
         if full_size:
             shape = (self.det_info['ypix'], self.det_info['xpix'])
             image = pad_or_cut_to_size(image, shape)
+
+        # Add in zodi background to full image
+        image += self.bg_zodi(**kwargs)
 
         # Well levels after "saturation time"
         sat_level = image * t_sat / self.well_level
