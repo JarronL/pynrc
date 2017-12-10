@@ -9,6 +9,9 @@ import six
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
+
+# Update 
+on_rtd = os.environ.get('READTHEDOCS') == 'True'
 rcvals = {'xtick.minor.visible': True, 'ytick.minor.visible': True,
           'xtick.direction': 'in', 'ytick.direction': 'in', 
           'xtick.top': True, 'ytick.right': True, 'font.family': ['serif'],
@@ -17,13 +20,14 @@ rcvals = {'xtick.minor.visible': True, 'ytick.minor.visible': True,
           'image.interpolation': 'nearest', 'image.origin': 'lower',
           'figure.figsize': [8,6], 'mathtext.fontset':'cm'}#,
           #'text.usetex': True, 'text.latex.preamble': ['\usepackage{gensymb}']}
-matplotlib.rcParams.update(rcvals)
-cmap_pri, cmap_alt = ('viridis', 'gist_heat')
-matplotlib.rcParams['image.cmap'] = cmap_pri if cmap_pri in plt.colormaps() else cmap_alt
+if not on_rtd:
+    matplotlib.rcParams.update(rcvals)
+    cmap_pri, cmap_alt = ('viridis', 'gist_heat')
+    matplotlib.rcParams['image.cmap'] = cmap_pri if cmap_pri in plt.colormaps() else cmap_alt
 
 
 import datetime, time
-import yaml, re, os
+import re, os
 import sys, platform
 import multiprocessing as mp
 import traceback
