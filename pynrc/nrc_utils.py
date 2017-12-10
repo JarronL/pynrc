@@ -103,10 +103,11 @@ S.refs.set_default_waveset(minwave=500, maxwave=56000, num=10000.0, delta=None, 
 S.refs.setref(area = 25.4e4) # cm^2
 
 # Grab WebbPSF assumed pixel scales 
-nc_temp = webbpsf.NIRCam()
-pixscale_SW = nc_temp._pixelscale_short
-pixscale_LW = nc_temp._pixelscale_long
-del nc_temp
+if not on_rtd:
+    nc_temp = webbpsf.NIRCam()
+    pixscale_SW = nc_temp._pixelscale_short
+    pixscale_LW = nc_temp._pixelscale_long
+    del nc_temp
 
 opd_default = ('OPD_RevW_ote_for_NIRCam_requirements.fits', 0)
 
