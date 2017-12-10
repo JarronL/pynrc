@@ -22,6 +22,7 @@ Installing with pip
 --------------------
 
 .. admonition:: Note: To be completed
+
     You can install the ``pynrc`` package through pip::
 
         $ pip install pynrc
