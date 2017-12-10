@@ -24,14 +24,20 @@ class Conf(_config.ConfigNamespace):
     # Path to data files for pynrc. 
     # The environment variable $PYNRC_PATH takes priority.
     import os
-    path = os.getenv('PYNRC_PATH')
-    if path is None:
-        raise EnvironmentError("Environment variable $PYNRC_PATH is not set!")
-    if not os.path.isdir(path):
-        raise IOError("PYNRC_PATH ({}) is not a valid directory path!".format(path))
-    # Make sure there is a '/' at the end of the path name
-    if '/' not in path[-1]: 
-        path += '/'
+    
+    on_rtd = os.environ.get('READTHEDOCS') == 'True'
+    
+    if on_rtd:
+        path = '/'
+    else:
+        path = os.getenv('PYNRC_PATH')
+        if path is None:
+            raise EnvironmentError("Environment variable $PYNRC_PATH is not set!")
+        if not os.path.isdir(path):
+            raise IOError("PYNRC_PATH ({}) is not a valid directory path!".format(path))
+        # Make sure there is a '/' at the end of the path name
+        if '/' not in path[-1]: 
+            path += '/'
     PYNRC_PATH = _config.ConfigItem(path, 'Directory path to data files \
                                     required for pynrc calculations.')
 

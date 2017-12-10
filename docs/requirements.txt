@@ -1,2 +1,9 @@
 sphinx-automodapi
+numpy
+matplotlib
+Cython
+astropy-helpers
 astropy
+-e git+https://github.com/mperrin/poppy.git#egg=poppy
+-e git+https://github.com/mperrin/webbpsf.git#egg=webbpsf
+
