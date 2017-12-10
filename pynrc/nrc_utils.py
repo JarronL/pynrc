@@ -4,6 +4,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 
 # The six library is useful for Python 2 and 3 compatibility
 import six
+import os, re
 
 # Import libraries
 import numpy as np
@@ -27,7 +28,6 @@ if not on_rtd:
 
 
 import datetime, time
-import re, os
 import sys, platform
 import multiprocessing as mp
 import traceback
