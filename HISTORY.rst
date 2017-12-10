@@ -1,15 +1,19 @@
 Revision History
 ================
 
-v0.6.0 (Oct 2017)
+v0.6.0 (Dec 2017)
 -----------------
 
-- Support for Python 3
+- Support for Python 3 (mostly ``map``, ``dict``, and index fixes)
 - Updated code comments for ``sphinx`` and ``readthedocs`` documentation
 - Create ``setup.py`` install file
 - Modify grism PSF shapes due to aperture shape
 - Detector frames times based on ASIC microcode build 10
 - Headers for DMS data
+- Three major additions to PSF coeffs
+  - coeffs based on module (SWA, SWB, LWA, LWB), rather than filter
+  - WFE drift coeff mods
+  - field-dependent coeff mods
 
 v0.5.0 (Feb 2017)
 -----------------

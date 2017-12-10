@@ -24,8 +24,8 @@ PSF Related
 +++++++++++
     - Actual coronagraphic throughput from FITS files
     - Include dispersion of coronagraph PSF
-    - PSF Jitter options
-    - Bar Mask offsets (using nrc.options['bar_offset'])
+    - More PSF Jitter options
+    - Bar Mask offsets (using nrc.options['bar_offset'])?
     - PSF convolution based on geometric spot size
     
 Observation Classes
