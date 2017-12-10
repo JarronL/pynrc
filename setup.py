@@ -18,9 +18,17 @@ from pynrc.version import __version__
 version = __version__
 
 # Get the long description from the README file
-with open(path.join(root, 'README.md'), encoding='utf-8') as f:
-    long_description = f.read()
+long_description = '''
+pyNRC is a set of Python-based tools for planning observations with JWST NIRCam, 
+including an ETC, simple image slope simulator, and enhanced DMS simulator. 
+The module works for a vareity NIRCam observing modes including direct imaging, 
+coronagraphic imaging, slitless grism spectroscopy, DHS observations, and weak 
+lens imaging. All PSFs are generated via WebbPSF to reproduce realistic JWST 
+images and spectra.
 
+See https://github.com/JarronL/pynrc and https://pynrc.readthedocs.io
+for more information.
+'''
 
 setup(
     name='pynrc',
@@ -77,7 +85,7 @@ setup(
           'matplotlib>=1.5.0',
           'scipy>=0.16.0',
           'astropy>=1.2.0',
-          'pysynphot>=0.9',
+          'pysynphot>=0.9.8',
           'poppy>=0.6.1',
           'webbpsf>=0.6.0',
           'jwxml>=0.3.0'

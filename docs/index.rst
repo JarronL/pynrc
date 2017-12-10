@@ -16,12 +16,6 @@ Documentation for pyNRC (pynrc)
    
    installation.rst
 
-
-Getting Started with pyNRC
-==========================
-
-Installation
-
 ETC Basic Usage
 
 ETC Advanced Usage
@@ -48,6 +42,6 @@ see :ref:`LICENSE <license>`.
 .. attention:: Citing pyNRC
 
     If you make use of pyNRC in your work, please cite the following paper: 
-    `Leisenring et al. 2017, "pyNRC: A NIRCam ETC and Simulation Toolset"`
+    `Leisenring et al. 2018, "pyNRC: A NIRCam ETC and Simulation Toolset"`
 
 Copyright (c) 2017 Jarron Leisenring and contributors.

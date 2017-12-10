@@ -109,7 +109,7 @@ if not on_rtd:
     pixscale_LW = nc_temp._pixelscale_long
     del nc_temp
 
-opd_default = ('OPD_RevW_ote_for_NIRCam_requirements.fits', 0)
+opd_default = ('OPD_RevW_ote_for_NIRCam_requirements.fits.gz', 0)
 
 ###########################################################################
 #
@@ -563,9 +563,8 @@ class NIRCamFieldAndWavelengthDependentAberration_mod(poppy.OpticalElement):
 
         # TODO load here the wavelength dependence info.
         self.focusmodel_file = os.path.join(
-            webbpsf.utils.get_webbpsf_data_path(),
-            'NIRCam',
-            'optics',
+            conf.PYNRC_PATH,
+            'throughputs',
             'nircam_defocus_vs_wavelength.fits')
         model_hdul = fits.open(self.focusmodel_file)
         assert model_hdul[1].header['XTENSION'] == 'BINTABLE'
@@ -1003,8 +1002,7 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     drift_file : str, None
         Delta OPD file to use for WFE drift.
     include_si_wfe : bool
-        Include SI WFE measurements in si_zernikes_isim_cv3.fits?
-        Default = False.
+        Include SI WFE measurements? Default = False.
     detector : str, None
         Name of detector [A1, A2, ..., A5, B1, ..., B5].
     detector_position : tuple, None
