@@ -61,8 +61,9 @@ try:
 except ImportError:
     raise ImportError('WebbPSF is not installed. pyNRC depends on its inclusion.')
 # Check that minimum required version meets requirements
-_webbpsf_version_min = (0,6,0)
-_ = webbpsf.utils.get_webbpsf_data_path(_webbpsf_version_min)
+if not on_rtd:
+    _webbpsf_version_min = (0,6,0)
+    _ = webbpsf.utils.get_webbpsf_data_path(_webbpsf_version_min)
 
 # Link to WebbPSF's instance of poppy
 from webbpsf.webbpsf_core import poppy
