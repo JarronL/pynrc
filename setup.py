@@ -77,7 +77,7 @@ setup(
           'matplotlib>=1.5.0',
           'scipy>=0.16.0',
           'astropy>=1.2.0',
-          'pysynphot>=0.9.8.0',
+          'pysynphot>=0.9',
           'poppy>=0.6.1',
           'webbpsf>=0.6.0',
           'jwxml>=0.3.0'
