@@ -1,6 +1,6 @@
 sphinx-automodapi
 numpy
-matplotlib
+matplotlib>=2
 Cython
 astropy-helpers
 astropy
