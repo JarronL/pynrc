@@ -8,12 +8,13 @@ pyNRC - A JWST NIRCam ETC
 **!!Under Development!!**
 
 pyNRC is a set of Python-based tools for planning observations with JWST NIRCam, 
-such as an ETC, ~~rudimentary overhead calculator~~ (TBI), and simple image slope 
-simulator. 
-pyNRC works for a vareity NIRCam observing modes including direct imaging, 
+such as an ETC, ~~rudimentary overhead calculator~~ (TBI), simple image slope 
+simulator, and full-blown DMS simulator.
+
+The module works for a vareity NIRCam observing modes including direct imaging, 
 coronagraphic imaging, slitless grism spectroscopy, ~~DHS observations~~ (TBI), 
 and weak lens imaging.
-All PSFs are generated via WebbPSF (https://webbpsf.readthedocs.io/en/stable/) to reproduce 
+All PSFs are generated via WebbPSF (https://webbpsf.readthedocs.io) to reproduce 
 realistic JWST images and spectra.
 
 **Note**: pyNRC allows for more modes than are officially allowed by the Observatory,
@@ -43,15 +44,11 @@ startup file, such as ``.bashrc``:
 
 - ``export PYNRC_PATH="/Users/Bob/pynrc_data/"``
 
-You can grab the required data files at: http://mips.as.arizona.edu/~jleisenring/pynrc/pynrc_data_v0.5.0.tar. One of the directories includes speckle maps for computing contrasts. These files can either be computed directly via the generate_speckle_maps.ipynb or downloaded at http://mips.as.arizona.edu/~jleisenring/pynrc/speckle_maps.tar.
+You can grab the required data files at: http://mips.as.arizona.edu/~jleisenring/pynrc/pynrc_data_v0.6.0.tar. 
 
 ## Requirements
 
-+ Python 2.7.x (3.x compatability not guaranteed, but vetting welcome!)
-+ WebbPSF >=0.5.0 (https://pythonhosted.org/webbpsf/)
-+ Astropy >=1.2.0 (http://www.astropy.org/)
-+ Pysynphot >=0.9.8.2 (https://pysynphot.readthedocs.io)
-+ Others???
-
-#### Recommended
-+ Seaborn >=0.7.0 (https://seaborn.pydata.org/)
++ Python >=2.7.0 or >=3.5
++ WebbPSF >=0.6.0 (https://pythonhosted.org/webbpsf/)
++ Astropy >=1.3.0 (http://www.astropy.org/)
++ Pysynphot >=0.9.8.0 (https://pysynphot.readthedocs.io)
