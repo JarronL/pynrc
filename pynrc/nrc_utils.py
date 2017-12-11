@@ -563,8 +563,9 @@ class NIRCamFieldAndWavelengthDependentAberration_mod(poppy.OpticalElement):
 
         # TODO load here the wavelength dependence info.
         self.focusmodel_file = os.path.join(
-            conf.PYNRC_PATH,
-            'throughputs',
+            webbpsf.utils.get_webbpsf_data_path(),
+            'NIRCam',
+            'optics',
             'nircam_defocus_vs_wavelength.fits')
         model_hdul = fits.open(self.focusmodel_file)
         assert model_hdul[1].header['XTENSION'] == 'BINTABLE'
@@ -1436,8 +1437,9 @@ def wfed_coeff(filter, force=False, save=True, save_name=None, **kwargs):
     if (not force) and os.path.exists(save_name):
         return np.load(save_name)
     
+    _log.warn('Generating WFE Drift coefficients. This may take some time.')
     # Cycle through WFE drifts for fitting
-    wfe_list = np.array([0,1,2,5,10,15,20])
+    wfe_list = np.array([0,1,2,5,10,20])
     nwfe = len(wfe_list)
     
     cf_wfe = []
@@ -1525,6 +1527,8 @@ def field_coeff(filter, force=False, save=True, save_name=None, **kwargs):
     # Load file if it already exists
     if (not force) and os.path.exists(save_name):
         return np.load(save_name)
+
+    _log.warn('Generating field-dependent coefficients. This may take some time.')
 
     # Cycle through a list of field points
     # These are measured field positions
@@ -2680,7 +2684,7 @@ def bp_2mass(filter):
     Parameters
     ----------
     filter : str
-        Filter 'j', 'h', or 'ks'.
+        Filter 'j', 'h', or 'k'.
 
     Returns
     -------
@@ -3568,6 +3572,77 @@ def sp_accr(mmdot, rin=2, dist=10, truncated=False,
     sp.convert(fluxout)
         
     return sp
+
+
+###########################################################################
+#
+#    Coronagraphic Disk Imaging Routines
+#
+###########################################################################
+
+def nproc_use_convolve(fov_pix, oversample, npsf=None):
+    """ 
+    Attempt to estimate a reasonable number of processes to use for multiple 
+    simultaneous convolve_fft calculations.
+
+    Here we attempt to estimate how many such calculations can happen in
+    parallel without swapping to disk, with a mixture of empiricism and conservatism.
+    One really does not want to end up swapping to disk with huge arrays.
+
+    NOTE: Requires psutil package. Otherwise defaults to mp.cpu_count() / 2
+
+    Parameters
+    -----------
+    fov_pix : int
+        Square size in detector-sampled pixels of final PSF image.
+    oversample : int
+        The optical system that we will be calculating for.
+    nwavelengths : int
+        Number of wavelengths. Sets maximum # of processes.
+    """
+
+    try:
+        import psutil
+    except ImportError:
+        nproc = int(mp.cpu_count() // 2)
+        if nproc < 1: nproc = 1
+
+        _log.info("No psutil package available, cannot estimate optimal nprocesses.")
+        _log.info("Returning nproc=ncpu/2={}.".format(nproc))
+        return nproc
+
+    mem = psutil.virtual_memory()
+    avail_GB = mem.available / (1024**3) - 1.0 # Leave 1 GB
+
+    fov_pix_over = fov_pix * oversample
+
+    # Memory formulas are based on fits to memory usage stats for:
+    #   fov_arr = np.array([16,32,128,160,256,320,512,640,1024,2048])
+    #   os_arr = np.array([1,2,4,8])
+    # In MBytes
+    mem_total = 300*(fov_pix_over)**2 * 8 / (1024**2)
+
+    # Convert to GB
+    mem_total /= 1024
+
+    # How many processors to split into?
+    nproc = avail_GB // mem_total
+    nproc = np.min([nproc, mp.cpu_count(), poppy.conf.n_processes])
+    if npsf is not None:
+        nproc = np.min([nproc, npsf])
+        # Resource optimization:
+        # Split iterations evenly over processors to free up minimally used processors.
+        # For example, if there are 5 processes only doing 1 iteration, but a single
+        #   processor doing 2 iterations, those 5 processors (and their memory) will not
+        #   get freed until the final processor is finished. So, to minimize the number
+        #   of idle resources, take the total iterations and divide by two (round up),
+        #   and that should be the final number of processors to use.
+        np_max = np.ceil(npsf / nproc)
+        nproc = int(np.ceil(npsf / np_max))
+
+    if nproc < 1: nproc = 1
+
+    return int(nproc)
 
 
 ###########################################################################

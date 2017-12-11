@@ -532,7 +532,8 @@ class obs_coronagraphy(NIRCam):
             npix = ypix*xpix
             nproc = nproc_use_convolve(npix, 1, noff)
             if nproc<=1:
-                imconv_slices = map(_wrap_convolve_for_mp, worker_arguments)
+                imconv_slices = [_wrap_convolve_for_mp(wa) for wa in worker_arguments]
+                #map(_wrap_convolve_for_mp, worker_arguments)
             else:
                 pool = mp.Pool(nproc)
                 try:
@@ -595,13 +596,14 @@ class obs_coronagraphy(NIRCam):
         exclude_planets : bool
             Ignore planets when generating image?
         
-        
         Keyword Args
         ------------
         zfact : float
             Zodiacal background factor (default=2.5)
         exclude_noise : bool
             Don't add random Gaussian noise (detector+photon)?
+        opt_diff : bool
+            Optimal reference differencing (scaling only on the inner regions)
 
         Returns
         -------
@@ -698,7 +700,8 @@ class obs_coronagraphy(NIRCam):
             but still add Poisson noise from disk.
         exclude_noise : bool
             Don't add random Gaussian noise (detector+photon)
-        
+        opt_diff : bool
+            Optimal reference differencing (scaling only on the inner regions)
         """
     
         # Final image shape
@@ -1055,4 +1058,12 @@ def _wrap_convolve_for_mp(args):
     #_, psf_over = nrc_object.gen_psf(return_oversample=True)
     #offset_pix = -offset_list[i] / pixscale_over
     #psf_over = fshift(psf_over, dely=offset_pix, pad=True)
-    return convolve_fft(im_temp, psf, fftn=fftpack.fftn, ifftn=fftpack.ifftn, allow_huge=True)
+    
+    # Normalize PSF sum to 1.0
+    # Otherwise convolve_fft may throw an error of psf.sum() is too small
+    norm = psf.sum()
+    psf = psf / norm
+    res = convolve_fft(im_temp, psf, fftn=fftpack.fftn, ifftn=fftpack.ifftn, allow_huge=True)
+    res *= norm
+    
+    return res

@@ -1558,8 +1558,8 @@ class NIRCam(object):
             
         wfe_drift = self._wfe_drift
         if wfe_drift>0:
-            _log.info('Updating WFE drift for fov_pix={} and oversample={}'.\
-                format(fov_pix,oversample))
+            _log.info('Updating WFE drift ({}nm) for fov_pix={} and oversample={}'.\
+                format(wfe_drift,fov_pix,oversample))
             wfe_kwargs = dict(self._psf_info)
             wfe_kwargs['pupil']  = self.pupil
             wfe_kwargs['mask']   = self.mask
