@@ -1469,7 +1469,7 @@ class NIRCam(object):
         offset_theta :float
             Position angle for radial offset, in degrees CCW.
         opd : tuple or HDUList
-            Tuple (file, slice) or HDUList specifying OPD.
+            Tuple (file, slice) or filename or HDUList specifying OPD.
         wfe_drift : float
             Wavefront error drift amplitude in nm.
             Updates :attr:`wfe_drift` attribute.
@@ -1576,10 +1576,11 @@ class NIRCam(object):
         # generate another background PSF for sensitivity information.
         # It's easiest just to ALWAYS do a small footprint without the
         # coronagraphic mask and save the PSF coefficients. 
+        # Opting to save and not force since this isn't critical for modeling.
         if self.mask is not None:
             self._psf_info_bg={'fov_pix':33, 'oversample':oversample, 
                 'offset_r':0, 'offset_theta':0, 'tel_pupil':tel_pupil, 
-                'opd':opd, 'jitter':None, 'save':save, 'force':force}
+                'opd':opd, 'jitter':None, 'save':True, 'force':False}
             self._psf_coeff_bg = psf_coeff(self.bandpass, self.pupil, None, self.module, 
                 **self._psf_info_bg)
         else:

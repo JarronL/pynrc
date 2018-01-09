@@ -18,11 +18,12 @@ pynrc.obs_coronagraphy
    .. autosummary::
 
       ~obs_coronagraphy.add_planet
+      ~obs_coronagraphy.kill_planets
       ~obs_coronagraphy.calc_contrast
+      ~obs_coronagraphy.gen_offset_psf
       ~obs_coronagraphy.gen_disk_image
       ~obs_coronagraphy.gen_planets_image
       ~obs_coronagraphy.gen_roll_image
-      ~obs_coronagraphy.kill_planets
       ~obs_coronagraphy.planet_spec
       ~obs_coronagraphy.saturation_levels
       ~obs_coronagraphy.star_flux
@@ -30,11 +31,12 @@ pynrc.obs_coronagraphy
    .. rubric:: Methods Documentation
 
    .. automethod:: add_planet
+   .. automethod:: kill_planets
    .. automethod:: calc_contrast
+   .. automethod:: gen_offset_psf
    .. automethod:: gen_disk_image
    .. automethod:: gen_planets_image
    .. automethod:: gen_roll_image
-   .. automethod:: kill_planets
    .. automethod:: planet_spec
    .. automethod:: saturation_levels
    .. automethod:: star_flux

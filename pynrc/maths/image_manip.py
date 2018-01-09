@@ -328,6 +328,9 @@ def align_LSQ(reference, target, mask=None, pad=False,
         N x K image indicating pixels to ignore when
         performing the minimization. The masks acts as
         a weighting function in performing the fit.
+    pad : bool
+        Should we pad the array before shifting, then truncate?
+        Otherwise, the image is wrapped.
     shift_function : func
         which function to use for sub-pixel shifting.
         Options are fourier_imshift or fshift.

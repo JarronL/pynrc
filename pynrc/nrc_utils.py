@@ -947,8 +947,8 @@ def _wrap_coeff_for_mp(args):
 
         
 def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A', 
-    fov_pix=11, oversample=None, npsf=None, ndeg=10, tel_pupil=None,
-    offset_r=0, offset_theta=0, jitter=None, jitter_sigma=0.007, 
+    fov_pix=11, oversample=None, npsf=None, ndeg=None, tel_pupil=None,
+    offset_r=None, offset_theta=None, jitter=None, jitter_sigma=0.007, 
     opd=None, wfe_drift=None, drift_file=None, include_si_wfe=True, 
     detector=None, detector_position=None, force=False, 
     save=True, save_name=None, return_save_name=False, **kwargs):
@@ -989,15 +989,16 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         produce 20 PSFs/um. The wavelength range is determined by
         choosing those wavelengths where throughput is >0.001.
     ndeg : int
-        Polynomial degree for PSF fitting. Default = 9.
+        Polynomial degree for PSF fitting. Default = 10.
     offset_r : float
         Radial offset from the center in arcsec.
     offset_theta :float
         Position angle for radial offset, in degrees CCW.
-    opd : tuple, HDUList
+    opd : str, tuple, HDUList
         OPD specifications. If a tuple, then it should contain two elements
-        (filename, slice index). Can also pass an HDUList where the opd is 
-        stored in HDUList[0].data.
+        (filename, slice index). Can also specify just the filename, which
+        will default to the first image slice.  Can also pass an HDUList 
+        where the OPD data is stored at HDUList[0].data.
     wfe_drift : float
         Wavefront error drift amplitude in nm.
     drift_file : str, None
@@ -1035,8 +1036,7 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     if oversample is None:
         oversample = 2 if coron_obs else 4
 
-    # Default OPD
-    if opd is None: 
+    if opd is None:  # Default OPD
         opd = opd_default
     elif isinstance(opd, six.string_types):
         opd = (opd, 0)
@@ -1102,13 +1102,15 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     # 3. All other imaging - Just perform nominal r=theta=0.
     #    Any PSF movement is more quickly applied with sub-pixel shifting routines.
     # NB: Implementation of field-dependent OPD maps may change these settings.
+    if offset_r is None: offset_r = 0
+    if offset_theta is None: offset_theta = 0
+    #if ('210R' in mtemp) or ('335R' in mtemp) or ('430R' in mtemp):
+    #    rtemp, ttemp = (offset_r, offset_theta)
+    #elif ('MASKSWB' in mtemp) or ('MASKLWB' in mtemp):
+    #    rtemp, ttemp = (offset_r, offset_theta)
+    #else:
+    #    rtemp = ttemp = 0
     rtemp, ttemp = (offset_r, offset_theta)
-    if ('210R' in mtemp) or ('335R' in mtemp) or ('430R' in mtemp):
-        rtemp, ttemp = (offset_r, 0)
-    elif ('MASKSWB' in mtemp) or ('MASKLWB' in mtemp):
-        rtemp, ttemp = (offset_r, offset_theta)
-    else:
-        rtemp = ttemp = 0
     inst.options['source_offset_r']     = rtemp
     inst.options['source_offset_theta'] = ttemp
     
@@ -1220,7 +1222,13 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     inst.SHORT_WAVELENGTH_MAX = inst.LONG_WAVELENGTH_MAX = 10e-6
 
     # Select which wavelengths to use
-    w1,w2 = (0.5,2.5) if 'SW' in chan_str else (2.4,5.1)
+    # When saving the data, we want the full channel wavelength
+    # However, if doing a "quick" PSF, only fit the filter wavelength range
+    if save:
+        w1,w2 = (0.5,2.5) if 'SW' in chan_str else (2.4,5.1)
+    else:
+        w1 = bp.wave.min() / 1e4
+        w2 = bp.wave.max() / 1e4
 
     # Create set of monochromatic PSFs to fit.
     if npsf is None:
@@ -1288,6 +1296,8 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     
     # Simultaneous polynomial fits to all pixels using linear least squares
     # 7th-degree polynomial seems to do the trick
+    if ndeg is None:
+        ndeg = 10 if save else 7
     coeff_all = jl_poly_fit(waves, images, ndeg)
 
     if save:

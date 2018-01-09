@@ -84,16 +84,44 @@ class obs_coronagraphy(NIRCam):
             if offset_list is not None:
                 print('No coronagraph, so offset_list automatically set to [0.0].')
         elif offset_list is None:
-            self.offset_list = [0.0, 0.1, 0.2, 0.5, 1.0, 2.0]
+            self.offset_list = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 1.0, 1.5, 2.0, 5.0]
         else:
             self.offset_list = offset_list
-        
-        if verbose: print("Generating list of PSFs...")
+
+        # Background PSF should be same size as primary PSF
+        if verbose: print("Generating background PSF coefficients...")
         # Faster once PSFs have already been previously generated 
         log_prev = conf.logging_level
         setup_logging('WARN', verbose=False)
-        self._gen_psf_off()
+        if self.mask is not None:
+            fov_pix    = self.psf_info['fov_pix']
+            oversample = self.psf_info['oversample']
+            tel_pupil  = self.psf_info['tel_pupil']
+            opd        = self.psf_info['opd']
+            self._psf_info_bg={'fov_pix':fov_pix, 'oversample':oversample, 
+                'offset_r':0, 'offset_theta':0, 'tel_pupil':tel_pupil, 
+                'opd':opd, 'jitter':None, 'save':True, 'force':False}
+            self._psf_coeff_bg = psf_coeff(self.bandpass, self.pupil, None, self.module, 
+                **self._psf_info_bg)
+        else:
+            self._psf_info_bg  = self._psf_info
+            self._psf_coeff_bg = self._psf_coeff
         setup_logging(log_prev, verbose=False)
+
+        # Only do this if disk_hdu not None?
+        if verbose: print("Generating oversampled PSFs...")
+        _, psf = self.gen_psf(return_oversample=True, use_bg_psf=False)
+        self.psf_center_over = psf
+        if self.mask is not None:
+            self.psf_offaxis_over = self.psf_center_over
+        else:
+            _, psf = self.gen_psf(return_oversample=True, use_bg_psf=True)
+            self.psf_offaxis_over = psf
+        
+        # PSFs at each offset position
+        if disk_hdu is not None:
+            if verbose: print("Generating PSFs for disk convolution...")
+            self._gen_psf_list()
         
         self._gen_ref(verbose=verbose)
         self._set_xypos()
@@ -115,6 +143,90 @@ class obs_coronagraphy(NIRCam):
         vold = self._wfe_ref_drift; self._wfe_ref_drift = value
         if vold != self._wfe_ref_drift: 
             self._gen_ref()
+            
+    def gen_offset_psf(self, offset_r, offset_theta, sp=None, return_oversample=False):
+        """Create a PSF offset from center FoV
+        
+        Generate some off-axis PSF at a given (r,theta) offset from center.
+        This function is mainly for coronagraphic observations where the
+        off-axis PSF varies w.r.t. position. 
+        
+        Parameters
+        ----------
+        offset_r : float
+            Radial offset of the target from center.
+        offset_theta : float
+            Position angle for that offset, in degrees CCW (+Y).
+        
+        Keyword Args
+        ------------
+        sp : None, :mod:`pysynphot.spectrum`
+            If not specified, the default is flat in phot lam 
+            (equal number of photons per spectral bin).
+        return_oversample : bool
+            Return either the pixel-sampled or oversampled PSF.
+
+        """
+        
+        if sp is None:
+            psf_center  = self.psf_center_over
+            psf_offaxis = self.psf_offaxis_over
+        else:
+            _, psf_center = self.gen_psf(sp, return_oversample=True, use_bg_psf=False)
+            if self.mask is None:
+                # Direct imaging; both PSFs are the same
+                psf_offaxis = psf_center
+            else:
+                _, psf_offaxis = self.gen_psf(sp, return_oversample=True, use_bg_psf=True)
+            
+        psf = self._psf_lin_comb(offset_r, offset_theta, psf_center, psf_offaxis)
+        if return_oversample:
+            return psf
+        else:
+            fov_pix = self.psf_info['fov_pix']
+            return krebin(psf, (fov_pix,fov_pix))
+
+        
+    def _psf_lin_comb(self, offset_r, offset_theta, psf_center=None, psf_offaxis=None):
+        """
+        Linearly combine off-axis and occulted PSFs.
+        Returns an oversampled PSF.
+        
+        If passing the two PSFs, make sure they are the oversampled
+        versions.
+        """
+        
+        fov_pix        = self.psf_info['fov_pix']
+        oversample     = self.psf_info['oversample']
+        pixscale       = self.pix_scale
+        fov_asec       = fov_pix * pixscale
+        pixscale_over = pixscale / oversample
+        
+        # Oversampled PSFs
+        psf_center  = self.psf_center_over  if psf_center  is None else psf_center
+        psf_offaxis = self.psf_offaxis_over if psf_offaxis is None else psf_offaxis
+        
+        # Oversampled image mask
+        if self.mask is not None:
+            im_mask = coron_trans(self.mask, fov=fov_asec, pixscale=pixscale_over, nd_squares=False)
+            im_mask = pad_or_cut_to_size(im_mask, psf_center.shape)
+        
+        # For circular masks, the offset PSF is well-determined by a linear
+        # combination of the perfectly centered PSF and the off-axis PSF.
+        if self.mask is None: # Direct imaging
+            res = psf_center
+        elif self.mask[-1]=='R': # Round masks
+            nx = im_mask.shape[0]
+            xv = (np.arange(nx) - nx/2) * pixscale_over
+            a = np.interp(offset_r, xv, im_mask[nx//2,:]**2)
+            b = 1 - a
+            
+            res = psf_offaxis*a + psf_center*b
+        elif self.mask[-1]=='B': # Bar masks
+            raise NotImplementedError('BAR Masks not yet implemented')
+            
+        return res
+        
 
     def _gen_disk_hdulist(self):
         """Create a correctly scaled disk model image"""
@@ -154,7 +266,7 @@ class obs_coronagraphy(NIRCam):
         """Function to generate Reference observation class"""
 
         # PSF information
-        opd = (self.psf_info['opd'][0], self.psf_info['opd'][1])
+        opd = self.psf_info['opd']
         fov_pix = self.psf_info['fov_pix']
         oversample = self.psf_info['oversample']
 
@@ -181,7 +293,7 @@ class obs_coronagraphy(NIRCam):
             self.nrc_ref = nrc
 
         
-    def _gen_psf_off(self):
+    def _gen_psf_list(self):
         """
         Create instances of NIRCam observations that are incrementally offset 
         from coronagraph center to determine maximum value of the detector-
@@ -190,43 +302,48 @@ class obs_coronagraphy(NIRCam):
         """
         
         # If no mask, then the PSF looks the same at all radii
+        self.psf_list = []
         if self.mask is None:
-            psf = self.gen_psf()
-            self.psf_max_vals = ([0,10], [psf.max(),psf.max()]) # radius and psf max
-            self.psf_offsets = [self]
+            psf = self.gen_offset_psf(0, 0)
             self.psf_list = [psf]
-        else:
-            psf_off = []
-            psf_max = []
-            self.psf_list = []
-            self.psf_offsets = []
-            for offset in self.offset_list:
+        elif self.mask[-1]=='R': # Round masks
+            self.psf_list = [self.gen_offset_psf(offset, 0) for offset in self.offset_list]
+        elif self.mask[-1]=='B': # Bar masks
+            raise NotImplementedError('BAR Masks not yet implemented')
+        
+        
+#             psf_off = []
+#             psf_max = []
+#             self.psf_list = []
+#             self.psf_offsets = []
+#             for offset in self.offset_list:
+#             
+#                 # Full FoV
+#                 fov_pix = 2 * np.max(self.offset_list) / self.pix_scale
+#                 # Increase to the next power of 2 and make odd
+#                 fov_pix = int(2**np.ceil(np.log2(fov_pix)+1))
+#                 oversample = self.psf_info['oversample']
+#             
+#                 nrc_inst = NIRCam(self.filter, self.pupil, self.mask, \
+#                                   fov_pix=fov_pix, oversample=oversample, \
+#                                   offset_r=offset)
+#                 # Append offsets and PSF max values
+#                 psf = nrc_inst.gen_psf()
+#                 psf_off.append(offset)                
+#                 psf_max.append(psf.max())
+#                 self.psf_offsets.append(nrc_inst)
+# 
+#                 # Shift to center
+#                 offset_pix = -offset / nrc_inst.pix_scale
+#                 psf = fshift(psf, dely=offset_pix, pad=True)
+#                 self.psf_list.append(psf)
+# 
+#                 
+#             # Add background PSF info (without mask) for large distance
+#             psf_off.append(np.max([np.max(self.offset_list)+1, 4]))
+#             psf_max.append(self.gen_psf(use_bg_psf=True).max())
+#             self.psf_max_vals = (psf_off, psf_max)
             
-                # Full FoV
-                fov_pix = 2 * np.max(self.offset_list) / self.pix_scale
-                # Increase to the next power of 2 and make odd
-                fov_pix = int(2**np.ceil(np.log2(fov_pix)+1))
-                oversample = self.psf_info['oversample']
-            
-                nrc_inst = NIRCam(self.filter, self.pupil, self.mask, \
-                                  fov_pix=fov_pix, oversample=oversample, \
-                                  offset_r=offset)
-                # Append offsets and PSF max values
-                psf = nrc_inst.gen_psf()
-                psf_off.append(offset)                
-                psf_max.append(psf.max())
-                self.psf_offsets.append(nrc_inst)
-
-                # Shift to center
-                offset_pix = -offset / nrc_inst.pix_scale
-                psf = fshift(psf, dely=offset_pix, pad=True)
-                self.psf_list.append(psf)
-
-                
-            # Add background PSF info (without mask) for large distance
-            psf_off.append(np.max([np.max(self.offset_list)+1, 4]))
-            psf_max.append(self.gen_psf(use_bg_psf=True).max())
-            self.psf_max_vals = (psf_off, psf_max)
 
     def _set_xypos(self):
         """
@@ -437,22 +554,20 @@ class obs_coronagraphy(NIRCam):
             
             # Add in PA offset
             if PA_offset!=0:
-                #r, theta = xy_to_rtheta(xoff, yoff)
-                #xoff, yoff = rtheta_to_xy(r, theta+PA_offset)
                 xoff, yoff = xy_rot(xoff, yoff, PA_offset)
             
-            xoff_asec, yoff_asec = np.array(pl['xyoff_pix']) * self.pix_scale
-            if len(self.offset_list) > 1:
-                if 'WB' in self.mask: # Bar mask
-                    roff_asec = np.abs(yoff_asec)
-                else: # Circular symmetric
-                    roff_asec = np.sqrt(xoff_asec**2 + yoff_asec**2)
-
-                roff_asec = np.sqrt(xoff_asec**2 + yoff_asec**2)
-                abs_diff = np.abs(np.array(self.offset_list)-roff_asec)
-                ind = np.where(abs_diff == abs_diff.min())[0][0]
-            else:
-                ind = 0
+             xoff_asec, yoff_asec = np.array([xoff, yoff]) * self.pix_scale
+#             if len(self.offset_list) > 1:
+#                 if 'WB' in self.mask: # Bar mask
+#                     roff_asec = np.abs(yoff_asec)
+#                 else: # Circular symmetric
+#                     roff_asec = np.sqrt(xoff_asec**2 + yoff_asec**2)
+# 
+#                 roff_asec = np.sqrt(xoff_asec**2 + yoff_asec**2)
+#                 abs_diff = np.abs(np.array(self.offset_list)-roff_asec)
+#                 ind = np.where(abs_diff == abs_diff.min())[0][0]
+#             else:
+#                 ind = 0
 
             # Create slope image (postage stamp) of planet
             if pl.get('sptype') is None:
@@ -465,18 +580,20 @@ class obs_coronagraphy(NIRCam):
                 sp_norm.name = sp.name
                 sp = sp_norm
             
-            psf_planet = self.psf_offsets[ind].gen_psf(sp)
-        
-            # This is offset according to offset_list
-            # First, shift to center
-            offset_pix = -self.offset_list[ind] / self.pix_scale
-            psf_planet = fshift(psf_planet, dely=offset_pix, pad=True)
+#             psf_planet = self.psf_offsets[ind].gen_psf(sp)
+#         
+#             # This is offset according to offset_list
+#             # First, shift to center
+#             offset_pix = -self.offset_list[ind] / self.pix_scale
+#             psf_planet = fshift(psf_planet, dely=offset_pix, pad=True)
+
+            r, th = xy_to_rtheta(xoff_asec, yoff_asec)
+            psf_planet = self.gen_offset_psf(r, th, sp=sp, return_oversample=False)
         
             # Expand to full size
             psf_planet = pad_or_cut_to_size(psf_planet, image_shape)
         
             # Shift to final position and add to image
-            #psf_planet = fshift(psf_planet, delx=xpix-xcen, dely=ypix-ycen, pad=True)
             image += fshift(psf_planet, delx=xoff, dely=yoff, pad=True)
             
         return image
@@ -514,7 +631,7 @@ class obs_coronagraphy(NIRCam):
         if PA_offset!=0: 
             disk_image = rotate(disk_image, -PA_offset, reshape=False)
             
-        if len(self.offset_list) == 1: # Direct imaging
+        if len(self.offset_list) == 1: # Single PSF
             psf = self.psf_list[0]
             image_conv = convolve_fft(disk_image, psf, fftn=fftpack.fftn, 
                                       ifftn=fftpack.ifftn, allow_huge=True)
@@ -533,7 +650,6 @@ class obs_coronagraphy(NIRCam):
             nproc = nproc_use_convolve(npix, 1, noff)
             if nproc<=1:
                 imconv_slices = [_wrap_convolve_for_mp(wa) for wa in worker_arguments]
-                #map(_wrap_convolve_for_mp, worker_arguments)
             else:
                 pool = mp.Pool(nproc)
                 try:
@@ -612,7 +728,6 @@ class obs_coronagraphy(NIRCam):
             and n-sigma magnitude limit (vega mag). 
         """
         from astropy.convolution import convolve, Gaussian1DKernel
-        
 
         # If no HDUList is passed, then create one
         if hdu_diff is None:
@@ -622,7 +737,6 @@ class obs_coronagraphy(NIRCam):
                                            exclude_disk=exclude_disk, 
                                            exclude_planets=exclude_planets, **kwargs)
         
-    
         # Radial noise
         data = hdu_diff[0].data
         header = hdu_diff[0].header
@@ -645,13 +759,41 @@ class obs_coronagraphy(NIRCam):
         # Divide out count rate
         stds = stds / self.star_flux()
     
-        # Grab the normalized PSF values generated on init
-        psf_off_list, psf_max_list = self.psf_max_vals
-        psf_off_list.append(rr.max())
-        psf_max_list.append(psf_max_list[-1])
-        # Interpolate at each radial position
-        psf_max = np.interp(rr, psf_off_list, psf_max_list)
-        # Normalize and multiply by psf max
+#         # Grab the normalized PSF values generated on init
+#         psf_off_list, psf_max_list = self.psf_max_vals
+#         psf_off_list.append(rr.max())
+#         psf_max_list.append(psf_max_list[-1])
+#         # Interpolate at each radial position
+#         psf_max = np.interp(rr, psf_off_list, psf_max_list)
+        
+        # Normalize by psf max value
+        if self.mask is None: # Direct imaging
+            psf = self.gen_offset_psf(0, 0)
+            psf_max = psf.max()
+        elif self.mask[-1]=='R': # Round masks
+            fov_pix, pixscale  = (self.psf_info['fov_pix'], self.pix_scale)
+            fov_asec = fov_pix * pixscale
+
+            # Image mask
+            im_mask = coron_trans(self.mask, fov=fov_asec, pixscale=pixscale, nd_squares=False)
+            im_mask = pad_or_cut_to_size(im_mask, data.shape)
+
+            nx = im_mask.shape[0]
+            xv = (np.arange(nx) - nx/2) * pixscale_over
+            
+            # a and b coefficients at each offset location
+            avals = np.interp(rr, xv, im_mask[nx//2,:]**2)
+            bvals = 1 - avals
+
+            # Linearly combine PSFs
+            psf_center  = krebin(self.psf_center_over, (fov_pix,fov_pix))
+            psf_offaxis = krebin(self.psf_offaxis_over, (fov_pix,fov_pix))
+            psf_max = np.array([np.max(psf_offaxis*a + psf_center*b) 
+                                for a,b in zip(avals,bvals)])
+
+        elif self.mask[-1]=='B': # Bar masks
+            raise NotImplementedError('BAR Masks not yet implemented')
+        
         contrast = stds / psf_max
         # Sigma limit
         contrast *= nsig
@@ -1038,29 +1180,20 @@ def _wrap_convolve_for_mp(args):
         r1 = 0; r2 = rho.max()+1	
     elif i==0:
         r1 = offset_list[i]
-        r2 = (offset_list[i] + offset_list[i+1])/2
+        r2 = (offset_list[i] + offset_list[i+1]) / 2.
     elif i==noff-1:
-        r1 = (offset_list[i] + offset_list[i-1])/2
+        r1 = (offset_list[i] + offset_list[i-1]) / 2.
         r2 = rho.max()+1.
     else:
-        r1 = (offset_list[i] + offset_list[i-1])/2
-        r2 = (offset_list[i] + offset_list[i+1])/2
-
-    #r1 = offset_list[i]
-    #r2 = offset_list[i+1] if i<(noff-1) else rho.max()
-
+        r1 = (offset_list[i] + offset_list[i-1]) / 2.
+        r2 = (offset_list[i] + offset_list[i+1]) / 2.
 
     ind = (rho>=r1) & (rho<r2)
     im_temp = model.copy()
     im_temp[~ind] = 0
-
-    # Generate psf and convolve with temp image
-    #_, psf_over = nrc_object.gen_psf(return_oversample=True)
-    #offset_pix = -offset_list[i] / pixscale_over
-    #psf_over = fshift(psf_over, dely=offset_pix, pad=True)
     
     # Normalize PSF sum to 1.0
-    # Otherwise convolve_fft may throw an error of psf.sum() is too small
+    # Otherwise convolve_fft may throw an error if psf.sum() is too small
     norm = psf.sum()
     psf = psf / norm
     res = convolve_fft(im_temp, psf, fftn=fftpack.fftn, ifftn=fftpack.ifftn, allow_huge=True)
