@@ -945,6 +945,9 @@ class NIRCam(object):
         Save the resulting PSF coefficients to a file? (default: True)
     force : bool
         Forces a recalcuation of PSF even if saved PSF exists. (default: False)
+    quick : bool
+        Only perform a fit over the filter bandpass with a smaller default
+        polynomial degree fit. Not compatible with save.
         
     Examples
     --------
@@ -1472,7 +1475,7 @@ class NIRCam(object):
             Tuple (file, slice) or filename or HDUList specifying OPD.
         wfe_drift : float
             Wavefront error drift amplitude in nm.
-            Updates :attr:`wfe_drift` attribute.
+            Updates :attr:`wfe_drift` attribute and coefficients appropriately.
         tel_pupil : str
             File name or HDUList specifying telescope entrance pupil.
         jitter : str or None
@@ -1552,7 +1555,7 @@ class NIRCam(object):
 
         # WFE Drift is handled differently than the rest of the parameters
         # This is because we use wfed_coeff() to determine the resid values
-        # for the PSF coefficients to generated a drifted PSF.
+        # for the PSF coefficients to generate a drifted PSF.
         if wfe_drift is not None:
             self._wfe_drift = wfe_drift
             

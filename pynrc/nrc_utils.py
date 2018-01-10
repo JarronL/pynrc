@@ -964,7 +964,7 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     fov_pix=11, oversample=None, npsf=None, ndeg=None, tel_pupil=None,
     offset_r=None, offset_theta=None, jitter=None, jitter_sigma=0.007, 
     opd=None, wfe_drift=None, drift_file=None, include_si_wfe=True, 
-    detector=None, detector_position=None, force=False, 
+    detector=None, detector_position=None, force=False, quick=False,
     save=True, save_name=None, return_save_name=False, **kwargs):
     """Generate PSF coefficients
     
@@ -1003,7 +1003,8 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         produce 20 PSFs/um. The wavelength range is determined by
         choosing those wavelengths where throughput is >0.001.
     ndeg : int
-        Polynomial degree for PSF fitting. Default = 10.
+        Polynomial degree for PSF fitting. 
+        Default = 10 (7 if quick=True).
     offset_r : float
         Radial offset from the center in arcsec.
     offset_theta :float
@@ -1038,10 +1039,16 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     save_name : str, None
         Full path name of FITS file to save/load coefficents. 
         If None, then a name is automatically generated.
+    quick : bool
+        Only perform a fit over the filter bandpass with a smaller default
+        polynomial degree fit. Not compatible with save.
     return_save_name : bool
 
 
     """
+    
+    if (save and quick):
+        raise ValueError("Keywords `save` and `quick` cannot both be set to True.")
 
     grism_obs = (pupil is not None) and ('GRISM' in pupil)
     dhs_obs   = (pupil is not None) and ('DHS'   in pupil)
@@ -1231,14 +1238,14 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         inst.pupilopd = opd
 
     # By default, WebbPSF has wavelength limits depending on the channel
-    # We don't care about this, so set these to low/high values
+    # which can interfere with pynrc calculations, so set these to low/high values
     inst.SHORT_WAVELENGTH_MIN = inst.LONG_WAVELENGTH_MIN = 1e-7
     inst.SHORT_WAVELENGTH_MAX = inst.LONG_WAVELENGTH_MAX = 10e-6
 
     # Select which wavelengths to use
-    # When saving the data, we want the full channel wavelength
-    # However, if doing a "quick" PSF, only fit the filter wavelength range
-    if save:
+    # If doing a "quick" PSF, only fit the filter wavelength range.
+    # Otherwise, we fit the full channel wavelength.
+    if quick:
         w1,w2 = (0.5,2.5) if 'SW' in chan_str else (2.4,5.1)
     else:
         w1 = bp.wave.min() / 1e4
@@ -1311,7 +1318,7 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     # Simultaneous polynomial fits to all pixels using linear least squares
     # 7th-degree polynomial seems to do the trick
     if ndeg is None:
-        ndeg = 10 if save else 7
+        ndeg = 10 if quick else 7
     coeff_all = jl_poly_fit(waves, images, ndeg)
 
     if save:

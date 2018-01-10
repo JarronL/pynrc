@@ -112,7 +112,7 @@ class obs_coronagraphy(NIRCam):
         if verbose: print("Generating oversampled PSFs...")
         _, psf = self.gen_psf(return_oversample=True, use_bg_psf=False)
         self.psf_center_over = psf
-        if self.mask is not None:
+        if self.mask is None:
             self.psf_offaxis_over = self.psf_center_over
         else:
             _, psf = self.gen_psf(return_oversample=True, use_bg_psf=True)
@@ -725,7 +725,7 @@ class obs_coronagraphy(NIRCam):
         -------
         tuple
             Three arrays in a tuple: the radius in arcsec, n-sigma contrast,
-            and n-sigma magnitude limit (vega mag). 
+            and n-sigma magnitude sensitivity limit (vega mag). 
         """
         from astropy.convolution import convolve, Gaussian1DKernel
 
@@ -779,7 +779,7 @@ class obs_coronagraphy(NIRCam):
             im_mask = pad_or_cut_to_size(im_mask, data.shape)
 
             nx = im_mask.shape[0]
-            xv = (np.arange(nx) - nx/2) * pixscale_over
+            xv = (np.arange(nx) - nx/2) * pixscale
             
             # a and b coefficients at each offset location
             avals = np.interp(rr, xv, im_mask[nx//2,:]**2)
@@ -1014,11 +1014,11 @@ class obs_coronagraphy(NIRCam):
             If False, use fov_pix size.
         ngroup : int
             How many group times to determine saturation level?
+            If this number is higher than the total groups in ramp, 
+            then a warning is produced.
             The default is ngroup=0, which corresponds to the
-            so-called "zero-frame." This is the very first frame
-            that is read-out and saved separately. If this number
-            is higher than the total groups in ramp, then a
-            warning is produced.
+            so-called "zero-frame," which is the very first frame
+            that is read-out and saved separately. 
         
         """
         
