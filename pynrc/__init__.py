@@ -82,7 +82,7 @@ def _reload(name="pynrc"):
     Simple reload function to test code changes without restarting python.
     There may be some weird consequences and bugs that show up, such as
     functions and attributes deleted from the code still stick around after
-    the reload. Although, this is still true with ``importlib.reload(pynrc)``.
+    the reload. Although, this is even true with ``importlib.reload(pynrc)``.
     """
     import imp
     imp.load_module(name,*imp.find_module(name))

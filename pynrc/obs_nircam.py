@@ -556,7 +556,7 @@ class obs_coronagraphy(NIRCam):
             if PA_offset!=0:
                 xoff, yoff = xy_rot(xoff, yoff, PA_offset)
             
-             xoff_asec, yoff_asec = np.array([xoff, yoff]) * self.pix_scale
+            xoff_asec, yoff_asec = np.array([xoff, yoff]) * self.pix_scale
 #             if len(self.offset_list) > 1:
 #                 if 'WB' in self.mask: # Bar mask
 #                     roff_asec = np.abs(yoff_asec)
