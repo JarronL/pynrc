@@ -109,7 +109,24 @@ if not on_rtd:
     pixscale_LW = nc_temp._pixelscale_long
     del nc_temp
 
-opd_default = ('OPD_RevW_ote_for_NIRCam_requirements.fits.gz', 0)
+# Default OPD info
+opd_default = ('OPD_RevW_ote_for_NIRCam_requirements.fits', 0)
+# .fits or .fits.gz?
+opd_dir = os.path.join(webbpsf.utils.get_webbpsf_data_path(),'NIRCam','OPD')
+opd_file = os.path.join(opd_dir,opd_default[0])
+if not os.path.exists(opd_file):
+    opd_file_alt = opd_file + '.gz'
+    if not os.path.exists(opd_file_alt):
+        f1 = os.path.basename(opd_file)
+        f2 = os.path.basename(opd_file_alt)
+        err_msg = 'Cannot find either {} or {} in directory {}'.format(f1, f2, opd_dir)
+        raise OSError(err_msg)
+    else:
+        opd_default = ('OPD_RevW_ote_for_NIRCam_requirements.fits.gz', 0)
+    
+
+    import errno
+    raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), opd_file)
 
 ###########################################################################
 #
@@ -562,11 +579,8 @@ class NIRCamFieldAndWavelengthDependentAberration_mod(poppy.OpticalElement):
             self.opd[aperture==0] = 0
 
         # TODO load here the wavelength dependence info.
-        self.focusmodel_file = os.path.join(
-            webbpsf.utils.get_webbpsf_data_path(),
-            'NIRCam',
-            'optics',
-            'nircam_defocus_vs_wavelength.fits')
+        self.focusmodel_file = os.path.join(webbpsf.utils.get_webbpsf_data_path(),
+            'NIRCam', 'optics', 'nircam_defocus_vs_wavelength.fits')
         model_hdul = fits.open(self.focusmodel_file)
         assert model_hdul[1].header['XTENSION'] == 'BINTABLE'
         self.focus_model_data = model_hdul[1].data
