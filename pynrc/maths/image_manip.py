@@ -878,7 +878,7 @@ def binned_statistic(x, values, func=np.mean, bins=10):
         If bins is an int, it defines the number of equal-width bins 
         in the given range (10, by default). If bins is a sequence, 
         it defines the bin edges, including the rightmost edge.
-        This doens't do anything if x is a list of indices.
+        This doesn't do anything if x is a list of indices.
              
     Example
     -------
@@ -887,7 +887,7 @@ def binned_statistic(x, values, func=np.mean, bins=10):
     >>> rho = dist_image(image)
     >>> binsize = 1
     >>> radial_bins = np.arange(rho.min(), rho.max() + binsize, binsize)
-    >>> radial_stds = binned_statistic(igroups, image, func=np.std, bins=radial_bins)
+    >>> radial_stds = binned_statistic(rho, image, func=np.std, bins=radial_bins)
     
     """
 
@@ -897,7 +897,7 @@ def binned_statistic(x, values, func=np.mean, bins=10):
     
         # Check if bins is a single value
         if (len(np.array(bins))==1) and (bins is not None):
-            igroups = hist_indices(x, bins)
+            igroups = hist_indices(x, bins=bins, return_more=False)
             res = np.array([func(values_flat[ind]) for ind in igroups])
         # Otherwise we assume bins is a list or array defining edge locations
         else:
@@ -905,7 +905,7 @@ def binned_statistic(x, values, func=np.mean, bins=10):
             # Check if binsize is the same for all bins
             bsize = bins[1:] - bins[:-1]
             if np.isclose(bsize.min(), bsize.max()):
-                igroups = hist_indices(x, bins)
+                igroups = hist_indices(x, bins=bins, return_more=False)
                 res = np.array([func(values_flat[ind]) for ind in igroups])
             else:
                 # If non-uniform bins, just use scipy.stats.binned_statistic
