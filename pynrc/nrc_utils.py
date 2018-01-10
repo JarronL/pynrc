@@ -111,22 +111,25 @@ if not on_rtd:
 
 # Default OPD info
 opd_default = ('OPD_RevW_ote_for_NIRCam_requirements.fits', 0)
-# .fits or .fits.gz?
-opd_dir = os.path.join(webbpsf.utils.get_webbpsf_data_path(),'NIRCam','OPD')
-opd_file = os.path.join(opd_dir,opd_default[0])
-if not os.path.exists(opd_file):
-    opd_file_alt = opd_file + '.gz'
-    if not os.path.exists(opd_file_alt):
-        f1 = os.path.basename(opd_file)
-        f2 = os.path.basename(opd_file_alt)
-        err_msg = 'Cannot find either {} or {} in directory {}'.format(f1, f2, opd_dir)
-        raise OSError(err_msg)
-    else:
-        opd_default = ('OPD_RevW_ote_for_NIRCam_requirements.fits.gz', 0)
+
+# The following won't work on readthedocs compilation
+if not on_rtd:
+    # .fits or .fits.gz?
+    opd_dir = os.path.join(webbpsf.utils.get_webbpsf_data_path(),'NIRCam','OPD')
+    opd_file = os.path.join(opd_dir,opd_default[0])
+    if not os.path.exists(opd_file):
+        opd_file_alt = opd_file + '.gz'
+        if not os.path.exists(opd_file_alt):
+            f1 = os.path.basename(opd_file)
+            f2 = os.path.basename(opd_file_alt)
+            err_msg = 'Cannot find either {} or {} in directory {}'.format(f1, f2, opd_dir)
+            raise OSError(err_msg)
+        else:
+            opd_default = ('OPD_RevW_ote_for_NIRCam_requirements.fits.gz', 0)
     
 
-    import errno
-    raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), opd_file)
+        import errno
+        raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), opd_file)
 
 ###########################################################################
 #
