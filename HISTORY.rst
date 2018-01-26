@@ -10,10 +10,11 @@ v0.6.0 (Dec 2017)
 - Modify grism PSF shapes due to aperture shape
 - Detector frames times based on ASIC microcode build 10
 - Headers for DMS data
-- Three major additions to PSF coeffs
-  - coeffs based on module (SWA, SWB, LWA, LWB), rather than filter
-  - WFE drift coeff mods
-  - field-dependent coeff mods
+- Three major changes to PSF coefficients
+
+  - coefficients based on module (SWA, SWB, LWA, LWB), rather than filter
+  - WFE drift coefficient relations
+  - field-dependent coefficient relation
 
 v0.5.0 (Feb 2017)
 -----------------
