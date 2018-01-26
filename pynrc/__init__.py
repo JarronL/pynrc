@@ -62,7 +62,7 @@ conf = Conf()
 from .logging_utils import setup_logging#, restart_logging
 setup_logging(conf.default_logging_level, verbose=False)
 
-from .nrc_utils import (read_filter, pix_noise, nrc_header, stellar_spectrum, bp_2mass)
+from .nrc_utils import (read_filter, pix_noise, nrc_header, stellar_spectrum, bp_2mass, bp_wise)
 
 from .pynrc_core import (multiaccum, DetectorOps, NIRCam, planets_sb11, planets_sb12)
 

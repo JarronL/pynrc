@@ -310,40 +310,6 @@ class obs_coronagraphy(NIRCam):
             self.psf_list = [self.gen_offset_psf(offset, 0) for offset in self.offset_list]
         elif self.mask[-1]=='B': # Bar masks
             raise NotImplementedError('BAR Masks not yet implemented')
-        
-        
-#             psf_off = []
-#             psf_max = []
-#             self.psf_list = []
-#             self.psf_offsets = []
-#             for offset in self.offset_list:
-#             
-#                 # Full FoV
-#                 fov_pix = 2 * np.max(self.offset_list) / self.pix_scale
-#                 # Increase to the next power of 2 and make odd
-#                 fov_pix = int(2**np.ceil(np.log2(fov_pix)+1))
-#                 oversample = self.psf_info['oversample']
-#             
-#                 nrc_inst = NIRCam(self.filter, self.pupil, self.mask, \
-#                                   fov_pix=fov_pix, oversample=oversample, \
-#                                   offset_r=offset)
-#                 # Append offsets and PSF max values
-#                 psf = nrc_inst.gen_psf()
-#                 psf_off.append(offset)                
-#                 psf_max.append(psf.max())
-#                 self.psf_offsets.append(nrc_inst)
-# 
-#                 # Shift to center
-#                 offset_pix = -offset / nrc_inst.pix_scale
-#                 psf = fshift(psf, dely=offset_pix, pad=True)
-#                 self.psf_list.append(psf)
-# 
-#                 
-#             # Add background PSF info (without mask) for large distance
-#             psf_off.append(np.max([np.max(self.offset_list)+1, 4]))
-#             psf_max.append(self.gen_psf(use_bg_psf=True).max())
-#             self.psf_max_vals = (psf_off, psf_max)
-            
 
     def _set_xypos(self):
         """
@@ -557,17 +523,6 @@ class obs_coronagraphy(NIRCam):
                 xoff, yoff = xy_rot(xoff, yoff, PA_offset)
             
             xoff_asec, yoff_asec = np.array([xoff, yoff]) * self.pix_scale
-#             if len(self.offset_list) > 1:
-#                 if 'WB' in self.mask: # Bar mask
-#                     roff_asec = np.abs(yoff_asec)
-#                 else: # Circular symmetric
-#                     roff_asec = np.sqrt(xoff_asec**2 + yoff_asec**2)
-# 
-#                 roff_asec = np.sqrt(xoff_asec**2 + yoff_asec**2)
-#                 abs_diff = np.abs(np.array(self.offset_list)-roff_asec)
-#                 ind = np.where(abs_diff == abs_diff.min())[0][0]
-#             else:
-#                 ind = 0
 
             # Create slope image (postage stamp) of planet
             if pl.get('sptype') is None:
@@ -579,13 +534,6 @@ class obs_coronagraphy(NIRCam):
                 sp_norm = sp.renorm(*renorm_args)
                 sp_norm.name = sp.name
                 sp = sp_norm
-            
-#             psf_planet = self.psf_offsets[ind].gen_psf(sp)
-#         
-#             # This is offset according to offset_list
-#             # First, shift to center
-#             offset_pix = -self.offset_list[ind] / self.pix_scale
-#             psf_planet = fshift(psf_planet, dely=offset_pix, pad=True)
 
             r, th = xy_to_rtheta(xoff_asec, yoff_asec)
             psf_planet = self.gen_offset_psf(r, th, sp=sp, return_oversample=False)
@@ -896,6 +844,8 @@ class obs_coronagraphy(NIRCam):
             # Add random noise
             im_roll1 += np.random.normal(scale=im_noise1)
             
+        # Get rid of disk and planet emission
+        # but we want to keep their noise contribution
         if exclude_disk:
             im_roll1 -= im_disk_r1
         if exclude_planets:
@@ -919,7 +869,6 @@ class obs_coronagraphy(NIRCam):
             # Subtraction with and without scaling
             im_diff1_r1 = im_roll1 - im_ref_rebin
             im_diff2_r1 = im_roll1 - im_ref_rebin * scale1
-            #im_diff_r1 = optimal_difference(im_roll1, im_ref_rebin, scale1)
 
             im_disk_r2 = sci.gen_disk_image(PA_offset=PA2)
             im_pl_r2   = sci.gen_planets_image(PA_offset=PA2)
@@ -938,12 +887,9 @@ class obs_coronagraphy(NIRCam):
                 im_roll2 -= im_pl_r2
 
             # Subtract reference star from Roll 2
-            #im_roll2_sub = pad_or_cut_to_size(im_roll2, sub_shape)
-            #scale2 = scale_ref_image(im_roll2_sub, im_ref_sub)
             im_star_sub = pad_or_cut_to_size(im_star+im_pl_r2, sub_shape)
             scale2 = scale_ref_image(im_star_sub, im_ref_sub)
             _log.debug('scale2: {0:.3f}'.format(scale2))
-            #scale2 = im_roll2.max() / im_ref.max()
             if oversample != 1:
                 im_roll2 = frebin(im_roll2, scale=oversample)
             # Subtraction with and without scaling
@@ -1038,12 +984,19 @@ class obs_coronagraphy(NIRCam):
     
         # Slope image of input source
         im_star = self.gen_psf(self.sp_sci)
-        im_disk = self.gen_disk_image()
-        im_pl = self.gen_planets_image()
-        image = im_star + im_disk + im_pl
         if full_size:
             shape = (self.det_info['ypix'], self.det_info['xpix'])
-            image = pad_or_cut_to_size(image, shape)
+            im_star = pad_or_cut_to_size(im_star, shape)
+
+        im_disk = self.gen_disk_image()
+        im_pl = self.gen_planets_image()
+        
+        if self.disk_hdulist is not None:
+            im_disk = pad_or_cut_to_size(im_disk, im_star.shape)
+        if len(self.planets)>0:
+            im_pl = pad_or_cut_to_size(im_pl, im_star.shape)
+        
+        image = im_star + im_disk + im_pl
 
         # Add in zodi background to full image
         image += self.bg_zodi(**kwargs)
@@ -1055,7 +1008,7 @@ class obs_coronagraphy(NIRCam):
 
 
 
-def model_to_hdulist(args_model, sp_star, filter, 
+def model_to_hdulist(args_model, sp_star, filter_or_bp, 
     pupil=None, mask=None, module=None):
 
     """HDUList from model FITS file.
@@ -1078,8 +1031,8 @@ def model_to_hdulist(args_model, sp_star, filter,
     sp_star : :mod:`pysynphot.spectrum`
         A pysynphot spectrum of central star. Used to adjust observed
         photon flux if filter differs from model input
-    filter : str
-        NIRCam filter used in observation to determine final photon flux.
+    filter_or_bp : str, :mod:`pysynphot.obsbandpass`
+        Either the name of a filter or a Pysynphot bandpass.
     pupil : str, None
         Instrument pupil setting (Lyot mask, grism, DHS, etc.)
     mask : str, None
@@ -1095,7 +1048,16 @@ def model_to_hdulist(args_model, sp_star, filter,
     # Get the bandpass for the filter, pupil, and mask
     # This corresponds to the flux at the entrance pupil
     # for the particular filter.
-    bp = read_filter(filter, pupil=pupil, mask=mask, module=module)
+    #bp = read_filter(filter, pupil=pupil, mask=mask, module=module)
+    # Get filter throughput and create bandpass 
+    if isinstance(filter_or_bp, six.string_types):
+        filter = filter_or_bp
+        bp = read_filter(filter, pupil=pupil, mask=mask, module=module)
+    else:
+        bp = filter_or_bp
+        filter = bp.name
+
+
 
     # Detector pixel scale and PSF oversample
     #detscale = channel_select(bp)[0]
@@ -1200,3 +1162,66 @@ def _wrap_convolve_for_mp(args):
     res *= norm
     
     return res
+
+
+def plot_contrasts(curves, wfe_list, ax=None, colors=None, return_ax=False):
+    """Plot a series of contrast curves for corresponding WFE drifts."""
+    if ax is None:
+        fig, ax = plt.subplots()
+    if colors is None:
+        lin_vals = np.linspace(0.2,0.7,len(wfe_list))
+        colors = plt.cm.Blues_r(lin_vals)[::-1]
+    for j, wfe_ref_drift in enumerate(wfe_list):
+        rr, contrast, mag_sens = curves[j]
+        label='$\Delta$' + "WFE = {} nm".format(wfe_list[j])
+        ax.plot(rr, mag_sens, label=label, color=colors[j], zorder=1, lw=2)
+        
+    if return_ax: return ax
+
+def planet_mags(obs, age=10, entropy=13, mass_list=[10,5,2,1], av_vals=[0,25], atmo='hy3s', **kwargs):
+    """Determine series of exoplanet magnitudes for given observation."""
+
+    pmag = {}
+    for i,m in enumerate(mass_list):
+        flux_list = []
+        for j,av in enumerate(av_vals):
+            sp = obs.planet_spec(mass=m, age=age, Av=av, entropy=entropy, atmo=atmo, **kwargs)
+            sp_obs = S.Observation(sp, obs.bandpass, binset=obs.bandpass.wave)
+            flux = sp_obs.effstim('vegamag')
+            flux_list.append(flux)
+        pmag[m] = tuple(flux_list)
+        
+    return pmag
+
+import matplotlib.patches as patches
+def plot_planet_patches(ax, obs, age=10, entropy=13, mass_list=[10,5,2,1], av_vals=[0,25], **kwargs):
+    """Plot exoplanet magnitudes in region corresponding to extinction values."""
+    
+    xlim = ax.get_xlim()
+    cols = plt.cm.tab10(np.linspace(0,1,10))
+    
+    #lin_vals = np.linspace(0,0.5,4)
+    #cols = plt.cm.Purples_r(lin_vals)[::-1]
+    
+    dist = obs.distance
+    
+    if entropy<8: entropy=8
+    if entropy>13: entropy=13
+
+    pmag = planet_mags(obs, age, entropy, mass_list, av_vals, **kwargs)
+    for i,m in enumerate(mass_list):
+        pm_min, pm_max = pmag[m]
+        label = 'Mass = {} '.format(m) + '$M_{\mathrm{Jup}}$'
+        rect = patches.Rectangle((xlim[0], pm_min), xlim[1], pm_max-pm_min, alpha=0.2,
+                                 color=cols[i], label=label, zorder=2)
+        ax.add_patch(rect)
+        ax.plot(xlim, [pm_min]*2, color=cols[i], lw=1, alpha=0.3)
+        ax.plot(xlim, [pm_max]*2, color=cols[i], lw=1, alpha=0.3)
+        
+
+    entropy_switch = {13:'Hot', 8:'Cold'}
+    entropy_string = entropy_switch.get(entropy, "Warm")
+    ent_str = entropy_string + ' Start'
+    av_str = '$A_V = [{:.0f},{:.0f}]$'.format(av_vals[0],av_vals[1])
+
+    ax.set_title('{} -- {} {}'.format(obs.filter,ent_str,av_str))
