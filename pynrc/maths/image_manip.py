@@ -713,7 +713,7 @@ def scale_ref_image(im1, im2, mask=None, smooth_imgs=False,
 
 def optimal_difference(im_sci, im_ref, scale, binsize=1, center=None, 
                        mask_good=None, sub_mean=True, std_func=np.std):
-    """Optimize reference subtraction
+    """Optimize subtraction of ref PSF
     
     Scale factors from scale_ref_image work great for subtracting
     a reference PSF from a science image where there are plenty

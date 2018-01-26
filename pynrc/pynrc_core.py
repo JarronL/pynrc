@@ -1464,6 +1464,8 @@ class NIRCam(object):
         fov_pix : int
             Size of the FoV in pixels (real SW or LW pixels).
             The defaults depend on the type of observation.
+            Odd number place the PSF on the center of the pixel,
+            whereas an even number centers it on the "crosshairs."
         oversample : int
             Factor to oversample during WebbPSF calculations.
             Default 2 for coronagraphy and 4 otherwise.
@@ -1495,7 +1497,7 @@ class NIRCam(object):
             except:
                 oversample = 2 if 'LYOT' in self.pupil else 4
 
-        # Default size is 11 pixels
+        # Default size is 33 pixels
         fov_default = 33
         # Use dictionary as case/switch statement
         pup_switch = {
@@ -1519,7 +1521,10 @@ class NIRCam(object):
         oversample = int(oversample)
         fov_pix = int(fov_pix)
         # Make sure fov_pix is odd
-        if np.mod(fov_pix,2)==0: fov_pix+=1
+        #if np.mod(fov_pix,2)==0: fov_pix+=1
+        if np.mod(fov_pix,2)==0: 
+            _log.warning('fov_pix specified as even; PSF is centered at pixel corners.')
+            
         _log.info('Updating PSF coeff with fov_pix={} and oversample={}'.\
             format(fov_pix,oversample))
     
@@ -1591,53 +1596,8 @@ class NIRCam(object):
             self._psf_coeff_bg = self._psf_coeff
 
 
-    def gen_psf(self, sp=None, return_oversample=False, use_bg_psf=False, **kwargs):
-        """PSF image.
-        
-        Create a PSF image from instrument settings. The image is noiseless and
-        doesn't take into account any non-linearity or saturation effects, but is
-        convolved with the instrument throughput. Pixel values are in counts/sec.
-        The result is effectively an idealized slope image (no background).
-
-        If no spectral dispersers (grisms or DHS), then this returns a single
-        image or list of images if sp is a list of spectra. By default, it returns
-        only the detector-sampled PSF, but setting return_oversample=True will
-        also return a set of oversampled images as a second output.
-
-        Parameters
-        ----------
-        sp : :mod:`pysynphot.spectrum`
-            If not specified, the default is flat in phot lam 
-            (equal number of photons per spectral bin).
-            The default is normalized to produce 1 count/sec within that bandpass,
-            assuming the telescope collecting area and instrument bandpass. 
-            Coronagraphic PSFs will further decrease this due to the smaller pupil
-            size and coronagraphic spot. 
-        return_oversample : bool
-            If True, then also returns the oversampled version of the PSF
-        use_bg_psf : bool
-            If a coronagraphic observation, off-center PSF is different.
-
-        """
-
-        if use_bg_psf:
-            mask = None
-            psf_coeff = self._psf_coeff_bg
-            psf_info  = self._psf_info_bg
-        else:
-            mask = self.mask
-            psf_coeff = self._psf_coeff
-            psf_info  = self._psf_info
-
-        return gen_image_coeff(self.bandpass, sp_norm=sp, 
-            pupil=self.pupil, mask=self.mask, module=self.module, 
-            coeff=psf_coeff, fov_pix=psf_info['fov_pix'], 
-            oversample=psf_info['oversample'], 
-            return_oversample=return_oversample, **kwargs)
-    
-
     def sat_limits(self, sp=None, bp_lim=None, units='vegamag', well_frac=0.8,
-        verbose=False, **kwargs):
+        ngroup=None, verbose=False, **kwargs):
         """Saturation limits.        
         
         Generate the limiting magnitude (80% saturation) with the current instrument
@@ -1657,6 +1617,12 @@ class NIRCam(object):
             Output units (defaults to vegamag).
         well_frac : float
             Fraction of full well to consider 'saturated'.
+        ngroup : int, None
+            Option to specify the number of groups to determine
+            integration time. If not set, then the default is to
+            use those specified in the Detectors class. Can set
+            ngroup=0 for the so-called Zero Frame in the event
+            there are multiple reads per group.
         verbose : bool
             Print result details.
 
@@ -1674,15 +1640,37 @@ class NIRCam(object):
         if bp_lim is None: bp_lim = self.bandpass
         quiet = False if verbose else True
 
-        well_level = self.Detectors[0].well_level
         # Total time spent integrating minus the reset frame
-        int_time = self.multiaccum_times['t_int']
+        if ngroup is None:
+            t_sat = self.multiaccum_times['t_int']
+        else:
+            t_frame = self.multiaccum_times['t_frame']
+            if ngroup==0:
+                t_sat = t_frame
+            else:
+                ma = self.multiaccum
+                nf = ma.nf; nd1 = ma.nd1; nd2 = ma.nd2
+                t_sat = (nd1 + ngroup*nf + (ngroup-1)*nd2) * t_frame
+
+        well_level = self.Detectors[0].well_level
 
         kwargs = merge_dicts(kwargs, self._psf_info)
+
+        # We don't necessarily need the entire image, so cut down to size
+        psf_coeff = self._psf_coeff
+        if not ('WEAK LENS' in self.pupil):
+            fov_pix = 51
+            fov_pix_over = fov_pix * kwargs['oversample']
+            coeff = []
+            for im in psf_coeff:
+                coeff.append(pad_or_cut_to_size(im, (fov_pix_over,fov_pix_over)))
+            psf_coeff = np.array(coeff)
+            kwargs['fov_pix'] = fov_pix
+
         satlim = sat_limit_webbpsf(self.bandpass, pupil=self.pupil, mask=self.mask,
             module=self.module, full_well=well_level, well_frac=well_frac,
-            sp=sp, bp_lim=bp_lim, int_time=int_time, quiet=quiet, units=units, 
-            coeff=self._psf_coeff, **kwargs)
+            sp=sp, bp_lim=bp_lim, int_time=t_sat, quiet=quiet, units=units, 
+            coeff=psf_coeff, **kwargs)
 
         return satlim
 
@@ -1743,8 +1731,17 @@ class NIRCam(object):
         if 'ideal_Poisson' not in kwargs.keys():
             kwargs['ideal_Poisson'] = True
             
-        # Always use the bg coeff because it's smaller in size
+        # Always use the bg coeff
         psf_coeff = self._psf_coeff_bg
+        # We don't necessarily need the entire image, so cut down to size
+        if not ('WEAK LENS' in self.pupil):
+            fov_pix = 33
+            fov_pix_over = fov_pix * kwargs['oversample']
+            coeff = []
+            for im in psf_coeff:
+                coeff.append(pad_or_cut_to_size(im, (fov_pix_over,fov_pix_over)))
+            psf_coeff = np.array(coeff)
+            kwargs['fov_pix'] = fov_pix
 
         bglim = bg_sensitivity(self.bandpass, self.pupil, self.mask, self.module,
             pix_scale=pix_scale, sp=sp, units=units, nsig=nsig, tf=tf, quiet=quiet, 
@@ -1882,6 +1879,51 @@ class NIRCam(object):
         else:
             return sat_level
 
+
+    def gen_psf(self, sp=None, return_oversample=False, use_bg_psf=False, **kwargs):
+        """PSF image.
+        
+        Create a PSF image from instrument settings. The image is noiseless and
+        doesn't take into account any non-linearity or saturation effects, but is
+        convolved with the instrument throughput. Pixel values are in counts/sec.
+        The result is effectively an idealized slope image (no background).
+
+        If no spectral dispersers (grisms or DHS), then this returns a single
+        image or list of images if sp is a list of spectra. By default, it returns
+        only the detector-sampled PSF, but setting return_oversample=True will
+        also return a set of oversampled images as a second output.
+
+        Parameters
+        ----------
+        sp : :mod:`pysynphot.spectrum`
+            If not specified, the default is flat in phot lam 
+            (equal number of photons per spectral bin).
+            The default is normalized to produce 1 count/sec within that bandpass,
+            assuming the telescope collecting area and instrument bandpass. 
+            Coronagraphic PSFs will further decrease this due to the smaller pupil
+            size and coronagraphic spot. 
+        return_oversample : bool
+            If True, then also returns the oversampled version of the PSF
+        use_bg_psf : bool
+            If a coronagraphic observation, off-center PSF is different.
+
+        """
+
+        if use_bg_psf:
+            mask = None
+            psf_coeff = self._psf_coeff_bg
+            psf_info  = self._psf_info_bg
+        else:
+            mask = self.mask
+            psf_coeff = self._psf_coeff
+            psf_info  = self._psf_info
+
+        return gen_image_coeff(self.bandpass, sp_norm=sp, 
+            pupil=self.pupil, mask=self.mask, module=self.module, 
+            coeff=psf_coeff, fov_pix=psf_info['fov_pix'], 
+            oversample=psf_info['oversample'], 
+            return_oversample=return_oversample, **kwargs)
+    
 
     def gen_exposures(self, sp=None, im_slope=None, file_out=None, return_results=None,
                       targ_name=None, timeFileNames=False, DMS=True,

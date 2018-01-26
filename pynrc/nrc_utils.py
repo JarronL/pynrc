@@ -1088,7 +1088,8 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     # Create a simulated PSF with WebbPSF
     inst = webbpsf_NIRCam_mod()
     inst.options['output_mode'] = 'oversampled'
-    inst.options['parity'] = 'odd'
+    # The fov_pix keyword overrides parity
+    #inst.options['parity'] = 'odd'
     inst.filter = filter
     
     # Should we include field-dependent aberrations? 
@@ -1249,10 +1250,10 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     # If doing a "quick" PSF, only fit the filter wavelength range.
     # Otherwise, we fit the full channel wavelength.
     if quick:
-        w1,w2 = (0.5,2.5) if 'SW' in chan_str else (2.4,5.1)
-    else:
         w1 = bp.wave.min() / 1e4
         w2 = bp.wave.max() / 1e4
+    else:
+        w1,w2 = (0.5,2.5) if 'SW' in chan_str else (2.4,5.1)
 
     # Create set of monochromatic PSFs to fit.
     if npsf is None:
@@ -1321,7 +1322,7 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     # Simultaneous polynomial fits to all pixels using linear least squares
     # 7th-degree polynomial seems to do the trick
     if ndeg is None:
-        ndeg = 10 if quick else 7
+        ndeg = 7 if quick else 10
     coeff_all = jl_poly_fit(waves, images, ndeg)
 
     if save:
@@ -2019,6 +2020,7 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
     -------------------
     image        : Explicitly pass image data rather than calculating from coeff.
     return_image : Instead of calculating sensitivity, return the image calced from coeff.
+        Useful if needing to calculate sensitivities for many different settings.
     rad_EE       : Extraction aperture radius (in pixels) for imaging mode.
     dw_bin       : Delta wavelength to calculate spectral sensitivities (grisms & DHS).
     ap_spec      : Instead of dw_bin, specify the spectral extraction aperture in pixels.
@@ -2742,6 +2744,45 @@ def bp_2mass(filter):
     
     tbl = ascii.read(dir + file, names=['Wave', 'Throughput'])
     bp = S.ArrayBandpass(tbl['Wave']*1e4, tbl['Throughput'], name=name)
+    
+    return bp
+
+def bp_wise(filter):
+    """WISE Bandpass
+    
+    Create a WISE W1-W4 filter bandpass used to generate
+    synthetic photometry.
+    
+    Parameters
+    ----------
+    filter : str
+        Filter 'w1', 'w2', 'w3', or 'w4'.
+
+    Returns
+    -------
+    :mod:`pysynphot.obsbandpass`
+        A Pysynphot bandpass object.
+
+    """
+    
+    dir = conf.PYNRC_PATH + 'throughputs/WISE/'
+    if 'w1' in filter.lower():
+        file = 'RSR-W1.txt'
+        name = 'W1'
+    elif 'w2' in filter.lower():
+        file = 'RSR-W2.txt'
+        name = 'W2'
+    elif 'w3' in filter.lower():
+        file = 'RSR-W3.txt'
+        name = 'W3'
+    elif 'w4' in filter.lower():
+        file = 'RSR-W4.txt'
+        name = 'W4'
+    else:
+        raise ValueError('{} not a valid WISE filter'.format(filter))
+    
+    tbl = ascii.read(dir + file, data_start=0)
+    bp = S.ArrayBandpass(tbl['col1']*1e4, tbl['col2'], name=name)
     
     return bp
 
