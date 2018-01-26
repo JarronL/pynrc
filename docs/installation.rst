@@ -31,8 +31,10 @@ Installing with pip
     You still must download and install the data files, 
     as :ref:`described below <data_install>`.
 
+
 Installing from source
 ----------------------
+
 To get the most up to date version of ``pynrc``, install directly 
 from source, though stability is not guarenteed. The 
 `development version <https://github.com/JarronL/pynrc>`_ 
@@ -47,7 +49,13 @@ Then install the package with::
     $ cd pynrc
     $ pip install .
     
-.. $ python setup.py install
+For development purposes::
+
+    $ cd pynrc
+    $ pip install -e .
+
+in order to create editable installations. This is great for helping
+to develop the code, create bug reports, pull requests to GitHub, etc.
 
 
 .. _data_install:
