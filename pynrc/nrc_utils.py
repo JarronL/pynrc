@@ -3223,7 +3223,7 @@ def zodi_spec(zfact=None, locstr=None, year=None, day=None, **kwargs):
     Notes
     -----
     Added the ability to query the Euclid background model using 
-    :func:`~nrc_utils.zodi_euclid` for a specific location and observing 
+    :func:`zodi_euclid` for a specific location and observing 
     time. The two blackbodies will be scaled to the 1.0 and 5.5 um emission. 
 
     Keyword Args
