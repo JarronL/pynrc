@@ -149,12 +149,13 @@ class obs_coronagraphy(NIRCam):
         
         Generate some off-axis PSF at a given (r,theta) offset from center.
         This function is mainly for coronagraphic observations where the
-        off-axis PSF varies w.r.t. position. 
+        off-axis PSF varies w.r.t. position. The PSF is centered in the 
+        resulting image.
         
         Parameters
         ----------
         offset_r : float
-            Radial offset of the target from center.
+            Radial offset of the target from center in arcsec.
         offset_theta : float
             Position angle for that offset, in degrees CCW (+Y).
         
@@ -633,128 +634,9 @@ class obs_coronagraphy(NIRCam):
         return obs.effstim(fluxunit)
 
 
-    def calc_contrast(self, hdu_diff=None, roll_angle=10, nsig=1, 
-        exclude_disk=True, exclude_planets=True, **kwargs):
-        """Create contrast curve.
-        
-        Generate n-sigma contrast curve for the current observation settings.
-        Make sure that MULTIACCUM parameters are set for both the main
-        class (``self.update_detectors()``) as well as the reference target
-        class (``self.nrc_ref.update_detectors()``).
-        
-        Parameters
-        ----------
-        hdu_diff : HDUList
-            Option to pass an already pre-made difference image.
-        
-        roll_angle : float
-            Telescope roll angle (deg) between two observations.
-            If set to 0 or None, then only one roll will be performed.
-            If value is >0, then two rolls are performed, each using the
-            specified MULTIACCUM settings (doubling the effective exposure
-            time).
-        nsig  : float
-            n-sigma contrast curve.
-        exclude_disk : bool
-            Ignore disk when generating image?
-        exclude_planets : bool
-            Ignore planets when generating image?
-        
-        Keyword Args
-        ------------
-        zfact : float
-            Zodiacal background factor (default=2.5)
-        exclude_noise : bool
-            Don't add random Gaussian noise (detector+photon)?
-        opt_diff : bool
-            Optimal reference differencing (scaling only on the inner regions)
-
-        Returns
-        -------
-        tuple
-            Three arrays in a tuple: the radius in arcsec, n-sigma contrast,
-            and n-sigma magnitude sensitivity limit (vega mag). 
-        """
-        from astropy.convolution import convolve, Gaussian1DKernel
-
-        # If no HDUList is passed, then create one
-        if hdu_diff is None:
-            PA1 = 0
-            PA2 = None if abs(roll_angle) < eps else roll_angle
-            hdu_diff = self.gen_roll_image(PA1=PA1, PA2=PA2, 
-                                           exclude_disk=exclude_disk, 
-                                           exclude_planets=exclude_planets, **kwargs)
-        
-        # Radial noise
-        data = hdu_diff[0].data
-        header = hdu_diff[0].header
-        rho = dist_image(data, pixscale=header['PIXELSCL'])
-
-        # Get radial profiles
-        binsize = header['OVERSAMP'] * header['PIXELSCL']
-        bins = np.arange(rho.min(), rho.max() + binsize, binsize)
-        igroups, _, rr = hist_indices(rho, bins, True)
-        stds = binned_statistic(igroups, data, func=np.std)
-        stds = convolve(stds, Gaussian1DKernel(1))
-
-        # Ignore corner regions
-        arr_size = np.min(data.shape) * header['PIXELSCL']
-        mask = rr < (arr_size/2)
-        rr = rr[mask]
-        stds = stds[mask]
-
-        # Normalized PSF radial standard deviation
-        # Divide out count rate
-        stds = stds / self.star_flux()
-    
-#         # Grab the normalized PSF values generated on init
-#         psf_off_list, psf_max_list = self.psf_max_vals
-#         psf_off_list.append(rr.max())
-#         psf_max_list.append(psf_max_list[-1])
-#         # Interpolate at each radial position
-#         psf_max = np.interp(rr, psf_off_list, psf_max_list)
-        
-        # Normalize by psf max value
-        if self.mask is None: # Direct imaging
-            psf = self.gen_offset_psf(0, 0)
-            psf_max = psf.max()
-        elif self.mask[-1]=='R': # Round masks
-            fov_pix, pixscale  = (self.psf_info['fov_pix'], self.pix_scale)
-            fov_asec = fov_pix * pixscale
-
-            # Image mask
-            im_mask = coron_trans(self.mask, fov=fov_asec, pixscale=pixscale, nd_squares=False)
-            im_mask = pad_or_cut_to_size(im_mask, data.shape)
-
-            nx = im_mask.shape[0]
-            xv = (np.arange(nx) - nx/2) * pixscale
-            
-            # a and b coefficients at each offset location
-            avals = np.interp(rr, xv, im_mask[nx//2,:]**2)
-            bvals = 1 - avals
-
-            # Linearly combine PSFs
-            psf_center  = krebin(self.psf_center_over, (fov_pix,fov_pix))
-            psf_offaxis = krebin(self.psf_offaxis_over, (fov_pix,fov_pix))
-            psf_max = np.array([np.max(psf_offaxis*a + psf_center*b) 
-                                for a,b in zip(avals,bvals)])
-
-        elif self.mask[-1]=='B': # Bar masks
-            raise NotImplementedError('BAR Masks not yet implemented')
-        
-        contrast = stds / psf_max
-        # Sigma limit
-        contrast *= nsig
-
-        # Magnitude sensitivity
-        star_mag = self.star_flux('vegamag')
-        sen_mag = star_mag - 2.5*np.log10(contrast)
-
-        return (rr, contrast, sen_mag)
-
     def gen_roll_image(self, PA1=0, PA2=10, zfact=None, oversample=None, 
         exclude_disk=False, exclude_planets=False, exclude_noise=False, 
-        opt_diff=True):
+        no_ref=False, opt_diff=True):
         """Make roll-subtracted image.
         
         Create a final roll-subtracted slope image based on current observation
@@ -764,10 +646,11 @@ class obs_coronagraphy(NIRCam):
         
         - Create Roll 1 and Roll 2 slope images (star+exoplanets)
         - Create Reference Star slope image
-        - Add random Gaussian noise to all images
+        - Add noise to all images
         - Subtract ref image from both rolls
-        - De-rotate Roll 2 by roll_angle amplitude
+        - De-rotate Roll 2 by roll_angle value
         - Average Roll 1 and de-rotated Roll 2
+        - De-rotate averaged image to North
 
         Returns an HDUList of final image (North rotated upwards).
 
@@ -790,6 +673,8 @@ class obs_coronagraphy(NIRCam):
             but still add Poisson noise from disk.
         exclude_noise : bool
             Don't add random Gaussian noise (detector+photon)
+        no_ref : bool
+            Exclude reference observation. Subtraction is then Roll1-Roll2.
         opt_diff : bool
             Optimal reference differencing (scaling only on the inner regions)
         """
@@ -809,22 +694,13 @@ class obs_coronagraphy(NIRCam):
         else:
             roll_angle = PA2 - PA1
         if oversample is None: oversample = 1
+        
+        if no_ref and (roll_angle==0):
+            _log.warning('If no_ref=True, then PA1 must not equal PA2. Setting no_ref=False')
+            no_ref = False
    
         sci = self
         ref = self.nrc_ref
-        
-        # Reference star slope simulation
-        # Ideal slope
-        im_ref = ref.gen_psf(sci.sp_ref, return_oversample=False)
-        im_ref = pad_or_cut_to_size(im_ref, image_shape)
-        im_ref_sub = pad_or_cut_to_size(im_ref, sub_shape)
-        # Noise per pixel
-        if not exclude_noise:
-            det = ref.Detectors[0]
-            fzodi = ref.bg_zodi(zfact)
-            im_noise = det.pixel_noise(fsrc=im_ref, fzodi=fzodi)
-            # Add random noise
-            im_ref += np.random.normal(scale=im_noise)
         
         # Stellar PSF is fixed
         im_star = sci.gen_psf(sci.sp_sci, return_oversample=False)
@@ -844,13 +720,71 @@ class obs_coronagraphy(NIRCam):
             # Add random noise
             im_roll1 += np.random.normal(scale=im_noise1)
             
+        # Roll1
         # Get rid of disk and planet emission
         # but we want to keep their noise contribution
-        if exclude_disk:
-            im_roll1 -= im_disk_r1
-        if exclude_planets:
-            im_roll1 -= im_pl_r1
-    
+        if exclude_disk: im_roll1 -= im_disk_r1
+        if exclude_planets: im_roll1 -= im_pl_r1
+
+        # Pure roll subtraction (no reference PSF)
+        if no_ref: 
+            # Roll2
+            # Use reference PSF for stellar PSF for WFE drift
+            # Make sure to use appropriate WFE drift amount!
+            im_star2 = ref.gen_psf(sci.sp_sci, return_oversample=False)
+            im_star2 = pad_or_cut_to_size(im_star2, image_shape)
+            im_disk_r2 = sci.gen_disk_image(PA_offset=PA2)
+            im_pl_r2   = sci.gen_planets_image(PA_offset=PA2)
+            im_roll2   = im_star2 + im_disk_r2 + im_pl_r2
+
+            # Noise per pixel
+            if not exclude_noise:
+                det = sci.Detectors[0]
+                fzodi = sci.bg_zodi(zfact)
+                im_noise2 = det.pixel_noise(fsrc=im_roll2, fzodi=fzodi)
+                # Add random noise
+                im_roll2 += np.random.normal(scale=im_noise2)
+
+            if exclude_disk: im_roll2 -= im_disk_r2
+            if exclude_planets: im_roll2 -= im_pl_r2
+
+            if oversample != 1:
+                im_roll1 = frebin(im_roll1, scale=oversample)
+                im_roll2 = frebin(im_roll2, scale=oversample)
+
+            diff_r1 = im_roll1 - im_roll2
+            diff_r2 = -1 * diff_r1
+            diff1_r2_rot = rotate(diff_r2, roll_angle, reshape=False, cval=np.nan)
+            final = (diff_r1 + diff1_r2_rot) / 2
+
+            # De-rotate PA1 to North
+            if abs(PA1) > eps:
+                final = rotate(final, PA1, reshape=False)
+                
+            hdu = fits.PrimaryHDU(final)
+            hdu.header['EXTNAME'] = ('ROLL_SUB')
+            hdu.header['OVERSAMP'] = oversample
+            hdu.header['PIXELSCL'] = sci.pix_scale / hdu.header['OVERSAMP']
+            hdulist = fits.HDUList([hdu])
+
+            return hdulist
+
+        
+        # Continuing with a ref PSF subtraction algorithm    
+        
+        # Reference star slope simulation
+        # Ideal slope
+        im_ref = ref.gen_psf(sci.sp_ref, return_oversample=False)
+        im_ref = pad_or_cut_to_size(im_ref, image_shape)
+        im_ref_sub = pad_or_cut_to_size(im_ref, sub_shape)
+        # Noise per pixel
+        if not exclude_noise:
+            det = ref.Detectors[0]
+            fzodi = ref.bg_zodi(zfact)
+            im_noise = det.pixel_noise(fsrc=im_ref, fzodi=fzodi)
+            # Add random noise
+            im_ref += np.random.normal(scale=im_noise)
+
         # Subtract reference star from Roll 1
         #im_roll1_sub = pad_or_cut_to_size(im_roll1, sub_shape)
         #scale1 = scale_ref_image(im_roll1_sub, im_ref_sub)
@@ -863,9 +797,9 @@ class obs_coronagraphy(NIRCam):
             im_roll1     = frebin(im_roll1, scale=oversample)
         else:
             im_ref_rebin = im_ref
-        
-        # Telescope Roll 2
-        if abs(roll_angle) > eps:
+            
+        # Telescope Roll 2 with reference subtraction
+        if (abs(roll_angle) > eps) and (not no_ref):
             # Subtraction with and without scaling
             im_diff1_r1 = im_roll1 - im_ref_rebin
             im_diff2_r1 = im_roll1 - im_ref_rebin * scale1
@@ -945,6 +879,162 @@ class obs_coronagraphy(NIRCam):
         hdulist = fits.HDUList([hdu])
 
         return hdulist
+
+    def calc_contrast(self, hdu_diff=None, roll_angle=10, nsig=1, 
+        exclude_disk=True, exclude_planets=True, no_ref=False, **kwargs):
+        """Create contrast curve.
+        
+        Generate n-sigma contrast curve for the current observation settings.
+        Make sure that MULTIACCUM parameters are set for both the main
+        class (``self.update_detectors()``) as well as the reference target
+        class (``self.nrc_ref.update_detectors()``).
+        
+        Parameters
+        ----------
+        hdu_diff : HDUList
+            Option to pass an already pre-made difference image.
+        
+        roll_angle : float
+            Telescope roll angle (deg) between two observations.
+            If set to 0 or None, then only one roll will be performed.
+            If value is >0, then two rolls are performed, each using the
+            specified MULTIACCUM settings (doubling the effective exposure
+            time).
+        nsig  : float
+            n-sigma contrast curve.
+        exclude_disk : bool
+            Ignore disk when generating image?
+        exclude_planets : bool
+            Ignore planets when generating image?
+        no_ref : bool
+            Exclude reference observation. Subtraction is then Roll1-Roll2.
+        
+        Keyword Args
+        ------------
+        zfact : float
+            Zodiacal background factor (default=2.5)
+        exclude_noise : bool
+            Don't add random Gaussian noise (detector+photon)?
+        opt_diff : bool
+            Optimal reference differencing (scaling only on the inner regions)
+
+        Returns
+        -------
+        tuple
+            Three arrays in a tuple: the radius in arcsec, n-sigma contrast,
+            and n-sigma magnitude sensitivity limit (vega mag). 
+        """
+        from astropy.convolution import convolve, Gaussian1DKernel
+
+        if no_ref and (roll_angle==0):
+            _log.warning('If no_ref=True, roll_angle must not equal 0. Setting no_ref=False')
+            no_ref = False
+
+        # If no HDUList is passed, then create one
+        if hdu_diff is None:
+            PA1 = 0
+            PA2 = None if abs(roll_angle) < eps else roll_angle
+            hdu_diff = self.gen_roll_image(PA1=PA1, PA2=PA2, exclude_disk=exclude_disk, 
+                                           exclude_planets=exclude_planets, 
+                                           no_ref=no_ref, **kwargs)
+        
+        # Radial noise
+        data = hdu_diff[0].data
+        header = hdu_diff[0].header
+        rho = dist_image(data, pixscale=header['PIXELSCL'])
+
+        # Get radial profiles
+        binsize = header['OVERSAMP'] * header['PIXELSCL']
+        bins = np.arange(rho.min(), rho.max() + binsize, binsize)
+        igroups, _, rr = hist_indices(rho, bins, True)
+        stds = binned_statistic(igroups, data, func=np.std)
+        stds = convolve(stds, Gaussian1DKernel(1))
+
+        # Ignore corner regions
+        arr_size = np.min(data.shape) * header['PIXELSCL']
+        mask = rr < (arr_size/2)
+        rr = rr[mask]
+        stds = stds[mask]
+
+        # Normalized PSF radial standard deviation
+        # Divide out count rate
+        stds = stds / self.star_flux()
+    
+#         # Grab the normalized PSF values generated on init
+#         psf_off_list, psf_max_list = self.psf_max_vals
+#         psf_off_list.append(rr.max())
+#         psf_max_list.append(psf_max_list[-1])
+#         # Interpolate at each radial position
+#         psf_max = np.interp(rr, psf_off_list, psf_max_list)
+        
+        # Normalize by psf max value
+        xpix, ypix = (self.det_info['xpix'], self.det_info['ypix'])
+        pixscale = self.pix_scale
+        if no_ref: # No reference image subtraction; pure roll subtraction
+            
+            off_vals = []
+            max_vals = []
+            xvals = np.arange(1,xpix/2,5)
+            for j, roff in enumerate(xvals):
+                psf1 = self.gen_offset_psf(roff, 0, return_oversample=False)
+                psf2 = self.gen_offset_psf(roff, roll_angle, return_oversample=False)
+                
+                psf1 = fshift(psf1, delx=0, dely=roff, pad=False)
+                xoff, yoff = xy_rot(0, roff, 10)
+                psf2 = fshift(psf2, delx=xoff, dely=yoff, pad=False)
+                
+                diff = psf1 - psf2
+                maxv = diff.max()
+                
+                off_vals.append(roff)
+                max_vals.append(maxv)
+                if maxv >= 0.95*psf1.max():
+                    off_vals = [0] + off_vals + [roff+5, xpix/2]
+                    max_vals = [0] + max_vals + [psf1.max(), psf1.max()]
+                    break
+                    
+            max_vals = np.array(max_vals)
+            off_asec = np.array(off_vals) * pixscale
+                
+            psf_max = np.interp(rr, off_asec, max_vals)
+                
+        elif self.mask is None: # Direct imaging
+            psf = self.gen_offset_psf(0, 0)
+            psf_max = psf.max()
+        elif self.mask[-1]=='R': # Round masks
+            fov_asec = np.max([xpix,ypix]) * pixscale
+
+            # Image mask
+            im_mask = coron_trans(self.mask, fov=fov_asec, pixscale=pixscale, nd_squares=False)
+            im_mask = pad_or_cut_to_size(im_mask, data.shape)
+
+            nx = im_mask.shape[0]
+            xv = (np.arange(nx) - nx/2) * pixscale
+            
+            # a and b coefficients at each offset location
+            avals = np.interp(rr, xv, im_mask[nx//2,:]**2)
+            bvals = 1 - avals
+
+            # Linearly combine PSFs
+            fov_pix = self.psf_info['fov_pix']
+            psf_center  = krebin(self.psf_center_over, (fov_pix,fov_pix))
+            psf_offaxis = krebin(self.psf_offaxis_over, (fov_pix,fov_pix))
+            psf_max = np.array([np.max(psf_offaxis*a + psf_center*b) 
+                                for a,b in zip(avals,bvals)])
+
+        elif self.mask[-1]=='B': # Bar masks
+            raise NotImplementedError('BAR Masks not yet implemented')
+        
+        contrast = stds / psf_max
+        # Sigma limit
+        contrast *= nsig
+
+        # Magnitude sensitivity
+        star_mag = self.star_flux('vegamag')
+        sen_mag = star_mag - 2.5*np.log10(contrast)
+
+        return (rr, contrast, sen_mag)
+
         
     def saturation_levels(self, full_size=True, ngroup=0, **kwargs):
         """Saturation levels.
@@ -1222,6 +1312,12 @@ def plot_planet_patches(ax, obs, age=10, entropy=13, mass_list=[10,5,2,1], av_va
     entropy_switch = {13:'Hot', 8:'Cold'}
     entropy_string = entropy_switch.get(entropy, "Warm")
     ent_str = entropy_string + ' Start'
+
     av_str = '$A_V = [{:.0f},{:.0f}]$'.format(av_vals[0],av_vals[1])
+    age_str = 'Age = {:.0f} Myr; '.format(age)
+    dist_str = 'Dist = {:.1f} pc; '.format(dist) if dist is not None else ''
+    #dist_str=""
+
+    #ax.set_title('{} -- {} ({}{}{})'.format(obs.filter,ent_str,age_str,dist_str,av_str))
 
     ax.set_title('{} -- {} {}'.format(obs.filter,ent_str,av_str))
