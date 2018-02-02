@@ -9,7 +9,7 @@ coronagraphic imaging, slitless grism spectroscopy, DHS observations,
 and weak lens imaging. All PSFs are generated via WebbPSF 
 (https://webbpsf.readthedocs.io) to reproduce realistic JWST images and spectra.
 
-Developed by Jarron Leisenring and contributors at University of Arizona (2015-17).
+Developed by Jarron Leisenring and contributors at University of Arizona (2015-18).
 """
 from __future__ import absolute_import, division, print_function, unicode_literals
 
@@ -32,7 +32,8 @@ class Conf(_config.ConfigNamespace):
     else:
         path = os.getenv('PYNRC_PATH')
         if path is None:
-            raise EnvironmentError("Environment variable $PYNRC_PATH is not set!")
+            print("WARNING: Environment variable $PYNRC_PATH is not set!")
+            #raise EnvironmentError("Environment variable $PYNRC_PATH is not set!")
         if not os.path.isdir(path):
             raise IOError("PYNRC_PATH ({}) is not a valid directory path!".format(path))
         # Make sure there is a '/' at the end of the path name
@@ -58,7 +59,7 @@ class Conf(_config.ConfigNamespace):
 
 conf = Conf()
 
-#from . import logging_utils
+
 from .logging_utils import setup_logging#, restart_logging
 setup_logging(conf.default_logging_level, verbose=False)
 

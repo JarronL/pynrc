@@ -7,6 +7,7 @@ Spectral Tools
 
 .. autosummary::
 
+    ~nrc_utils.source_spectrum
     ~nrc_utils.planets_sb12
 
 .. rubric:: Functions Summary
@@ -22,6 +23,28 @@ Spectral Tools
     ~nrc_utils.bin_spectrum
 
 .. rubric:: Documentation
+
+.. autoclass:: pynrc.nrc_utils.source_spectrum
+   :show-inheritance:
+
+   .. rubric:: Methods Summary
+
+   .. autosummary::
+
+      ~source_spectrum.bb_jy
+      ~source_spectrum.model_scale
+      ~source_spectrum.model_IRexcess
+      ~source_spectrum.func_resid
+      ~source_spectrum.fit_spec
+
+   .. rubric:: Methods Documentation
+
+   .. automethod:: bb_jy
+   .. automethod:: model_scale
+   .. automethod:: model_IRexcess
+   .. automethod:: func_resid
+   .. automethod:: fit_spec
+
 
 .. autoclass:: pynrc.nrc_utils.planets_sb12
    :show-inheritance:
