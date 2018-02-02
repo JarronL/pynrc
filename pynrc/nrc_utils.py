@@ -1415,7 +1415,7 @@ def wfed_coeff(filter, force=False, save=True, save_name=None, **kwargs):
     modify a nominal set of PSF image coefficients to generate a
     new PSF where the WFE has drifted by some amplitude.
     
-    Keyword Arguments match those in :func:`~nrc_utils.psf_coeff`.
+    Keyword Arguments match those in :func:`psf_coeff`.
     
     Parameters
     ----------
@@ -1430,7 +1430,7 @@ def wfed_coeff(filter, force=False, save=True, save_name=None, **kwargs):
     save_name : str, None
         Full path name of save file (.npy) to save/load.
         If None, then a name is automatically generated,
-        matching the :func:`~nrc_utils.psf_coeff` function.
+        matching the :func:`psf_coeff` function.
         
     Example
     -------
@@ -1503,7 +1503,7 @@ def wfed_coeff(filter, force=False, save=True, save_name=None, **kwargs):
 def field_coeff(filter, force=False, save=True, save_name=None, **kwargs):
     """PSF Coefficient Mod w.r.t Field Position
 
-    Keyword Arguments match those in :func:`~nrc_utils.psf_coeff`.
+    Keyword Arguments match those in :func:`psf_coeff`.
     
     Parameters
     ----------
@@ -1518,7 +1518,7 @@ def field_coeff(filter, force=False, save=True, save_name=None, **kwargs):
     save_name : str, None
         Full path name of save file (.npy) to save/load.
         If None, then a name is automatically generated,
-        matching the :func:`~nrc_utils.psf_coeff` function.
+        matching the :func:`psf_coeff` function.
 
 
     Example
@@ -2010,7 +2010,7 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
     -------------------
     coeff : A cube of polynomial coefficients for generating PSFs. This is
         generally oversampled with a shape (fov_pix*oversamp, fov_pix*oversamp, deg).
-        If not set, this will be calculated using :func:`~nrc_utils.psf_coeff`.
+        If not set, this will be calculated using :func:`psf_coeff`.
     fov_pix      : Number of detector pixels in the image coefficient and PSF.
     oversample   : Factor of oversampling of detector pixels.
     offset_r     : Radial offset of the target from center.
@@ -3029,7 +3029,7 @@ def stellar_spectrum(sptype, *renorm_args,
     ------------
     catname : str
         Catalog name, including 'bosz', 'ck04models', and 'phoenix'.
-        Default is 'bosz', which comes from :func:`~nrc_utils.BOSZ_spectrum`.
+        Default is 'bosz', which comes from :func:`BOSZ_spectrum`.
     Teff : float
         Effective temperature ranging from 3500K to 30000K.
     metallicity : float
@@ -3421,7 +3421,7 @@ class source_spectrum(object):
         Surface gravity (log g) from 0 to 5.
     catname : str
         Catalog name, including 'bosz', 'ck04models', and 'phoenix'.
-        Default is 'bosz', which comes from :func:`~nrc_utils.BOSZ_spectrum`.
+        Default is 'bosz', which comes from :func:`BOSZ_spectrum`.
     res : str
         Spectral resolution to use (200 or 2000 or 20000).
     interpolate : bool
