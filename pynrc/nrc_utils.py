@@ -3581,7 +3581,7 @@ class source_spectrum(object):
         
         .. math::
         
-            x_0 \times BB(\lambda, x_1) \times \lambda^{x_2}
+            x_0 BB(\lambda, x_1) \lambda^{x_2}
         """
 
         sp = self.sp_lowres if sp is None else sp
