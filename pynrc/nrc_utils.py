@@ -3577,7 +3577,11 @@ class source_spectrum(object):
         
         Model of a stellar spectrum plus IR excess, where the
         excess is a modified blackbody. The final model follows
-        the form x[0]*sp + x[1]*BB(wave,x[2])*wave^x[3]
+        the form `x[0]*sp + x[1]*BB(wave,x[2])*wave^x[3]`
+        
+        .. math::
+        
+            x_0 * sp + x_1 * BB(\lambda, x_2) * \lambda^{x_3}
         """
 
         sp = self.sp_lowres if sp is None else sp
