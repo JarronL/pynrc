@@ -2849,6 +2849,24 @@ def BOSZ_spectrum(Teff, metallicity, log_g, res=2000, interpolate=True, **kwargs
     Different spectral resolutions can also be specified, currently only
     res=200 or 2000 or 20000.
 
+    Parameters
+    ----------
+    Teff : float
+        Effective temperature ranging from 3500K to 30000K.
+    metallicity : float
+        Metallicity [Fe/H] value ranging from -2.5 to 0.5.
+    log_g : float
+        Surface gravity (log g) from 0 to 5.
+    
+    Keyword Args
+    ------------
+    res : str
+        Spectral resolution to use (200 or 2000 or 20000).
+    interpolate : bool
+        Interpolate spectrum using a weighted average of grid points
+        surrounding the desired input parameters.
+
+
     References
     ----------
     https://archive.stsci.edu/prepds/bosz/
@@ -2971,11 +2989,10 @@ def BOSZ_spectrum(Teff, metallicity, log_g, res=2000, interpolate=True, **kwargs
     name = 'BOSZ(Teff={},z={},logG={})'.format(Teff,metallicity,log_g)
     sp = S.ArraySpectrum(wfin, ffin, 'angstrom', 'flam', name=name)
     
-    return sp
+    return sp    
 
-    
-
-def stellar_spectrum(sptype, *renorm_args, **kwargs):
+def stellar_spectrum(sptype, *renorm_args, 
+                     Teff=None, metallicity=None, log_g=None, **kwargs):
     """Stellar spectrum
 
     Similar to specFromSpectralType() in WebbPSF/Poppy, this function uses
@@ -2996,6 +3013,9 @@ def stellar_spectrum(sptype, *renorm_args, **kwargs):
     Use ``catname='ck04models'`` keyword for ck04 models
     Use ``catname='phoenix'`` keyword for Phoenix models
     
+    Can also directly specify Teff, metallicity, an log_g rather than a spectral
+    type. 
+    
     Parameters
     ----------
     sptype : str
@@ -3010,6 +3030,17 @@ def stellar_spectrum(sptype, *renorm_args, **kwargs):
     catname : str
         Catalog name, including 'bosz', 'ck04models', and 'phoenix'.
         Default is 'bosz', which comes from :func:`~nrc_utils.BOSZ_spectrum`.
+    Teff : float
+        Effective temperature ranging from 3500K to 30000K.
+    metallicity : float
+        Metallicity [Fe/H] value ranging from -2.5 to 0.5.
+    log_g : float
+        Surface gravity (log g) from 0 to 5.
+    res : str
+        Spectral resolution to use (200 or 2000 or 20000).
+    interpolate : bool
+        Interpolate spectrum using a weighted average of grid points
+        surrounding the desired input parameters.
     
     """
 
@@ -3088,8 +3119,19 @@ def stellar_spectrum(sptype, *renorm_args, **kwargs):
     # Generate list of spectral types
     sptype_list = list(lookuptable.keys())
 
-    # First test if the user wants a flat spectrum (in photlam)
-    if 'flat' in sptype.lower():
+    # Test if the user wants a flat spectrum (in photlam)
+    # Check if Teff, metallicity, and log_g are specified
+    if (Teff is not None) and (metallicity is not None) and (log_g is not None):
+        v0, v1, v2 = (Teff, metallicity, log_g)
+        if 'bosz' in catname.lower():
+            sp = BOSZ_spectrum(v0, v1, v2, **kwargs)
+        else:
+            if ('ck04models' in catname.lower()) and (v0<3500):
+                _log.warn("ck04 models stop at 3500K. Setting Teff=3500.")
+                v0 = 3500
+            sp = S.Icat(catname, v0, v1, v2)
+        sp.name = '({:.0f},{:0.1f},{:0.1f})'.format(v0,v1,v2)
+    elif 'flat' in sptype.lower():
         waveset = S.refs._default_waveset
         sp = S.ArraySpectrum(waveset, 0*waveset + 10.)
         sp.name = 'Flat spectrum in photlam'
@@ -3099,6 +3141,9 @@ def stellar_spectrum(sptype, *renorm_args, **kwargs):
         if 'bosz' in catname.lower():
             sp = BOSZ_spectrum(v0, v1, v2, **kwargs)
         else:
+            if ('ck04models' in catname.lower()) and (v0<3500):
+                _log.warn("ck04 models stop at 3500K. Setting Teff=3500.")
+                v0 = 3500
             sp = S.Icat(catname, v0, v1, v2)
         sp.name = sptype
     else: # Interpolate values for undefined sptype
@@ -3119,7 +3164,7 @@ def stellar_spectrum(sptype, *renorm_args, **kwargs):
             sp = BOSZ_spectrum(v0, v1, v2, **kwargs)
         else:
             if ('ck04models' in catname.lower()) and (v0<3500):
-                _log.warn("ck04 models stop at 3500K. Setting v0=3500.")
+                _log.warn("ck04 models stop at 3500K. Setting Teff=3500.")
                 v0 = 3500
             sp = S.Icat(catname, v0, v1, v2)
         sp.name = sptype
@@ -3133,6 +3178,8 @@ def stellar_spectrum(sptype, *renorm_args, **kwargs):
         sp = sp_norm
 
     return sp
+
+
 
         
 def zodi_spec(zfact=None, locstr=None, year=None, day=None, **kwargs):
@@ -3336,6 +3383,306 @@ def zodi_euclid(locstr, year, day, wavelengths=[1,5.5], ido_viewin=0, **kwargs):
 # 	sp_zodi.name = 'Zodiacal Light'
 # 	
 # 	return sp_zodi
+
+# Class for creating an input source spectrum
+class source_spectrum(object):
+    """Model source spectrum
+    
+    The class ingests spectral information of a given target
+    and generates :mod:`pysynphot.spectrum` model fit to the
+    known photometric SED. Two model routines can fit. The
+    first is a very simple scale factor that is applied to the
+    input spectrum, while the second takes the input spectrum
+    and adds an IR excess modeled as a modified blackbody function.
+    
+    Parameters
+    ----------
+    name : string
+        Source name.
+    sptype : string
+        Assumed stellar spectral type. Not relevant if Teff, metallicity,
+        and log_g are specified.
+    mag_val : float
+        Magnitude of input bandpass for initial scaling of spectrum.
+    bp : :mod:`pysynphot.obsbandpass`
+        Bandpass to apply mag_val scaling.
+    votable_file: string
+        VOTable name that holds the source's photometry. The user can
+        find the relevant data at http://vizier.u-strasbg.fr/vizier/sed/
+        and click download data.
+    
+    Keyword Args
+    ------------
+    Teff : float
+        Effective temperature ranging from 3500K to 30000K.
+    metallicity : float
+        Metallicity [Fe/H] value ranging from -2.5 to 0.5.
+    log_g : float
+        Surface gravity (log g) from 0 to 5.
+    catname : str
+        Catalog name, including 'bosz', 'ck04models', and 'phoenix'.
+        Default is 'bosz', which comes from :func:`~nrc_utils.BOSZ_spectrum`.
+    res : str
+        Spectral resolution to use (200 or 2000 or 20000).
+    interpolate : bool
+        Interpolate spectrum using a weighted average of grid points
+        surrounding the desired input parameters.
+        
+    Example
+    -------
+    Generate a source spectrum and fit photometric data
+    
+    >>> import pynrc
+    >>> from pynrc.nrc_utils import source_spectrum
+    >>> 
+    >>> name = 'HR8799'
+    >>> vot = 'votables/{}.vot'.format(name)
+    >>> bp_k = pynrc.bp_2mass('k')
+    >>> 
+    >>> # Read in stellar spectrum model and normalize to Ks = 5.24
+    >>> src = source_spectrum(name, 'F0V', 5.24, bp_k, vot,
+    >>>                       Teff=7430, metallicity=-0.47, log_g=4.35)
+    >>> # Fit model to photometry from 0.1 - 30 micons
+    >>> # Retuns pysynphot spectral object
+    >>> sp_mod = src.fit_spec(wlim=[0.1,30])
+    
+    """
+
+    def __init__(self, name, sptype, mag_val, bp, votable_file,
+                 Teff=None, metallicity=None, log_g=None, **kwargs):
+
+        self.name = name
+
+        # Setup initial spectrum
+        kwargs['Teff']        = Teff
+        kwargs['metallicity'] = metallicity
+        kwargs['log_g']       = log_g
+        self.sp0 = stellar_spectrum(sptype, mag_val, 'vegamag', bp, **kwargs)
+        
+        # Read in a low res version for photometry matching
+        kwargs['res'] = 200
+        self.sp_lowres = stellar_spectrum(sptype, mag_val, 'vegamag', bp, **kwargs)
+        
+        # Readin photometry
+        self.votable_file = votable_file
+        self._gen_table()
+        self._combine_fluxes()
+        
+    def _gen_table(self):
+        """Read VOTable and convert to astropy table"""
+        # Import source SED from VOTable
+        from astropy.io.votable import parse_single_table
+        table = parse_single_table(self.votable_file)
+        # Convert to astropy table
+        tbl = table.to_table()
+        
+        freq = tbl['sed_freq'] * 1e9 # Hz
+        wave_m = 2.99792458E+08 / freq
+        wave_A = 1e10 * wave_m
+        
+        # Add wavelength column
+        col = tbl.Column(wave_A, 'sed_wave')
+        col.unit = 'Angstrom'
+        tbl.add_column(col)
+        
+        # Sort flux monotomically with wavelength
+        tbl.sort(['sed_wave', 'sed_flux'])
+        
+        self.table = tbl
+        
+    def _combine_fluxes(self):
+        """Average duplicate data points
+        
+        Creates average of duplicate point stored in self.sp_phot.
+        """
+    
+        table = self.table
+        
+        wave = table['sed_wave']
+        flux = table["sed_flux"]
+        eflux = table["sed_eflux"]
+
+        # Average duplicate data points
+        uwave, ucnt = np.unique(wave, return_counts=True)
+        uflux = []
+        uflux_e = []
+        for i, w in enumerate(uwave):
+            ind = (wave==w)
+            flx = np.median(flux[ind]) if ucnt[i]>1 else flux[ind][0]
+            uflux.append(flx)
+
+            eflx = robust.medabsdev(flux[ind]) if ucnt[i]>1 else eflux[ind][0]
+            uflux_e.append(eflx)
+        uflux = np.array(uflux)
+        uflux_e = np.array(uflux_e)
+
+        # Photometric data points
+        sp_phot = S.ArraySpectrum(uwave, uflux, 
+                                  waveunits=wave.unit.name, 
+                                  fluxunits=flux.unit.name)
+        sp_phot.convert('Angstrom')
+        sp_phot.convert('Flam')
+
+        sp_phot_e = S.ArraySpectrum(uwave, uflux_e, 
+                                    waveunits=wave.unit.name, 
+                                    fluxunits=eflux.unit.name)
+        sp_phot_e.convert('Angstrom')
+        sp_phot_e.convert('Flam')
+
+        
+        self.sp_phot = sp_phot
+        self.sp_phot_e = sp_phot_e
+
+        
+    def bb_jy(self, wave, T):
+        """Blackbody function (Jy)
+        
+        For a given wavelength set (in um) and a Temperature (K), 
+        return the blackbody curve in units of Jy.
+        
+        Parameters
+        ----------
+        wave : array_like
+            Wavelength array in microns
+        T : float
+            Temperature of blackbody (K)
+        """
+
+        # Physical Constants
+        #H  = 6.62620000E-27  # Planck's constant in cgs units
+        HS = 6.62620000E-34  # Planck's constant in standard units
+        C  = 2.99792458E+08  # speed of light in standard units
+        K  = 1.38064852E-23  # Boltzmann constant in standard units
+
+        # Blackbody coefficients (SI units)
+        C1 = 2.0 * HS * C    # Power * unit area / steradian
+        C2 = HS * C / K   
+
+        w_m = wave * 1e-6
+
+        exponent = C2 / (w_m * T)
+        expfactor = np.exp(exponent)
+
+        return 1.0E+26 * C1 * (w_m**-3.0) / (expfactor - 1.0)
+
+        
+    def model_scale(self, x, sp=None):
+        """Simple model to scale stellar spectrum"""
+        
+        sp = self.sp_lowres if sp is None else sp
+        return x[0] * sp
+
+    def model_IRexcess(self, x, sp=None):
+        """Model for stellar spectrum with IR excesss
+        
+        Model of a stellar spectrum plus IR excess, where the
+        excess is a modified blackbody. The final model follows
+        the form x[0]*sp + x[1]*BB(wave,x[2])*wave^x[3]
+        """
+
+        sp = self.sp_lowres if sp is None else sp
+
+        bb_flux = x[0] * self.bb_jy(sp.wave/1e4, x[1]) * (sp.wave/1e4)**x[2] / 1e17
+        sp_bb = S.ArraySpectrum(sp.wave, bb_flux, fluxunits='Jy')
+        sp_bb.convert('Flam')
+        
+        return sp + sp_bb
+
+
+    def func_resid(self, x, IR_excess=False, wlim=[0.1, 30], use_err=True):
+        """Calculate model residuals
+        
+        Parameters
+        ----------
+        x : array_like
+            Model parameters for either `model_scale` or `model_IRexcess`.
+            See these two functions for more details.
+        IR_excess: bool
+            Include IR excess in model fit? This is a simple modified blackbody.
+        wlim : array_like
+            Min and max limits for wavelengths to consider (microns).
+        use_err : bool
+            Should we use the uncertainties in the SED photometry for weighting?
+        """
+    
+        # Star model and photometric data
+        sp_star = self.sp_lowres
+        sp_phot = self.sp_phot
+        sp_phot_e = self.sp_phot_e
+        
+        # Which model are we using?
+        func_model = self.model_IRexcess if IR_excess else self.model_scale
+        
+        sp_model = func_model(x, sp_star)
+    
+        wvals = sp_phot.wave
+        wmin, wmax = np.array(wlim)*1e4
+        ind = (wvals >= wmin) & (wvals <= wmax)
+        
+        wvals = wvals[ind]
+        yvals = sp_phot.flux[ind]
+        evals = sp_phot_e.flux[ind]
+        
+        # Instead of interpolating on a high-resolution grid,
+        # we should really rebin onto a more coarse grid.
+        mod_interp = np.interp(wvals, sp_star.wave, sp_model.flux)
+        
+        # Normalize values so the residuals aren't super small/large
+        norm = np.mean(yvals)
+        
+        resid = (mod_interp - yvals)
+        if use_err: resid /= evals
+
+        # Return non-NaN normalized values
+        return resid[~np.isnan(resid)] / norm
+        
+    def fit_spec(self, x0=None, robust=True, use_err=True, IR_excess=False, 
+                 wlim=[0.1, 30], verbose=True):
+    
+        """Fit a model function to photometry
+        
+        Use :func:`scipy.optimize.least_squares` to find the best fit
+        model to the observed photometric data. If not parameters passed,
+        then defaults are set.
+        
+        Keyword Args
+        ------------
+        x0 : array_like
+            Initial guess of independent variables.
+        robust : bool
+            Perform an outlier-resistant fit.
+        use_err : bool
+            Should we use the uncertainties in the SED photometry for weighting?
+        IR_excess: bool
+            Include IR excess in model fit? This is a simple modified blackbody.
+        wlim : array_like
+            Min and max limits for wavelengths to consider (microns).
+        verbose : bool
+            Print out best-fit model parameters. Defalt is True.
+        """
+        
+        # Default initial starting parameters
+        if x0 is None:
+            x0 = [1.0, 2000.0, 0.5] if IR_excess else [1.0]
+            
+        # Robust fit?
+        loss = 'soft_l1' if robust else 'linear'
+        
+        # Perform least-squares fit
+        kwargs={'IR_excess':IR_excess, 'wlim':wlim, 'use_err':use_err}
+        res = least_squares(self.func_resid, x0, bounds=(0,np.inf), loss=loss, 
+                            kwargs=kwargs)
+        out = res.x
+        if verbose: print(out)
+
+        # Which model are we using?
+        func_model = self.model_IRexcess if IR_excess else self.model_scale
+        # Create final model spectrum
+        sp_model = func_model(out, self.sp0)
+        sp_model.name = self.name
+        
+        return sp_model
+
 
 # Class for reading in planet spectra
 class planets_sb12(object):
