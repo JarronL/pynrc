@@ -930,11 +930,16 @@ class NIRCam(object):
         Radial offset from the center in arcsec.
     offset_theta :float
         Position angle for radial offset, in degrees CCW.
-    opd : tuple or HDUList
-        Tuple (file, slice) or HDUList specifying OPD.
+    bar_offset : float or None
+        For bar masks, the position along the bar to place the PSF (arcsec).
+        Use :func:`~pynrc.nrc_utils.offset_bar` for filter-dependent locations.
+        If not set, default is to decide location based on selected filter.
+        Updates :attr:`bar_offset` attribute.
     wfe_drift : float
         Wavefront error drift amplitude in nm.
         Updates :attr:`wfe_drift` attribute.
+    opd : tuple or HDUList
+        Tuple (file, slice) or filename or HDUList specifying OPD.
     tel_pupil : str
         File name or HDUList specifying telescope entrance pupil.
     jitter : str or None
@@ -1021,7 +1026,10 @@ class NIRCam(object):
         self._pupil = pupil
         self._mask = mask
         self._ND_acq = ND_acq
+        
         self._wfe_drift = 0
+        self._bar_offset = None
+        self._fov_pix_bg = 33
 
         self._update_bp()		
         self._validate_wheels()
@@ -1438,10 +1446,25 @@ class NIRCam(object):
         if vold != self._wfe_drift: 
             self.update_psf_coeff(wfe_drift=self._wfe_drift)
 
+    @property
+    def bar_offset(self):
+        """Offset position along bar mask (arcsec)."""
+        return self._bar_offset
+    @bar_offset.setter
+    def bar_offset(self, value):
+        """Set the bar offset position and update coefficients"""
+        # Only update if the value changes
+        if self.mask is None:
+            self._bar_offset = None
+        else:
+            vold = self._bar_offset; self._bar_offset = value
+            if vold != self._bar_offset: 
+                self.update_psf_coeff(bar_offset=self._bar_offset)
+            
     def update_psf_coeff(self, fov_pix=None, oversample=None, 
         offset_r=None, offset_theta=None, tel_pupil=None, opd=None,
         wfe_drift=None, jitter='gaussian', jitter_sigma=0.007, 
-        save=None, force=False, **kwargs):
+        bar_offset=None, save=None, force=False, **kwargs):
         """Create new PSF coefficients.
         
         Generates a set of PSF coefficients from a sequence of WebbPSF images.
@@ -1471,13 +1494,19 @@ class NIRCam(object):
             Default 2 for coronagraphy and 4 otherwise.
         offset_r : float
             Radial offset from the center in arcsec.
-        offset_theta :float
+        offset_theta : float
             Position angle for radial offset, in degrees CCW.
-        opd : tuple or HDUList
-            Tuple (file, slice) or filename or HDUList specifying OPD.
+        bar_offset : float or None
+            For bar masks, the position along the bar to place the PSF (arcsec).
+            Use :func:`~pynrc.nrc_utils.offset_bar` for filter-dependent locations.
+            If both :attr:`bar_offset` attribute and `bar_offset` keyword are None,
+            then decide location based on selected filter.
+            Updates :attr:`bar_offset` attribute and coefficients appropriately.
         wfe_drift : float
             Wavefront error drift amplitude in nm.
             Updates :attr:`wfe_drift` attribute and coefficients appropriately.
+        opd : tuple or HDUList
+            Tuple (file, slice) or filename or HDUList specifying OPD.
         tel_pupil : str
             File name or HDUList specifying telescope entrance pupil.
         jitter : str or None
@@ -1520,7 +1549,7 @@ class NIRCam(object):
 
         oversample = int(oversample)
         fov_pix = int(fov_pix)
-        # Make sure fov_pix is odd
+        # Make sure fov_pix is odd?
         #if np.mod(fov_pix,2)==0: fov_pix+=1
         if np.mod(fov_pix,2)==0: 
             _log.warning('fov_pix specified as even; PSF is centered at pixel corners.')
@@ -1579,14 +1608,41 @@ class NIRCam(object):
             cf_mod = jl_poly(np.array([wfe_drift]), cf_fit)
             cf_mod = cf_mod.reshape(self._psf_coeff.shape)
             self._psf_coeff += cf_mod
+            
+        # Bar masks can have offsets
+        if (self.mask is not None) and ('WB' in self.mask):
+            r_bar, th_bar = offset_bar(self.filter, self.mask)
+            # Want th_bar to be -90 so that r_bar matches webbpsf
+            if th_bar>0: 
+                r_bar  = -1 * r_bar
+                th_bar = -1 * th_bar
+
+            # Specifying bar_offset keyword overrides everything
+            if bar_offset is not None:
+                self._bar_offset = bar_offset
+            # If _bar_offset attribute unspecified, then filter based
+            if self._bar_offset is None:
+                self._bar_offset = r_bar
+
+            bar_offset = self._bar_offset
+            
+            wedge_kwargs = dict(self._psf_info)
+            wedge_kwargs['module'] = self.module
+            
+            wedge_cf = wedge_coeff(self.filter, self.pupil, self.mask, **wedge_kwargs)
+            cf_fit = wedge_cf.reshape([wedge_cf.shape[0], -1])
+            cf_mod = jl_poly(np.array([bar_offset]), cf_fit)
+            cf_mod = cf_mod.reshape(self._psf_coeff.shape)
+            self._psf_coeff += cf_mod
+            
     
         # If there is a coronagraphic spot or bar, then we may need to
         # generate another background PSF for sensitivity information.
         # It's easiest just to ALWAYS do a small footprint without the
         # coronagraphic mask and save the PSF coefficients. 
-        # Opting to save and not force since this isn't critical for modeling.
+        # For now, we exclude any WFE drift for the bg PSF.
         if self.mask is not None:
-            self._psf_info_bg={'fov_pix':33, 'oversample':oversample, 
+            self._psf_info_bg = {'fov_pix':self._fov_pix_bg, 'oversample':oversample, 
                 'offset_r':0, 'offset_theta':0, 'tel_pupil':tel_pupil, 
                 'opd':opd, 'jitter':None, 'save':True, 'force':False}
             self._psf_coeff_bg = psf_coeff(self.bandpass, self.pupil, None, self.module, 
@@ -1910,11 +1966,9 @@ class NIRCam(object):
         """
 
         if use_bg_psf:
-            mask = None
             psf_coeff = self._psf_coeff_bg
             psf_info  = self._psf_info_bg
         else:
-            mask = self.mask
             psf_coeff = self._psf_coeff
             psf_info  = self._psf_info
 

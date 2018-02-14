@@ -102,18 +102,17 @@ S.refs.set_default_waveset(minwave=500, maxwave=56000, num=10000.0, delta=None, 
 # Flux loss from masks and occulters are taken into account in WebbPSF
 S.refs.setref(area = 25.4e4) # cm^2
 
-# Grab WebbPSF assumed pixel scales 
-if not on_rtd:
-    nc_temp = webbpsf.NIRCam()
-    pixscale_SW = nc_temp._pixelscale_short
-    pixscale_LW = nc_temp._pixelscale_long
-    del nc_temp
-
 # Default OPD info
 opd_default = ('OPD_RevW_ote_for_NIRCam_requirements.fits', 0)
 
 # The following won't work on readthedocs compilation
 if not on_rtd:
+    # Grab WebbPSF assumed pixel scales 
+    nc_temp = webbpsf.NIRCam()
+    pixscale_SW = nc_temp._pixelscale_short
+    pixscale_LW = nc_temp._pixelscale_long
+    del nc_temp
+
     # .fits or .fits.gz?
     opd_dir = os.path.join(webbpsf.utils.get_webbpsf_data_path(),'NIRCam','OPD')
     opd_file = os.path.join(opd_dir,opd_default[0])
@@ -128,8 +127,8 @@ if not on_rtd:
             opd_default = ('OPD_RevW_ote_for_NIRCam_requirements.fits.gz', 0)
     
 
-        import errno
-        raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), opd_file)
+        #import errno
+        #raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), opd_file)
 
 ###########################################################################
 #
@@ -202,7 +201,7 @@ def read_filter(filter, pupil=None, mask=None, module=None, ND_acq=False,
         Add in additional OTE H2O absorption. This is a scale factor 
         relative to 0.0131 um thickness.
     nvr_scale : float
-        Add in additiona NIRCam non-volatile residue. This is scale 
+        Add in additiona NIRCam non-volatile residue. This is a scale 
         factor relative to 0.280 um thickness.
 
     Returns
@@ -422,7 +421,7 @@ def read_filter(filter, pupil=None, mask=None, module=None, ND_acq=False,
         bp = S.ArrayBandpass(bp.wave, th_new, name=filter)
 
 
-    # Resample to common dw to make ensure consistency
+    # Resample to common dw to ensure consistency
     dw_arr = bp.wave[1:] - bp.wave[:-1]
     #if not np.isclose(dw_arr.min(),dw_arr.max()):
     dw = np.median(dw_arr)
@@ -968,7 +967,8 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     offset_r=None, offset_theta=None, jitter=None, jitter_sigma=0.007, 
     opd=None, wfe_drift=None, drift_file=None, include_si_wfe=True, 
     detector=None, detector_position=None, force=False, quick=False,
-    save=True, save_name=None, return_save_name=False, **kwargs):
+    save=True, save_name=None, return_save_name=False, 
+    bar_offset=None, **kwargs):
     """Generate PSF coefficients
     
     Creates a set of coefficients that will generate a simulated PSF at any
@@ -1010,8 +1010,12 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         Default = 10 (7 if quick=True).
     offset_r : float
         Radial offset from the center in arcsec.
-    offset_theta :float
+    offset_theta : float
         Position angle for radial offset, in degrees CCW.
+    bar_offset : float
+        Offset along coronagraphic bar (wedge) occulter, in arcseconds.
+        Keeps the resulting PSF at zero tip/tilt, unlike `offset_r` and `offset_theta`.
+        Defaults to 0 offset. Use :func:`offset_bar` for filter-dependent offsets.
     opd : str, tuple, HDUList
         OPD specifications. If a tuple, then it should contain two elements
         (filename, slice index). Can also specify just the filename, which
@@ -1046,7 +1050,6 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         Only perform a fit over the filter bandpass with a smaller default
         polynomial degree fit. Not compatible with save.
     return_save_name : bool
-
 
     """
     
@@ -1110,8 +1113,8 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     
 
     # Check if mask and pupil names exist in WebbPSF lists.
-    # We don't want to pass values that WebbPSF does not recognize,
-    # but are otherwise completely valid in the NIRCam framework.
+    # We don't want to pass values that WebbPSF does not recognize
+    # but are otherwise completely valid in the pynrc framework.
     if mask in list(inst.image_mask_list): inst.image_mask = mask
     if pupil in list(inst.pupil_mask_list): inst.pupil_mask = pupil
     
@@ -1129,16 +1132,20 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     # NB: Implementation of field-dependent OPD maps may change these settings.
     if offset_r is None: offset_r = 0
     if offset_theta is None: offset_theta = 0
-    #if ('210R' in mtemp) or ('335R' in mtemp) or ('430R' in mtemp):
-    #    rtemp, ttemp = (offset_r, offset_theta)
-    #elif ('MASKSWB' in mtemp) or ('MASKLWB' in mtemp):
-    #    rtemp, ttemp = (offset_r, offset_theta)
-    #else:
-    #    rtemp = ttemp = 0
     rtemp, ttemp = (offset_r, offset_theta)
     inst.options['source_offset_r']     = rtemp
     inst.options['source_offset_theta'] = ttemp
     
+    # Bar offsets (auto_offset not supported)
+    # If observing with bar mask, default to 0 offset
+    if 'B' in mtemp:
+        bar_offset = 0 if bar_offset is None else bar_offset
+    else:
+        # Set to None if not observing with bar mask
+        bar_offset = None
+    bar_str = '' if bar_offset is None else '_bar{:.1f}'.format(bar_offset)
+    inst.options['bar_offset'] = bar_offset
+
     jitter_sigma = 0 if jitter is None else jitter_sigma
     inst.options['jitter'] = jitter
     inst.options['jitter_sigma'] = jitter_sigma
@@ -1175,9 +1182,9 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
             os.makedirs(save_dir)
 
         # Final filename to save coeff
-        fname = '{}{}_{}_{}_pix{}_os{}_jsig{:.0f}_r{:.1f}_th{:.1f}_{}.fits'.\
+        fname = '{}{}_{}_{}_pix{}_os{}_jsig{:.0f}_r{:.1f}_th{:.1f}{}_{}.fits'.\
             format(chan_str,module,ptemp,mtemp,fov_pix,oversample,\
-                   jitter_sigma*1000,rtemp,ttemp,otemp)
+                   jitter_sigma*1000,rtemp,ttemp,bar_str,otemp)
         save_name = save_dir + fname
         
     if return_save_name:
@@ -1501,7 +1508,7 @@ def wfed_coeff(filter, force=False, save=True, save_name=None, **kwargs):
 
 
 def field_coeff(filter, force=False, save=True, save_name=None, **kwargs):
-    """PSF Coefficient Mod w.r.t Field Position
+    """PSF Coefficient Mod w.r.t. Field Position
 
     Keyword Arguments match those in :func:`psf_coeff`.
     
@@ -1566,7 +1573,7 @@ def field_coeff(filter, force=False, save=True, save_name=None, **kwargs):
     _log.warn('Generating field-dependent coefficients. This may take some time.')
 
     # Cycle through a list of field points
-    # These are measured field positions
+    # These are the measured field positions
     module = kwargs.get('module', 'A')
     kwargs['module'] = module
     if module=='A':
@@ -1654,6 +1661,113 @@ def field_model(x, y, cf):
     res_shape = [x.size] + [sh for sh in cf_orig[1:]]
     
     return np.dot(xx_fit, cf).reshape(res_shape).squeeze()
+    
+    
+def wedge_coeff(filter, pupil, mask, force=False, save=True, save_name=None, **kwargs):
+    """PSF Coefficient Mod w.r.t. Field Position
+
+    Keyword Arguments match those in :func:`psf_coeff`.
+    
+    Parameters
+    ----------
+    filter : str
+        Name of a filter.
+    force : bool
+        Forces a recalcuation of coefficients even if saved 
+        PSF already exists. (default: False)
+    save : bool
+        Save the resulting WFE drift coefficents to a file? 
+        (default: True)
+    save_name : str, None
+        Full path name of save file (.npy) to save/load.
+        If None, then a name is automatically generated,
+        matching the :func:`psf_coeff` function.
+
+
+    Example
+    -------
+    Generate PSF coefficient at bar_offset=0, generate position modifications, 
+    then use these results to create a PSF at some arbitrary offset location.
+
+    >>> from pynrc.nrc_utils import *
+    >>> fpix, osamp = (320, 2)
+    >>> filt, pupil, mask = ('F430M', 'WEDGELYOT', 'MASKLWB')
+    >>> coeff    = psf_coeff(filt, pupil, mask, fov_pix=fpix, oversample=osamp)
+    >>> cf_resid = wedge_coeff(filt, pupil, mask, fov_pix=fpix, oversample=osamp)
+
+    >>> # The narrow location (arcsec)
+    >>> bar_offset = 8
+    >>> cf_fit = cf_resid.reshape([cf_resid.shape[0], -1])
+    >>> cf_mod = jl_poly(np.array([bar_offset]), cf_fit).reshape(coeff.shape)
+    >>> cf_new = coeff + cf_mod
+    >>> psf    = gen_image_coeff(filt, pupil, mask, coeff=cf_new, fov_pix=fpix, oversample=osamp)
+
+    """
+
+    kwargs['force']     = True
+    kwargs['save']      = False
+    kwargs['save_name'] = None
+    
+    kwargs['pupil'] = pupil
+    kwargs['mask'] = mask
+
+    module = kwargs.get('module', 'A')
+    kwargs['module'] = module
+
+    # Get filter throughput and create bandpass 
+    bp = read_filter(filter)
+    channel = 'SW' if bp.avgwave() < 24000 else 'LW'
+
+    # Final filename to save coeff
+    if save_name is None:
+        # Name to save array of oversampled coefficients
+        save_dir = conf.PYNRC_PATH + 'psf_coeffs/'
+        # Create directory if it doesn't already exist
+        if not os.path.isdir(save_dir):
+            os.makedirs(save_dir)
+
+        # Final filename to save coeff
+        save_name = psf_coeff(filter, return_save_name=True, **kwargs)
+        save_name = os.path.splitext(save_name)[0] + '_wedge.npy'
+
+    # Load file if it already exists
+    if (not force) and os.path.exists(save_name):
+        return np.load(save_name)
+
+    _log.warn('Generating field-dependent coefficients. This may take some time.')
+
+    # Cycle through a list of bar offset locations
+    values = np.arange(-8,8,1)
+    nvals = len(values)
+    
+    # First is default value
+    # SI WFE isn't value for coronagraphic field points
+    kwargs['include_si_wfe'] = False
+    cf0 = psf_coeff(filter, bar_offset=0, **kwargs)
+
+    cf_offset = []
+    for val in values:
+        _log.debug('Bar Offset: {:.1f} arcsec'.format(val))
+        kwargs['bar_offset'] = val
+
+        cf = psf_coeff(filter, **kwargs)
+        cf_offset.append(cf)
+
+    cf_offset = np.array(cf_offset)
+    
+    # Get residuals
+    cf_offset -= cf0
+
+    # Fit each pixel with a polynomial and save the coefficient
+    cf_offset = cf_offset.reshape([nvals, -1])
+    cf_fit = jl_poly_fit(values, cf_offset, 4)
+    cf_fit = cf_fit.reshape([-1, cf.shape[0], cf.shape[1], cf.shape[2]])
+
+    if save:
+        np.save(save_name, cf_fit)
+    
+    return cf_fit
+    
     
 
 def gen_image_coeff(filter_or_bp, pupil=None, mask=None, module='A', 
@@ -2984,10 +3098,9 @@ def BOSZ_spectrum(Teff, metallicity, log_g, res=2000, interpolate=True, **kwargs
         Teff = teff_best[ind]
         log_g = logg_best[ind]
         metallicity = metal_best[ind]
-        
     
     name = 'BOSZ(Teff={},z={},logG={})'.format(Teff,metallicity,log_g)
-    sp = S.ArraySpectrum(wfin, ffin, 'angstrom', 'flam', name=name)
+    sp = S.ArraySpectrum(wfin[:-1], ffin[:-1], 'angstrom', 'flam', name=name)
     
     return sp    
 
@@ -3443,8 +3556,9 @@ class source_spectrum(object):
     >>> src = source_spectrum(name, 'F0V', 5.24, bp_k, vot,
     >>>                       Teff=7430, metallicity=-0.47, log_g=4.35)
     >>> # Fit model to photometry from 0.1 - 30 micons
-    >>> # Retuns pysynphot spectral object
-    >>> sp_mod = src.fit_spec(wlim=[0.1,30])
+    >>> # Saves pysynphot spectral object at src.sp_model
+    >>> src.fit_SED(wlim=[0.1,30])
+    >>> sp_sci = src.sp_model
     
     """
 
@@ -3462,6 +3576,9 @@ class source_spectrum(object):
         # Read in a low res version for photometry matching
         kwargs['res'] = 200
         self.sp_lowres = stellar_spectrum(sptype, mag_val, 'vegamag', bp, **kwargs)
+        
+        # Init model to None
+        self.sp_model = None
         
         # Readin photometry
         self.votable_file = votable_file
@@ -3640,8 +3757,8 @@ class source_spectrum(object):
         # Return non-NaN normalized values
         return resid[~np.isnan(resid)] / norm
         
-    def fit_spec(self, x0=None, robust=True, use_err=True, IR_excess=False, 
-                 wlim=[0.1, 30], verbose=True):
+    def fit_SED(self, x0=None, robust=True, use_err=True, IR_excess=False, 
+                 wlim=[0.3,10], verbose=True):
     
         """Fit a model function to photometry
         
@@ -3685,7 +3802,53 @@ class source_spectrum(object):
         sp_model = func_model(out, self.sp0)
         sp_model.name = self.name
         
-        return sp_model
+        self.sp_model = sp_model
+        
+    def plot_SED(self, ax=None, return_figax=False, xr=[0.3,30], yr=None, 
+                     units='Jy', **kwargs):
+    
+        sp0 = self.sp0
+        sp_phot = self.sp_phot
+        sp_model = self.sp_model
+        
+        # Convert to Jy and save original units
+        sp0_units = sp0.fluxunits.name
+        sp_phot_units = sp_phot.fluxunits.name
+        sp0.convert(units)
+        sp_phot.convert(units)
+        
+        if ax is None:
+            fig, ax = plt.subplots(1,1, figsize=(8,5))
+    
+        ax.loglog(sp0.wave/1e4, sp0.flux, lw=1, label='Photosphere', **kwargs)
+        ax.errorbar(sp_phot.wave/1e4, sp_phot.flux, yerr=sp_phot.flux, 
+                    marker='.', ls='none', label='Photometry')
+        
+        if sp_model is not None:
+            sp_model_units = sp_model.fluxunits.name
+            sp_model.convert(units)
+            ax.plot(sp_model.wave / 1e4, sp_model.flux, lw=2, label='Model Fit')
+            sp_model.convert(sp_model_units)
+
+        ax.set_xlabel('Wavelength (microns)')
+        ax.set_ylabel('Flux ({})'.format(units))
+        ax.set_title(self.name)
+        
+        if xr is not None:
+            ax.set_xlim(xr)
+        if yr is not None:
+            ax.set_ylim(yr)
+        
+        ax.legend()
+
+        # Convert back to original units
+        sp0.convert(sp0_units)
+        sp_phot.convert(sp_phot_units)
+
+        if ax is None:
+            fig.tight_layout()
+            if return_figax: return (fig,ax)
+
 
 
 # Class for reading in planet spectra

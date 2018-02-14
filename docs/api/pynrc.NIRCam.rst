@@ -12,6 +12,7 @@ pynrc.NIRCam
 
       ~NIRCam.ND_acq
       ~NIRCam.bandpass
+      ~NIRCam.bar_offset
       ~NIRCam.channel
       ~NIRCam.det_info
       ~NIRCam.filter

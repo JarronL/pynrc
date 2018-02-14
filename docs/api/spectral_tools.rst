@@ -35,7 +35,8 @@ Spectral Tools
       ~source_spectrum.model_scale
       ~source_spectrum.model_IRexcess
       ~source_spectrum.func_resid
-      ~source_spectrum.fit_spec
+      ~source_spectrum.fit_SED
+      ~source_spectrum.plot_SED
 
    .. rubric:: Methods Documentation
 
@@ -43,7 +44,8 @@ Spectral Tools
    .. automethod:: model_scale
    .. automethod:: model_IRexcess
    .. automethod:: func_resid
-   .. automethod:: fit_spec
+   .. automethod:: fit_SED
+   .. automethod:: plot_SED
 
 
 .. autoclass:: pynrc.nrc_utils.planets_sb12
