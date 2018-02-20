@@ -841,8 +841,6 @@ class DetectorOps(object):
         else: # Get rid of dimensions of length 1
             return data.squeeze()
 
-
-
 class NIRCam(object):
 
     """NIRCam base instrument class
@@ -967,6 +965,9 @@ class NIRCam(object):
 
 
     """
+    
+    # Variable indicating whether or not to warn about 
+    _fov_pix_warn = True
 
     def __init__(self, filter='F210M', pupil=None, mask=None, module='A', ND_acq=False,
         **kwargs):
@@ -1549,10 +1550,15 @@ class NIRCam(object):
 
         oversample = int(oversample)
         fov_pix = int(fov_pix)
-        # Make sure fov_pix is odd?
-        #if np.mod(fov_pix,2)==0: fov_pix+=1
-        if np.mod(fov_pix,2)==0: 
+        # Only want to throw this warning once based on self._fov_pix_warn status
+        # Skip if weak lens or coronagraphic mask
+        do_warn = True
+        do_warn = False if  'WEAK' in self.pupil else do_warn
+        do_warn = False if self.mask is not None else do_warn
+        
+        if (np.mod(fov_pix,2)==0) and (self._fov_pix_warn==True) and (do_warn): 
             _log.warning('fov_pix specified as even; PSF is centered at pixel corners.')
+            self._fov_pix_warn = False
             
         _log.info('Updating PSF coeff with fov_pix={} and oversample={}'.\
             format(fov_pix,oversample))

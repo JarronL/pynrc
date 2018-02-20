@@ -3,6 +3,7 @@ from __future__ import division, print_function, unicode_literals
 from astropy.convolution import convolve_fft, Gaussian2DKernel
 from scipy.ndimage.interpolation import rotate
 from scipy import fftpack
+from copy import deepcopy
 
 # Import libraries
 from . import *
@@ -41,6 +42,8 @@ class obs_hci(NIRCam):
     wfe_ref_drift: float
         WFE drift in nm between the science and reference targets.
         Expected values are between ~3-10 nm.
+    wfe_ref_drift: float
+        WFE drift in nm between science roll angles. Default=0.
     wind_mode : str
         'FULL', 'STRIPE', or 'WINDOW'
     xpix : int
@@ -57,9 +60,9 @@ class obs_hci(NIRCam):
         
     """
     
-    def __init__(self, sp_sci, sp_ref, distance, wfe_ref_drift=10, offset_list=None, 
-                 wind_mode='WINDOW', xpix=320, ypix=320, disk_hdu=None, 
-                 verbose=False, **kwargs):
+    def __init__(self, sp_sci, sp_ref, distance, wfe_ref_drift=10, wfe_roll_drift=0,
+        offset_list=None, wind_mode='WINDOW', xpix=320, ypix=320, disk_hdu=None, 
+        verbose=False, **kwargs):
                  
         if 'FULL'   in wind_mode: xpix = ypix = 2048
         if 'STRIPE' in wind_mode: xpix = 2048
@@ -72,6 +75,8 @@ class obs_hci(NIRCam):
         self.sp_sci = sp_sci
         self.sp_ref = sp_ref
         self._wfe_ref_drift = wfe_ref_drift
+        self.wfe_roll_drift = wfe_roll_drift
+
         
         # Distance to source in pc
         self.distance = distance
@@ -149,10 +154,37 @@ class obs_hci(NIRCam):
         self._gen_disk_hdulist()
         
         if verbose: print("Finished.")
+
+    @property
+    def wfe_drift(self):
+        """WFE drift relative to nominal PSF (nm)"""
+        return self._wfe_drift
+    @wfe_drift.setter
+    def wfe_drift(self, value):
+        """Set the WFE drift value and update coefficients"""
+        # Only update if the value changes
+        _log.warning("Are you sure you don't mean wfe_ref_drift?")
+        vold = self._wfe_drift; self._wfe_drift = value
+        if vold != self._wfe_drift: 
+            self.update_psf_coeff(wfe_drift=self._wfe_drift)
+    
+    def _set_wfe_drift(self, value, no_warn=True):
+        """
+        Similar to wfe_drift setter, but prevents warnings.
+        Kind of a kludge. Make a better solution later?
+        """
+        if no_warn:
+            log_prev = conf.logging_level
+            setup_logging('ERROR', verbose=False)
+            self.wfe_drift = value
+            setup_logging(log_prev, verbose=False)
+        else:
+            self.wfe_drift = value
+
         
     @property
     def wfe_ref_drift(self):
-        """Assumed WFE drift"""
+        """WFE drift (nm) of ref obs relative to sci obs"""
         return self._wfe_ref_drift
     @wfe_ref_drift.setter
     def wfe_ref_drift(self, value):
@@ -512,7 +544,7 @@ class obs_hci(NIRCam):
         return self._planets
 
     def add_planet(self, atmo='hy3s', mass=10, age=100, entropy=10,
-        rtheta=(0,0), runits='AU', Av=0, renorm_args=None, sptype=None,
+        xy=(0,0), rtheta=None, runits='AU', Av=0, renorm_args=None, sptype=None,
         accr=False, mmdot=None, mdot=None, accr_rin=2, truncated=False):
         """Insert a planet into observation.
         
@@ -544,11 +576,14 @@ class obs_hci(NIRCam):
         Av : float
             Extinction magnitude (assumes Rv=4.0) of the exoplanet
             due to being embedded in a disk.
-
-        rtheta : tuple
-            Radius and position angle relative to stellar position.
+    
+        xy : tuple, None
+            (X,Y) position in V2/V3 coordinates of companion.
+        rtheta : tuple, None
+            Radius and position angle relative to stellar position. 
+            Alternative to xy keyword
         runits : str
-            What units is radius? Valid values are 'AU', 'asec', or 'pix'.
+            What are the spatial units? Valid values are 'AU', 'asec', or 'pix'.
 
         accr : bool
             Include accretion (default: False)?
@@ -563,12 +598,19 @@ class obs_hci(NIRCam):
              Full disk or truncated (ie., MRI; default: False)?
 
          """
+         
+        if (xy is None) and (rtheta is None):
+            _log.error('Either xy or rtheta must be specified.')
+
+        if (xy is not None) and (rtheta is not None):
+            _log.warning('Both xy and rtheta are specified. ' + \
+                         'The xy keyword shall take priority.')
 
         # Size of subarray image in terms of pixels
         image_shape = (self.det_info['ypix'], self.det_info['xpix'])
         
         # XY location of planets within subarray with units from runits keyword
-        loc = rtheta_to_xy(rtheta[0], rtheta[1])
+        loc = rtheta_to_xy(r, theta) if xy is None else xy
 
         # Define pixel location relative to the center of the subarray
         au_per_pixel = self.distance*self.pix_scale
@@ -605,7 +647,7 @@ class obs_hci(NIRCam):
         self._planets.append(d)
         
         
-    def gen_planets_image(self, PA_offset=0):
+    def gen_planets_image(self, PA_offset=0, quick_PSF=True):
         """Create image of just planets.
         
         Use info stored in self.planets to create a noiseless slope image 
@@ -619,10 +661,15 @@ class obs_hci(NIRCam):
             Rotate entire scene by some position angle.
             Positive values are counter-clockwise from +Y direction.
             Corresponds to instrument aperture PA.
+        quick_PSF : bool
+            Rather than generate a spectrum-weighted PSF, use the 
+            cached PSF scaled by the photon count through the bandpass.
+            Resulting PSFs are less accurate, but generation is much faster.
+            Default is True.
         """
         if len(self.planets)==0:
             _log.info("No planet info at self.planets")
-            return 0
+            return 0.0
             
         if PA_offset is None: PA_offset=0
             
@@ -650,8 +697,13 @@ class obs_hci(NIRCam):
                 sp = sp_norm
 
             r, th = xy_to_rtheta(xoff_asec, yoff_asec)
-            psf_planet = self.gen_offset_psf(r, th, sp=sp, return_oversample=False)
-        
+            if quick_PSF:
+                psf_planet = self.gen_offset_psf(r, th, return_oversample=False)
+                obs = S.Observation(sp, self.bandpass, binset=self.bandpass.wave)
+                psf_planet *= obs.effstim('counts')
+            else:
+                psf_planet = self.gen_offset_psf(r, th, sp=sp, return_oversample=False)
+                
             # Expand to full size
             psf_planet = pad_or_cut_to_size(psf_planet, image_shape)
         
@@ -733,23 +785,25 @@ class obs_hci(NIRCam):
 
 
 
-    def star_flux(self, fluxunit='counts'):
+    def star_flux(self, fluxunit='counts', sp=None):
         """ Stellar flux.
         
         Return the stellar flux in whatever units, such as 
         vegamag, counts, or Jy.
         """
+        
+        if sp is None: sp=self.sp_sci
 
         # Create pysynphot observation
         bp = self.bandpass
-        obs = S.Observation(self.sp_sci, bp, binset=bp.wave)
+        obs = S.Observation(sp, bp, binset=bp.wave)
         
         return obs.effstim(fluxunit)
 
 
     def gen_roll_image(self, PA1=0, PA2=10, zfact=None, oversample=None, 
         exclude_disk=False, exclude_planets=False, exclude_noise=False, 
-        no_ref=False, opt_diff=True):
+        no_ref=False, opt_diff=True, **kwargs):
         """Make roll-subtracted image.
         
         Create a final roll-subtracted slope image based on current observation
@@ -757,7 +811,7 @@ class obs_hci(NIRCam):
         
         Procedure:
         
-        - Create Roll 1 and Roll 2 slope images (star+exoplanets)
+        - Create Roll 1 and Roll 2 slope images (star+exoplanets+disk)
         - Create Reference Star slope image
         - Add noise to all images
         - Subtract ref image from both rolls
@@ -790,6 +844,14 @@ class obs_hci(NIRCam):
             Exclude reference observation. Subtraction is then Roll1-Roll2.
         opt_diff : bool
             Optimal reference differencing (scaling only on the inner regions)
+            
+        Keyword Args
+        ------------
+        quick_PSF : bool
+            Rather than generate a spectrum-weighted PSF for planets, use 
+            the cached PSF scaled by the photon count through the bandpass.
+            Resulting PSFs are slightly less accurate, but much faster.
+            Default is True.
         """
     
         # Final image shape
@@ -821,7 +883,7 @@ class obs_hci(NIRCam):
         
         # Disk and Planet images
         im_disk_r1 = sci.gen_disk_image(PA_offset=PA1)
-        im_pl_r1   = sci.gen_planets_image(PA_offset=PA1)
+        im_pl_r1   = sci.gen_planets_image(PA_offset=PA1, **kwargs)
 
         # Telescope Roll 1
         im_roll1 = im_star + im_disk_r1 + im_pl_r1
@@ -842,12 +904,18 @@ class obs_hci(NIRCam):
         # Pure roll subtraction (no reference PSF)
         if no_ref: 
             # Roll2
-            # Use reference PSF for stellar PSF for WFE drift
-            # Make sure to use appropriate WFE drift amount!
-            im_star2 = ref.gen_psf(sci.sp_sci, return_oversample=False)
-            im_star2 = pad_or_cut_to_size(im_star2, image_shape)
+            if self.wfe_roll_drift>0:
+                # Change self.wfe_drift to self.wfe_roll_drift
+                # and calculate new stellar PSF for Roll2
+                self._set_wfe_drift(self.wfe_roll_drift)
+                im_star2 = sci.gen_psf(sci.sp_sci, return_oversample=False)
+                im_star2 = pad_or_cut_to_size(im_star2, image_shape)
+                self._set_wfe_drift(0)
+            else:
+                im_star2 = im_star
+            
             im_disk_r2 = sci.gen_disk_image(PA_offset=PA2)
-            im_pl_r2   = sci.gen_planets_image(PA_offset=PA2)
+            im_pl_r2   = sci.gen_planets_image(PA_offset=PA2, **kwargs)
             im_roll2   = im_star2 + im_disk_r2 + im_pl_r2
 
             # Noise per pixel
@@ -869,6 +937,10 @@ class obs_hci(NIRCam):
             diff_r2 = -1 * diff_r1
             diff1_r2_rot = rotate(diff_r2, roll_angle, reshape=False, cval=np.nan)
             final = (diff_r1 + diff1_r2_rot) / 2
+
+            # Replace NaNs with values from diff_r1
+            nan_mask = np.isnan(final)
+            final[nan_mask] = diff_r1[nan_mask]
 
             # De-rotate PA1 to North
             if abs(PA1) > eps:
@@ -917,9 +989,16 @@ class obs_hci(NIRCam):
             im_diff1_r1 = im_roll1 - im_ref_rebin
             im_diff2_r1 = im_roll1 - im_ref_rebin * scale1
 
+            if self.wfe_roll_drift>0:
+                self._set_wfe_drift(self.wfe_roll_drift)
+                im_star2 = sci.gen_psf(sci.sp_sci, return_oversample=False)
+                im_star2 = pad_or_cut_to_size(im_star2, image_shape)
+                self._set_wfe_drift(0)
+            else:
+                im_star2 = im_star
             im_disk_r2 = sci.gen_disk_image(PA_offset=PA2)
-            im_pl_r2   = sci.gen_planets_image(PA_offset=PA2)
-            im_roll2   = im_star + im_disk_r2 + im_pl_r2
+            im_pl_r2   = sci.gen_planets_image(PA_offset=PA2, **kwargs)
+            im_roll2   = im_star2 + im_disk_r2 + im_pl_r2
             # Noise per pixel
             if not exclude_noise:
                 det = sci.Detectors[0]
@@ -1149,63 +1228,79 @@ class obs_hci(NIRCam):
         return (rr, contrast, sen_mag)
 
         
-    def saturation_levels(self, full_size=True, ngroup=0, **kwargs):
+    def saturation_levels(self, full_size=True, ngroup=2, do_ref=False, **kwargs):
         """Saturation levels.
         
         Create image showing level of saturation for each pixel.
-        Can either show the saturation after one frame (default)
-        or after the ramp has finished integrating (ramp_sat=True).
+        Saturation at different number of groups is possible with
+        ngroup keyword.
         
         Parameters
         ----------
         full_size : bool
             Expand (or contract) to size of detector array?
-            If False, use fov_pix size.
+            If False, returned image is fov_pix size.
         ngroup : int
             How many group times to determine saturation level?
             If this number is higher than the total groups in ramp, 
-            then a warning is produced.
-            The default is ngroup=0, which corresponds to the
-            so-called "zero-frame," which is the very first frame
-            that is read-out and saved separately. 
+            then a warning is produced. The default is ngroup=2, 
+            A value of 0 corresponds to the so-called "zero-frame," 
+            which is the very first frame that is read-out and saved 
+            separately. This is the equivalent to ngroup=1 for RAPID
+            and BRIGHT1 observations.
+        do_ref : bool
+            Get saturation levels for reference soure instead of science
         
         """
         
         assert ngroup >= 0
+        
+        if do_ref:
+            obs = self.nrc_ref
+            sp = self.sp_ref
+        else:
+            obs = self
+            sp = self.sp_sci
+        
+        if ngroup > obs.det_info['ngroup']:
+            _log.warning("Specified ngroup is greater than self.det_info['ngroup'].")
 
-        t_frame = self.multiaccum_times['t_frame']
-        t_int = self.multiaccum_times['t_int']
+        t_frame = obs.multiaccum_times['t_frame']
+        t_int = obs.multiaccum_times['t_int']
         if ngroup==0:
             t_sat = t_frame
         else:
-            ma = self.multiaccum
+            ma = obs.multiaccum
             nf = ma.nf; nd1 = ma.nd1; nd2 = ma.nd2
             t_sat = (nd1 + ngroup*nf + (ngroup-1)*nd2) * t_frame
         
-        if t_sat>t_int:
-            _log.warning('ngroup*t_group is greater than t_int.')
+        #if t_sat>t_int:
+        #    _log.warning('ngroup*t_group is greater than t_int.')
     
         # Slope image of input source
-        im_star = self.gen_psf(self.sp_sci)
+        im_star = obs.gen_psf(sp)
         if full_size:
-            shape = (self.det_info['ypix'], self.det_info['xpix'])
+            shape = (obs.det_info['ypix'], obs.det_info['xpix'])
             im_star = pad_or_cut_to_size(im_star, shape)
 
-        im_disk = self.gen_disk_image()
-        im_pl = self.gen_planets_image()
+        if not do_ref:
+            im_disk = obs.gen_disk_image()
+            im_pl = obs.gen_planets_image()
         
-        if self.disk_hdulist is not None:
-            im_disk = pad_or_cut_to_size(im_disk, im_star.shape)
-        if len(self.planets)>0:
-            im_pl = pad_or_cut_to_size(im_pl, im_star.shape)
-        
-        image = im_star + im_disk + im_pl
+            if obs.disk_hdulist is not None:
+                im_disk = pad_or_cut_to_size(im_disk, im_star.shape)
+            if len(obs.planets)>0:
+                im_pl = pad_or_cut_to_size(im_pl, im_star.shape)
+                
+            image = im_star + im_disk + im_pl
+        else:
+            image = im_star
 
         # Add in zodi background to full image
-        image += self.bg_zodi(**kwargs)
+        image += obs.bg_zodi(**kwargs)
 
         # Well levels after "saturation time"
-        sat_level = image * t_sat / self.well_level
+        sat_level = image * t_sat / obs.well_level
     
         return sat_level
 
@@ -1376,8 +1471,39 @@ def _wrap_convolve_for_mp(args):
     return res
 
 
-def plot_contrasts(curves, wfe_list, ax=None, colors=None, return_ax=False):
-    """Plot a series of contrast curves for corresponding WFE drifts."""
+def plot_contrasts(curves, nsig, wfe_list, obs=None, ax=None, 
+    colors=None, xr=[0,10], yr=[25,5], return_axes=False):
+    """Plot contrast curves
+    
+    Plot a series of contrast curves for corresponding WFE drifts.
+    
+    Parameters
+    ----------
+    curves : list
+        A list with length corresponding to `wfe_list`. Each list element
+        has three arrays in a tuple: the radius in arcsec, n-sigma contrast,
+        and n-sigma sensitivity limit (vega mag). 
+    nsig : float
+        N-sigma limit corresponding to sensitivities/contrasts.
+    wfe_list : array-like
+        List of WFE drift values corresponding to each set of sensitivities
+        in `curves` argument.
+        
+    Keyword Args
+    ------------
+    obs : :class:`obs_hci`
+        Corresponding observation class that created the contrast curves.
+        Uses distances and stellar magnitude to plot contrast and AU
+        distances on opposing axes.
+    ax : matplotlib.axes
+        Axes on which to plot curves.
+    colors : None, array-like
+        List of colors for contrast curves. Default is gradient of blues.
+    return_axes : bool
+        Return the matplotlib axes to continue plotting. If `obs` is set,
+        then this returns three sets of axes.
+    
+    """
     if ax is None:
         fig, ax = plt.subplots()
     if colors is None:
@@ -1387,12 +1513,45 @@ def plot_contrasts(curves, wfe_list, ax=None, colors=None, return_ax=False):
         rr, contrast, mag_sens = curves[j]
         label='$\Delta$' + "WFE = {} nm".format(wfe_list[j])
         ax.plot(rr, mag_sens, label=label, color=colors[j], zorder=1, lw=2)
+
+    if xr is not None: ax.set_xlim(xr)
+    if yr is not None: ax.set_ylim(yr)
+
         
-    if return_ax: return ax
+    ax.xaxis.get_major_locator().set_params(nbins=9, steps=[1, 2, 5, 10])
+    ax.yaxis.get_major_locator().set_params(nbins=9, steps=[1, 2, 5, 10])
+
+    ax.set_ylabel('{:.0f}-$\sigma$ Sensitivities (mag)'.format(nsig))
+    ax.set_xlabel('Separation (arcsec)')
+
+    # Plot opposing axes in alternate units
+    if obs is not None:
+        yr2 = 10**((obs.star_flux('vegamag') - np.array(ax.get_ylim()) / 2.5))
+        ax2 = ax.twinx()
+        ax2.set_yscale('log')
+        ax2.set_ylim(yr2)
+        ax2.set_ylabel('{:.0f}-$\sigma$ Contrast'.format(nsig))
+
+        ax3 = ax.twiny()
+        xr3 = np.array(ax.get_xlim()) * obs.distance
+        ax3.set_xlim(xr3)
+        ax3.set_xlabel('Separtion (AU)')
+        
+        ax3.xaxis.get_major_locator().set_params(nbins=9, steps=[1, 2, 5, 10])
+        
+        if return_axes: 
+            return (ax, ax2, ax3)
+    else:
+        if return_axes: 
+            return ax
+        
 
 def planet_mags(obs, age=10, entropy=13, mass_list=[10,5,2,1], av_vals=[0,25], atmo='hy3s', **kwargs):
     """Determine series of exoplanet magnitudes for given observation."""
 
+    if av_vals is None:
+        av_vals = [0,0]
+        
     pmag = {}
     for i,m in enumerate(mass_list):
         flux_list = []
@@ -1422,24 +1581,63 @@ def plot_planet_patches(ax, obs, age=10, entropy=13, mass_list=[10,5,2,1], av_va
 
     pmag = planet_mags(obs, age, entropy, mass_list, av_vals, **kwargs)
     for i,m in enumerate(mass_list):
-        pm_min, pm_max = pmag[m]
         label = 'Mass = {} '.format(m) + '$M_{\mathrm{Jup}}$'
-        rect = patches.Rectangle((xlim[0], pm_min), xlim[1], pm_max-pm_min, alpha=0.2,
-                                 color=cols[i], label=label, zorder=2)
-        ax.add_patch(rect)
-        ax.plot(xlim, [pm_min]*2, color=cols[i], lw=1, alpha=0.3)
-        ax.plot(xlim, [pm_max]*2, color=cols[i], lw=1, alpha=0.3)
+        if av_vals is None:
+            ax.plot(xlim, pmag[m], color=cols[i], lw=1, ls='--', label=label)        
+        else:
+            pm_min, pm_max = pmag[m]
+            rect = patches.Rectangle((xlim[0], pm_min), xlim[1], pm_max-pm_min, 
+                                     alpha=0.2, color=cols[i], label=label, zorder=2)
+            ax.add_patch(rect)
+            ax.plot(xlim, [pm_min]*2, color=cols[i], lw=1, alpha=0.3)
+            ax.plot(xlim, [pm_max]*2, color=cols[i], lw=1, alpha=0.3)
         
-
     entropy_switch = {13:'Hot', 8:'Cold'}
     entropy_string = entropy_switch.get(entropy, "Warm")
     ent_str = entropy_string + ' Start'
-
-    av_str = '$A_V = [{:.0f},{:.0f}]$'.format(av_vals[0],av_vals[1])
-    age_str = 'Age = {:.0f} Myr; '.format(age)
-    dist_str = 'Dist = {:.1f} pc; '.format(dist) if dist is not None else ''
+    
+    if av_vals is None:
+        av_str = ''
+    else:
+        av_str = ' ($A_V = [{:.0f},{:.0f}]$)'.format(av_vals[0],av_vals[1])
+    #age_str = 'Age = {:.0f} Myr; '.format(age)
+    #dist_str = 'Dist = {:.1f} pc; '.format(dist) if dist is not None else ''
     #dist_str=""
 
     #ax.set_title('{} -- {} ({}{}{})'.format(obs.filter,ent_str,age_str,dist_str,av_str))
 
-    ax.set_title('{} -- {} ({})'.format(obs.filter,ent_str,av_str))
+    #ax.set_title('{} -- {}{}'.format(obs.filter,ent_str,av_str))
+
+
+def plot_hdulist(hdulist, xr=None, yr=None, ax=None, return_ax=False, 
+    cmap=None, scale='linear', vmin=None, vmax=None):
+
+    from webbpsf import display_psf
+
+    if ax is None:
+        fig, ax = plt.subplots()
+    if cmap is None:
+        cmap = matplotlib.rcParams['image.cmap']
+    
+    data = hdulist[0].data
+    if vmax is None:
+        vmax = 0.75 * data.max() if scale=='linear' else vmax
+    if vmin is None:
+        vmin = 0 if scale=='linear' else vmax/1e6
+
+    ax, cb = display_psf(hdulist, ax=ax, title='', colorbar=True, cmap=cmap,
+                         scale=scale, vmin=vmin, vmax=vmax, return_ax=True)
+    cb.set_label('Counts per pixel')
+    
+    ax.set_xlim(xr)
+    ax.set_ylim(yr)
+    ax.set_xlabel('Arcsec')
+    ax.set_ylabel('Arcsec')
+
+
+    ax.tick_params(axis='both', color='white', which='both')
+    for k in ax.spines.keys():
+        ax.spines[k].set_color('white')
+
+    ax.xaxis.get_major_locator().set_params(nbins=9, steps=[1, 2, 5, 10])
+    ax.yaxis.get_major_locator().set_params(nbins=9, steps=[1, 2, 5, 10])

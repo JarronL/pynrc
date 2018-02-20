@@ -1481,7 +1481,7 @@ def wfed_coeff(filter, force=False, save=True, save_name=None, **kwargs):
     
     _log.warn('Generating WFE Drift coefficients. This may take some time.')
     # Cycle through WFE drifts for fitting
-    wfe_list = np.array([0,1,2,5,10,20])
+    wfe_list = np.array([0,1,2,5,10,20,40])
     nwfe = len(wfe_list)
     
     cf_wfe = []
@@ -3518,7 +3518,7 @@ class source_spectrum(object):
     mag_val : float
         Magnitude of input bandpass for initial scaling of spectrum.
     bp : :mod:`pysynphot.obsbandpass`
-        Bandpass to apply mag_val scaling.
+        Bandpass to apply initial mag_val scaling.
     votable_file: string
         VOTable name that holds the source's photometry. The user can
         find the relevant data at http://vizier.u-strasbg.fr/vizier/sed/
