@@ -21,6 +21,7 @@ Documentation for pyNRC (pynrc)
    :maxdepth: 1
 
    tutorials/Basic_Usage.ipynb   
+   tutorials/Ramp_Optimization_Examples.ipynb
    tutorials/Coronagraph_Basics.ipynb
    
 .. toctree::
