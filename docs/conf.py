@@ -38,7 +38,14 @@ extensions = ['sphinx.ext.autodoc',
     'sphinx.ext.intersphinx',
     'sphinx.ext.inheritance_diagram',
     'sphinx_automodapi.automodapi',
-    'sphinx.ext.napoleon']
+    'sphinx.ext.napoleon',
+    'nbsphinx']
+    
+# nbsphinx generates doc files from notebooks on the fly
+# By default, it will execute those notebooks with no outputs.
+# In our case, we plan to upload only pre-executed notebooks.
+# Explicitly turn off execution just in case.
+nbsphinx_execute = 'never'
 
 # Napoleon settings
 napoleon_google_docstring = True
@@ -73,7 +80,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = 'pynrc'
-copyright = '2017, Jarron Leisenring'
+copyright = '2018, Jarron Leisenring'
 author = 'Jarron Leisenring'
 
 # The version info for the project you're documenting, acts as replacement for

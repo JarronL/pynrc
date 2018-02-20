@@ -1,32 +1,32 @@
-pynrc.obs_coronagraphy
+pynrc.obs_hci
 ======================
 
 .. currentmodule:: pynrc
 
-.. autoclass:: obs_coronagraphy
+.. autoclass:: obs_hci
    :show-inheritance:
 
    .. rubric:: Attributes Summary
 
    .. autosummary::
 
-      ~obs_coronagraphy.planets
-      ~obs_coronagraphy.wfe_ref_drift
+      ~obs_hci.planets
+      ~obs_hci.wfe_ref_drift
 
    .. rubric:: Methods Summary
 
    .. autosummary::
 
-      ~obs_coronagraphy.add_planet
-      ~obs_coronagraphy.kill_planets
-      ~obs_coronagraphy.calc_contrast
-      ~obs_coronagraphy.gen_offset_psf
-      ~obs_coronagraphy.gen_disk_image
-      ~obs_coronagraphy.gen_planets_image
-      ~obs_coronagraphy.gen_roll_image
-      ~obs_coronagraphy.planet_spec
-      ~obs_coronagraphy.saturation_levels
-      ~obs_coronagraphy.star_flux
+      ~obs_hci.add_planet
+      ~obs_hci.kill_planets
+      ~obs_hci.calc_contrast
+      ~obs_hci.gen_offset_psf
+      ~obs_hci.gen_disk_image
+      ~obs_hci.gen_planets_image
+      ~obs_hci.gen_roll_image
+      ~obs_hci.planet_spec
+      ~obs_hci.saturation_levels
+      ~obs_hci.star_flux
 
    .. rubric:: Methods Documentation
 

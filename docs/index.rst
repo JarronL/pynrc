@@ -16,13 +16,13 @@ Documentation for pyNRC (pynrc)
    
    installation.rst
 
-ETC Basic Usage
+.. toctree::
+   :caption: User Guides
+   :maxdepth: 1
 
-ETC Advanced Usage
-
-Simulating Observations
-
-
+   tutorials/Basic_Usage.ipynb   
+   tutorials/Coronagraph_Basics.ipynb
+   
 .. toctree::
    :caption: Reference Info
    :maxdepth: 1
@@ -43,5 +43,6 @@ see :ref:`LICENSE <license>`.
 
     If you make use of pyNRC in your work, please cite the following paper: 
     `Leisenring et al. 2018, "pyNRC: A NIRCam ETC and Simulation Toolset"`
+    (in prep).
 
-Copyright (c) 2017 Jarron Leisenring and contributors.
+Copyright (c) 2018 Jarron Leisenring and contributors.
