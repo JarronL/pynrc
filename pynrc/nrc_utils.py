@@ -3104,8 +3104,7 @@ def BOSZ_spectrum(Teff, metallicity, log_g, res=2000, interpolate=True, **kwargs
     
     return sp    
 
-def stellar_spectrum(sptype, *renorm_args, 
-                     Teff=None, metallicity=None, log_g=None, **kwargs):
+def stellar_spectrum(sptype, *renorm_args, **kwargs):
     """Stellar spectrum
 
     Similar to specFromSpectralType() in WebbPSF/Poppy, this function uses
@@ -3150,12 +3149,16 @@ def stellar_spectrum(sptype, *renorm_args,
     log_g : float
         Surface gravity (log g) from 0 to 5.
     res : str
-        Spectral resolution to use (200 or 2000 or 20000).
+        BOSZ spectral resolution to use (200 or 2000 or 20000).
     interpolate : bool
-        Interpolate spectrum using a weighted average of grid points
-        surrounding the desired input parameters.
+        Interpolate BOSZ spectrum using a weighted average of grid points
+        surrounding the desired input parameters. Default is True.
     
     """
+
+    Teff = kwargs.pop('Teff', None)
+    metallicity = kwargs.pop('metallicity', None)
+    log_g = kwargs.pop('log_g', None)
 
     catname = kwargs.get('catname')
     if catname is None: catname = 'bosz'
