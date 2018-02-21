@@ -85,13 +85,6 @@ You should now be able to successfully ``import pynrc`` in a Python session.
    of ``pynrc``, and then update to a newer version, the software may prompt 
    you to download and install a new updated version of the data files.
 
-Install everything from scratch
---------------------------------
-
-.. admonition:: Note: To be completed
-    
-    Description for installing everything from scratch into a clean
-    Anaconda environment.
 
 Testing
 --------

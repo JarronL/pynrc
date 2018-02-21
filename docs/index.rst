@@ -14,6 +14,7 @@ Documentation for pyNRC (pynrc)
    :caption: Getting Started
    :maxdepth: 1
    
+   install_clean.rst
    installation.rst
 
 .. toctree::
