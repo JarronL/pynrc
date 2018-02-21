@@ -14,7 +14,7 @@ Requirements
 * `Astropy <http://www.astropy.org>`_ 1.2.0+
 * `pysynphot <https://pysynphot.readthedocs.io>`_ 0.9.8+
 * `WebbPSF <https://webbpsf.readthedocs.io>`_ 0.6.0+ 
-  and of its dependencies.
+  and its dependencies.
 * `psutil <https://pypi.python.org/pypi/psutil>`_ (optional, but useful)
 
 
