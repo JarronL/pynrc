@@ -1526,7 +1526,8 @@ def plot_contrasts(curves, nsig, wfe_list, obs=None, ax=None,
 
     # Plot opposing axes in alternate units
     if obs is not None:
-        yr2 = 10**((obs.star_flux('vegamag') - np.array(ax.get_ylim()) / 2.5))
+        yr1 = np.array(ax.get_ylim())
+        yr2 = 10**((obs.star_flux('vegamag') - yr1) / 2.5)
         ax2 = ax.twinx()
         ax2.set_yscale('log')
         ax2.set_ylim(yr2)
