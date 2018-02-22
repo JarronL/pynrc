@@ -6,7 +6,7 @@ Installation
 Requirements
 ------------
 
-``pynrc`` requires Python 2.7 or 3.5+ along with the following packages:
+``pynrc`` requires Python 2.7+ or 3.5+ along with the following packages:
 
 * Recent version of `NumPy <http://www.numpy.org>`_, 
   `SciPy <https://www.scipy.org>`_,
