@@ -1878,7 +1878,7 @@ class NIRCam(object):
 
         return fzodi_pix
         
-    def saturation_levels(self, sp, full_size=True, ngroup=0, **kwargs):
+    def saturation_levels(self, sp, full_size=True, ngroup=2, **kwargs):
         """Saturation levels.
         
         Create image showing level of saturation for each pixel.
@@ -1894,11 +1894,12 @@ class NIRCam(object):
             If False, use fov_pix size.
         ngroup : int
             How many group times to determine saturation level?
-            The default is ngroup=0, which corresponds to the
-            so-called "zero-frame." This is the very first frame
-            that is read-out and saved separately. If this number
-            is higher than the total groups in ramp, then a
-            warning is produced.
+            If this number is higher than the total groups in ramp, 
+            then a warning is produced. The default is ngroup=2, 
+            A value of 0 corresponds to the so-called "zero-frame," 
+            which is the very first frame that is read-out and saved 
+            separately. This is the equivalent to ngroup=1 for RAPID
+            and BRIGHT1 observations.
         
         """
         

@@ -3812,6 +3812,7 @@ class source_spectrum(object):
     
         sp0 = self.sp0
         sp_phot = self.sp_phot
+        sp_phot_e = self.sp_phot_e
         sp_model = self.sp_model
         
         # Convert to Jy and save original units
@@ -3824,7 +3825,7 @@ class source_spectrum(object):
             fig, ax = plt.subplots(1,1, figsize=(8,5))
     
         ax.loglog(sp0.wave/1e4, sp0.flux, lw=1, label='Photosphere', **kwargs)
-        ax.errorbar(sp_phot.wave/1e4, sp_phot.flux, yerr=sp_phot.flux, 
+        ax.errorbar(sp_phot.wave/1e4, sp_phot.flux, yerr=sp_phot_e.flux, 
                     marker='.', ls='none', label='Photometry')
         
         if sp_model is not None:
