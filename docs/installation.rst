@@ -6,7 +6,7 @@ Installation
 Requirements
 ------------
 
-``pynrc`` requires Python 2.7 or 3.5+ along with the following packages:
+``pynrc`` requires Python 2.7+ or 3.5+ along with the following packages:
 
 * Recent version of `NumPy <http://www.numpy.org>`_, 
   `SciPy <https://www.scipy.org>`_,
@@ -14,7 +14,7 @@ Requirements
 * `Astropy <http://www.astropy.org>`_ 1.2.0+
 * `pysynphot <https://pysynphot.readthedocs.io>`_ 0.9.8+
 * `WebbPSF <https://webbpsf.readthedocs.io>`_ 0.6.0+ 
-  and of its dependencies.
+  and its dependencies.
 * `psutil <https://pypi.python.org/pypi/psutil>`_ (optional, but useful)
 
 
