@@ -97,7 +97,7 @@ For other installation methods see the `WebbPSF documentation <https://webbpsf.r
     for most cases.
 
 
-``WebbPSF`` Data Files
+WebbPSF Data Files
 --------------------------
 
 For the user's convenience, WebbPSF data files can be found here: 
