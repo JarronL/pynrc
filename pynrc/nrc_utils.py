@@ -3010,9 +3010,9 @@ def BOSZ_spectrum(Teff, metallicity, log_g, res=2000, interpolate=True, **kwargs
     else: raise ValueError('Teff must be less than or equal to 30000.')
     
     if log_g<lg_min:
-        raise ValueError('log_g must be greater than {}'.format(lg_min))
+        raise ValueError('log_g must be >={}'.format(lg_min))
     if log_g>lg_max:
-        raise ValueError('log_g must be less than {}'.format(lg_max))
+        raise ValueError('log_g must be <={}'.format(lg_max))
     
     # Grid of log g values
     logg_grid = np.arange(lg_min, lg_max+lg_step, lg_step)

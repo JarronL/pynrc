@@ -525,7 +525,7 @@ def frebin(image, dimensions=None, scale=None, total=True):
 
 
 # Fix NaN values
-def fix_nans_with_med(im, niter_max=5, verbose=False):
+def fix_nans_with_med(im, niter_max=5, verbose=False, **kwargs):
     """Iteratively fix NaNs with surrounding Real data"""
     sh_orig = im.shape
     
@@ -561,7 +561,8 @@ def fix_nans_with_med(im, niter_max=5, verbose=False):
     nan_mask = np.isnan(im)
     if np.any(nan_mask):
         n_nans = np.where(nan_mask)[0].size
-        print('{} NaNs left after {} iterations.'.format(n_nans, niter_max))
+        if verbose:
+            print('{} NaNs left after {} iterations.'.format(n_nans, niter_max))
         
     return im
 

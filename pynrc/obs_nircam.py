@@ -544,7 +544,7 @@ class obs_hci(NIRCam):
         return self._planets
 
     def add_planet(self, atmo='hy3s', mass=10, age=100, entropy=10,
-        xy=(0,0), rtheta=None, runits='AU', Av=0, renorm_args=None, sptype=None,
+        xy=None, rtheta=None, runits='AU', Av=0, renorm_args=None, sptype=None,
         accr=False, mmdot=None, mdot=None, accr_rin=2, truncated=False):
         """Insert a planet into observation.
         
@@ -610,7 +610,7 @@ class obs_hci(NIRCam):
         image_shape = (self.det_info['ypix'], self.det_info['xpix'])
         
         # XY location of planets within subarray with units from runits keyword
-        loc = rtheta_to_xy(r, theta) if xy is None else xy
+        loc = rtheta_to_xy(rtheta[0], rtheta[1]) if xy is None else xy
 
         # Define pixel location relative to the center of the subarray
         au_per_pixel = self.distance*self.pix_scale
@@ -647,7 +647,7 @@ class obs_hci(NIRCam):
         self._planets.append(d)
         
         
-    def gen_planets_image(self, PA_offset=0, quick_PSF=True):
+    def gen_planets_image(self, PA_offset=0, quick_PSF=True, **kwargs):
         """Create image of just planets.
         
         Use info stored in self.planets to create a noiseless slope image 
@@ -717,7 +717,7 @@ class obs_hci(NIRCam):
         self._planets = []
     
     
-    def gen_disk_image(self, PA_offset=0):
+    def gen_disk_image(self, PA_offset=0, **kwargs):
         """Create image of just disk.
         
         Generate a (noiseless) convolved image of the disk at some PA offset. 
@@ -800,10 +800,50 @@ class obs_hci(NIRCam):
         
         return obs.effstim(fluxunit)
 
+    def _fix_sat_im(self, image, sat_val=0.8, **kwargs):
+        """Fix saturated region of an image
+        
+        
+        Parameters
+        ----------
+        image : ndarray
+            Image to clean.
+        sav_val : float
+            Well level fraction to considered saturated.
+                    
+        Keyword Args
+        ------------
+        full_size : bool
+            Expand (or contract) to size of detector array?
+            If False, returned image is fov_pix size.
+        ngroup : int
+            How many group times to determine saturation level?
+            If this number is higher than the total groups in ramp, 
+            then a warning is produced. The default is ngroup=2, 
+            A value of 0 corresponds to the so-called "zero-frame," 
+            which is the very first frame that is read-out and saved 
+            separately. This is the equivalent to ngroup=1 for RAPID
+            and BRIGHT1 observations.
+        do_ref : bool
+            Get saturation levels for reference soure instead of science.
+        niter_max : int
+            Number of iterations for fixing NaNs. Default=5.
+        """
+
+        sat_level = self.saturation_levels(self, image=image, **kwargs)
+        sat_mask = sat_level > sat_val
+        image[sat_mask] = np.nan
+        image = fix_nans_with_med(image, **kwargs)
+        
+        # If there are any leftover NaNs, make them 0.
+        nan_mask = np.isnan(image)
+        image[nan_mask] = 0
+        
+        return image
 
     def gen_roll_image(self, PA1=0, PA2=10, zfact=None, oversample=None, 
         exclude_disk=False, exclude_planets=False, exclude_noise=False, 
-        no_ref=False, opt_diff=True, **kwargs):
+        no_ref=False, opt_diff=True, fix_sat=False, **kwargs):
         """Make roll-subtracted image.
         
         Create a final roll-subtracted slope image based on current observation
@@ -844,6 +884,8 @@ class obs_hci(NIRCam):
             Exclude reference observation. Subtraction is then Roll1-Roll2.
         opt_diff : bool
             Optimal reference differencing (scaling only on the inner regions)
+        fix_sat : bool
+            Calculate saturated regions and fix with median of nearby data.
             
         Keyword Args
         ------------
@@ -901,6 +943,9 @@ class obs_hci(NIRCam):
         if exclude_disk: im_roll1 -= im_disk_r1
         if exclude_planets: im_roll1 -= im_pl_r1
 
+        if fix_sat:  # Fix saturated pixels
+            im_roll1 = self._fix_sat_im(im_roll1, **kwargs)
+
         # Pure roll subtraction (no reference PSF)
         if no_ref: 
             # Roll2
@@ -928,6 +973,9 @@ class obs_hci(NIRCam):
 
             if exclude_disk: im_roll2 -= im_disk_r2
             if exclude_planets: im_roll2 -= im_pl_r2
+
+            if fix_sat:  # Fix saturated pixels
+                im_roll2 = self._fix_sat_im(im_roll2, **kwargs)
 
             if oversample != 1:
                 im_roll1 = frebin(im_roll1, scale=oversample)
@@ -970,13 +1018,13 @@ class obs_hci(NIRCam):
             # Add random noise
             im_ref += np.random.normal(scale=im_noise)
 
-        # Subtract reference star from Roll 1
-        #im_roll1_sub = pad_or_cut_to_size(im_roll1, sub_shape)
-        #scale1 = scale_ref_image(im_roll1_sub, im_ref_sub)
+        if fix_sat:  # Fix saturated pixels
+            im_ref = self._fix_sat_im(im_ref, **kwargs)
+
+        # Determine reference star scale factor
         im_star_sub = pad_or_cut_to_size(im_star+im_pl_r1, sub_shape)
         scale1 = scale_ref_image(im_star_sub, im_ref_sub)
         _log.debug('scale1: {0:.3f}'.format(scale1))
-        #scale1 = im_roll1.max() / im_ref.max()
         if oversample != 1:
             im_ref_rebin = frebin(im_ref, scale=oversample)
             im_roll1     = frebin(im_roll1, scale=oversample)
@@ -1011,6 +1059,9 @@ class obs_hci(NIRCam):
                 im_roll2 -= im_disk_r2
             if exclude_planets:
                 im_roll2 -= im_pl_r2
+
+            if fix_sat:  # Fix saturated pixels
+                im_roll2 = self._fix_sat_im(im_roll2, **kwargs)
 
             # Subtract reference star from Roll 2
             im_star_sub = pad_or_cut_to_size(im_star+im_pl_r2, sub_shape)
@@ -1228,7 +1279,8 @@ class obs_hci(NIRCam):
         return (rr, contrast, sen_mag)
 
         
-    def saturation_levels(self, full_size=True, ngroup=2, do_ref=False, **kwargs):
+    def saturation_levels(self, full_size=True, ngroup=2, do_ref=False, 
+        image=None, **kwargs):
         """Saturation levels.
         
         Create image showing level of saturation for each pixel.
@@ -1250,6 +1302,9 @@ class obs_hci(NIRCam):
             and BRIGHT1 observations.
         do_ref : bool
             Get saturation levels for reference soure instead of science
+        image : ndarray
+            Rather than generating an image on the fly, pass a pre-computed
+            slope image.
         
         """
         
@@ -1278,26 +1333,31 @@ class obs_hci(NIRCam):
         #    _log.warning('ngroup*t_group is greater than t_int.')
     
         # Slope image of input source
-        im_star = obs.gen_psf(sp)
-        if full_size:
-            shape = (obs.det_info['ypix'], obs.det_info['xpix'])
-            im_star = pad_or_cut_to_size(im_star, shape)
+        if image is None:
+            im_star = obs.gen_psf(sp)
+            if full_size:
+                shape = (obs.det_info['ypix'], obs.det_info['xpix'])
+                im_star = pad_or_cut_to_size(im_star, shape)
 
-        if not do_ref:
-            im_disk = obs.gen_disk_image()
-            im_pl = obs.gen_planets_image()
+            if not do_ref:
+                im_disk = obs.gen_disk_image()
+                im_pl = obs.gen_planets_image()
         
-            if obs.disk_hdulist is not None:
-                im_disk = pad_or_cut_to_size(im_disk, im_star.shape)
-            if len(obs.planets)>0:
-                im_pl = pad_or_cut_to_size(im_pl, im_star.shape)
+                if obs.disk_hdulist is not None:
+                    im_disk = pad_or_cut_to_size(im_disk, im_star.shape)
+                if len(obs.planets)>0:
+                    im_pl = pad_or_cut_to_size(im_pl, im_star.shape)
                 
-            image = im_star + im_disk + im_pl
-        else:
-            image = im_star
+                image = im_star + im_disk + im_pl
+            else:
+                image = im_star
 
-        # Add in zodi background to full image
-        image += obs.bg_zodi(**kwargs)
+            # Add in zodi background to full image
+            image += obs.bg_zodi(**kwargs)
+        else:
+            if full_size:
+                shape = (obs.det_info['ypix'], obs.det_info['xpix'])
+                image = pad_or_cut_to_size(image, shape)
 
         # Well levels after "saturation time"
         sat_level = image * t_sat / obs.well_level
