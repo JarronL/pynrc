@@ -1223,6 +1223,10 @@ class NIRCam(object):
 
     @property
     def pix_scale(self):
+        """Pixel scale in arcsec/pixel (deprecated)"""
+        return self.pixelscale
+    @property
+    def pixelscale(self):
         """Pixel scale in arcsec/pixel"""
         return self.Detectors[0].pixelscale
     @property
@@ -1231,7 +1235,7 @@ class NIRCam(object):
         return self.Detectors[0].well_level
 
 
-    def update_detectors(self, verbose=False, **kwargs):
+    def update_detectors(self, verbose=False, det_list=None, **kwargs):
         """
         Generates a list of detector objects depending on module and channel.
         This function will get called any time a filter, pupil, mask, or
@@ -1249,6 +1253,14 @@ class NIRCam(object):
     
         A dictionary of the keyword settings can be referenced in :attr:`det_info`.
         This dictionary cannot be modified directly.
+        
+        Parameters
+        ----------
+        det_list : list, None
+            List of detector names (481, 482, etc.) to consider.
+            If not set, then defaults are chosen based on observing mode.
+        verbose : bool
+            Print out ramp and detector settings.
         
         Keyword Args
         ------------
@@ -1280,13 +1292,39 @@ class NIRCam(object):
         """
 
         if self.module=='A':
-            det_list = [481,482,483,484] if self.channel=='SW' else [485]
-            if ('CIRCLYOT'  in self.pupil) and (self.channel=='SW'): det_list = [482]
-            if ('WEDGELYOT' in self.pupil) and (self.channel=='SW'): det_list = [484]
+            if self.channel=='LW':
+                det_list = [485]
+            elif self.mask is None:
+                det_list = [481,482,483,484]
+            elif ('WB' in self.mask) or ('WEDGELYOT' in self.pupil):
+                det_list = [484]
+            elif ('210R' in self.mask) or ('335R' in self.mask) or ('CIRCLYOT' in self.pupil):
+                det_list = [482]
+            else:
+                errmsg = 'No detector makes sense here ({} {} {}).'\
+                    .format(self.filter, self.pupil, self.mask)
+                raise ValueError(errmsg)
+                
+            #det_list = [481,482,483,484] if self.channel=='SW' else [485]
+            #if ('CIRCLYOT'  in self.pupil) and (self.channel=='SW'): det_list = [482]
+            #if ('WEDGELYOT' in self.pupil) and (self.channel=='SW'): det_list = [484]
         if self.module=='B':
-            det_list = [486,487,488,489] if self.channel=='SW' else [490]
-            if ('CIRCLYOT'  in self.pupil) and (self.channel=='SW'): det_list = [486]
-            if ('WEDGELYOT' in self.pupil) and (self.channel=='SW'): det_list = [488]
+            if self.channel=='LW':
+                det_list = [490]
+            elif self.mask is None:
+                det_list = [486,487,488,489]
+            elif ('WB' in self.mask) or ('WEDGELYOT' in self.pupil):
+                det_list = [488]
+            elif ('210R' in self.mask) or ('335R' in self.mask) or ('CIRCLYOT' in self.pupil):
+                det_list = [486]
+            else:
+                errmsg = 'No detector makes sense here ({} {} {}).'\
+                    .format(self.filter, self.pupil, self.mask)
+                raise ValueError(errmsg)
+
+            #det_list = [486,487,488,489] if self.channel=='SW' else [490]
+            #if ('CIRCLYOT'  in self.pupil) and (self.channel=='SW'): det_list = [486]
+            #if ('WEDGELYOT' in self.pupil) and (self.channel=='SW'): det_list = [488]
 
         # Check if kwargs is empty
         if not kwargs:

@@ -371,15 +371,16 @@ def frebin(image, dimensions=None, scale=None, total=True):
     Parameters
     ----------
     image : ndarray
-        Input image, 1-d or 2-d ndarray
+        Input image, 1-d or 2-d ndarray.
     dimensions : tuple or None
-        Desired size of output array (take priority over scale)
+        Desired size of output array (take priority over scale).
     scale : tuple or None
-        Factor to scale output array
+        Factor to scale output array size. A scale of 2 will increase
+        the number of pixels by 2 (ie., finer pixel scale).
     total : bool
         Conserves the surface flux. If True, the output pixels 
-         will be the sum of pixels within the appropriate box of 
-         the input image. Otherwise, they will be the average.
+        will be the sum of pixels within the appropriate box of 
+        the input image. Otherwise, they will be the average.
     
     Returns
     -------

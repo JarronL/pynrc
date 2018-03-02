@@ -66,11 +66,14 @@ class obs_hci(NIRCam):
                  
         if 'FULL'   in wind_mode: xpix = ypix = 2048
         if 'STRIPE' in wind_mode: xpix = 2048
-        
+                
         #super(NIRCam,self).__init__(**kwargs)
         # Not sure if this works for both Python 2 and 3
         NIRCam.__init__(self, wind_mode=wind_mode, xpix=xpix, ypix=ypix, **kwargs)
-        
+
+        if (wind_mode=='FULL') and (self.channel=='SW'):
+            raise NotImplementedError('SW Full frame not yet implemented.')
+
         # Spectral models
         self.sp_sci = sp_sci
         self.sp_ref = sp_ref
@@ -94,20 +97,8 @@ class obs_hci(NIRCam):
             self.update_psf_coeff()
             setup_logging(log_prev, verbose=False)
             
-#         if self.mask is not None:
-#             fov_pix    = self.psf_info['fov_pix']
-#             oversample = self.psf_info['oversample']
-#             tel_pupil  = self.psf_info['tel_pupil']
-#             opd        = self.psf_info['opd']
-#             self._psf_info_bg={'fov_pix':fov_pix, 'oversample':oversample, 
-#                 'offset_r':0, 'offset_theta':0, 'tel_pupil':tel_pupil, 
-#                 'opd':opd, 'jitter':None, 'save':True, 'force':False}
-#             self._psf_coeff_bg = psf_coeff(self.bandpass, self.pupil, None, self.module, 
-#                 **self._psf_info_bg)
-#         else:
-#             self._psf_info_bg  = self._psf_info
-#             self._psf_coeff_bg = self._psf_coeff
-#        setup_logging(log_prev, verbose=False)
+        # Create mask throughput images seen by each detector
+        self._gen_cmask()
 
         # Cached PSFs
         # -----------
@@ -307,6 +298,10 @@ class obs_hci(NIRCam):
 
             # Determine x and y location
             offx_asec, offy_asec = rtheta_to_xy(offset_r, offset_theta)
+            
+            # If outside the 20" mask region, then just region the off-axis PSF
+            if np.abs(offx_asec) > 10:
+                return psf_offaxis
 
             # Get center PSF
             if psf_center is None:
@@ -460,37 +455,51 @@ class obs_hci(NIRCam):
     def _set_xypos(self):
         """
         Set x0 and y0 subarray positions.
-        Needs to be more specific for SW+335R and LW+210R as well as
-        for different modules.
         """
-        xpix = self.det_info['xpix']
-        ypix = self.det_info['ypix']
-        x0   = self.det_info['x0']
-        y0   = self.det_info['y0']
-        mask = self.mask
-        wind_mode = self.det_info['wind_mode']
         
-        # Coronagraphic Mask
-        if ((x0==0) and (y0==0)) and ((mask is not None) and ('MASK' in mask)) \
-            and ('FULL' not in wind_mode):
-            # Default positions (really depends on xpix/ypix)
-            if 'LWB' in mask:
-                x0=275; y0=1508
-            elif 'SWB' in mask:
-                x0=171; y0=236
-            elif '430R' in mask:
-                x0=916; y0=1502
-            elif '335R' in mask:
-                x0=1238; y0=1502
-            elif '210R' in mask:
-                x0=392; y0=224
-            
+        wind_mode = self.det_info['wind_mode']
+        if self.mask is not None:
+            full = True if 'FULL' in wind_mode else False
+            cdict = coron_ap_locs(self.module, self.channel, self.mask, full=full)
+            xcen, ycen = cdict['cen']
+
+            xpix, ypix = (self.det_info['xpix'], self.det_info['ypix'])
+            if full: x0, y0 = (0,0)
+            else: x0, y0 = (int(xcen-xpix/2), int(ycen-ypix/2))
+        
             # Make sure subarray sizes don't push out of bounds
             if (y0 + ypix) > 2048: y0 = 2048 - ypix
             if (x0 + xpix) > 2048: x0 = 2048 - xpix
         
             self.update_detectors(x0=x0, y0=y0)
-
+            
+    def _gen_cmask(self, oversample=1):
+        """
+        Generate coronagraphic mask transmission images.
+        
+        Output images are in V2/V3 coordinates.
+        """
+        mask = self.mask
+        module = self.module
+        pixscale = self.pix_scale
+        wind_mode = self.det_info['wind_mode']
+        
+        mask_dict = {}
+        for det in self.Detectors:
+            detid = det.detid
+            
+            if mask is None:
+                mask_dict[detid] = None
+            elif 'FULL' in wind_mode:
+                mask_dict[detid] = build_mask_detid(detid, oversample, mask)
+            else:
+                fov = np.max([det.xpix, det.ypix]) * pixscale
+                im = coron_trans(mask, module=module, pixscale=pixscale, 
+                                 fov=fov, nd_squares=True)
+                im = pad_or_cut_to_size(im, (det.ypix,det.xpix))
+                mask_dict[detid] = im
+            
+        self.mask_images = mask_dict
 
     def planet_spec(self, Av=0, **kwargs):
         """Exoplanet spectrum.
@@ -647,7 +656,7 @@ class obs_hci(NIRCam):
         self._planets.append(d)
         
         
-    def gen_planets_image(self, PA_offset=0, quick_PSF=True, **kwargs):
+    def gen_planets_image(self, PA_offset=0, quick_PSF=True, use_cmask=False, **kwargs):
         """Create image of just planets.
         
         Use info stored in self.planets to create a noiseless slope image 
@@ -666,6 +675,9 @@ class obs_hci(NIRCam):
             cached PSF scaled by the photon count through the bandpass.
             Resulting PSFs are less accurate, but generation is much faster.
             Default is True.
+        use_cmask : bool
+            Use the coronagraphic mask image to determine if any planet is
+            getting obscurred by a corongraphic mask feature
         """
         if len(self.planets)==0:
             _log.info("No planet info at self.planets")
@@ -706,9 +718,39 @@ class obs_hci(NIRCam):
                 
             # Expand to full size
             psf_planet = pad_or_cut_to_size(psf_planet, image_shape)
-        
-            # Shift to final position and add to image
-            image += fshift(psf_planet, delx=xoff, dely=yoff, pad=True)
+            # Shift to final position
+            psf_planet = fshift(psf_planet, delx=xoff, dely=yoff, pad=True)
+            
+            # Determine if any throughput loss due to coronagraphic mask 
+            # artifacts, such as the mask holder or ND squares.
+            # Planet positions are relative to the center of the mask,
+            # which is not centered in a full detector. 
+            # All subarrays should have the mask placed at the center.
+            detid = self.Detectors[0].detid
+            cmask = self.mask_images[detid]
+            if use_cmask and (cmask is not None):
+                # First, anything in a rectangular region around the 
+                # mask has already been correctly accounted for
+                if (np.abs(xoff_asec)<10) and (np.abs(yoff_asec)<5):
+                    trans = 1
+                # If a full detector observation, then check adjust
+                # to be relative to mask location
+                elif 'FULL' in self.det_info['wind_mode']:
+                    cdict = coron_ap_locs(self.module, self.channel, self.mask, full=True)
+                    xcm, ycm = cdict['cen_V23']
+                    xpos, ypos = (int(xcm+xoff), int(ycm+yoff))
+                    cmask_sub = cmask[ypos-3:ypos+3,xpos-3:xpos+3]
+                    trans = np.mean(cmask_sub)
+                else:
+                    xpos, ypox = (xoff, yoff)
+                    cmask_sub = cmask[ypos-3:ypos+3,xpos-3:xpos+3]
+                    trans = np.mean(cmask_sub)
+                    
+                print(trans)
+                psf_planet *= trans
+            
+            # Add to image
+            image += psf_planet
             
         return image
         
@@ -717,7 +759,7 @@ class obs_hci(NIRCam):
         self._planets = []
     
     
-    def gen_disk_image(self, PA_offset=0, **kwargs):
+    def gen_disk_image(self, PA_offset=0, use_cmask=False, **kwargs):
         """Create image of just disk.
         
         Generate a (noiseless) convolved image of the disk at some PA offset. 
@@ -731,6 +773,9 @@ class obs_hci(NIRCam):
             Rotate entire scene by some position angle.
             Positive values are counter-clockwise from +Y direction.
             Corresponds to instrument aperture PA.
+        use_cmask : bool
+            Use the coronagraphic mask image to determine if any planet is
+            getting obscurred by a corongraphic mask feature
         """
             
         if self.disk_hdulist is None:
@@ -744,6 +789,28 @@ class obs_hci(NIRCam):
         header = self.disk_hdulist[0].header
         if PA_offset!=0: 
             disk_image = rotate(disk_image, -PA_offset, reshape=False)
+
+        # Multiply raw disk data by coronagraphic mask. Exclude region
+        # already affected by observed maks.
+        detid = self.Detectors[0].detid
+        cmask = self.mask_images[detid]
+        if use_cmask and (cmask is not None):
+            # Make cmask the same pix scale and size as disk_image
+            pscale_image = header['PIXELSCL']
+            pscale_cmask = self.pix_scale
+            scale = pscale_cmask / pscale_image
+            if scale!=1: cmask = frebin(cmask, scale=scale)
+            cmask = pad_or_cut_to_size(cmask, disk_image.shape)
+
+            # Exclude actual coronagraphic mask since this is already
+            # taken into account during PSF convolution. Not true for
+            # all other masks within FOV, ND squares, and mask holder.
+            r, th = dist_image(cmask, pixscale=pscale_image, return_theta=True)
+            x_asec, y_asec = rtheta_to_xy(r, th)
+            ind = (np.abs(xoff_asec)<10) & (np.abs(yoff_asec)<5)
+            cmask[ind] = 1
+
+            disk_image *= cmask
             
         if len(self.offset_list) == 1: # Single PSF
             psf = self.psf_list[0]
@@ -787,9 +854,17 @@ class obs_hci(NIRCam):
 
     def star_flux(self, fluxunit='counts', sp=None):
         """ Stellar flux.
-        
+
         Return the stellar flux in whatever units, such as 
         vegamag, counts, or Jy.
+        
+        Parameters
+        ----------
+        fluxunits : str
+            Desired output units, such as counts, vegamag, Jy, etc.
+            Must be a Pysynphot supported unit string.
+        sp : :mod:`pysynphot.spectrum`
+            Normalized Pysynphot spectrum.
         """
         
         if sp is None: sp=self.sp_sci
@@ -1003,7 +1078,8 @@ class obs_hci(NIRCam):
             return hdulist
 
         
-        # Continuing with a ref PSF subtraction algorithm    
+        # Continuing with a ref PSF subtraction algorithm
+        ##################################################
         
         # Reference star slope simulation
         # Ideal slope

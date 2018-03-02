@@ -4445,7 +4445,9 @@ def coron_trans(name, module='A', pixscale=None, fov=20, nd_squares=True):
 def build_mask(module='A', pixscale=0.03):
     """Create coronagraphic mask image
     
-    Return an image of the full coronagraphic mask layout for a given module.
+    Return a truncated image of the full coronagraphic mask layout 
+    for a given module.
+    
     +V3 is up, and +V2 is to the left.
     """
     if module=='A':
@@ -4457,8 +4459,238 @@ def build_mask(module='A', pixscale=0.03):
     return np.concatenate(allims, axis=1)
 
 
+def build_mask_detid(detid, oversample=1, ref_mask=None):
+    """Create mask image for a given detector
+    
+    Return an full coronagraphic mask image as seen by a given SCA.
+    +V3 is up, and +V2 is to the left.
+    
+    Parameters
+    ----------
+    detid : str
+        Name of detector, 'A1', A2', ... 'A5' (or 'ALONG'), etc.
+    oversample : float
+        How much to oversample output mask relative to detector sampling.
+    ref_mask : str or None
+        Reference mask for placement of coronagraphic mask elements.
+        If None, then defauls are chosen for each detector.
+    """
+    
+    from jwxml import siaf
+    
+    names = ['A1', 'A2', 'A3', 'A4', 'A5', 'ALONG',
+             'B1', 'B2', 'B3', 'B4', 'B5', 'BLONG']
+             
+    if detid not in names:
+        raise ValueError("Invalid detid: {0} \n\tValid names are: {1},\n\t{2}" \
+              .format(detid, ', '.join(names)))
 
+    # Convert ALONG to A5 name
+    module = detid[0]  
+    detid = '{}5'.format(module) if 'LONG' in detid else detid
 
+    # These detectors don't see any of the mask structure
+    names_ret0 = ['A1', 'A3', 'B2', 'B4']
+    if detid in names_ret0:
+        return None
+    
+    pixscale = pixscale_LW if '5' in detid else pixscale_SW
+    pixscale_over = pixscale / oversample
+    
+    # Build the full mask
+    xpix = ypix = 2048
+    xpix_over = int(xpix * oversample)
+    ypix_over = int(ypix * oversample)
+
+    if detid=='A2':
+        cnames = ['MASK210R', 'MASK335R', 'MASK430R']
+        ref_mask = 'MASK210R' if ref_mask is None else ref_mask
+    elif detid=='A4':
+        cnames = ['MASK430R', 'MASKSWB', 'MASKLWB']
+        ref_mask = 'MASKSWB' if ref_mask is None else ref_mask
+    elif detid=='A5':
+        cnames = ['MASK210R', 'MASK335R', 'MASK430R', 'MASKSWB', 'MASKLWB']
+        ref_mask = 'MASK430R' if ref_mask is None else ref_mask
+    elif detid=='B1':
+        cnames = ['MASK430R', 'MASK335R', 'MASK210R']
+        ref_mask = 'MASK210R' if ref_mask is None else ref_mask
+    elif detid=='B3':
+        cnames = ['MASKSWB', 'MASKLWB', 'MASK430R']
+        ref_mask = 'MASKSWB' if ref_mask is None else ref_mask
+    elif detid=='B5':
+        cnames = ['MASKSWB', 'MASKLWB', 'MASK430R', 'MASK335R', 'MASK210R']
+        ref_mask = 'MASK430R' if ref_mask is None else ref_mask
+    allims = [coron_trans(cname, module, pixscale_over) for cname in cnames]
+    
+    channel = 'LW' if '5' in detid else 'SW'
+    cdict = coron_ap_locs(module, channel, ref_mask, full=False)
+    xdet, ydet = cdict['cen']
+
+    # Add an offset value before expanding to full size
+    cmask = np.concatenate(allims, axis=1) + 999
+    
+    # A5 mask names need to be reversed for detector orientation
+    # along horizontal direction
+    if detid=='A5':
+        cnames = cnames[::-1]
+    xf_arr = np.arange(1,2*len(cnames)+1,2) / (2*len(cnames))
+    xf = xf_arr[np.array(cnames)==ref_mask][0]
+    xc = cmask.shape[1] * xf
+    xc += (ypix_over - cmask.shape[1]) / 2
+    yc = xpix_over / 2
+
+    # Cut to final image size
+    cmask = pad_or_cut_to_size(cmask, (ypix_over,xpix_over))
+
+    # Place cmask in detector coords
+    cmask = V2V3_to_det(cmask, detid)
+
+    # Shift cmask to appropriate location
+    # ie., move MASK430R from center
+    xdet_over, ydet_over = np.array([xdet,ydet]) * oversample
+    delx = xdet_over - xc
+    dely = ydet_over - yc
+    
+    #print((xdet_over, ydet_over), (xc, yc), (delx, dely))
+    
+    cmask = fshift(cmask, int(delx), int(dely), pad=True) + 1
+    cmask[cmask>10] = cmask[cmask>10] - 1000
+    
+    # Place blocked region from coronagraph holder
+    if detid=='A2':
+        i1, i2 = [int(920*oversample), int(360*oversample)]
+        cmask[0:i1,0:i2]=0
+        i1 = int(220*oversample)
+        cmask[0:i1,:] = 0
+    elif detid=='A4':
+        i1, i2 = [int(920*oversample), int(1490*oversample)]
+        cmask[0:i1,i2:]=0
+        i1 = int(220*oversample)
+        cmask[0:i1,:] = 0
+    elif detid=='A5':
+        i1, i2 = [int(1500*oversample), int(260*oversample)]
+        cmask[i1:,0:i2]=0
+        i1, i2 = [int(1500*oversample), int(1900*oversample)]
+        cmask[i1:,i2:]=0
+        i1 = int(1825*oversample)
+        cmask[i1:,:] = 0
+    elif detid=='B1':
+        i1, i2 = [int(920*oversample), int(1640*oversample)]
+        cmask[0:i1,i2:]=0
+        i1 = int(210*oversample)
+        cmask[0:i1,:] = 0
+    elif detid=='B3':
+        i1, i2 = [int(920*oversample), int(500*oversample)]
+        cmask[0:i1,0:i2]=0
+        i1 = int(210*oversample)
+        cmask[0:i1,:] = 0
+    elif detid=='B5':
+        i1, i2 = [int(550*oversample), int(200*oversample)]
+        cmask[0:i1,0:i2]=0
+        i1, i2 = [int(550*oversample), int(1830*oversample)]
+        cmask[0:i1,i2:]=0
+        i1 = int(210*oversample)
+        cmask[0:i1,:] = 0
+
+    # Convert back to V2/V3
+    cmask = det_to_V2V3(cmask, detid)
+    
+    return cmask
+    
+    
+def coron_ap_locs(module, channel, mask, full=False):
+    """Coronagraph mask aperture locations and sizes
+    
+    Returns a dictionary of the detector aperture sizes
+    and locations. Attributes `cen` and `loc` are in terms
+    of (x,y) pixels.
+    """
+
+    if module=='A':
+        if channel=='SW':
+            if '210R' in mask:
+                cdict = {'det':'A2', 'cen':(713,529), 'size':640}
+            elif '335R' in mask:
+                cdict = {'det':'A2', 'cen':(1366,529), 'size':640}
+            elif 'SWB' in mask:
+                cdict = {'det':'A4', 'cen':(494,536), 'size':640}
+            elif 'LWB' in mask:
+                cdict = {'det':'A4', 'cen':(1145,536), 'size':640}
+            else:
+                raise ValueError('Mask {} not recognized for {} channel'\
+                                 .format(mask, channel))
+        elif channel=='LW':
+            if '210R' in mask:
+                cdict = {'cen':(1720, 1670), 'size':320}
+            elif '335R' in mask:
+                cdict = {'cen':(1397,1672), 'size':320}
+            elif '430R' in mask:
+                cdict = {'cen':(1074,1673), 'size':320}
+            elif 'SWB' in mask:
+                cdict = {'cen':(758,1683), 'size':320}
+            elif 'LWB' in mask:
+                cdict = {'cen':(436,1683), 'size':320}
+            else:
+                raise ValueError('Mask {} not recognized for {} channel'\
+                                 .format(mask, channel))
+            cdict['det'] = 'A5'
+        else:
+            raise ValueError('Channel {} not recognized'.format(channel))
+            
+            
+    elif module=='B':
+        if channel=='SW':
+            if '210R' in mask:
+                cdict = {'det':'B1', 'cen':(1293,515), 'size':640}
+            elif '335R' in mask:
+                cdict = {'det':'B1', 'cen':(637,514), 'size':640}
+            elif 'SWB' in mask:
+                cdict = {'det':'B3', 'cen':(871,518), 'size':640}
+            elif 'LWB' in mask:
+                cdict = {'det':'B3', 'cen':(1523,514), 'size':640}
+            else:
+                raise ValueError('Mask {} not recognized for {} channel'\
+                                 .format(mask, channel))
+        elif channel=='LW':
+            if '210R' in mask:
+                cdict = {'cen':(1656,359), 'size':320}
+            elif '335R' in mask:
+                cdict = {'cen':(1334,360), 'size':320}
+            elif '430R' in mask:
+                cdict = {'cen':(1012,362), 'size':320}
+            elif 'SWB' in mask:
+                cdict = {'cen':(370,367), 'size':320}
+            elif 'LWB' in mask:
+                cdict = {'cen':(694,365), 'size':320}
+            else:
+                raise ValueError('Mask {} not recognized for {} channel'\
+                                 .format(mask, channel))
+            cdict['det'] = 'B5'
+        else:
+            raise ValueError('Channel {} not recognized'.format(channel))
+            
+    else:
+        raise ValueError('Module {} not recognized'.format(module))
+        
+    x0, y0 = np.array(cdict['cen']) - cdict['size']/2
+    cdict['loc'] = (int(x0), int(y0))
+    
+    
+    # Add in V2/V3 coordinates
+    # X is flipped for A5, Y is flipped for all others
+    cen = cdict['cen']
+    if cdict['det'] == 'A5':
+        cdict['cen_V23'] = (2048-cen[0], cen[1])
+    else:
+        cdict['cen_V23'] = (cen[0], 2048-cen[1])
+
+    if full:
+        cdict['size'] = 2048
+        cdict['loc'] = (0,0)
+        
+    return cdict
+        
+        
 ###########################################################################
 #
 #    Miscellaneous
