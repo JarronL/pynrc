@@ -22,7 +22,7 @@ pynrc.NIRCam
       ~NIRCam.module
       ~NIRCam.multiaccum
       ~NIRCam.multiaccum_times
-      ~NIRCam.pix_scale
+      ~NIRCam.pixelscale
       ~NIRCam.psf_coeff
       ~NIRCam.psf_coeff_bg
       ~NIRCam.psf_info

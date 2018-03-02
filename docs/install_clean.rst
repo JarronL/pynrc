@@ -58,7 +58,7 @@ directory, identified by the ``PYSYN_CDBS`` environment variable that *must* be
 set prior to using this package.
 
 1. Download the following file: 
-   `cdbs.tar.gz <http://http://mips.as.arizona.edu/~jleisenring/pynrc/cdbs.tar.gz>`_  [approx. 760 MB]
+   `cdbs.tar.gz <http://mips.as.arizona.edu/~jleisenring/pynrc/cdbs.tar.gz>`_  [approx. 760 MB]
 2. Untar into a directory of your choosing.
 3. Set the environment variable ``PYSYN_CDBS`` to point to that directory. 
    For example, in .bashrc shell file, add::
@@ -86,9 +86,11 @@ first install the rest of the dependencies first, then WebbPSF with the
 
 For other installation methods see the `WebbPSF documentation <https://webbpsf.readthedocs.io>`_.
 
-.. admonition:: Note: A word about backends
+.. caution::
+    A note about backends.
     
-    In many cases `matplotlib` crashes when using the default backend. 
+    In many cases `matplotlib` crashes when using the default backend (at least
+    on Mac OS X and certain Linux distributions). 
     Given the propensity for these crashes, it may be preferable to 
     use a different graphics backend such as `TkAgg`. This can either be
     accomplished by setting `matplotlib.use("TkAgg")` after

@@ -17,6 +17,7 @@ NIRCam Tools
     ~nrc_utils.channel_select
     ~nrc_utils.grism_res
     ~nrc_utils.build_mask
+    ~nrc_utils.build_mask_detid
     ~nrc_utils.coron_trans
     ~nrc_utils.offset_bar
     ~nrc_utils.config2
@@ -35,6 +36,7 @@ NIRCam Tools
 .. autofunction:: pynrc.nrc_utils.channel_select
 .. autofunction:: pynrc.nrc_utils.grism_res
 .. autofunction:: pynrc.nrc_utils.build_mask
+.. autofunction:: pynrc.nrc_utils.build_mask_detid
 .. autofunction:: pynrc.nrc_utils.coron_trans
 .. autofunction:: pynrc.nrc_utils.offset_bar
 .. autofunction:: pynrc.nrc_utils.config2

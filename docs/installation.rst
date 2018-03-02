@@ -68,8 +68,9 @@ SCA biases and darks, stellar models, and exoplanet models are
 distributed separately. To run ``pynrc``, you must download these 
 files and define the ``PYNRC_PATH`` environment variable.
 
-1. Download the following file: `pynrc_data_v0.6.0.tar <http://mips.as.arizona.edu/~jleisenring/pynrc/pynrc_data_v0.6.0.tar>`_  [approx. 3.3 GB]
-2. Untar ``pynrc_data_v0.6.0.tar`` into a directory of your choosing.
+1. Download the following file: 
+   `pynrc_data_v0.6.1.tar.gz <http://mips.as.arizona.edu/~jleisenring/pynrc/pynrc_data_v0.6.1.tar.gz>`_  [approx. 2.3 GB]
+2. Untar into a directory of your choosing.
 3. Set the environment variable ``PYNRC_PATH`` to point to that directory. 
    For bash, for example::
 
