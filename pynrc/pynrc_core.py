@@ -1496,7 +1496,15 @@ class NIRCam(object):
         if self.mask is None:
             self._bar_offset = None
         else:
-            vold = self._bar_offset; self._bar_offset = value
+            vold = self._bar_offset
+            # Value limits between -10 and 10
+            if np.abs(value)>10:
+                value = 10 if value>0 else -10
+                msg1 = 'bar_offset value must be between -10 and 10.'
+                msg2 = 'Setting to {}.'.format(value)
+                _log.warning('{} {}'.format(msg1,msg2))
+            
+            self._bar_offset = value
             if vold != self._bar_offset: 
                 self.update_psf_coeff(bar_offset=self._bar_offset)
             
@@ -1539,7 +1547,8 @@ class NIRCam(object):
             For bar masks, the position along the bar to place the PSF (arcsec).
             Use :func:`~pynrc.nrc_utils.offset_bar` for filter-dependent locations.
             If both :attr:`bar_offset` attribute and `bar_offset` keyword are None,
-            then decide location based on selected filter.
+            then decide location based on selected filter. A positive value will
+            move the source to the right when viewing V2 to the left and V3 up.
             Updates :attr:`bar_offset` attribute and coefficients appropriately.
         wfe_drift : float
             Wavefront error drift amplitude in nm.
@@ -1664,7 +1673,7 @@ class NIRCam(object):
             # Specifying bar_offset keyword overrides everything
             if bar_offset is not None:
                 self._bar_offset = bar_offset
-            # If _bar_offset attribute unspecified, then filter based
+            # If _bar_offset attribute unspecified, then based on filter
             if self._bar_offset is None:
                 self._bar_offset = r_bar
 

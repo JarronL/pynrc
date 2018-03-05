@@ -1734,7 +1734,7 @@ def wedge_coeff(filter, pupil, mask, force=False, save=True, save_name=None, **k
     if (not force) and os.path.exists(save_name):
         return np.load(save_name)
 
-    _log.warn('Generating field-dependent coefficients. This may take some time.')
+    _log.warn('Generating wedge field-dependent coefficients. This may take some time.')
 
     # Cycle through a list of bar offset locations
     values = np.arange(-8,8,1)
@@ -3823,15 +3823,33 @@ class source_spectrum(object):
         
         if ax is None:
             fig, ax = plt.subplots(1,1, figsize=(8,5))
-    
-        ax.loglog(sp0.wave/1e4, sp0.flux, lw=1, label='Photosphere', **kwargs)
-        ax.errorbar(sp_phot.wave/1e4, sp_phot.flux, yerr=sp_phot_e.flux, 
-                    marker='.', ls='none', label='Photometry')
+
+        w = sp0.wave / 1e4
+        f = sp0.flux
+        if xr is not None:
+            ind = (w>=xr[0]) & (w<=xr[1])
+            w, f = (w[ind], f[ind])
+        ax.loglog(w, f, lw=1, label='Photosphere', **kwargs)
+
+        w = sp_phot.wave / 1e4
+        f = sp_phot.flux
+        f_err = sp_phot_e.flux
+        if xr is not None:
+            ind = (w>=xr[0]) & (w<=xr[1])
+            w, f, f_err = (w[ind], f[ind], f_err[ind])
+        ax.errorbar(w, f, yerr=f_err, marker='.', ls='none', label='Photometry')
         
         if sp_model is not None:
             sp_model_units = sp_model.fluxunits.name
             sp_model.convert(units)
-            ax.plot(sp_model.wave / 1e4, sp_model.flux, lw=2, label='Model Fit')
+            
+            w = sp_model.wave / 1e4
+            f = sp_model.flux
+            if xr is not None:
+                ind = (w>=xr[0]) & (w<=xr[1])
+                w, f = (w[ind], f[ind])
+            
+            ax.plot(w, f, lw=2, label='Model Fit')
             sp_model.convert(sp_model_units)
 
         ax.set_xlabel('Wavelength (microns)')

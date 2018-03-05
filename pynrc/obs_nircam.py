@@ -72,7 +72,7 @@ class obs_hci(NIRCam):
         NIRCam.__init__(self, wind_mode=wind_mode, xpix=xpix, ypix=ypix, **kwargs)
 
         if (wind_mode=='FULL') and (self.channel=='SW'):
-            raise NotImplementedError('SW Full frame not yet implemented.')
+            raise NotImplementedError('SW Full Frame not yet implemented.')
 
         # Spectral models
         self.sp_sci = sp_sci
@@ -387,16 +387,14 @@ class obs_hci(NIRCam):
                          wind_mode=wind_mode, xpix=xpix, ypix=ypix, \
                          fov_pix=fov_pix, oversample=oversample, opd=opd,
                          offset_r=offset_r, offset_theta=offset_theta,
-                         wfe_drift=self.wfe_ref_drift)
+                         wfe_drift=self.wfe_ref_drift, bar_offset=self.bar_offset)
             self.nrc_ref = nrc
 
         
     def _gen_psf_list(self):
         """
-        Create instances of NIRCam PSFs that are incrementally offset 
-        from coronagraph center to determine maximum value of the detector-
-        sampled PSF for determination of contrast. Also saves the list of
-        PSFs for later retrieval.
+        Save instances of NIRCam PSFs that are incrementally offset 
+        from coronagraph center to convolve with a disk image.
         """
         
         # If no mask, then the PSF looks the same at all radii
@@ -407,6 +405,7 @@ class obs_hci(NIRCam):
         elif self.mask[-1]=='R': # Round masks
             self.psf_list = [self.gen_offset_psf(offset, 0) for offset in self.offset_list]
         elif self.mask[-1]=='B': # Bar masks
+            self.psf_list = [self.gen_offset_psf(offset, 0) for offset in self.offset_list]
             raise NotImplementedError('BAR Masks not yet implemented')
 
     def _gen_psfbar_list(self):
@@ -431,7 +430,7 @@ class obs_hci(NIRCam):
         xoff_asec = np.min([xasec_half, xoff_arcsec_max])
         
         # Offset values to create new PSF
-        del_off = 1
+        del_off = 2
         offset_vals = np.arange(-xoff_asec, xoff_asec+del_off, del_off)
         
         # Original offset value for observation
@@ -440,7 +439,7 @@ class obs_hci(NIRCam):
         # Loop through offset locations and save PSFs
         psf_list = []
         for offset in offset_vals:
-            print(offset)
+            #print(offset)
             self.bar_offset = offset
             _, psf = self.gen_psf(return_oversample=True, use_bg_psf=False)
             psf_list.append(psf)
@@ -1279,13 +1278,6 @@ class obs_hci(NIRCam):
         # Divide out count rate
         stds = stds / self.star_flux()
     
-#         # Grab the normalized PSF values generated on init
-#         psf_off_list, psf_max_list = self.psf_max_vals
-#         psf_off_list.append(rr.max())
-#         psf_max_list.append(psf_max_list[-1])
-#         # Interpolate at each radial position
-#         psf_max = np.interp(rr, psf_off_list, psf_max_list)
-        
         # Normalize by psf max value
         xpix, ypix = (self.det_info['xpix'], self.det_info['ypix'])
         pixscale = self.pix_scale
@@ -1327,7 +1319,7 @@ class obs_hci(NIRCam):
             im_mask = coron_trans(self.mask, fov=fov_asec, pixscale=pixscale, nd_squares=False)
             im_mask = pad_or_cut_to_size(im_mask, data.shape)
 
-            nx = im_mask.shape[0]
+            ny, nx = im_mask.shape
             xv = (np.arange(nx) - nx/2) * pixscale
             
             # a and b coefficients at each offset location
@@ -1342,7 +1334,36 @@ class obs_hci(NIRCam):
                                 for a,b in zip(avals,bvals)])
 
         elif self.mask[-1]=='B': # Bar masks
-            raise NotImplementedError('BAR Masks not yet implemented')
+            fov_asec = np.max([xpix,ypix]) * pixscale
+
+            # Image mask
+            im_mask = coron_trans(self.mask, fov=fov_asec, pixscale=pixscale, nd_squares=False)
+            im_mask = pad_or_cut_to_size(im_mask, data.shape)
+            
+            # For offaxis PSF max values, use fiducial at bar_offset location
+            bar_offset = self.bar_offset
+            ny, nx = im_mask.shape
+            xloc = int(bar_offset / pixscale + nx/2)
+            mask_cut = im_mask[:,xloc]
+
+            # Interpolate along the horizontal cut
+            yv = (np.arange(ny) - ny/2) * pixscale
+            avals = np.interp(rr, yv, mask_cut**2)
+            bvals = 1 - avals
+
+            # Get PSF at middle of bar
+            vals = self.psf_center_offsets
+            arr = np.array(self.psf_center_over)
+            func = interp1d(vals, arr, axis=0, kind='linear')
+            psf_center = func(bar_offset)
+
+            # Linearly combine PSFs
+            fov_pix = self.psf_info['fov_pix']
+            psf_center  = krebin(psf_center, (fov_pix,fov_pix))
+            psf_offaxis = krebin(self.psf_offaxis_over, (fov_pix,fov_pix))
+            psf_max = np.array([np.max(psf_offaxis*a + psf_center*b) 
+                                for a,b in zip(avals,bvals)])
+
         
         contrast = stds / psf_max
         # Sigma limit
