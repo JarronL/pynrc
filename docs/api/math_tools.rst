@@ -31,6 +31,7 @@ Math Tools
     ~pynrc.maths.image_manip.optimal_difference
     ~pynrc.maths.image_manip.pad_or_cut_to_size
     ~pynrc.maths.image_manip.fix_nans_with_med
+    ~pynrc.maths.image_manip.rotate_offset
 
 .. rubric:: Polynomial Fitting Summary
 
@@ -83,6 +84,7 @@ Math Tools
 .. autofunction:: pynrc.maths.image_manip.optimal_difference
 .. autofunction:: pynrc.maths.image_manip.pad_or_cut_to_size
 .. autofunction:: pynrc.maths.image_manip.fix_nans_with_med
+.. autofunction:: pynrc.maths.image_manip.rotate_offset
 
 ----------------------------
 

@@ -1,4 +1,4 @@
-.. _clean_install
+.. _clean_install:
 
 =========================
 Clean Installation
@@ -32,7 +32,7 @@ the appropriate URL to Conda's channel search path.
     # Writes changes to ~/.condarc
 
 
-.. _install_pysynphot
+.. _install_pysynphot:
 
 Installing Pysynphot
 ====================
@@ -68,7 +68,7 @@ set prior to using this package.
 You should now be able to successfully ``import pysynphot`` in a Python session.
 
 
-.. _install_webbpsf
+.. _install_webbpsf:
 
 Installing WebbPSF
 ====================
@@ -109,7 +109,7 @@ setting the ``WEBBPSF_PATH`` environment variable to point
 towards your `webbpsf-data` directory.
 
 
-.. _install_pynrc_clean
+.. _install_pynrc_clean:
 
 Installing pyNRC
 ====================
