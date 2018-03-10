@@ -1210,7 +1210,7 @@ class NIRCam(object):
         t_frame   : Time of a single frame.
         t_group   : Time of a single group (read frames + drop frames).
         t_int     : Photon collection time for a single ramp/integration.
-        t_int_tot : Total time for all frames (rest+read+drop) in a ramp/integration.
+        t_int_tot : Total time for all frames (reset+read+drop) in a ramp/integration.
         t_exp     : Total photon collection time for all ramps.
         t_acq     : Total acquisition time to complete exposure with all overheads.
         """
@@ -1494,8 +1494,8 @@ class NIRCam(object):
         """Set the bar offset position and update coefficients"""
         # Only update if the value changes
         if self.mask is None:
-            self._bar_offset = None
-        else:
+            self._bar_offset = 0 #None
+        elif self.mask[-1]=='B':
             vold = self._bar_offset
             # Value limits between -10 and 10
             if np.abs(value)>10:
@@ -1507,6 +1507,8 @@ class NIRCam(object):
             self._bar_offset = value
             if vold != self._bar_offset: 
                 self.update_psf_coeff(bar_offset=self._bar_offset)
+        else:
+            self._bar_offset = 0
             
     def update_psf_coeff(self, fov_pix=None, oversample=None, 
         offset_r=None, offset_theta=None, tel_pupil=None, opd=None,
@@ -1687,6 +1689,8 @@ class NIRCam(object):
             cf_mod = jl_poly(np.array([bar_offset]), cf_fit)
             cf_mod = cf_mod.reshape(self._psf_coeff.shape)
             self._psf_coeff += cf_mod
+        else:
+            self._bar_offset = 0
             
     
         # If there is a coronagraphic spot or bar, then we may need to
