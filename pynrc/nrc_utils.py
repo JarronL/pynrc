@@ -4208,8 +4208,8 @@ def nproc_use_convolve(fov_pix, oversample, npsf=None):
         Square size in detector-sampled pixels of final PSF image.
     oversample : int
         The optical system that we will be calculating for.
-    nwavelengths : int
-        Number of wavelengths. Sets maximum # of processes.
+    npsf : int
+        Number of PSFs. Sets maximum # of processes.
     """
 
     try:

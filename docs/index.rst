@@ -15,7 +15,6 @@ Documentation for pyNRC (pynrc)
    :maxdepth: 1
    
    install_clean.rst
-.. installation.rst
 
 .. toctree::
    :caption: User Guides
@@ -24,6 +23,7 @@ Documentation for pyNRC (pynrc)
    tutorials/Basic_Usage.ipynb   
    tutorials/Ramp_Optimization_Examples.ipynb
    tutorials/Coronagraph_Basics.ipynb
+   tutorials/Coronagraph_Wedges.ipynb
    
 .. toctree::
    :caption: Reference Info
