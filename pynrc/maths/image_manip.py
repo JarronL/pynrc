@@ -3,6 +3,8 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 # The six library is useful for Python 2 and 3 compatibility
 import six
 
+from scipy.ndimage.interpolation import rotate
+
 #__all__ = ['pad_or_cut_to_size', 'frebin', \
 #           'fshift', 'fourier_imshift', 'shift_subtract', 'align_LSQ']
 import numpy as np
@@ -26,7 +28,7 @@ from scipy.ndimage import fourier_shift
 from astropy.io import fits
 
 
-def pad_or_cut_to_size(array, new_shape):
+def pad_or_cut_to_size(array, new_shape, fill_val=0.0):
     """
     Resize an array to a new shape by either padding with zeros
     or trimming off rows and/or columns. The ouput shape can
@@ -39,6 +41,8 @@ def pad_or_cut_to_size(array, new_shape):
     padded_shape :  tuple of 2 elements
         Desired size for the output array. For 2D case, if a single value, 
         then will create a 2-element tuple of the same value.
+    fill_val : scalar, optional
+        Value to pad borders. Default is 0.0
 
     Returns
     -------
@@ -46,6 +50,10 @@ def pad_or_cut_to_size(array, new_shape):
         An array of size new_shape that preserves the central information 
         of the input array.
     """
+    
+    # Return if no difference in shapes
+    if array.shape == new_shape:
+        return array
 
     ndim = len(array.shape)
     if ndim == 1:
@@ -80,6 +88,9 @@ def pad_or_cut_to_size(array, new_shape):
     else:
         raise ValueError('Input image can only have 1 or 2 dimensions. \
                           Found {} dimensions.'.format(ndim))
+                      
+    # Input the fill values    
+    output += fill_val
 
     if nx_new>nx:
         n0 = (nx_new - nx) / 2
@@ -123,7 +134,8 @@ def pad_or_cut_to_size(array, new_shape):
     return output
 
 
-def fshift(image, delx=0, dely=0, pad=False):
+
+def fshift(image, delx=0, dely=0, pad=False, cval=0.0):
     """ Fractional image shift
     
     Ported from IDL function fshift.pro.
@@ -140,6 +152,15 @@ def fshift(image, delx=0, dely=0, pad=False):
     pad : bool
         Should we pad the array before shifting, then truncate?
         Otherwise, the image is wrapped.
+    cval : sequence or float, optional
+        The values to set the padded values for each axis. Default is 0.
+        ((before_1, after_1), ... (before_N, after_N)) unique pad constants
+        for each axis.
+        ((before, after),) yields same before and after constants for each
+        axis.
+        (constant,) or int is a shortcut for before = after = constant for
+        all axes.
+
         
     Returns
     -------
@@ -147,7 +168,12 @@ def fshift(image, delx=0, dely=0, pad=False):
         Shifted image
     """
     
+    
     if len(image.shape) == 1:
+        # Return if delx is 0
+        if np.isclose(delx, 0, atol=1e-5):
+            return image
+
         # separate shift into an integer and fraction shift
         intx = np.int(delx)
         fracx = delx - intx
@@ -155,10 +181,10 @@ def fshift(image, delx=0, dely=0, pad=False):
             fracx += 1
             intx -= 1
 
-        # Pad ends with zeros
+        # Pad ends with constant value
         if pad:
             padx = np.abs(intx) + 1
-            x = np.pad(image,np.abs(intx),'constant')
+            x = np.pad(image,np.abs(intx),'constant',constant_values=cval)
         else:
             padx = 0
             x = image.copy()
@@ -173,6 +199,10 @@ def fshift(image, delx=0, dely=0, pad=False):
         return x
 
     elif len(image.shape) == 2:	
+        # Return if both delx and dely are 0
+        if np.isclose(delx, 0, atol=1e-5) and np.isclose(dely, 0, atol=1e-5):
+            return image
+
         # separate shift into an integer and fraction shift
         intx = np.int(delx)
         inty = np.int(dely)
@@ -185,12 +215,12 @@ def fshift(image, delx=0, dely=0, pad=False):
             fracy += 1
             inty -= 1
 
-        # Pad ends with zeros
+        # Pad ends with constant value
         if pad:
             padx = np.abs(intx) + 1
             pady = np.abs(inty) + 1
             pad_vals = ([pady]*2,[padx]*2)
-            x = np.pad(image,pad_vals,'constant')
+            x = np.pad(image,pad_vals,'constant',constant_values=cval)
         else:
             padx = 0; pady = 0
             x = image.copy()
@@ -229,6 +259,7 @@ def fshift(image, delx=0, dely=0, pad=False):
     else:
         raise ValueError('Input image can only have 1 or 2 dimensions. \
                           Found {} dimensions.'.format(len(image.shape)))
+                          
                           
                           
 def fourier_imshift(image, xshift, yshift, pad=False):
@@ -918,3 +949,119 @@ def binned_statistic(x, values, func=np.mean, bins=10):
         res = np.array([func(values_flat[ind]) for ind in igroups])
     
     return res
+
+def rotate_offset(data, angle, cen=None, cval=0.0, order=1, 
+    reshape=True, recenter=True, **kwargs):
+    """Rotate and offset an array.
+
+    Same as `rotate` in `scipy.ndimage.interpolation` except that it
+    rotates around a center point given by `cen` keyword.
+    The array is rotated in the plane defined by the two axes given by the
+    `axes` parameter using spline interpolation of the requested order.
+    
+    Parameters
+    ----------
+    data : ndarray
+        The input array.
+    angle : float
+        The rotation angle in degrees (rotates in CW direction).
+    cen : tuple
+        Center location around which to rotate image.
+        Values are expected to be `(xcen, ycen)`.
+    recenter : bool
+        Do we want to reposition so that `cen` is the image center?
+        
+    Keyword Args
+    ------------
+    axes : tuple of 2 ints, optional
+        The two axes that define the plane of rotation. Default is the first
+        two axes.
+    reshape : bool, optional
+        If `reshape` is true, the output shape is adapted so that the input
+        array is contained completely in the output. Default is True.
+    order : int, optional
+        The order of the spline interpolation, default is 1.
+        The order has to be in the range 0-5.
+    mode : str, optional
+        Points outside the boundaries of the input are filled according
+        to the given mode ('constant', 'nearest', 'reflect', 'mirror' or 'wrap').
+        Default is 'constant'.
+    cval : scalar, optional
+        Value used for points outside the boundaries of the input if
+        ``mode='constant'``. Default is 0.0
+    prefilter : bool, optional
+        The parameter prefilter determines if the input is pre-filtered with
+        `spline_filter` before interpolation (necessary for spline
+        interpolation of order > 1).  If False, it is assumed that the input is
+        already filtered. Default is True.
+
+    Returns
+    -------
+    rotate : ndarray or None
+        The rotated data.
+
+    """
+
+    ndim = len(data.shape)
+    if ndim==2:
+        ny, nx = data.shape
+        nz = 1
+    elif ndim==3:
+        nz, ny, nx = data.shape
+    else:
+        raise ValueError('Input image can only have 2 or 3 dimensions. \
+                          Found {} dimensions.'.format(ndim))
+
+    if 'axes' not in kwargs.keys():
+        kwargs['axes'] = (2,1)
+    kwargs['order'] = order
+    kwargs['cval'] = cval
+
+    xcen, ycen = (nx/2, ny/2)
+    if cen is None:
+        cen = (xcen, ycen)
+    xcen_new, ycen_new = cen
+    delx, dely = (xcen-xcen_new, ycen-ycen_new)
+
+    # Reshape into a 3D array if nz=1
+    data = data.reshape([nz,ny,nx])
+    # Return rotate function if rotating about center
+    if np.allclose((delx, dely), 0, atol=1e-5):
+        return rotate(data, angle, reshape=reshape, **kwargs).squeeze()
+
+    # Pad and then shift array
+    new_shape = (int(ny+2*abs(dely)), int(nx+2*abs(delx)))
+    images_shift = []
+    for im in data:
+        im_pad = pad_or_cut_to_size(im, new_shape, fill_val=cval)
+        im_new = fshift(im_pad, delx, dely, cval=cval)
+        images_shift.append(im_new)
+    images_shift = np.array(images_shift)
+    
+    # Remove additional dimension in the case of single image
+    #images_shift = images_shift.squeeze()
+    
+    # Rotate images
+    images_shrot = rotate(images_shift, angle, reshape=True, **kwargs)
+    
+    if reshape:
+        return images_shrot.squeeze()
+    else:
+        # Shift back to it's location
+        if recenter:
+            images_rot = images_shrot
+        else:
+            images_rot = []
+            for im in images_shrot:
+                im_new = fshift(im, -delx, -dely, pad=True, cval=cval)
+                images_rot.append(im_new)
+            images_rot = np.array(images_rot)
+    
+        images_fin = []
+        for im in images_rot:
+            im_new = pad_or_cut_to_size(im, (ny,nx))
+            images_fin.append(im_new)
+        images_fin = np.array(images_fin)
+    
+        return images_fin.squeeze()
+
