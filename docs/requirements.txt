@@ -7,7 +7,7 @@ matplotlib>=2
 Cython
 astropy==2
 astropy-helpers
-pysynphot==0.9.8.7
+pysynphot==0.9.7
 -e git+https://github.com/mperrin/poppy.git#egg=poppy
 -e git+https://github.com/mperrin/webbpsf.git#egg=webbpsf
 
