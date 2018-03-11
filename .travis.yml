@@ -1,14 +1,78 @@
 # Config file for automatic testing at travis-ci.org
-
 language: python
+
 python:
-  - 3.6
-  - 3.5
-  - 3.4
   - 2.7
+  - 3.5
+
+env:
+    global:
+        # The following versions are the 'default' for tests, unless
+        # overridden underneath. They are defined here in order to save having
+        # to repeat them for all configurations.
+        - NUMPY_VERSION=stable
+        - ASTROPY_VERSION=stable
+        - MAIN_CMD='python setup.py'
+        - SETUP_CMD='test'
+        - PIP_DEPENDENCIES='git+https://github.com/mperrin/webbpsf.git#egg=webbpsf jwxml'
+        - CONDA_DEPENDENCIES='scipy matplotlib six'
+
+        # For headless testing of code that imports PyPlot:
+        - MPLBACKEND=Agg
+
+matrix:
+    include:
+        # do the actual tests against dev version of POPPY
+        # - python: 2.7
+        # - python: 3.5
+        
+        # Do a coverage test in Python 3.
+        - python: 3.6
+          env: SETUP_CMD='test --coverage'
+
+        # Try Astropy development version
+        - python: 3.6
+          env: SETUP_CMD='test' ASTROPY_VERSION=development
+
+        # Try older numpy versions
+        - python: 2.7
+          env: SETUP_CMD='test' NUMPY_VERSION=1.12
+        - python: 2.7
+          env: SETUP_CMD='test' NUMPY_VERSION=1.11
+
+        # Try released POPPY
+        - python: 3.6
+          env: SETUP_CMD='test' PIP_DEPENDENCIES='webbpsf jwxml'
+
+    allow_failures:
+        # Released WebbPSF may be missing new functionality used by dev pynrc
+        - env: SETUP_CMD='test' PIP_DEPENDENCIES='webbpsf jwxml'
+
 
 # Command to install dependencies, e.g. pip install -r requirements.txt --use-mirrors
-install: pip install -U tox-travis
+install:
+    # We now use the ci-helpers package to set up our testing environment.
+    # This is done by using Miniconda and then using conda and pip to install
+    # dependencies. Which dependencies are installed using conda and pip is
+    # determined by the CONDA_DEPDENDENCIES and PIP_DEPENDENCIES variables,
+    # which should be space-delimited lists of package names. See the README
+    # in https://github.com/astropy/ci-helpers for information about the full
+    # list of environment variables that can be used to customize your
+    # environment. In some cases, ci-helpers may not offer enough flexibility
+    # in how to install a package, in which case you can have additional
+    # commands in the install: section below.
+
+    - git clone git://github.com/astropy/ci-helpers.git
+    - source ci-helpers/travis/setup_conda.sh
+
+    # As described above, using ci-helpers, you should be able to set up an
+    # environment with dependencies installed using conda and pip, but in some
+    # cases this may not provide enough flexibility in how to install a
+    # specific dependency (and it will not be able to install non-Python
+    # dependencies). Therefore, you can also include commands below (as
+    # well as at the start of the install section or in the before_install
+    # section if they are needed before setting up conda) to install any
+    # other dependencies.
 
 # Command to run tests, e.g. python setup.py test
 script: tox
@@ -17,13 +81,13 @@ script: tox
 # create the Github repo and add it to Travis, run the
 # following command to finish PyPI deployment setup:
 # $ travis encrypt --add deploy.password
-deploy:
-  provider: pypi
-  distributions: sdist bdist_wheel
-  user: jarron
-  password:
-    secure: PLEASE_REPLACE_ME
-  on:
-    tags: true
-    repo: JarronL/pynrc
-    python: 3.6
+#deploy:
+#  provider: pypi
+#  distributions: sdist bdist_wheel
+#  user: jarron
+#  password:
+#    secure: PLEASE_REPLACE_ME
+#  on:
+#    tags: true
+#    repo: JarronL/pynrc
+#    python: 3.6

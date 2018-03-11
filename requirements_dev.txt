@@ -10,12 +10,3 @@ twine
 
 pytest==3.4.2
 pytest-runner==2.11.1
-
-numpy
-matplotlib>=2
-Cython
-astropy==2
-astropy-helpers
-pysynphot==0.9.7
--e git+https://github.com/mperrin/poppy.git#egg=poppy
--e git+https://github.com/mperrin/webbpsf.git#egg=webbpsf
