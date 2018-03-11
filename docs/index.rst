@@ -3,8 +3,8 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Documentation for pyNRC (pynrc)
-===============================
+Welcome to pyNRC's documentation!
+=================================
 
 .. automodule:: pynrc
     :members:
@@ -14,6 +14,7 @@ Documentation for pyNRC (pynrc)
    :caption: Getting Started
    :maxdepth: 1
    
+   readme.rst
    install_clean.rst
 
 .. toctree::
@@ -31,6 +32,13 @@ Documentation for pyNRC (pynrc)
    
    api_new.rst
    change_log.rst
+
+.. toctree::
+   :caption: Contributions
+   :maxdepth: 1
+
+   authors.rst
+   contributing.rst
    license.rst
    
 
@@ -47,4 +55,3 @@ see :ref:`LICENSE <license>`.
     `Leisenring et al. 2018, "pyNRC: A NIRCam ETC and Simulation Toolset"`
     (in prep).
 
-Copyright (c) 2018 Jarron Leisenring and contributors.

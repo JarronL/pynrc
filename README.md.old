@@ -17,9 +17,14 @@ and weak lens imaging.
 All PSFs are generated via WebbPSF (https://webbpsf.readthedocs.io) to reproduce 
 realistic JWST images and spectra.
 
+The documentation is available at https://pynrc.readthedocs.io
+
 **Note**: pyNRC allows for more modes than are officially allowed by the Observatory,
 (ie., filter + coronagraphic combinations, subarray sizes, etc.). 
 Just because you can do something with pyNRC does not mean it will be supported.
 Check out https://jwst-docs.stsci.edu/display/JTI/NIRCam+Observing+Modes for more information.
 
-The documentation is available at https://pynrc.readthedocs.org
+Similar to some of its dependencies, pyNRC requires a host of input data files in
+order to generate simulations. Due to the size of these files, they are not included
+with this source distribution. Please the documentation for instructions on how to
+to download the required data files.
