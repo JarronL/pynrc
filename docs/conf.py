@@ -40,7 +40,9 @@ extensions = ['sphinx.ext.autodoc',
     'sphinx.ext.inheritance_diagram',
     'sphinx_automodapi.automodapi',
     'sphinx.ext.napoleon',
-    'nbsphinx']
+    'nbsphinx',
+    'sphinx.ext.todo',
+    ]
     
 # nbsphinx generates doc files from notebooks on the fly
 # By default, it will execute those notebooks with no outputs.
@@ -109,7 +111,7 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 pygments_style = 'sphinx'
 
 # If true, `todo` and `todoList` produce output, else they produce nothing.
-todo_include_todos = False
+todo_include_todos = True
 
 
 # -- Options for HTML output ----------------------------------------------

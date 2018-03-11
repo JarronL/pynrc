@@ -15,6 +15,7 @@ Welcome to pyNRC's documentation!
    :maxdepth: 1
    
    readme.rst
+   installation.rst
    install_clean.rst
 
 .. toctree::
@@ -32,14 +33,8 @@ Welcome to pyNRC's documentation!
    
    api_new.rst
    change_log.rst
-
-.. toctree::
-   :caption: Contributions
-   :maxdepth: 1
-
-   authors.rst
-   contributing.rst
    license.rst
+   contributing.rst
    
 
 

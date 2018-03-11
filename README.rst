@@ -1,6 +1,9 @@
-========================================
-pyNRC - A JWST NIRCam ETC and Simulator
-========================================
+=====
+pyNRC
+=====
+
+A JWST NIRCam ETC and Simulator
+===============================
 
 .. image:: https://img.shields.io/pypi/v/pynrc.svg
         :target: https://pypi.python.org/pypi/pynrc
@@ -18,17 +21,20 @@ pyNRC - A JWST NIRCam ETC and Simulator
 
 **!!Under Development!!**
 
+.. warning:: 
+
+    Under Development!!
 
 pyNRC is a set of Python-based tools for planning observations with JWST NIRCam, 
 such as an ETC, a simple image slope simulator, and an enhanced data simulator.
 
 While special attention has been placed on NIRCam coronagraphic modes, 
 this package also works for a variety of NIRCam observing modes including: 
- - direct imaging 
- - coronagraphic imaging
- - weak lens imaging
- - slitless grism spectroscopy
- - DHS observations (TBI)
+- direct imaging 
+- coronagraphic imaging
+- weak lens imaging
+- slitless grism spectroscopy
+- DHS observations (TBI)
 
 All PSFs are generated via WebbPSF (https://webbpsf.readthedocs.io) to reproduce 
 realistic JWST images and spectra.
