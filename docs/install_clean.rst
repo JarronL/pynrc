@@ -1,11 +1,12 @@
 .. _clean_install:
 
-=========================
-Clean Installation
-=========================
+===================================
+Install from New Conda Environment
+===================================
 
 This installation tutorial assumes a clean installation with 
-Anaconda and has been verified on both Python 2.7 and 3.6 using the following modules:
+Anaconda and has been verified on both Python 2.7 and 3.6 using 
+the following modules:
 
 * Numpy 1.14   
 * Matplotlib 2.1
@@ -23,10 +24,8 @@ If you're already working in an AstroConda environment,
 then you should be all set and can probably skip this step.
 
 If you have some other Conda, installation, then you can simply 
-add the AstroConda channel to your `.condarc` file, which appends 
-the appropriate URL to Conda's channel search path.
-
-.. code-block:: sh
+add the AstroConda channel to your ``.condarc`` file, which appends 
+the appropriate URL to Conda's channel search path::
 
     $ conda config --add channels http://ssb.stsci.edu/astroconda
     # Writes changes to ~/.condarc
@@ -37,16 +36,14 @@ the appropriate URL to Conda's channel search path.
 Installing Pysynphot
 ====================
 
-With the AstroConda channel added, it's a simple matter to run:
-
-.. code-block:: sh
+With the AstroConda channel added, it's a simple matter to run::
 
     $ conda install pysynphot
 
 Otherwise, install the
 `standalone <https://github.com/spacetelescope/pysynphot/releases>`_ release::
 
-    pip install git+https://github.com/spacetelescope/pysynphot.git@0.9.8.8
+    $ pip install git+https://github.com/spacetelescope/pysynphot.git@0.9.8.8
 
 Pysynphot Data Files
 --------------------
@@ -73,13 +70,11 @@ You should now be able to successfully ``import pysynphot`` in a Python session.
 Installing WebbPSF
 ====================
 
-The AstroConda copy of WebbPSF has a `webbpsf-data` installation dependency, 
+The AstroConda copy of WebbPSF has a ``webbpsf-data`` installation dependency, 
 which we do not want in our slightly customized installation, because the WebbPSF 
 data files get downloaded separately. Instead, we will do this in two parts to 
 first install the rest of the dependencies first, then WebbPSF with the 
-``--no-deps`` flag:
-
-.. code-block:: sh
+``--no-deps`` flag::
 
     $ conda install jwxml poppy
     $ conda install webbpsf --no-deps
@@ -89,14 +84,14 @@ For other installation methods see the `WebbPSF documentation <https://webbpsf.r
 .. caution::
     A note about backends.
     
-    In many cases `matplotlib` crashes when using the default backend (at least
+    In many cases ``matplotlib`` crashes when using the default backend (at least
     on Mac OS X and certain Linux distributions). 
     Given the propensity for these crashes, it may be preferable to 
-    use a different graphics backend such as `TkAgg`. This can either be
-    accomplished by setting `matplotlib.use("TkAgg")` after
-    importing `matplotlib` or setting the default backend
-    via your matplotlibrc file. The latter option is probably preferred
-    for most cases.
+    use a different graphics backend such as ``TkAgg``. This can either be
+    accomplished by setting ``matplotlib.use("TkAgg")`` after
+    importing ``matplotlib`` or setting the default backend via your 
+    `matplotlibrc file <https://matplotlib.org/users/customizing.html#the-matplotlibrc-file`.
+    The latter option is probably preferred for most cases.
 
 
 WebbPSF Data Files
@@ -106,7 +101,7 @@ For the user's convenience, WebbPSF data files can be found here:
 `webbpsf-data-0.6.0.tar.gz <http://mips.as.arizona.edu/~jleisenring/pynrc/webbpsf-data-0.6.0.tar.gz>`_  [approx. 240 MB]
 Follow the same procedure as with the Pysynphot data files, 
 setting the ``WEBBPSF_PATH`` environment variable to point 
-towards your `webbpsf-data` directory.
+towards your ``webbpsf-data`` directory.
 
 
 .. _install_pynrc_clean:
@@ -137,14 +132,15 @@ in order to create editable installations. This is great for helping
 to develop the code, create bug reports, pull requests to GitHub, etc.
 
 
-``pynrc`` Data Files
+pyNRC Data Files
 --------------------------
 
-Similarly, ``pynrc`` comes with its own set of data files, 
-such as instrument throughputs, SCA biases and darks, 
-stellar models, and exoplanet models. To run ``pynrc``, 
-you must download these files and define the 
-``PYNRC_PATH`` environment variable.
+Similarly, ``pynrc`` comes with its own set of data files, such as 
+instrument throughputs, SCA biases and darks, stellar models, 
+and exoplanet models. To run ``pynrc``, you must download these 
+files and define the ``PYNRC_PATH`` environment variable. This is
+also the location that PSF coefficients will be saved to during
+normal operations of ``pynrc``.
 
 1. Download the following file: 
    `pynrc_data_v0.6.1.tar.gz <http://mips.as.arizona.edu/~jleisenring/pynrc/pynrc_data_v0.6.1.tar.gz>`_  [approx. 2.3 GB]
@@ -153,6 +149,8 @@ you must download these files and define the
    For example, in .bashrc shell file, add::
 
     export PYNRC_PATH='$HOME/data/pynrc_data'
+
+   You will probably want to add this to your ``.bashrc``.
 
 You should now be able to successfully ``import pynrc`` in a Python session.
 

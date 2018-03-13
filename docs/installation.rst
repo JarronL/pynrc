@@ -6,7 +6,7 @@ Installation
 Requirements
 ------------
 
-``pynrc`` requires Python 2.7+ or 3.5+ along with the following packages:
+pyNRC requires Python 2.7+ or 3.5+ along with the following packages:
 
 * Recent version of `NumPy <http://www.numpy.org>`_, 
   `SciPy <https://www.scipy.org>`_,
@@ -15,21 +15,35 @@ Requirements
 * `pysynphot <https://pysynphot.readthedocs.io>`_ 0.9.8+
 * `WebbPSF <https://webbpsf.readthedocs.io>`_ 0.6.0+ 
   and its dependencies.
-* `psutil <https://pypi.python.org/pypi/psutil>`_ (optional, but useful)
+* `psutil <https://pypi.python.org/pypi/psutil>`_
 
+
+Installing with conda
+---------------------
+
+.. todo::
+
+    pyNRC has been placed on conda-forge so you can manage the package
+    through your Conda installation. Simply add conda-forge to your 
+    ``.condarc`` file, which appends the appropriate URL to Conda's 
+    channel search path::
+    
+        $ conda config --add channels conda-forge 
+
+    With the conda-forge channel added, it's a simple matter to run::
+
+        $ conda install pynrc
 
 Installing with pip
 --------------------
 
-.. todo
+You can install the ``pynrc`` package through pip::
 
-    You can install the ``pynrc`` package through pip::
+    $ pip install pynrc
 
-        $ pip install pynrc
-
-    Note that the pip command only installs the program code.
-    You still must download and install the data files, 
-    as :ref:`described below <data_install>`.
+Note that the pip command only installs the program code.
+You still must download and install the data files, 
+as :ref:`described below <data_install>`.
 
 
 Installing from source
@@ -67,6 +81,8 @@ Files containing such information as the instrument throughputs,
 SCA biases and darks, stellar models, and exoplanet models are 
 distributed separately. To run ``pynrc``, you must download these 
 files and define the ``PYNRC_PATH`` environment variable.
+This is also the location that PSF coefficients will be saved to during
+normal operations of ``pynrc``.
 
 1. Download the following file: 
    `pynrc_data_v0.6.1.tar.gz <http://mips.as.arizona.edu/~jleisenring/pynrc/pynrc_data_v0.6.1.tar.gz>`_  [approx. 2.3 GB]
@@ -79,13 +95,6 @@ files and define the ``PYNRC_PATH`` environment variable.
    You will probably want to add this to your ``.bashrc``.
 
 You should now be able to successfully ``import pynrc`` in a Python session.
-
-.. warning::
-
-   If you have previously installed the data files for an earlier version 
-   of ``pynrc``, and then update to a newer version, the software may prompt 
-   you to download and install a new updated version of the data files.
-
 
 Testing
 --------

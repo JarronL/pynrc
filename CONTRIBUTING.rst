@@ -138,6 +138,28 @@ A reminder for the maintainers on how to deploy.
     
    This command also tags the release on github. Make sure to have the 
    command line token handy to enter as the requested password.
-   Double-check `stable` release of readthedocs::
+   Double-check `stable` release of readthedocs.
+   
+.. todo::
 
+    6. Release code to conda-forge
+       If you already have a conda-forge feedstock forked to your own GitHub account, first
+       edit `recipe/meta.yaml` to update the version, hash, etc. To calculate the sha256 
+       hash, run:
+   
+       ```shell
+       openssl dgst -sha256 path/to/package_name-0.1.1.tar.gz
+       ```
+   
+       Then, commit and push the yaml file to GitHub:
+   
+       ```shell
+       git pull upstream master
+       git add --all
+       git commit -m 'version bump to v0.1.1'
+       git push -u origin master
+       ```
+   
+       Finally, issue a pull request to conda-forge.
+       
 .. Travis will then deploy to PyPI if tests pass.
