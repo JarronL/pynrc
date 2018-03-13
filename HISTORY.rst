@@ -1,15 +1,27 @@
 Revision History
 ================
 
+v0.6.3 (Mar 2018)
+-----------------
+
+- First PyPI release.
+- Effectively the same as 0.6.3, but better documentation of packaging and distributing.
+
+
 v0.6.2 (Mar 2018)
 -----------------
 
-- Many things...
+- Implemented coronagraphic wedges, including arbitrary offsets along bar
+- Renamed ``obs_coronagraphy`` to ``obs_hci``
 
-v0.6.1 (Feb 2018)
------------------
+  - Faster modeling of off-axis PSFs
+  - Include coronagraphic features (e.g.: ND squares) in slope images
+  - Roll subtracted images include option to use Roll1-Roll2
+  - Fixed bug that was slowing down PSF convolution of disks
 
-- Skipped this version
+- Can now generate docs directly from Jupyter notebooks using nbsphinx extension
+- Coronagraphic tutorials for docs
+- Create the ``source_spectrum`` class to fit spectra to observed photometry.
 
 v0.6.0 (Dec 2017)
 -----------------
