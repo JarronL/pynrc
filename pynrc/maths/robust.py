@@ -2,6 +2,7 @@
 Small collection of robust statistical estimators based on functions from
 Henry Freudenriech (Hughes STX) statistics library (called ROBLIB) that have
 been incorporated into the AstroIDL User's Library.  Function included are:
+
   * biweightMean - biweighted mean estimator
   * mean - robust estimator of the mean of a data set
   * mode - robust estimate of the mode of a data set using the half-sample

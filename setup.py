@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 """A setuptools based setup module.
 See:
 https://packaging.python.org/en/latest/distributing.html
@@ -12,23 +15,74 @@ from os import path
 
 root = path.abspath(path.dirname(__file__))
 
-#with open(path.join(root, NAME, 'VERSION'), encoding='utf-8') as f:
-#    version = f.read().strip()
 from pynrc.version import __version__
 version = __version__
 
-# Get the long description from the README file
-long_description = '''
-pyNRC is a set of Python-based tools for planning observations with JWST NIRCam, 
-including an ETC, simple image slope simulator, and enhanced DMS simulator. 
-The module works for a vareity NIRCam observing modes including direct imaging, 
-coronagraphic imaging, slitless grism spectroscopy, DHS observations, and weak 
-lens imaging. All PSFs are generated via WebbPSF to reproduce realistic JWST 
-images and spectra.
+import os, sys
 
-See https://github.com/JarronL/pynrc and https://pynrc.readthedocs.io
-for more information.
-'''
+if sys.argv[-1] == 'publish':
+    os.system("python setup.py sdist upload")
+    os.system("python setup.py bdist_wheel upload")
+    print("You probably want to also tag the version now:")
+    print("  python setup.py tag")
+    sys.exit()
+
+# Requires .pypirc
+#[pypitest]
+#repository: https://test.pypi.org/legacy/
+#username: jarron
+#password: password
+if sys.argv[-1] == 'pubtest':
+    os.system("python setup.py sdist upload -r pypitest")
+    os.system("python setup.py bdist_wheel upload -r pypitest")
+    sys.exit()
+    
+if sys.argv[-1] == 'tag':
+    os.system("git tag -a v%s -m 'version %s'" % (version, version))
+    os.system("git push --follow-tags")
+#    os.system("git push")
+#    os.system("git push origin v%s" % (version))
+    sys.exit()
+
+
+if sys.argv[-1] == 'test':
+    test_requirements = [
+        'pytest',
+        'coverage'
+    ]
+    try:
+        modules = map(__import__, test_requirements)
+    except ImportError as e:
+        err_msg = e.message.replace("No module named ", "")
+        msg = "%s is not installed. Install your test requirments." % err_msg
+        raise ImportError(msg)
+        
+    print('pyNRC testing not yet implemented!!')
+    os.system('py.test')
+    sys.exit()
+
+# Get the long description from the README and HISTORY files
+with open('README.rst') as readme_file:
+    readme = readme_file.read()
+with open('HISTORY.rst') as history_file:
+    history = history_file.read()
+
+#requirements = ['Click>=6.0', ]
+requirements = ['Click>=6.0',
+          'numpy>=1.10.0',
+          'matplotlib>=1.5.0',
+          'scipy>=0.16.0',
+          'astropy>=2.0.3',
+          'pysynphot>=0.9',
+          'poppy>=0.6.1',
+          'webbpsf>=0.6.0',
+          'jwxml>=0.3.0',
+      ]
+
+setup_requirements = ['pytest-runner', ]
+
+test_requirements = ['pytest', ]
+
 
 setup(
     name='pynrc',
@@ -36,8 +90,8 @@ setup(
     # Versions should comply with PEP440.
     version=version,
 
-    description='JWST NIRCam ETC and simulation project',
-    long_description=long_description,
+    description="JWST NIRCam ETC and Simulator",
+    long_description=readme + '\n\n' + history,
 
     # The project's main homepage.
     url='https://github.com/JarronL/pynrc',
@@ -45,7 +99,7 @@ setup(
     # Author details
     author='Jarron Leisenring',
     author_email='jarronl@email.arizona.edu',
-    license='MIT',
+    license='MIT license',
     keywords='jwst nircam etc simulator',
 
     # See https://pypi.python.org/pypi?%3Aaction=list_classifiers
@@ -74,22 +128,14 @@ setup(
 
     # You can just specify the packages manually here if your project is
     # simple. Or you can use find_packages().
-    packages=find_packages(exclude=['contrib', 'docs', 'tests']),
+    #packages=find_packages(exclude=['contrib', 'docs', 'tests']),
+    packages=find_packages(include=['pynrc']),
 
     # List run-time dependencies here.  These will be installed by pip when
     # your project is installed. For an analysis of "install_requires" vs pip's
     # requirements files see:
     # https://packaging.python.org/en/latest/requirements.html
-      install_requires=[
-          'numpy>=1.10.0',
-          'matplotlib>=1.5.0',
-          'scipy>=0.16.0',
-          'astropy>=1.2.0',
-          'pysynphot>=0.9',
-          'poppy>=0.6.1',
-          'webbpsf>=0.6.0',
-          'jwxml>=0.3.0'
-      ],
+    install_requires=requirements,
 
     # List additional groups of dependencies here (e.g. development
     # dependencies). You can install these using the following syntax,
@@ -105,4 +151,9 @@ setup(
     #package_data={
     #    'pynrc': ['package_data.dat'],
     #},
+
+    setup_requires=setup_requirements,
+    test_suite='tests',
+    tests_require=test_requirements,
+    zip_safe=False,
 )

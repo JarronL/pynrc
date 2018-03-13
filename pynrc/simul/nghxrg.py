@@ -4,6 +4,7 @@ NGHXRG - Teledyne HxRG Noise Generator
 Modification History:
 
 8-15 April 2015, B.J. Rauscher, NASA/GSFC
+
 - Implement Pierre Ferruit's (ESA/ESTEC)recommendation to use
   numpy.fft.rfft and numpy.fft.irfft for faster execution. This saves
   about 30% in execution time.
@@ -23,17 +24,20 @@ Modification History:
 - Version 2(Beta)
 
 16 April 2015, B.J. Rauscher
+
 - Fixed a bug in the pinkening filter definitions. Abs() was used where
   sqrt() was intended. The bug caused power spectra to have the wrong shape at
   low frequency.
 - Version 2.1(Beta)
 
 17 April 2015, B.J. Rauscher
+
 - Implement a request from Chaz Shapiro for HXRGNoise() to exit gracefully if
   the bias_file is not found.
 - Version 2.2 (Beta)
 
 8 July 2015, B.J. Rauscher
+
 - Address PASP referee comments
     * Fast scan direction is now reversible. To reverse the slow scan
       direction use the numpy flipud() function.
@@ -45,6 +49,7 @@ Modification History:
 - Version 2.4
 
 12 Oct 2015, J.M. Leisenring, UA/Steward
+
 - Make compatible with Python 2.x
     * from __future__ import division
 - Allow pca0 & kTC noise to show up for a single frame
@@ -56,6 +61,7 @@ Modification History:
 - Version 2.5
 
 20 Oct 2015, J.M. Leisenring, UA/Steward
+
 - Padded nstep to the next power of 2 in order to improve FFT runtime
     * nstep2 = int(2**np.ceil(np.log2(nstep)))
     * Speeds up FFT calculations by ~5x
@@ -64,6 +70,7 @@ Modification History:
 - Version 2.6
 
 17 Nov 2015, J.M. Leisenring, UA/Steward
+
 - Read in bias_file rather than pca0_file
     * Calculate pca0 element by normalizing bias file
 - Include alternating column offsets (aco_a & aco_b)
@@ -71,15 +78,18 @@ Modification History:
 - Version 2.7
 
 15 Feb 2016, J.M. Leisenring, UA/Steward
+
 - Add a reference instability
     * ref pixels don't track active pixels perfectly
 - Version 2.8
 
 9 May 2016, J.M. Leisenring, UA/Steward
+
 - Each channel can have it's own read noise value
 - Version 2.9
 
 21 July 2016, J.M. Leisenring, UA/Steward
+
 - Add option to use FFTW
     * This can be faster for some processors/OS architectures
     * The decision to use this is highly dependent on the computer

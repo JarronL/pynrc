@@ -21,7 +21,7 @@ Requirements
 Installing with pip
 --------------------
 
-.. admonition:: Note: To be completed
+.. todo
 
     You can install the ``pynrc`` package through pip::
 
@@ -90,7 +90,7 @@ You should now be able to successfully ``import pynrc`` in a Python session.
 Testing
 --------
 
-.. admonition:: Note: To be completed
+.. todo::
 
     If you want to check that all the tests are running correctly with your Python
     configuration, you can also run::

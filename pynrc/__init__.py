@@ -3,8 +3,8 @@ pyNRC - Python ETC and Simulator for JWST NIRCam
 ----------------------------------------------------------------------------
 
 pyNRC is a set of Python-based tools for planning observations with JWST NIRCam, 
-such as an ETC, asimple image slope simulator, and an enhanced data simulator.
-The module works for a variety of NIRCam observing modes including direct imaging, 
+such as an ETC, a simple image slope simulator, and an enhanced data simulator.
+This package works for a variety of NIRCam observing modes including direct imaging, 
 coronagraphic imaging, slitless grism spectroscopy, DHS observations, 
 and weak lens imaging. All PSFs are generated via WebbPSF 
 (https://webbpsf.readthedocs.io) to reproduce realistic JWST images and spectra.
@@ -19,6 +19,8 @@ from .version import __version__
 import astropy
 from astropy import config as _config
 
+import tempfile
+
 class Conf(_config.ConfigNamespace):
 
     # Path to data files for pynrc. 
@@ -28,17 +30,23 @@ class Conf(_config.ConfigNamespace):
     on_rtd = os.environ.get('READTHEDOCS') == 'True'
     
     if on_rtd:
-        path = '/'
+        path = tempfile.gettempdir()
     else:
         path = os.getenv('PYNRC_PATH')
         if path is None:
             print("WARNING: Environment variable $PYNRC_PATH is not set!")
+            print("  Setting PYNRC_PATH to temporary directory.")
+            path = tempfile.gettempdir()
+            print("  {}".format(path))
             #raise EnvironmentError("Environment variable $PYNRC_PATH is not set!")
         if not os.path.isdir(path):
+            #print ("WARNING: PYNRC_PATH ({}) is not a valid directory path!".format(path))
             raise IOError("PYNRC_PATH ({}) is not a valid directory path!".format(path))
+            
+    if '/' not in path[-1]: 
         # Make sure there is a '/' at the end of the path name
-        if '/' not in path[-1]: 
-            path += '/'
+        path = path + '/'
+
     PYNRC_PATH = _config.ConfigItem(path, 'Directory path to data files \
                                     required for pynrc calculations.')
 
