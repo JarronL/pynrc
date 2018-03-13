@@ -134,6 +134,6 @@ $ make release-test
 If everything works, then upload the release to PyPI::
 
 $ make release
-
+$ python setup.py tag
 
 .. Travis will then deploy to PyPI if tests pass.
