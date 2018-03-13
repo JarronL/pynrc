@@ -15,8 +15,6 @@ from os import path
 
 root = path.abspath(path.dirname(__file__))
 
-#with open(path.join(root, NAME, 'VERSION'), encoding='utf-8') as f:
-#    version = f.read().strip()
 from pynrc.version import __version__
 version = __version__
 
@@ -28,10 +26,22 @@ if sys.argv[-1] == 'publish':
     print("You probably want to also tag the version now:")
     print("  python setup.py tag")
     sys.exit()
+
+# Requires .pypirc
+#[pypitest]
+#repository: https://test.pypi.org/legacy/
+#username: jarron
+#password: password
+if sys.argv[-1] == 'pubtest':
+    os.system("python setup.py sdist upload -r pypitest")
+    os.system("python setup.py bdist_wheel upload -r pypitest")
+    sys.exit()
     
 if sys.argv[-1] == 'tag':
-    os.system("git tag -a %s -m 'version %s'" % (version, version))
-    os.system("git push --tags")
+    os.system("git tag -a v%s -m 'version %s'" % (version, version))
+    os.system("git push --follow-tags")
+#    os.system("git push")
+#    os.system("git push origin v%s" % (version))
     sys.exit()
 
 
