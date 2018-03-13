@@ -23,8 +23,6 @@ import os, sys
 if sys.argv[-1] == 'publish':
     os.system("python setup.py sdist upload")
     os.system("python setup.py bdist_wheel upload")
-    print("You probably want to also tag the version now:")
-    print("  python setup.py tag")
     sys.exit()
 
 # Requires .pypirc
@@ -37,14 +35,7 @@ if sys.argv[-1] == 'pubtest':
     os.system("python setup.py bdist_wheel upload -r pypitest")
     sys.exit()
     
-if sys.argv[-1] == 'tag':
-    os.system("git tag -a v%s -m 'version %s'" % (version, version))
-    os.system("git push --follow-tags")
-#    os.system("git push")
-#    os.system("git push origin v%s" % (version))
-    sys.exit()
-
-
+    
 if sys.argv[-1] == 'test':
     test_requirements = [
         'pytest',
@@ -72,7 +63,7 @@ requirements = ['Click>=6.0',
           'numpy>=1.10.0',
           'matplotlib>=1.5.0',
           'scipy>=0.16.0',
-          'astropy==2',
+          'astropy<3.0',
           'pysynphot>=0.9',
           'poppy>=0.6.1',
           'webbpsf>=0.6.0',

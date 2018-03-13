@@ -122,11 +122,12 @@ A reminder for the maintainers on how to deploy.
 Make sure all your changes are committed (including an entry in HISTORY.rst).
 Update version info in pynrc.version.
 
-Generate documentation::
+Generate documentation locally::
 
 $ make docs
 
-Package a distribution and test upload the release to TestPyPI::
+Push release to github and make sure readthedocs is generated correctly.
+Then, package a distribution and test upload the release to TestPyPI::
 
 $ make release-test
 
@@ -134,8 +135,5 @@ If everything works, then upload the release to PyPI::
 
 $ make release
 
-Push release to github::
-
-$ python setup.py tag
 
 .. Travis will then deploy to PyPI if tests pass.
