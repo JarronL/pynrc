@@ -127,7 +127,8 @@ A reminder for the maintainers on how to deploy.
 
     $ make docs
 
-3. Push release to github and make sure readthedocs generates correctly.
+3. Push all updates to github and make sure readthedocs generates correctly
+   before actually submitting the release.
 4. Package a distribution and test upload the release to TestPyPI::
 
     $ make release-test
