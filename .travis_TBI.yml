@@ -22,31 +22,13 @@ env:
 
 matrix:
     include:
-        # do the actual tests against dev version of POPPY
-        # - python: 2.7
-        # - python: 3.5
-        
         # Do a coverage test in Python 3.
         - python: 3.6
-          env: SETUP_CMD='test --coverage'
+          env: SETUP_CMD='test'
 
         # Try Astropy development version
         - python: 3.6
           env: SETUP_CMD='test' ASTROPY_VERSION=development
-
-        # Try older numpy versions
-        - python: 2.7
-          env: SETUP_CMD='test' NUMPY_VERSION=1.12
-        - python: 2.7
-          env: SETUP_CMD='test' NUMPY_VERSION=1.11
-
-        # Try released POPPY
-        - python: 3.6
-          env: SETUP_CMD='test' PIP_DEPENDENCIES='webbpsf jwxml'
-
-    allow_failures:
-        # Released WebbPSF may be missing new functionality used by dev pynrc
-        - env: SETUP_CMD='test' PIP_DEPENDENCIES='webbpsf jwxml'
 
 
 # Command to install dependencies, e.g. pip install -r requirements.txt --use-mirrors
@@ -61,10 +43,9 @@ install:
     # environment. In some cases, ci-helpers may not offer enough flexibility
     # in how to install a package, in which case you can have additional
     # commands in the install: section below.
-
     - git clone git://github.com/astropy/ci-helpers.git
     - source ci-helpers/travis/setup_conda.sh
-
+    #- source ci-helpers/travis/setup_conda_$TRAVIS_OS_NAME.sh
     # As described above, using ci-helpers, you should be able to set up an
     # environment with dependencies installed using conda and pip, but in some
     # cases this may not provide enough flexibility in how to install a
@@ -74,8 +55,7 @@ install:
     # section if they are needed before setting up conda) to install any
     # other dependencies.
 
-# Command to run tests, e.g. python setup.py test
-script: tox
+script: $MAIN_CMD $SETUP_CMD
 
 # Assuming you have installed the travis-ci CLI tool, after you
 # create the Github repo and add it to Travis, run the

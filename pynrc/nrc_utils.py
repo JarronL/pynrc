@@ -2846,13 +2846,13 @@ def bp_2mass(filter):
     dir = conf.PYNRC_PATH + 'throughputs/2MASS/'
     if 'j' in filter.lower():
         file = '2mass_j.txt'
-        name = 'J'
+        name = 'J-Band'
     elif 'h' in filter.lower():
         file = '2mass_h.txt'
-        name = 'H'
+        name = 'H-Band'
     elif 'k' in filter.lower():
         file = '2mass_ks.txt'
-        name = 'Ks'
+        name = 'Ks-Band'
     else:
         raise ValueError('{} not a valid 2MASS filter'.format(filter))
     

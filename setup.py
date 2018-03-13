@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 """A setuptools based setup module.
 See:
 https://packaging.python.org/en/latest/distributing.html
@@ -17,6 +20,37 @@ root = path.abspath(path.dirname(__file__))
 from pynrc.version import __version__
 version = __version__
 
+import os, sys
+
+if sys.argv[-1] == 'publish':
+    os.system("python setup.py sdist upload")
+    os.system("python setup.py bdist_wheel upload")
+    print("You probably want to also tag the version now:")
+    print("  python setup.py tag")
+    sys.exit()
+    
+if sys.argv[-1] == 'tag':
+    os.system("git tag -a %s -m 'version %s'" % (version, version))
+    os.system("git push --tags")
+    sys.exit()
+
+
+if sys.argv[-1] == 'test':
+    test_requirements = [
+        'pytest',
+        'coverage'
+    ]
+    try:
+        modules = map(__import__, test_requirements)
+    except ImportError as e:
+        err_msg = e.message.replace("No module named ", "")
+        msg = "%s is not installed. Install your test requirments." % err_msg
+        raise ImportError(msg)
+        
+    print('pyNRC testing not yet implemented!!')
+    os.system('py.test')
+    sys.exit()
+
 # Get the long description from the README and HISTORY files
 with open('README.rst') as readme_file:
     readme = readme_file.read()
@@ -28,7 +62,7 @@ requirements = ['Click>=6.0',
           'numpy>=1.10.0',
           'matplotlib>=1.5.0',
           'scipy>=0.16.0',
-          'astropy>=1.2.0',
+          'astropy>=2.0.3',
           'pysynphot>=0.9',
           'poppy>=0.6.1',
           'webbpsf>=0.6.0',
