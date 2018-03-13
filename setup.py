@@ -31,15 +31,14 @@ if sys.argv[-1] == 'publish':
 #[pypitest]
 #repository: https://test.pypi.org/legacy/
 #username: jarron
-#password: password
+#password: ****
 if sys.argv[-1] == 'pubtest':
     os.system("python setup.py sdist upload -r pypitest")
     os.system("python setup.py bdist_wheel upload -r pypitest")
     sys.exit()
     
 if sys.argv[-1] == 'tag':
-    os.system("git tag -a v%s -m 'version %s'" % (version, version))
-    os.system("git push")
+    os.system("git tag -a v%s -m 'Release %s'" % (version, version))
     os.system("git push origin v%s" % (version))
     sys.exit()
 

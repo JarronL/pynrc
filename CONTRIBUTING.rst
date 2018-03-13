@@ -119,21 +119,25 @@ Deploying
 ---------
 
 A reminder for the maintainers on how to deploy.
-Make sure all your changes are committed (including an entry in HISTORY.rst).
-Update version info in pynrc.version.
 
-Generate documentation locally::
+1. Update version info in pynrc.version.
+   Add entries to HISTORY.rst.
+   Make sure all your changes are committed to git.
+2. Generate documentation locally::
 
-$ make docs
+    $ make docs
 
-Push release to github and make sure readthedocs is generated correctly.
-Then, package a distribution and test upload the release to TestPyPI::
+3. Push release to github and make sure readthedocs generates correctly.
+4. Package a distribution and test upload the release to TestPyPI::
 
-$ make release-test
+    $ make release-test
 
-If everything works, then upload the release to PyPI::
+5. If everything works without a hitch, then upload the release to PyPI::
 
-$ make release
-$ python setup.py tag
+    $ make release
+    
+   This command also tags the release on github. Make sure to have the 
+   command line token handy to enter as the requested password.
+   Double-check `stable` release of readthedocs::
 
 .. Travis will then deploy to PyPI if tests pass.
