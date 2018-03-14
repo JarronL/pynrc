@@ -59,3 +59,5 @@ pynrc.NIRCam
    .. automethod:: sensitivity
    .. automethod:: update_detectors
    .. automethod:: update_psf_coeff
+
+

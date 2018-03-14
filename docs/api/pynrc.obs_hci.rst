@@ -1,4 +1,4 @@
-pynrc.obs_hci
+pynrc.nrc_hci
 ======================
 
 .. currentmodule:: pynrc
@@ -20,7 +20,6 @@ pynrc.obs_hci
       ~obs_hci.add_planet
       ~obs_hci.kill_planets
       ~obs_hci.calc_contrast
-      ~obs_hci.gen_offset_psf
       ~obs_hci.gen_disk_image
       ~obs_hci.gen_planets_image
       ~obs_hci.gen_roll_image
@@ -33,7 +32,6 @@ pynrc.obs_hci
    .. automethod:: add_planet
    .. automethod:: kill_planets
    .. automethod:: calc_contrast
-   .. automethod:: gen_offset_psf
    .. automethod:: gen_disk_image
    .. automethod:: gen_planets_image
    .. automethod:: gen_roll_image

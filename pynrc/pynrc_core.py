@@ -1651,7 +1651,7 @@ class NIRCam(object):
         wfe_drift = self._wfe_drift
         if wfe_drift>0:
             _log.info('Updating WFE drift ({}nm) for fov_pix={} and oversample={}'.\
-                format(wfe_drift,fov_pix,oversample))
+                      format(wfe_drift,fov_pix,oversample))
             wfe_kwargs = dict(self._psf_info)
             wfe_kwargs['pupil']  = self.pupil
             wfe_kwargs['mask']   = self.mask
@@ -1697,13 +1697,27 @@ class NIRCam(object):
         # generate another background PSF for sensitivity information.
         # It's easiest just to ALWAYS do a small footprint without the
         # coronagraphic mask and save the PSF coefficients. 
-        # For now, we exclude any WFE drift for the bg PSF.
         if self.mask is not None:
             self._psf_info_bg = {'fov_pix':self._fov_pix_bg, 'oversample':oversample, 
                 'offset_r':0, 'offset_theta':0, 'tel_pupil':tel_pupil, 
                 'opd':opd, 'jitter':None, 'save':True, 'force':False}
             self._psf_coeff_bg = psf_coeff(self.bandpass, self.pupil, None, self.module, 
                 **self._psf_info_bg)
+
+            # Update off-axis WFE drift
+            if wfe_drift>0:
+                wfe_kwargs = dict(self._psf_info_bg)
+                wfe_kwargs['pupil']  = self.pupil
+                wfe_kwargs['mask']   = None
+                wfe_kwargs['module'] = self.module
+                #del wfe_kwargs['save'], wfe_kwargs['force']
+
+                wfe_cf = wfed_coeff(self.bandpass, **wfe_kwargs)
+                cf_fit = wfe_cf.reshape([wfe_cf.shape[0], -1])
+                cf_mod = jl_poly(np.array([wfe_drift]), cf_fit)
+                cf_mod = cf_mod.reshape(self._psf_coeff.shape)
+                self._psf_coeff_bg += cf_mod
+
         else:
             self._psf_info_bg  = self._psf_info
             self._psf_coeff_bg = self._psf_coeff
@@ -2071,7 +2085,7 @@ class NIRCam(object):
         sp : :mod:`pysynphot.spectrum`, None
             A pysynphot spectral object. If not specified, then it is
             assumed that we're looking at blank sky.
-        targ_name     : str, None
+        targ_name : str, None
             A target name for the exposure file's header.
         file_out : str, None
             Path and name of output FITs files. Time stamps will

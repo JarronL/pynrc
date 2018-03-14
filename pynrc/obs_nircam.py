@@ -15,36 +15,15 @@ _log = logging.getLogger('pynrc')
 
 eps = np.finfo(float).eps
 
-class obs_hci(NIRCam):
+class nrc_hci(NIRCam):
     """NIRCam coronagraphy (and direct imaging)
-    
-    Subclass of the NIRCam instrument class used to observe stars 
-    (plus exoplanets and disks) with either a coronagraph or direct 
-    imaging. 
-    
-    The main concept is to generate a science target of the primary
-    source along with a simulated disk structure. Planets are further
-    added to the astronomical scene. A separate reference source is 
-    also defined for PSF subtraction, which contains a specified WFE. 
-    A variety of methods exist to generate slope images and analyze 
-    the PSF-subtracted results via images and contrast curves.
+
+    Subclass of the :mod:`~pynrc.NIRCam` instrument class with updates for PSF 
+    geneation of off-axis PSFs. If a coronagraph is not present,
+    then this is effetively the same as the :mod:`~pynrc.NIRCam` class.
 
     Parameters
     ----------
-    sp_sci : :mod:`pysynphot.spectrum`
-        A pysynphot spectrum of science target (e.g., central star).
-        Should already be normalized to the apparent flux.
-    sp_ref : :mod:`pysynphot.spectrum`
-        A pysynphot spectrum of reference target.
-        Should already be normalized to the apparent flux.
-    distance : float
-        Distance in parsecs to the science target. This is used for
-        flux normalization of the planets and disk.
-    wfe_ref_drift: float
-        WFE drift in nm between the science and reference targets.
-        Expected values are between ~3-10 nm.
-    wfe_ref_drift: float
-        WFE drift in nm between science roll angles. Default=0.
     wind_mode : str
         'FULL', 'STRIPE', or 'WINDOW'
     xpix : int
@@ -55,15 +34,10 @@ class obs_hci(NIRCam):
         Size of the detector readout along the y-axis. The detector is
         assumed to be in window mode  unless the user explicitly 
         sets wind_mode='FULL'.
-    disk_hdu : HDUList
-        A model of the disk in photons/sec. This requires header
-        keywords PIXSCALE (in arcsec/pixel) and DISTANCE (in pc).
-        
+
     """
-    
-    def __init__(self, sp_sci, sp_ref, distance, wfe_ref_drift=10, wfe_roll_drift=0,
-        offset_list=None, wind_mode='WINDOW', xpix=320, ypix=320, disk_hdu=None, 
-        verbose=False, **kwargs):
+
+    def __init__(self, wind_mode='WINDOW', xpix=320, ypix=320, verbose=False, **kwargs):
                  
         if 'FULL'   in wind_mode: xpix = ypix = 2048
         if 'STRIPE' in wind_mode: xpix = 2048
@@ -71,20 +45,6 @@ class obs_hci(NIRCam):
         #super(NIRCam,self).__init__(**kwargs)
         # Not sure if this works for both Python 2 and 3
         NIRCam.__init__(self, wind_mode=wind_mode, xpix=xpix, ypix=ypix, **kwargs)
-
-        if (wind_mode=='FULL') and (self.channel=='SW'):
-            raise NotImplementedError('SW Full Frame not yet implemented.')
-
-        # Spectral models
-        self.sp_sci = sp_sci
-        self.sp_ref = sp_ref
-        self._wfe_ref_drift = wfe_ref_drift
-        self.wfe_roll_drift = wfe_roll_drift
-
-        
-        # Distance to source in pc
-        self.distance = distance
-        self._planets = []
 
         # Background/off-axis PSF coeff updates
         # -------------------------------------
@@ -97,9 +57,6 @@ class obs_hci(NIRCam):
             setup_logging('WARN', verbose=False)
             self.update_psf_coeff()
             setup_logging(log_prev, verbose=False)
-            
-        # Create mask throughput images seen by each detector
-        self._gen_cmask()
 
         # Cached PSFs
         # -----------
@@ -120,73 +77,8 @@ class obs_hci(NIRCam):
             _, psf = self.gen_psf(return_oversample=True, use_bg_psf=True)
             self.psf_offaxis_over = psf
         
-        # PSFs at each offset position
-        # Only necessary if there is a disk or extended object.
-        if disk_hdu is not None:
-            if verbose: print("Generating PSFs for disk convolution...")
-
-            # Offsets positions to build PSFs as we move away from mask
-            # For bar masks, these PSFs are offset along the center of the bar.
-            if self.mask is None:
-                # if no coronagraphic mask, then only 1 PSF
-                self.offset_list = [0.0]
-                if offset_list is not None:
-                    print('No coronagraph, so offset_list automatically set to [0.0].')
-            elif offset_list is None:
-                self.offset_list = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 1.0, 0.75, 1.5, 2.0, 5.0]
-            else:
-                self.offset_list = offset_list
-
-            self._gen_psf_list()
-        
-        self._gen_ref(verbose=verbose)
-        self._set_xypos()
-        
-        # Rescale input disk image to observation parameters
-        self._disk_hdulist_input = disk_hdu
-        self._gen_disk_hdulist()
-        
         if verbose: print("Finished.")
 
-    @property
-    def wfe_drift(self):
-        """WFE drift relative to nominal PSF (nm)"""
-        return self._wfe_drift
-    @wfe_drift.setter
-    def wfe_drift(self, value):
-        """Set the WFE drift value and update coefficients"""
-        # Only update if the value changes
-        _log.warning("Are you sure you don't mean wfe_ref_drift?")
-        vold = self._wfe_drift; self._wfe_drift = value
-        if vold != self._wfe_drift: 
-            self.update_psf_coeff(wfe_drift=self._wfe_drift)
-    
-    def _set_wfe_drift(self, value, no_warn=True):
-        """
-        Similar to wfe_drift setter, but prevents warnings.
-        Kind of a kludge. Make a better solution later?
-        """
-        if no_warn:
-            log_prev = conf.logging_level
-            setup_logging('ERROR', verbose=False)
-            self.wfe_drift = value
-            setup_logging(log_prev, verbose=False)
-        else:
-            self.wfe_drift = value
-
-        
-    @property
-    def wfe_ref_drift(self):
-        """WFE drift (nm) of ref obs relative to sci obs"""
-        return self._wfe_ref_drift
-    @wfe_ref_drift.setter
-    def wfe_ref_drift(self, value):
-        """Set the WFE drift value (updates self.nrc_ref)"""
-        # Only update if the value changes
-        vold = self._wfe_ref_drift; self._wfe_ref_drift = value
-        if vold != self._wfe_ref_drift: 
-            self._gen_ref()
-            
     def gen_offset_psf(self, offset_r, offset_theta, sp=None, return_oversample=False):
         """Create a PSF offset from center FoV
         
@@ -243,7 +135,6 @@ class obs_hci(NIRCam):
             fov_pix = self.psf_info['fov_pix']
             return krebin(psf, (fov_pix,fov_pix))
 
-        
     def _psf_lin_comb(self, offset_r, offset_theta, psf_center=None, psf_offaxis=None):
         """
         Linearly combine off-axis and occulted PSFs.
@@ -327,6 +218,192 @@ class obs_hci(NIRCam):
 
         return res
         
+    def _gen_psfbar_list(self):
+        """
+        Create instances of NIRCam PSFs that are incrementally offset 
+        along the center of a coronagraphic wedge mask.
+        """
+        
+        # Check that a bar mask is selected, otherwise exit
+        if (self.mask is None) or (not self.mask[-1]=='B'):
+            _log.warning('Bar mask not currently set (self.mask={}). Returning.'\
+                         .format(self.mask))
+            return
+        
+        xoff_arcsec_max = 10
+        
+        # Detector size
+        xpix = self.det_info['xpix']
+        xasec_half = np.ceil(xpix * self.pix_scale / 2)
+        
+        # Choose minimum of full field or selected window size
+        xoff_asec = np.min([xasec_half, xoff_arcsec_max])
+        
+        # Offset values to create new PSF
+        del_off = 2
+        offset_vals = np.arange(-xoff_asec, xoff_asec+del_off, del_off)
+        
+        # Original offset value for observation
+        baroff_orig = self.bar_offset
+        
+        # Loop through offset locations and save PSFs
+        psf_list = []
+        for offset in offset_vals:
+            #print(offset)
+            self.bar_offset = offset
+            _, psf = self.gen_psf(return_oversample=True, use_bg_psf=False)
+            psf_list.append(psf)
+        
+        # Return to original bar offset position
+        self.bar_offset = baroff_orig
+        
+        self.psf_center_offsets = offset_vals
+        self.psf_center_over = psf_list
+            
+
+
+    
+class obs_hci(nrc_hci):
+    """NIRCam coronagraphic observations
+    
+    Subclass of the :mod:`~pynrc.nrc_hci` instrument class used to observe 
+    stars (plus exoplanets and disks) with either a coronagraph or direct 
+    imaging. 
+    
+    The main concept is to generate a science target of the primary
+    source along with a simulated disk structure. Planets are further
+    added to the astronomical scene. A separate reference source is 
+    also defined for PSF subtraction, which contains a specified WFE. 
+    A variety of methods exist to generate slope images and analyze 
+    the PSF-subtracted results via images and contrast curves.
+
+    Parameters
+    ----------
+    sp_sci : :mod:`pysynphot.spectrum`
+        A pysynphot spectrum of science target (e.g., central star).
+        Should already be normalized to the apparent flux.
+    sp_ref : :mod:`pysynphot.spectrum` or None
+        A pysynphot spectrum of reference target.
+        Should already be normalized to the apparent flux.
+    distance : float
+        Distance in parsecs to the science target. This is used for
+        flux normalization of the planets and disk.
+    wfe_ref_drift: float
+        WFE drift in nm between the science and reference targets.
+        Expected values are between ~3-10 nm.
+    wfe_ref_drift: float
+        WFE drift in nm between science roll angles. Default=0.
+    wind_mode : str
+        'FULL', 'STRIPE', or 'WINDOW'
+    xpix : int
+        Size of the detector readout along the x-axis. The detector is
+        assumed to be in window mode  unless the user explicitly 
+        sets wind_mode='FULL'.
+    ypix : int
+        Size of the detector readout along the y-axis. The detector is
+        assumed to be in window mode  unless the user explicitly 
+        sets wind_mode='FULL'.
+    disk_hdu : HDUList
+        A model of the disk in photons/sec. This requires header
+        keywords PIXSCALE (in arcsec/pixel) and DISTANCE (in pc).
+        
+    """
+    
+    def __init__(self, sp_sci, sp_ref, distance, wfe_ref_drift=10, wfe_roll_drift=0,
+        offset_list=None, wind_mode='WINDOW', xpix=320, ypix=320, disk_hdu=None, 
+        verbose=False, **kwargs):
+                 
+        if 'FULL'   in wind_mode: xpix = ypix = 2048
+        if 'STRIPE' in wind_mode: xpix = 2048
+                
+        #super(NIRCam,self).__init__(**kwargs)
+        # Not sure if this works for both Python 2 and 3
+        nrc_hci.__init__(self, wind_mode=wind_mode, xpix=xpix, ypix=ypix, 
+                         verbose=verbose, **kwargs)
+
+        if (wind_mode=='FULL') and (self.channel=='SW'):
+            raise NotImplementedError('SW Full Frame not yet implemented.')
+
+        # Spectral models
+        self.sp_sci = sp_sci
+        self.sp_ref = sp_ref
+        self._wfe_ref_drift = wfe_ref_drift
+        self.wfe_roll_drift = wfe_roll_drift
+        
+        # Distance to source in pc
+        self.distance = distance
+        self._planets = []
+            
+        # PSFs at each offset position
+        # Only necessary if there is a disk or extended object.
+        if disk_hdu is not None:
+            if verbose: print("Generating PSFs for disk convolution...")
+
+            # Offsets positions to build PSFs as we move away from mask
+            # For bar masks, these PSFs are offset along the center of the bar.
+            if self.mask is None:
+                # if no coronagraphic mask, then only 1 PSF
+                self.offset_list = [0.0]
+                if offset_list is not None:
+                    print('No coronagraph, so offset_list automatically set to [0.0].')
+            elif offset_list is None:
+                self.offset_list = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 1.0, 0.75, 1.5, 2.0, 5.0]
+            else:
+                self.offset_list = offset_list
+
+            self._gen_psf_list()
+        
+        self._gen_ref(verbose=verbose)
+
+        # Set locations based on detector
+        self._set_xypos()
+        # Create mask throughput images seen by each detector
+        self._gen_cmask()
+        
+        # Rescale input disk image to observation parameters
+        self._disk_hdulist_input = disk_hdu
+        self._gen_disk_hdulist()
+        
+        if verbose: print("Finished.")
+
+    @property
+    def wfe_drift(self):
+        """WFE drift relative to nominal PSF (nm)"""
+        return self._wfe_drift
+    @wfe_drift.setter
+    def wfe_drift(self, value):
+        """Set the WFE drift value and update coefficients"""
+        # Only update if the value changes
+        _log.warning("Are you sure you don't mean wfe_ref_drift?")
+        vold = self._wfe_drift; self._wfe_drift = value
+        if vold != self._wfe_drift: 
+            self.update_psf_coeff(wfe_drift=self._wfe_drift)
+    
+    def _set_wfe_drift(self, value, no_warn=True):
+        """
+        Similar to wfe_drift setter, but prevents warnings.
+        Kind of a kludge. Make a better solution later?
+        """
+        if no_warn:
+            log_prev = conf.logging_level
+            setup_logging('ERROR', verbose=False)
+            self.wfe_drift = value
+            setup_logging(log_prev, verbose=False)
+        else:
+            self.wfe_drift = value
+
+        
+    @property
+    def wfe_ref_drift(self):
+        """WFE drift (nm) of ref obs relative to sci obs"""
+        return self._wfe_ref_drift
+    @wfe_ref_drift.setter
+    def wfe_ref_drift(self, value):
+        """Set the WFE drift value (updates self.nrc_ref)"""
+        # Only update if the value changes
+        vold = self._wfe_ref_drift; self._wfe_ref_drift = value
+        if vold != self._wfe_ref_drift: 
+            self._gen_ref()
 
     def _gen_disk_hdulist(self):
         """Create a correctly scaled disk model image.
@@ -384,11 +461,11 @@ class obs_hci(NIRCam):
             self.nrc_ref.wfe_drift = self.wfe_ref_drift
         except AttributeError:
             if verbose: print("Creating NIRCam reference class...")
-            nrc = NIRCam(self.filter, self.pupil, self.mask, module=self.module, \
-                         wind_mode=wind_mode, xpix=xpix, ypix=ypix, \
-                         fov_pix=fov_pix, oversample=oversample, opd=opd,
-                         offset_r=offset_r, offset_theta=offset_theta,
-                         wfe_drift=self.wfe_ref_drift, bar_offset=self.bar_offset)
+            nrc = nrc_hci(filter=self.filter, pupil=self.pupil, mask=self.mask, 
+                          module=self.module, wind_mode=wind_mode, xpix=xpix, ypix=ypix,
+                          fov_pix=fov_pix, oversample=oversample, opd=opd,
+                          offset_r=offset_r, offset_theta=offset_theta,
+                          wfe_drift=self.wfe_ref_drift, bar_offset=self.bar_offset)
             self.nrc_ref = nrc
 
         
@@ -411,49 +488,6 @@ class obs_hci(NIRCam):
             self.bar_offset = 0
             self.psf_list = [self.gen_offset_psf(offset, 0) for offset in self.offset_list]
             self.bar_offset = baroff_orig
-
-    def _gen_psfbar_list(self):
-        """
-        Create instances of NIRCam PSFs that are incrementally offset 
-        along the center of a coronagraphic wedge mask.
-        """
-        
-        # Check that a bar mask is selected, otherwise exit
-        if (self.mask is None) or (not self.mask[-1]=='B'):
-            _log.warning('Bar mask not currently set (self.mask={}). Returning.'\
-                         .format(self.mask))
-            return
-        
-        xoff_arcsec_max = 10
-        
-        # Detector size
-        xpix = self.det_info['xpix']
-        xasec_half = np.ceil(xpix * self.pix_scale / 2)
-        
-        # Choose minimum of full field or selected window size
-        xoff_asec = np.min([xasec_half, xoff_arcsec_max])
-        
-        # Offset values to create new PSF
-        del_off = 2
-        offset_vals = np.arange(-xoff_asec, xoff_asec+del_off, del_off)
-        
-        # Original offset value for observation
-        baroff_orig = self.bar_offset
-        
-        # Loop through offset locations and save PSFs
-        psf_list = []
-        for offset in offset_vals:
-            #print(offset)
-            self.bar_offset = offset
-            _, psf = self.gen_psf(return_oversample=True, use_bg_psf=False)
-            psf_list.append(psf)
-        
-        # Return to original bar offset position
-        self.bar_offset = baroff_orig
-        
-        self.psf_center_offsets = offset_vals
-        self.psf_center_over = psf_list
-            
 
     def _set_xypos(self):
         """

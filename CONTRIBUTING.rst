@@ -163,4 +163,10 @@ A reminder for the maintainers on how to deploy.
    
        Finally, issue a pull request to conda-forge.
        
+7. At end of all this, double-check the build environments at
+   https://readthedocs.org/projects/pynrc/builds/. For whatever reason,
+   it is common for there to be an OSError and the build to fail.
+   Resetting the environment at https://readthedocs.org/projects/pynrc/versions/
+   tends to fix this issue. Build times take about 5 minutes.
+       
 .. Travis will then deploy to PyPI if tests pass.

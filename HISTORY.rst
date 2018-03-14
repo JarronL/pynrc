@@ -1,6 +1,15 @@
 Revision History
 ================
 
+v0.6.4 (Mar 2018)
+-----------------
+
+- Off-axis PSFs now get drifted in the same way as their on-axis
+  counterparts.
+- Created an intermediate :mod:`~pynrc.nrc_hci` class to enable
+  offsets of WFE drifted PSFs.
+
+
 v0.6.3 (Mar 2018)
 -----------------
 
@@ -12,7 +21,7 @@ v0.6.2 (Mar 2018)
 -----------------
 
 - Implemented coronagraphic wedges, including arbitrary offsets along bar
-- Renamed ``obs_coronagraphy`` to ``obs_hci``
+- Renamed ``obs_coronagraphy`` to :mod:`~pynrc.obs_hci`
 
   - Faster modeling of off-axis PSFs
   - Include coronagraphic features (e.g.: ND squares) in slope images
