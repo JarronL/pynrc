@@ -1,6 +1,12 @@
 Revision History
 ================
 
+v0.6.5 (Mar 2018)
+-----------------
+
+- Fixed a critical bug where the off-axis PSF size was incorrect
+  when performing WFE drift calculations.
+
 v0.6.4 (Mar 2018)
 -----------------
 
