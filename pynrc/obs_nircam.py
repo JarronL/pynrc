@@ -465,8 +465,9 @@ class obs_hci(nrc_hci):
                           module=self.module, wind_mode=wind_mode, xpix=xpix, ypix=ypix,
                           fov_pix=fov_pix, oversample=oversample, opd=opd,
                           offset_r=offset_r, offset_theta=offset_theta,
-                          wfe_drift=self.wfe_ref_drift, bar_offset=self.bar_offset)
+                          wfe_drift=0, bar_offset=self.bar_offset)
             self.nrc_ref = nrc
+            self.nrc_ref.wfe_drift = self.wfe_ref_drift
 
         
     def _gen_psf_list(self):

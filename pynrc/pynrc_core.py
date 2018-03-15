@@ -1715,7 +1715,7 @@ class NIRCam(object):
                 wfe_cf = wfed_coeff(self.bandpass, **wfe_kwargs)
                 cf_fit = wfe_cf.reshape([wfe_cf.shape[0], -1])
                 cf_mod = jl_poly(np.array([wfe_drift]), cf_fit)
-                cf_mod = cf_mod.reshape(self._psf_coeff.shape)
+                cf_mod = cf_mod.reshape(self._psf_coeff_bg.shape)
                 self._psf_coeff_bg += cf_mod
 
         else:
