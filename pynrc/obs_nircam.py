@@ -555,7 +555,7 @@ class obs_hci(nrc_hci):
         atmo : str
             A string consisting of one of four atmosphere types:
             ['hy1s', 'hy3s', 'cf1s', 'cf3s'].
-        mass: int
+        mass: float
             Number 1 to 15 Jupiter masses.
         age: float
             Age in millions of years (1-1000).

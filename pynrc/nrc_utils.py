@@ -3566,7 +3566,7 @@ class source_spectrum(object):
     """
 
     def __init__(self, name, sptype, mag_val, bp, votable_file,
-                 Teff=None, metallicity=None, log_g=None, **kwargs):
+                 Teff=None, metallicity=None, log_g=None, Av=None, **kwargs):
 
         self.name = name
 
@@ -3579,6 +3579,17 @@ class source_spectrum(object):
         # Read in a low res version for photometry matching
         kwargs['res'] = 200
         self.sp_lowres = stellar_spectrum(sptype, mag_val, 'vegamag', bp, **kwargs)
+        
+        if Av is not None:
+            Rv = 4
+            self.sp0 = self.sp0 * S.Extinction(Av/Rv,name='mwrv4')
+            self.sp_lowres = self.sp_lowres * S.Extinction(Av/Rv,name='mwrv4')
+
+            self.sp0 = self.sp0.renorm(mag_val, 'vegamag', bp)
+            self.sp_lowres = self.sp_lowres.renorm(mag_val, 'vegamag', bp)
+
+            self.sp0.name = sptype
+            self.sp_lowres.name = sptype
         
         # Init model to None
         self.sp_model = None
