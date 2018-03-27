@@ -978,7 +978,7 @@ class obs_hci(nrc_hci):
         
         return obs.effstim(fluxunit)
 
-    def _fix_sat_im(self, image, sat_val=0.8, **kwargs):
+    def _fix_sat_im(self, image, sat_val=0.9, **kwargs):
         """Fix saturated region of an image
         
         
@@ -1008,7 +1008,7 @@ class obs_hci(nrc_hci):
             Number of iterations for fixing NaNs. Default=5.
         """
 
-        sat_level = self.saturation_levels(self, image=image, **kwargs)
+        sat_level = self.saturation_levels(image=image, **kwargs)
         sat_mask = sat_level > sat_val
         image[sat_mask] = np.nan
         image = fix_nans_with_med(image, **kwargs)
@@ -1356,7 +1356,7 @@ class obs_hci(nrc_hci):
         return hdulist
 
     def gen_roll_image(self, PA1=0, PA2=10, zfact=None, oversample=None, 
-        no_ref=False, opt_diff=True, fix_sat=False, **kwargs):
+        no_ref=False, opt_diff=True, fix_sat=False, ref_scale_all=False, **kwargs):
         """Make roll-subtracted image.
         
         Create a final roll-subtracted slope image based on current observation
@@ -1391,6 +1391,13 @@ class obs_hci(nrc_hci):
             Optimal reference differencing (scaling only on the inner regions)
         fix_sat : bool
             Calculate saturated regions and fix with median of nearby data.
+        ref_scale_all : bool
+            Normally we just use the science and reference PSFs to calculate
+            scaling. However, if there is an unresolved companion or disk
+            emission close to the star, then we won't get the correct scale
+            factor for optimal reference subtraction. Instead, this option
+            inludes disk and companions for calculating the reference scale
+            factor. 
             
         Keyword Args
         ------------
@@ -1463,9 +1470,12 @@ class obs_hci(nrc_hci):
         im_star = sci.gen_psf(self.sp_sci, return_oversample=False)
         im_star_sub = pad_or_cut_to_size(im_star, sub_shape)
         im_star = pad_or_cut_to_size(im_star, image_shape)
-        im_star = fshift(im_star, delx=delx, dely=dely, pad=True)
-                
+        im_star = fshift(im_star, delx=delx, dely=dely, pad=True)   
         im_roll1 = self.gen_slope_image(PA=PA1, im_star=im_star, **kwargs)
+        
+        if ref_scale_all:
+            im_star_sub = fshift(im_roll1, delx=-delx, dely=-dely, pad=True)
+            im_star_sub = pad_or_cut_to_size(im_star_sub, sub_shape)
         
         # Fix saturated pixels
         if fix_sat:  
@@ -1481,11 +1491,11 @@ class obs_hci(nrc_hci):
             
             # Change self.wfe_drift, gen image, and return wfe_drift
             if np.abs(self.wfe_roll_drift) > eps:
-                im_roll2 = self.gen_slope_image(PA=PA2, im_star=im_star, **kwargs)
-            else:
                 self._set_wfe_drift(wfe_drift2)
                 im_roll2 = self.gen_slope_image(PA=PA2, **kwargs)
                 self._set_wfe_drift(wfe_drift1)
+            else:
+                im_roll2 = self.gen_slope_image(PA=PA2, im_star=im_star, **kwargs)
             
             # Fix saturated pixels
             if fix_sat:  
@@ -1534,7 +1544,7 @@ class obs_hci(nrc_hci):
         im_ref = fshift(im_ref, delx=delx, dely=dely, pad=True)
         
         # With noise
-        im_ref = self.gen_slope_image(do_ref=True, im_star=im_ref, **kwargs)
+        im_ref = self.gen_slope_image(im_star=im_ref, do_ref=True, **kwargs)
 
         # Fix saturated pixels
         if fix_sat:  
@@ -1569,6 +1579,10 @@ class obs_hci(nrc_hci):
                 im_star2_sub = im_star_sub
             im_roll2 = self.gen_slope_image(PA=PA2, im_star=im_star2, **kwargs)
             self._set_wfe_drift(wfe_drift1)
+
+            if ref_scale_all:
+                im_star2_sub = fshift(im_roll2, delx=-delx, dely=-dely, pad=True)
+                im_star2_sub = pad_or_cut_to_size(im_star2_sub, sub_shape)
 
             # Fix saturated pixels
             if fix_sat:  
@@ -1612,20 +1626,22 @@ class obs_hci(nrc_hci):
             final1 = (diff1_r1_rot + diff1_r2_rot) / 2
             final2 = (diff2_r1_rot + diff2_r2_rot) / 2
             
+
             if opt_diff:
                 rho = dist_image(final1)
                 binsize = 1
                 bins = np.arange(rho.min(), rho.max() + binsize, binsize)
 
-                nan_mask = np.isnan(final1)
-                igroups = hist_indices(rho[~nan_mask], bins)
+                nan_mask = np.isnan(final1) | np.isnan(final2)
+                igroups, _, rr = hist_indices(rho[~nan_mask], bins, True)
 
-                std1 = binned_statistic(igroups, final1[~nan_mask], func=np.std)
-                std2 = binned_statistic(igroups, final2[~nan_mask], func=np.std)
+                func_std = np.std #robust.medabsdev
+                std1 = binned_statistic(igroups, final1[~nan_mask], func=func_std)
+                std2 = binned_statistic(igroups, final2[~nan_mask], func=func_std)
                 
                 ibin_better = np.where(std1 < std2)[0]
                 for ibin in ibin_better:
-                    final2.ravel()[igroups[ibin]] = final1.ravel()[igroups[ibin]]
+                    final2[~nan_mask][igroups[ibin]] = final1[~nan_mask][igroups[ibin]]
                     
             final = final2
 
@@ -1652,7 +1668,8 @@ class obs_hci(nrc_hci):
         return hdulist
 
     def calc_contrast(self, hdu_diff=None, roll_angle=10, nsig=1, 
-        exclude_disk=True, exclude_planets=True, no_ref=False, **kwargs):
+        exclude_disk=True, exclude_planets=True, no_ref=False, 
+        func_std=np.std, **kwargs):
         """Create contrast curve.
         
         Generate n-sigma contrast curve for the current observation settings.
@@ -1679,6 +1696,8 @@ class obs_hci(nrc_hci):
             Ignore planets when generating image?
         no_ref : bool
             Exclude reference observation. Subtraction is then Roll1-Roll2.
+        func_std : func
+            The function to use for calculating the radial standard deviation. 
         
         Keyword Args
         ------------
@@ -1701,6 +1720,7 @@ class obs_hci(nrc_hci):
 
         # If no HDUList is passed, then create one
         if hdu_diff is None:
+            roll_angle = 0 if roll_angle is None else roll_angle
             PA1 = 0
             PA2 = None if abs(roll_angle) < eps else roll_angle
             hdu_diff = self.gen_roll_image(PA1=PA1, PA2=PA2, exclude_disk=exclude_disk, 
@@ -1720,7 +1740,7 @@ class obs_hci(nrc_hci):
         bins = np.arange(rho.min(), rho.max() + binsize, binsize)
         nan_mask = np.isnan(data_rebin)
         igroups, _, rr = hist_indices(rho[~nan_mask], bins, True)
-        stds = binned_statistic(igroups, data_rebin[~nan_mask], func=robust.medabsdev)
+        stds = binned_statistic(igroups, data_rebin[~nan_mask], func=func_std)
         stds = convolve(stds, Gaussian1DKernel(1))
 
         # Ignore corner regions
@@ -1736,22 +1756,23 @@ class obs_hci(nrc_hci):
             
             off_vals = []
             max_vals = []
-            xvals = np.arange(1,xpix/2,5)
-            for j, roff in enumerate(xvals):
-                psf1 = self.gen_offset_psf(roff, 0, return_oversample=False)
-                psf2 = self.gen_offset_psf(roff, roll_angle, return_oversample=False)
+            rvals_pix = np.arange(1,xpix/2,5)
+            for j, roff_pix in enumerate(rvals_pix):
+                roff_asec = roff_pix * pixscale
+                psf1 = self.gen_offset_psf(roff_asec, 0, return_oversample=False)
+                psf2 = self.gen_offset_psf(roff_asec, roll_angle, return_oversample=False)
                 
-                psf1 = fshift(psf1, delx=0, dely=roff, pad=False)
-                xoff, yoff = xy_rot(0, roff, 10)
+                psf1 = fshift(psf1, delx=0, dely=roff_pix, pad=False)
+                xoff, yoff = xy_rot(0, roff_pix, 10)
                 psf2 = fshift(psf2, delx=xoff, dely=yoff, pad=False)
                 
                 diff = psf1 - psf2
                 maxv = diff.max()
                 
-                off_vals.append(roff)
+                off_vals.append(roff_pix)
                 max_vals.append(maxv)
                 if maxv >= 0.95*psf1.max():
-                    off_vals = [0] + off_vals + [roff+5, xpix/2]
+                    off_vals = [0] + off_vals + [roff_pix+5, xpix/2]
                     max_vals = [0] + max_vals + [psf1.max(), psf1.max()]
                     break
                     
@@ -1816,6 +1837,8 @@ class obs_hci(nrc_hci):
             psf_max = np.array([np.max(psf_offaxis*a + psf_center*b) 
                                 for a,b in zip(avals,bvals)])
             psf_max[rr>10] = psf_max[rr<10].max()
+
+        #plt.plot(rr[rr<3], psf_max[rr<3])
 
         
         # We also want to know the Poisson noise for the PSF values.
@@ -1937,7 +1960,7 @@ class obs_hci(nrc_hci):
 
         # Get rid of disk and planet emission
         # while keeping their noise contribution
-        if exclude_disk: im_final -= im_disk
+        if exclude_disk:    im_final -= im_disk
         if exclude_planets: im_final -= im_pl
         
         return im_final
@@ -2113,14 +2136,20 @@ def model_to_hdulist(args_model, sp_star, filter_or_bp,
         units_pysyn = S.units.Jy()
 
     # Convert from input units to photlam (photons/sec/cm^2/A/angular size)
-    # Compare observed wavelength to image wavelength
-    wave_obs = bp.avgwave() # Current bandpass wavelength
     im = units_pysyn.ToPhotlam(wave0, hdulist[0].data)
 
     # We want to assume scattering is flat in photons/sec/A
     # This means everything scales with stellar continuum
-    sp_star.convert('photlam') 
-    im *= sp_star.sample(wave_obs) / sp_star.sample(wave0)
+    sp_star.convert('photlam')
+    wstar, fstar = (sp_star.wave/1e4, sp_star.flux)
+
+    # Compare observed wavelength to image wavelength
+    wobs_um = bp.avgwave() / 1e4 # Current bandpass wavelength
+
+    wdel = np.linspace(-0.1,0.1)
+    f_obs = np.interp(wobs_um+wdel, wstar, fstar)
+    f0    = np.interp(wave_um+wdel, wstar, fstar)
+    im *= np.mean(f_obs / f0)
 
     # Convert to photons/sec/pixel
     im *= bp.equivwidth() * S.refs.PRIMARY_AREA
@@ -2380,7 +2409,7 @@ def plot_hdulist(hdulist, xr=None, yr=None, ax=None, return_ax=False,
     
     data = hdulist[0].data
     if vmax is None:
-        vmax = 0.75 * data.max() if scale=='linear' else vmax
+        vmax = 0.75 * np.nanmax(data) if scale=='linear' else vmax
     if vmin is None:
         vmin = 0 if scale=='linear' else vmax/1e6
 
