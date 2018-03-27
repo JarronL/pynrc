@@ -3829,6 +3829,14 @@ class source_spectrum(object):
         # Convert to Jy and save original units
         sp0_units = sp0.fluxunits.name
         sp_phot_units = sp_phot.fluxunits.name
+        
+        # nuFnu or lamFlam?
+        if (units=='nufnu') or (units=='lamflam'):
+            units = 'flam'
+            lfl = True
+        else:
+            lfl = False
+        
         sp0.convert(units)
         sp_phot.convert(units)
         
@@ -3837,6 +3845,8 @@ class source_spectrum(object):
 
         w = sp0.wave / 1e4
         f = sp0.flux
+        if lfl: 
+            f = f * sp0.wave
         if xr is not None:
             ind = (w>=xr[0]) & (w<=xr[1])
             w, f = (w[ind], f[ind])
@@ -3845,6 +3855,9 @@ class source_spectrum(object):
         w = sp_phot.wave / 1e4
         f = sp_phot.flux
         f_err = sp_phot_e.flux
+        if lfl: 
+            f = f * sp_phot.wave
+            f_err = f_err * sp_phot.wave
         if xr is not None:
             ind = (w>=xr[0]) & (w<=xr[1])
             w, f, f_err = (w[ind], f[ind], f_err[ind])
@@ -3856,6 +3869,8 @@ class source_spectrum(object):
             
             w = sp_model.wave / 1e4
             f = sp_model.flux
+            if lfl: 
+                f = f * sp_model.wave
             if xr is not None:
                 ind = (w>=xr[0]) & (w<=xr[1])
                 w, f = (w[ind], f[ind])
@@ -3863,8 +3878,20 @@ class source_spectrum(object):
             ax.plot(w, f, lw=2, label='Model Fit')
             sp_model.convert(sp_model_units)
 
+        # Labels for various units
+        ulabels = {'photlam': u'photons s$^{-1}$ cm$^{-2}$ A$^{-1}$',
+                   'photnu' : u'photons s$^{-1}$ cm$^{-2}$ Hz$^{-1}$',
+                   'flam'   : u'erg s$^{-1}$ cm$^{-2}$ A$^{-1}$',
+                   'fnu'    : u'erg s$^{-1}$ cm$^{-2}$ Hz$^{-1}$',
+                   'counts' : u'photons s$^{-1}$',
+                  }
+        if lfl: # Special case nuFnu or lamFlam
+            yunits = u'erg s$^{-1}$ cm$^{-2}$'  
+        else:
+            yunits = ulabels.get(units, units)
+             
         ax.set_xlabel('Wavelength (microns)')
-        ax.set_ylabel('Flux ({})'.format(units))
+        ax.set_ylabel('Flux ({})'.format(yunits))
         ax.set_title(self.name)
         
         if xr is not None:
