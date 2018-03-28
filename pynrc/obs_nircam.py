@@ -2415,7 +2415,7 @@ def plot_hdulist(hdulist, xr=None, yr=None, ax=None, return_ax=False,
 
     ax, cb = display_psf(hdulist, ax=ax, title='', colorbar=True, cmap=cmap,
                          scale=scale, vmin=vmin, vmax=vmax, return_ax=True)
-    cb.set_label('Counts per pixel')
+    cb.set_label('counts/sec')
     
     ax.set_xlim(xr)
     ax.set_ylim(yr)

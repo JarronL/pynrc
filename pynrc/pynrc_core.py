@@ -2406,8 +2406,11 @@ class NIRCam(object):
 
                     well_frac = pix_count_rate * int_time / self.well_level
                     # If above well_frac_max, then this setting is invalid
+                    # Also, all subsequent values of ng will be too high
+                    # so just break out of for loop.
                     if well_frac > well_frac_max:
-                        continue
+                        #continue
+                        break
             
                     # Approximate integrations needed to obtain required t_acq
                     nint1 = int(((1-tacq_frac)*tacq_max) / mtimes['t_acq'])
