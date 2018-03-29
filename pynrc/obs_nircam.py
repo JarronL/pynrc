@@ -347,7 +347,7 @@ class obs_hci(nrc_hci):
                 if offset_list is not None:
                     print('No coronagraph, so offset_list automatically set to [0.0].')
             elif offset_list is None:
-                self.offset_list = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 1.0, 0.75, 1.5, 2.0, 5.0]
+                self.offset_list = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 1.5, 2.0, 5.0]
             else:
                 self.offset_list = offset_list
 
@@ -924,15 +924,19 @@ class obs_hci(nrc_hci):
             
             # Resort tvals and self.psf_list by transmission 
             isort = np.argsort(tvals)
-            psf_list_sort = [self.psf_list[i] for i in isort]
-            
             tvals = tvals[isort]
+            psf_list_sort = [self.psf_list[i] for i in isort]
+
+            # Make sure we only have unique values
+            tvals, iuniq = np.unique(tvals, return_index=True)
+            psf_list_uniq = [psf_list_sort[i] for i in iuniq]
+            
             tvals_del = (tvals[1:] - tvals[0:-1])
             tvals_mid = tvals[0:-1] + tvals_del / 2
             tvals_edges = np.array([0] + list(tvals_mid) + [1])
 
             worker_args = [(psf, disk_image, tvals_edges, cmask_temp, i) 
-                           for i,psf in enumerate(psf_list_sort)]
+                           for i,psf in enumerate(psf_list_uniq)]
 
             if nproc<=1:
                 imconv_slices = [_wrap_conv_trans_for_mp(wa) for wa in worker_args]
@@ -2247,14 +2251,19 @@ def _wrap_conv_trans_for_mp(args):
     im_temp = model.copy()
     im_temp[~ind] = 0
     
-    # Normalize PSF sum to 1.0
-    # Otherwise convolve_fft may throw an error if psf.sum() is too small
-    norm = psf.sum()
-    psf = psf / norm
-    res = convolve_fft(im_temp, psf, fftn=fftpack.fftn, ifftn=fftpack.ifftn, allow_huge=True)
-    res *= norm
-    
-    return res
+    if np.allclose(im_temp,0):
+        # No need to convolve anything if no flux!
+        return im_temp
+    else:
+        # Normalize PSF sum to 1.0
+        # Otherwise convolve_fft may throw an error if psf.sum() is too small
+        norm = psf.sum()
+        psf = psf / norm
+        res = convolve_fft(im_temp, psf, fftn=fftpack.fftn, ifftn=fftpack.ifftn, allow_huge=True)
+        res *= norm
+
+        return res
+
 
 
 
