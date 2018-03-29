@@ -2245,7 +2245,7 @@ class NIRCam(object):
             observation, then this source is assumed to be occulted and 
             sp is fully unocculted.
         is_extended : bool
-            Treat source(s) as extended objects, then in units/arcsec^2
+            Treat sp source as extended object, then in units/arcsec^2
 
         snr_goal : float
             Minimum required SNR for source. For grism, this is the average
@@ -2348,7 +2348,9 @@ class NIRCam(object):
         if is_extended:
             ind_snr = 1
             obs = S.Observation(sp, self.bandpass, binset=self.bandpass.wave)
-            pix_count_rate = obs.countrate() * self.pix_scale**2
+            psf_faint = obs.countrate() * self.pix_scale**2
+            psf_bright = self.gen_psf(sp_bright, use_bg_psf=False)
+            pix_count_rate = np.max([psf_bright.max(), psf_faint])
         else:
             ind_snr = 0
 
