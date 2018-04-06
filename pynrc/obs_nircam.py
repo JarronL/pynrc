@@ -76,8 +76,6 @@ class nrc_hci(NIRCam):
             self._gen_psfbar_list()
             _, psf = self.gen_psf(return_oversample=True, use_bg_psf=True)
             self.psf_offaxis_over = psf
-        
-        if verbose: print("Finished.")
 
     def gen_offset_psf(self, offset_r, offset_theta, sp=None, return_oversample=False):
         """Create a PSF offset from center FoV
@@ -2303,8 +2301,8 @@ def plot_contrasts(curves, nsig, wfe_list, obs=None, ax=None,
     if ax is None:
         fig, ax = plt.subplots()
     if colors is None:
-        lin_vals = np.linspace(0.2,0.7,len(wfe_list))
-        colors = plt.cm.Blues_r(lin_vals)[::-1]
+        lin_vals = np.linspace(0.3,0.8,len(wfe_list))
+        colors = plt.cm.Blues(lin_vals)
     for j, wfe_ref_drift in enumerate(wfe_list):
         rr, contrast, mag_sens = curves[j]
         label='$\Delta$' + "WFE = {} nm".format(wfe_list[j])

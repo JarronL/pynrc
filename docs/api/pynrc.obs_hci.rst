@@ -1,4 +1,4 @@
-pynrc.nrc_hci
+pynrc.obs_hci
 ======================
 
 .. currentmodule:: pynrc
