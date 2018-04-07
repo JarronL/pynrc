@@ -38,7 +38,7 @@ from astropy.table import Table
 from astropy.time import Time
 from astropy import units
 
-from jwst_backgrounds import jbt
+if not on_rtd: from jwst_backgrounds import jbt
 
 
 #from scipy.optimize import least_squares#, leastsq

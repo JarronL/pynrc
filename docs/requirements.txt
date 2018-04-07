@@ -10,4 +10,3 @@ astropy-helpers
 pysynphot==0.9.7
 -e git+https://github.com/mperrin/poppy.git#egg=poppy
 -e git+https://github.com/mperrin/webbpsf.git#egg=webbpsf
--e git+https://github.com/spacetelescope/jwst_backgrounds.git#egg=jwst_backgrounds
