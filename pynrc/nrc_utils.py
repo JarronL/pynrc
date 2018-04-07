@@ -38,6 +38,9 @@ from astropy.table import Table
 from astropy.time import Time
 from astropy import units
 
+from jwst_backgrounds import jbt
+
+
 #from scipy.optimize import least_squares#, leastsq
 #from scipy.ndimage import fourier_shift
 from scipy.interpolate import RegularGridInterpolator, interp1d
@@ -3298,8 +3301,11 @@ def stellar_spectrum(sptype, *renorm_args, **kwargs):
 
 
         
-def zodi_spec(zfact=None, locstr=None, year=None, day=None, **kwargs):
+def zodi_spec(zfact=None, ra=None, dec=None, thisday=None, **kwargs):
     """Zodiacal light spectrum.
+    
+    New: Use `ra`, `dec`, and `thisday` keywords to call `jwst_backgrounds`
+    to obtain better predictions of the background.
     
     Create a spectrum of the zodiacal light emission in order to estimate the
     in-band sky background flux. This is simply the addition of two blackbodies
@@ -3328,7 +3334,14 @@ def zodi_spec(zfact=None, locstr=None, year=None, day=None, **kwargs):
     ----------
     zfact : float
         Factor to scale Zodiacal spectrum (default 2.5).
-
+    ra : float
+        Right ascension in decimal degrees
+    dec : float 
+        Declination in decimal degrees
+    thisday: int
+        Calendar day to use for background calculation.  If not given, will use the 
+        average of visible calendar days.
+        
     Returns
     -------
     :mod:`pysynphot.spectrum`
@@ -3341,6 +3354,7 @@ def zodi_spec(zfact=None, locstr=None, year=None, day=None, **kwargs):
     Added the ability to query the Euclid background model using 
     :func:`zodi_euclid` for a specific location and observing 
     time. The two blackbodies will be scaled to the 1.0 and 5.5 um emission. 
+    This functionality is deprecated in favor of jwst_backgrounds.
 
     Keyword Args
     ------------
@@ -3352,6 +3366,31 @@ def zodi_spec(zfact=None, locstr=None, year=None, day=None, **kwargs):
         Day of observation.
         
     """
+
+    if (ra is not None) and (dec is not None):
+        # Wavelength for bathtub plot, which we don't use here
+        wave_bath = 2.5
+        bkg = jbt.background(ra, dec, wave_bath)
+        wvals = bkg.bkg_data['wave_array'] # Wavelength (um)
+        farr = bkg.bkg_data['total_bg'] # Total background (MJy/sr)
+        
+        if thisday is None:
+            ftot = farr.mean(axis=0)
+        else:
+            calendar = bkg.bkg_data['calendar']
+            if thisday in calendar:
+                ind = np.where(calendar==thisday)[0][0]
+                ftot = farr[ind]
+            else:
+                _log.warning("The input calendar day {}".format(thisday)+" is not available")
+                return
+        
+        sp = S.ArraySpectrum(wave=wvals*1e4, flux=ftot*1e6, fluxunits='Jy')
+        sp.convert('flam')
+        sp.name = 'Total Background'
+        
+        return sp
+
 
     if zfact is None: zfact = 2.5
     #_log.debug('zfact:{0:.1f}'.format(zfact))
@@ -3371,6 +3410,9 @@ def zodi_spec(zfact=None, locstr=None, year=None, day=None, **kwargs):
 
 
     # Query Euclid Background Model
+    locstr = kwargs.get('locstr')
+    year  = kwargs.get('year')
+    day   = kwargs.get('day')
     if (locstr is not None) and (year is not None) and (day is not None):
 
         # Wavelengths in um and values in MJy
@@ -3393,6 +3435,7 @@ def zodi_spec(zfact=None, locstr=None, year=None, day=None, **kwargs):
 
 
     return sp_zodi
+
 
 def zodi_euclid(locstr, year, day, wavelengths=[1,5.5], ido_viewin=0, **kwargs):
     """IPAC Euclid Background Model

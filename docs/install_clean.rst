@@ -27,7 +27,7 @@ If you have some other Conda, installation, then you can simply
 add the AstroConda channel to your ``.condarc`` file, which appends 
 the appropriate URL to Conda's channel search path::
 
-    $ conda config --add channels http://ssb.stsci.edu/astroconda
+    $ conda config --add channels conda-forge
     # Writes changes to ~/.condarc
 
 
@@ -104,10 +104,53 @@ setting the ``WEBBPSF_PATH`` environment variable to point
 towards your ``webbpsf-data`` directory.
 
 
+.. _install_jwb_clean:
+
+Installing JWST Backgrounds
+============================
+
+``jwst_bakcgrounds`` is a a simple program to predict the levels of background emission 
+in JWST observations. It accesses a precompiled background cache prepared by Space 
+Telescope Science Institute, requiring an internet connection to access.
+However, ``pynrc`` comes a simpler background estimator in the event no there is
+no internet functionality. In this sense, ``jwst_backgrounds`` is not a strict
+requirement for running ``pynrc``. 
+
+This module requires ``healpy`` to run::
+
+    $ conda config --add channels http://ssb.stsci.edu/astroconda
+    $ conda install healpy
+    
+If ``healpy`` asks you to downgrade some of its dependencies, it is suggested that
+you only install the missing dependencies manually, then run conda with the ``--no-deps``
+flag. For instance::
+
+    $ conda install pytest-runner --no-deps
+    $ conda install healpy --no_deps
+    
+Then install JWST Backgrounds with pip::
+
+    $ pip install jwst_backgrounds
+
+
 .. _install_pynrc_clean:
 
 Installing pyNRC
 ====================
+
+Installing with pip
+--------------------
+
+You can install the ``pynrc`` package through pip::
+
+    $ pip install pynrc
+
+Note that the pip command only installs the program code.
+You still must download and install the data files, 
+as described below.
+
+Installing from source
+----------------------
 
 To get the most up to date version of ``pynrc``, install directly 
 from source, though stability is not guarenteed. The 

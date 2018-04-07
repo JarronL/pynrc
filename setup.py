@@ -75,6 +75,7 @@ requirements = ['Click>=6.0',
           'poppy>=0.6.1',
           'webbpsf>=0.6.0',
           'jwxml>=0.3.0',
+          'jwst_backgrounds>=1.1
       ]
 
 setup_requirements = ['pytest-runner', ]
