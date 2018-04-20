@@ -3918,7 +3918,7 @@ class source_spectrum(object):
                 ind = (w>=xr[0]) & (w<=xr[1])
                 w, f = (w[ind], f[ind])
             
-            ax.plot(w, f, lw=2, label='Model Fit')
+            ax.plot(w, f, lw=1, label='Model Fit')
             sp_model.convert(sp_model_units)
 
         # Labels for various units
@@ -3941,6 +3941,28 @@ class source_spectrum(object):
             ax.set_xlim(xr)
         if yr is not None:
             ax.set_ylim(yr)
+            
+        # Better formatting of ticks marks
+        from matplotlib.ticker import LogLocator, AutoLocator, NullLocator 
+        from matplotlib.ticker import FuncFormatter, NullFormatter
+        formatter = FuncFormatter(lambda y, _: '{:.16g}'.format(y))
+        
+        xr = ax.get_xlim()
+        if xr[1] < 10*xr[0]:
+            ax.xaxis.set_major_locator(AutoLocator())
+            ax.xaxis.set_minor_locator(NullLocator())
+        else:
+            ax.xaxis.set_major_locator(LogLocator())
+        ax.xaxis.set_major_formatter(formatter)
+
+        yr = ax.get_ylim()
+        if yr[1] < 10*yr[0]:
+            ax.yaxis.set_major_locator(AutoLocator())
+            ax.yaxis.set_minor_formatter(NullFormatter())
+            ax.yaxis.get_major_locator().set_params(nbins=10, steps=[1,10])
+        else:
+            ax.yaxis.set_major_locator(LogLocator())
+        ax.yaxis.set_major_formatter(formatter)
         
         ax.legend()
 
@@ -4265,6 +4287,120 @@ def sp_accr(mmdot, rin=2, dist=10, truncated=False,
         
     return sp
 
+
+def cond_table(age=None, file=None, **kwargs):
+    """Load COND Model Table
+    
+    Function to read in the COND model tables, which have been formatted
+    in a very specific way. Has the option to return a dictionary of 
+    astropy Tables, where each dictionary element corresponds to
+    the specific ages within the COND table. Or, if the age keyword is
+    specified, then this function only returns a single astropy table.
+    
+    Parameters
+    ----------
+    age : float
+        Age of planet in myr. If set to None, then an array
+        of 
+    file : string
+        Location and name of COND file. See isochrones stored at
+        https://phoenix.ens-lyon.fr/Grids/. 
+        Default is model.AMES-Cond-2000.M-0.0.JWST.Vega
+    """
+    
+    def make_table(*args):
+        i1, i2 = (ind1[i]+4, ind2[i])
+    
+        rows = []
+        for line in content[i1:i2]:
+            if (line=='') or ('---' in line):
+                continue
+            else:
+                vals = np.array(line.split(), dtype='float64')
+                rows.append(tuple(vals))
+        tbl = Table(rows=rows, names=cnames)
+
+        newcol = tbl['M/Ms'] * 1047.348644
+        newcol.name = 'MJup'
+        tbl.add_column(newcol, index=1)
+        tbl['MJup'].format = '.2f'
+        
+        return tbl
+
+    # Default file to read and load
+    if file is None:
+        base_dir = conf.PYNRC_PATH + 'cond_models/'
+        file = base_dir + 'model.AMES-Cond-2000.M-0.0.JWST.Vega'
+
+    with open(file) as f:
+        content = f.readlines()
+    
+    content = [x.strip('\n') for x in content]
+
+    # Column names
+    cnames = content[5].split()
+    cnames = ['M/Ms', 'Teff'] + cnames[1:]
+    ncol = len(cnames)
+
+    # Create a series of tables for each time
+    times_gyr = []
+    ind1 = []
+    for i, line in enumerate(content):
+        if 't (Gyr)' in line:
+            times_gyr.append(line.split()[-1])
+            ind1.append(i)
+    ntimes = len(times_gyr)
+
+    # Create start and stop indices for each age value
+    ind2 = ind1[1:] + [len(content)]
+    ind1 = np.array(ind1) 
+    ind2 = np.array(ind2)-1 
+    
+    # Everything is Gyr, but prefer Myr
+    ages_str = np.array(times_gyr)
+    ages_gyr = np.array(times_gyr, dtype='float64')
+    ages_myr = np.array(ages_gyr * 1000, dtype='int')
+    #times = ['{:.0f}'.format(a) for a in ages_myr]
+        
+    # Return all tables if no age specified
+    if age is None:
+        tables = {}
+        for i in range(ntimes):
+            tbl = make_table(i, ind1, ind2, content)
+            tables[ages_myr[i]] = tbl            
+        return tables
+    else:
+        # This is faster if we only want one table
+        ages_diff = np.abs(ages_myr - age)
+        i = np.where(ages_diff==ages_diff.min())[0][0]
+
+        tbl = make_table(i, ind1, ind2, content)
+        return tbl
+
+def cond_filter(table, filt, module='A', dist=None, **kwargs):
+    """
+    Given a COND table and NIRCam filter, return arrays of MJup
+    and Vega mags. If distance (pc) is provided, then return the
+    apparent magnitude, otherwise absolute magnitude at 10pc.
+    """
+    
+    mcol = 'MJup'
+    fcol = filt + module.lower()
+    
+    mass_data = table[mcol].data
+    mag_data  = table[fcol].data
+    
+    f = interp1d(mass_data, mag_data, kind='slinear', fill_value='extrapolate')
+    mass_arr = list(np.arange(0.3,1,0.1)) + list(np.arange(1,10)) \
+        + list(np.arange(10,200,10)) + list(np.arange(200,1400,100))
+    mass_arr = np.array(mass_arr)
+    mag_arr = f(mass_arr)
+    
+    # Distance modulus for apparent magnitude
+    if dist is not None:
+        mag_arr = mag_arr + 5*np.log10(dist/10)
+        
+    return mass_arr, mag_arr
 
 ###########################################################################
 #
