@@ -1628,7 +1628,6 @@ class obs_hci(nrc_hci):
             final1 = (diff1_r1_rot + diff1_r2_rot) / 2
             final2 = (diff2_r1_rot + diff2_r2_rot) / 2
 
-
             if opt_diff:
                 rho = dist_image(final1)
                 binsize = 1
@@ -1641,11 +1640,28 @@ class obs_hci(nrc_hci):
                 std1 = binned_statistic(igroups, final1[~nan_mask], func=func_std)
                 std2 = binned_statistic(igroups, final2[~nan_mask], func=func_std)
 
-                ibin_better = np.where(std1 < std2)[0]
-                for ibin in ibin_better:
-                    final2[~nan_mask][igroups[ibin]] = final1[~nan_mask][igroups[ibin]]
+                ibin_better1 = np.where(std1 < std2)[0]
+                ibin_better2 = np.where(std2 < std1)[0]
+                if len(ibin_better1) < len(ibin_better2):
+                    # Get all pixel indices
+                    if len(ibin_better1)>0:
+                        ind_all = np.array([item for ibin in ibin_better1 for item in igroups[ibin]])
+                        ind_all.sort()
+                        temp = final2[~nan_mask]
+                        temp[ind_all] = final1[~nan_mask][ind_all]
+                        final2[~nan_mask] = temp
+                    final = final2
+                else:
+                    if len(ibin_better2)>0:
+                        ind_all = np.array([item for ibin in ibin_better2 for item in igroups[ibin]])
+                        ind_all.sort()
+                        temp = final1[~nan_mask]
+                        temp[ind_all] = final2[~nan_mask][ind_all]
+                        final1[~nan_mask] = temp
+                    final = final1
 
-            final = final2
+            else:
+                final = final2
 
         # For only a single roll
         else:
@@ -1758,7 +1774,7 @@ class obs_hci(nrc_hci):
 
             off_vals = []
             max_vals = []
-            rvals_pix = np.arange(1,xpix/2,5)
+            rvals_pix = np.insert(np.arange(1,xpix/2,5), 0, 0.1)
             for j, roff_pix in enumerate(rvals_pix):
                 roff_asec = roff_pix * pixscale
                 psf1 = self.gen_offset_psf(roff_asec, 0, return_oversample=False)
@@ -1774,14 +1790,16 @@ class obs_hci(nrc_hci):
                 off_vals.append(roff_pix)
                 max_vals.append(maxv)
                 if maxv >= 0.95*psf1.max():
-                    off_vals = [0] + off_vals + [roff_pix+5, xpix/2]
-                    max_vals = [0] + max_vals + [psf1.max(), psf1.max()]
+                    off_vals = off_vals + [roff_pix+5, xpix/2]
+                    max_vals = max_vals + [psf1.max(), psf1.max()]
                     break
 
             max_vals = np.array(max_vals)
             off_asec = np.array(off_vals) * pixscale
 
-            psf_max = np.interp(rr, off_asec, max_vals)
+            #psf_max = np.interp(rr, off_asec, max_vals)
+            psf_max_log = np.interp(rr, off_asec, np.log10(max_vals))
+            psf_max = 10**psf_max_log
 
         elif self.mask is None: # Direct imaging
             psf = self.gen_offset_psf(0, 0)
@@ -1797,7 +1815,7 @@ class obs_hci(nrc_hci):
             xv = (np.arange(nx) - nx/2) * pixscale
 
             # a and b coefficients at each offset location
-            avals = np.interp(rr, xv, im_mask[nx//2,:]**2)
+            avals = np.interp(rr, xv, im_mask[ny//2,:]**2)
             bvals = 1 - avals
 
             # Linearly combine PSFs
@@ -1806,7 +1824,7 @@ class obs_hci(nrc_hci):
             psf_offaxis = krebin(self.psf_offaxis_over, (fov_pix,fov_pix))
             psf_max = np.array([np.max(psf_offaxis*a + psf_center*b)
                                 for a,b in zip(avals,bvals)])
-            psf_max[rr>10] = psf_max[rr<10].max()
+            psf_max[rr>10] = psf_max[(rr>5) & (rr<10)].max()
 
         elif self.mask[-1]=='B': # Bar masks
             fov_asec = np.max([xpix,ypix]) * pixscale
@@ -1838,7 +1856,7 @@ class obs_hci(nrc_hci):
             psf_offaxis = krebin(self.psf_offaxis_over, (fov_pix,fov_pix))
             psf_max = np.array([np.max(psf_offaxis*a + psf_center*b)
                                 for a,b in zip(avals,bvals)])
-            psf_max[rr>10] = psf_max[rr<10].max()
+            psf_max[rr>10] = psf_max[(rr>5) & (rr<10)].max()
 
         #plt.plot(rr[rr<3], psf_max[rr<3])
 
@@ -2396,8 +2414,8 @@ def plot_contrasts(curves, nsig, wfe_list, obs=None, ax=None,
     if yr is not None: ax.set_ylim(yr)
 
 
-    ax.xaxis.get_major_locator().set_params(nbins=9, steps=[1, 2, 5, 10])
-    ax.yaxis.get_major_locator().set_params(nbins=9, steps=[1, 2, 5, 10])
+    ax.xaxis.get_major_locator().set_params(nbins=10, steps=[1, 2, 5, 10])
+    ax.yaxis.get_major_locator().set_params(nbins=10, steps=[1, 2, 5, 10])
 
     ax.set_ylabel('{:.0f}-$\sigma$ Sensitivities (mag)'.format(nsig))
     ax.set_xlabel('Separation (arcsec)')
