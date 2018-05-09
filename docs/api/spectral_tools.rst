@@ -17,6 +17,7 @@ Spectral Tools
     ~nrc_utils.stellar_spectrum
     ~nrc_utils.BOSZ_spectrum
     ~nrc_utils.sp_accr
+    ~nrc_utils.jupiter_spec
     ~nrc_utils.zodi_spec
     ~nrc_utils.zodi_euclid
     ~nrc_utils.bp_2mass
@@ -79,6 +80,7 @@ Spectral Tools
 .. autofunction:: pynrc.nrc_utils.stellar_spectrum
 .. autofunction:: pynrc.nrc_utils.BOSZ_spectrum
 .. autofunction:: pynrc.nrc_utils.sp_accr
+.. autofunction:: pynrc.nrc_utils.jupiter_spec
 .. autofunction:: pynrc.nrc_utils.zodi_spec
 .. autofunction:: pynrc.nrc_utils.zodi_euclid
 .. autofunction:: pynrc.nrc_utils.bp_2mass
