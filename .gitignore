@@ -164,11 +164,16 @@ ENV/
 
 # Spyder project settings
 .spyderproject
+.spyproject
 
 # Rope project settings
 .ropeproject
 
 # End of https://www.gitignore.io/api/macos,emacs,python
 
-# Ignore PSFs
-pynrc_data/psf_coeffs/*.npy
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+
