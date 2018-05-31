@@ -1724,7 +1724,7 @@ class NIRCam(object):
 
 
     def sat_limits(self, sp=None, bp_lim=None, units='vegamag', well_frac=0.8,
-        ngroup=None, verbose=False, **kwargs):
+                   ngroup=None, verbose=False, force_full_fov=False,**kwargs):
         """Saturation limits.        
         
         Generate the limiting magnitude (80% saturation) with the current instrument
@@ -1750,6 +1750,10 @@ class NIRCam(object):
             use those specified in the Detectors class. Can set
             ngroup=0 for the so-called Zero Frame in the event
             there are multiple reads per group.
+        force_full_fov : bool
+            Force sat_limits to use the full field of view?
+            Otherwise, it uses a smaller subarray to speed up computation (except
+            for weak lens calculations.
         verbose : bool
             Print result details.
 
@@ -1785,7 +1789,7 @@ class NIRCam(object):
 
         # We don't necessarily need the entire image, so cut down to size
         psf_coeff = self._psf_coeff
-        if not ('WEAK LENS' in self.pupil):
+        if not ('WEAK LENS' in self.pupil) and not(force_full_fov):
             fov_pix = 51
             fov_pix_over = fov_pix * kwargs['oversample']
             coeff = []
