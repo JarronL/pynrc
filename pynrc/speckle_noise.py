@@ -41,8 +41,11 @@ class OPD_extract(object):
 
         self.opd = opd
         self.npix = opd.shape[0]
-        self.pix_scale = header['PUPLSCAL'] # pupil scale in meters/pixel
-
+        try:
+            self.pix_scale = header['PUPLSCAL'] # pupil scale in meters/pixel
+        except (AttributeError, KeyError):
+            self.pix_scale = 0.0064486953125 * 1024/header['NAXIS2']
+            
         # Create a list of segment masks
         self.nseg = 18
         # Flat to flat is 1.32 meters with a 3 mm air gain between mirrors
@@ -86,14 +89,14 @@ class OPD_extract(object):
 
     @property
     def mask_opd(self):
-        """Mask from generated OPD map"""
+        """Mask generated from OPD map"""
         mask = np.ones(self.opd.shape)
         mask[self.opd==0] = 0
         return mask
 
     @property
     def coeff_pupil(self):
-        """Pupil Zernike coefficients"""
+        """Zernike coefficients for overall pupil"""
         return self._coeff_pupil
 
     @property

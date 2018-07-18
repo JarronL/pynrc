@@ -191,6 +191,7 @@ def jl_poly_fit(x, yvals, deg=1, QR=True, robust_fit=False, niter=25):
 
         close_factor = 0.03
         close_enough = np.max([close_factor * np.sqrt(0.5/(x.size-1)), 1e-20])
+        err = 0
         for i in range(niter):
             # compute absolute value of residuals (fit minus data)
             yvals_mod = jl_poly(x, coeff_all)

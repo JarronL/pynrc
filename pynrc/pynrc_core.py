@@ -1700,7 +1700,8 @@ class NIRCam(object):
         if self.mask is not None:
             self._psf_info_bg = {'fov_pix':self._fov_pix_bg, 'oversample':oversample, 
                 'offset_r':0, 'offset_theta':0, 'tel_pupil':tel_pupil, 
-                'opd':opd, 'jitter':None, 'save':True, 'force':False}
+                'opd':opd, 'jitter':jitter, 'jitter_sigma':jitter_sigma, 
+                'save':True, 'force':False}
             self._psf_coeff_bg = psf_coeff(self.bandpass, self.pupil, None, self.module, 
                 **self._psf_info_bg)
 

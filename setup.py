@@ -65,18 +65,23 @@ with open('README.rst') as readme_file:
 with open('HISTORY.rst') as history_file:
     history = history_file.read()
 
-#requirements = ['Click>=6.0', ]
-requirements = ['Click>=6.0',
+requirements = [
+          'Click>=6.0',
           'numpy>=1.10.0',
           'matplotlib>=1.5.0',
           'scipy>=0.16.0',
-          'astropy>=1.2.0,<3.0',
           'pysynphot>=0.9',
           'poppy>=0.6.1',
           'webbpsf>=0.6.0',
           'jwxml>=0.3.0',
-#          'jwst_backgrounds>=1.1',
       ]
+# RTD cannot handle certain 
+if not (os.environ.get('READTHEDOCS') == 'True'):
+    requirements.append('jwst_backgrounds>=1.1')
+    requirements.append('astropy>=1.2.0,<3.0')
+else:
+    requirements.append('astropy>=1.2.0')
+    
 
 setup_requirements = ['pytest-runner', ]
 
@@ -128,7 +133,7 @@ setup(
     # You can just specify the packages manually here if your project is
     # simple. Or you can use find_packages().
     #packages=find_packages(exclude=['contrib', 'docs', 'tests']),
-    packages=find_packages(include=['pynrc']),
+    packages=find_packages(include=['pynrc*']),
 
     # List run-time dependencies here.  These will be installed by pip when
     # your project is installed. For an analysis of "install_requires" vs pip's

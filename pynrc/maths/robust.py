@@ -230,7 +230,7 @@ def mode(inputData, axis=None, dtype=None):
             else:
                 wMin = data[-1] - data[0]
                 N = data.size/2 + data.size%2 
-                for i in xrange(0, N):
+                for i in range(0, N):
                     w = data[i+N-1] - data[i] 
                     if w < wMin:
                         wMin = w
@@ -365,6 +365,8 @@ def linefit(inputX, inputY, iterMax=25, Bisector=False, BisquareLimit=6.0, Close
         xIn = xIn.compress(np.logical_not(yIn.mask))
         yIn = yIn.compressed()
     n = len(xIn)
+
+    np.logical_not(yIn.maks)
 
     x0 = xIn.sum() / n
     y0 = yIn.sum() / n

@@ -62,6 +62,23 @@ class nrc_hci(NIRCam):
         # -----------
         # Generate cached PSFs for quick retrieval.
         if verbose: print("Generating oversampled PSFs...")
+        self._gen_cached_psfs()
+
+    @property
+    def wfe_drift(self):
+        """WFE drift relative to nominal PSF (nm)"""
+        return self._wfe_drift
+    @wfe_drift.setter
+    def wfe_drift(self, value):
+        """Set the WFE drift value and update coefficients"""
+        # Only update if the value changes
+        vold = self._wfe_drift; self._wfe_drift = value
+        if vold != self._wfe_drift: 
+            self.update_psf_coeff(wfe_drift=self._wfe_drift)
+            self._gen_cached_psfs()
+
+    def _gen_cached_psfs(self):
+        """Generate a set of cached PSF for quick retrieval."""
         if self.mask is None:
             _, psf = self.gen_psf(return_oversample=True, use_bg_psf=False)
             self.psf_center_over = psf
@@ -76,6 +93,7 @@ class nrc_hci(NIRCam):
             self._gen_psfbar_list()
             _, psf = self.gen_psf(return_oversample=True, use_bg_psf=True)
             self.psf_offaxis_over = psf
+
 
     def gen_offset_psf(self, offset_r, offset_theta, sp=None, return_oversample=False):
         """Create a PSF offset from center FoV
@@ -138,8 +156,7 @@ class nrc_hci(NIRCam):
         Linearly combine off-axis and occulted PSFs.
         Returns an oversampled PSF.
 
-        If passing the two PSFs, make sure they are the oversampled
-        versions.
+        If passing the two PSFs, make sure they are the oversampled versions.
 
         Parameters
         ----------
@@ -432,7 +449,10 @@ class obs_hci(nrc_hci):
             hdulist_out = image_rescale(disk_hdul, args_in, args_out, cen_star=False)
 
             # Expand to full observation size
-            hdulist_out[0].data = pad_or_cut_to_size(hdulist_out[0].data, (ypix,xpix))
+            ydata, xdata = hdulist_out[0].data.shape
+            ynew = np.max([ypix, ydata])
+            xnew = np.max([xpix, xdata])
+            hdulist_out[0].data = pad_or_cut_to_size(hdulist_out[0].data, (ynew,xnew))
             self.disk_hdulist = hdulist_out
 
 
@@ -838,6 +858,7 @@ class obs_hci(nrc_hci):
         header = self.disk_hdulist[0].header
         if PA_offset!=0:
             disk_image = rotate(disk_image, -PA_offset, reshape=False, order=1)
+        disk_image = pad_or_cut_to_size(disk_image, image_shape)
 
         # Shift rotated image to location along bar
         delx, dely = (bar_offpix, 0)
@@ -1417,8 +1438,8 @@ class obs_hci(nrc_hci):
             Resulting PSFs are slightly less accurate, but much faster.
             Default is True.
         use_cmask : bool
-            Use the coronagraphic mask image to attenuate planet or disk that
-            is obscurred by a corongraphic mask feature.
+            Use the coronagraphic mask image to attenuate planets or disk
+            obscurred by a corongraphic mask feature.
         zfact : float
             Zodiacal background factor (default=2.5)
         locstr :
@@ -2069,7 +2090,6 @@ class obs_hci(nrc_hci):
 
 class obs_coronagraphy(obs_hci):
     """Deprecated class. Use :class:`obs_hci` instead."""
-    # Turns out the paper is Spiegel & Burrows (2012), not 2011
     def __init__(self, *args, **kwargs):
 
         _log.warning('obs_coronagraphy is depcrecated. Use obs_hci instead.')
@@ -2282,7 +2302,7 @@ def _wrap_conv_trans_for_mp(args):
         return res
 
 def plot_contrasts_mjup(curves, nsig, wfe_list, obs=None, age=10,
-    ax=None, colors=None, xr=[0,10], yr=None,
+    ax=None, colors=None, xr=[0,10], yr=None, file=None,
     twin_ax=False, return_axes=False, **kwargs):
     """Plot contrast curves
 
@@ -2299,6 +2319,10 @@ def plot_contrasts_mjup(curves, nsig, wfe_list, obs=None, age=10,
     wfe_list : array-like
         List of WFE drift values corresponding to each set of sensitivities
         in `curves` argument.
+    file : string
+        Location and name of COND file. See isochrones stored at
+        https://phoenix.ens-lyon.fr/Grids/.
+        Default is model.AMES-Cond-2000.M-0.0.JWST.Vega
 
     Keyword Args
     ------------
@@ -2306,9 +2330,6 @@ def plot_contrasts_mjup(curves, nsig, wfe_list, obs=None, age=10,
         Corresponding observation class that created the contrast curves.
         Uses distances and stellar magnitude to plot contrast and AU
         distances on opposing axes. Also necessary for mjup=True.
-    cond : bool
-        Instead of plotting sensitivities, use COND models to plot the
-        limiting planet masses.
     age : float
         Required for plotting limiting planet masses.
     ax : matplotlib.axes
@@ -2327,7 +2348,7 @@ def plot_contrasts_mjup(curves, nsig, wfe_list, obs=None, age=10,
         colors = plt.cm.Blues_r(lin_vals)
 
     # Grab COND model data
-    tbl = cond_table(age=age)
+    tbl = cond_table(age=age, file=file)
     filt = obs.filter
     mod = obs.module
     dist = obs.distance
@@ -2452,6 +2473,14 @@ def planet_mags(obs, age=10, entropy=13, mass_list=[10,5,2,1], av_vals=[0,25], a
     to use the COND models from https://phoenix.ens-lyon.fr/Grids.
     These are useful because SB12 model grids only ranges from 1-1000 Myr
     with masses 1-15 MJup.
+
+    cond : bool
+        Instead of plotting sensitivities, use COND models to plot the
+        limiting planet masses.
+    file : string
+        Location and name of COND file. See isochrones stored at
+        https://phoenix.ens-lyon.fr/Grids/.
+        Default is model.AMES-Cond-2000.M-0.0.JWST.Vega
     """
 
     if av_vals is None:

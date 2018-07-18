@@ -205,7 +205,9 @@ def read_filter(filter, pupil=None, mask=None, module=None, ND_acq=False,
         relative to 0.0131 um thickness.
     nvr_scale : float
         Add in additiona NIRCam non-volatile residue. This is a scale
-        factor relative to 0.280 um thickness.
+        factor relative to 0.280 um thickness. If set to None, then 
+        assumes a scale factor of 1.0 as is contained in the NIRCam
+        filter curves. Setting nvr_scale=0 will remove these contributions.
 
     Returns
     -------
@@ -411,13 +413,17 @@ def read_filter(filter, pupil=None, mask=None, module=None, ND_acq=False,
             ttemp = np.interp(bp.wave/1e4, wtemp, ttemp, left=0, right=0)
             th_ice = np.exp(ice_scale * np.log(ttemp))
             th_new = th_ice * th_new
+
         if nvr_scale is not None:
             ttemp = data['t_nvr']
             ttemp = np.insert(ttemp, 0, [1.0]) # Estimates for w<2.5um
             ttemp = np.append(ttemp, [1.0])    # Estimates for w>5.0um
             # Interpolate transmission onto filter wavelength grid
             ttemp = np.interp(bp.wave/1e4, wtemp, ttemp, left=0, right=0)
-            th_nvr = np.exp(nvr_scale * np.log(ttemp))
+            
+            # The "-1" removes NVR contributions already included in
+            # NIRCam throughput curves
+            th_nvr = np.exp((nvr_scale-1) * np.log(ttemp))
             th_new = th_nvr * th_new
 
         # Create new bandpass
@@ -946,8 +952,8 @@ def _wrap_coeff_for_mp(args):
     fov_pix_orig = fov_pix # Does calc_psf change fov_pix??
     try:
         hdu_list = inst.calc_psf(outfile=None, save_intermediates=False, \
-                                 oversample=oversample, rebin=True, \
-                                 fov_pixels=fov_pix, monochromatic=w*1e-6)
+                                 oversample=oversample, fov_pixels=fov_pix, \
+                                 monochromatic=w*1e-6)
 
     except Exception as e:
         print('Caught exception in worker thread (w = {}):'.format(w))
@@ -1031,7 +1037,7 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     include_si_wfe : bool
         Include SI WFE measurements? Default = False.
     detector : str, None
-        Name of detector [A1, A2, ..., A5, B1, ..., B5].
+        Name of detector [NRCA1, ..., NRCA5, NRCB1, ..., NRCB5].
     detector_position : tuple, None
         The pixel position in (X, Y) on the detector ("science" coordinates)
     tel_pupil : str, HDUList, None
@@ -1084,9 +1090,6 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
 
     chan_str = 'SW' if bp.avgwave() < 24000 else 'LW'
 
-    if detector is not None:
-        assert detector[0] == module
-
     # Change log levels to WARNING for pyNRC, WebbPSF, and POPPY
     log_prev = conf.logging_level
     setup_logging('WARN', verbose=False)
@@ -1107,7 +1110,7 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         if ('SW' in chan_str) and (detector is not None):
             inst.detector = detector
         else:
-            inst.detector = det_switch.get(chan_str+module)
+            inst.detector = 'NRC' + det_switch.get(chan_str+module)
         detpos_switch = {'SW':(2047,2047), 'LW':(1024,1024)}
         inst.detector_position = detpos_switch.get(chan_str)
     else:
@@ -1204,7 +1207,7 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     # Anything that is in an offset position is currently considered
     # to be a faint companion source that we're trying to detect, so
     # the PSF WFE difference has negligible bearing on the outcome.
-    if (wfe_drift > 0) and (rtemp == 0):
+    if (wfe_drift > 0): # and (rtemp == 0):
 
         from . import speckle_noise as sn
         _log.debug('Performing WFE drift of {}nm'.format(wfe_drift))
@@ -1237,8 +1240,8 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         hdu.header.add_history(" from " + drift_file)
         hdu.header.add_history(" scaled by {}".format(scale_val))
 
-        hdu.header['ORIGINAL'] = (opd_name, "Original OPD source")
-        hdu.header['SLICE']    = (opd_num, "Slice index of original OPD")
+        hdu.header['ORIGINAL'] = (opd_name,   "Original OPD source")
+        hdu.header['SLICE']    = (opd_num,    "Slice index of original OPD")
         hdu.header['DFILE']    = (drift_file, "Source file for OPD drift")
         hdu.header['OCASE']    = (delta_hdul[0].header['CASE'], "Oscillation model case")
         hdu.header['OVARIANT'] = (delta_hdul[0].header['VARIANT'],
@@ -1342,8 +1345,7 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
 
         setup_logging('WARN', verbose=False)
         hdu_temp = inst.calc_psf(outfile=None, save_intermediates=False, \
-                                 oversample=oversample, rebin=True, \
-                                 fov_pixels=fov_pix, \
+                                 oversample=oversample, fov_pixels=fov_pix, \
                                  monochromatic=bp.avgwave()*1e-10)
         setup_logging(log_prev, verbose=False)
         head_temp = hdu_temp[0].header
@@ -1419,7 +1421,7 @@ def wfed_coeff(filter, force=False, save=True, save_name=None, **kwargs):
     """PSF Coefficient Mod for WFE Drift
 
     This function finds a relationship between PSF coefficients
-    in the presense of WFE drift. For a series of WFE drift values,
+    in the presence of WFE drift. For a series of WFE drift values,
     we generate corresponding PSF coefficients and fit a polynomial
     relationship to the residual values. This allows us to quickly
     modify a nominal set of PSF image coefficients to generate a
@@ -4785,7 +4787,7 @@ def build_mask_detid(detid, oversample=1, ref_mask=None):
         How much to oversample output mask relative to detector sampling.
     ref_mask : str or None
         Reference mask for placement of coronagraphic mask elements.
-        If None, then defauls are chosen for each detector.
+        If None, then defaults are chosen for each detector.
     """
 
     from jwxml import siaf

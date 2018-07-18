@@ -27,7 +27,7 @@ If you have some other Conda, installation, then you can simply
 add the AstroConda channel to your ``.condarc`` file, which appends 
 the appropriate URL to Conda's channel search path::
 
-    $ conda config --add channels conda-forge
+    $ conda config --add channels http://ssb.stsci.edu/astroconda
     # Writes changes to ~/.condarc
 
 

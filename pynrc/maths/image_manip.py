@@ -14,13 +14,6 @@ _log = logging.getLogger('pynrc')
 from poppy.utils import krebin
 
 from pynrc.maths.coords import dist_image
-#from pynrc.nrc_utils import (hist_indices, binned_statistics)
-#    igroups = hist_indices(rho_good, bins)
-#    nbins = len(igroups)
-
-    # Standard deviation for each bin
-#    std1 = binned_statistic(igroups, diff1_good, func=std_func)
-
 
 from scipy.optimize import least_squares#, leastsq
 from scipy.ndimage import fourier_shift
@@ -713,35 +706,35 @@ def scale_ref_image(im1, im2, mask=None, smooth_imgs=False,
         _, _, scl = align_LSQ(im2[mask], im1[mask], shift_function=None)
         return scl
 
-###     ind = np.where(im1==im1[mask].max())
-###     ind = [ind[0][0], ind[1][0]]
-### 
-###     # Initial Guess
-###     scl = np.nanmean(im1[ind[0]-3:ind[0]+3,ind[1]-3:ind[1]+3]) / \
-###           np.nanmean(im2[ind[0]-3:ind[0]+3,ind[1]-3:ind[1]+3])
-###           
-###     # Wider range
-###     # Check a range of scale values
-###     # Want to minimize the standard deviation of the differenced images
-###     scl_arr = np.linspace(0.2*scl,2*scl,10)
-###     mad_arr = []
-###     for val in scl_arr:
-###         diff = im1 - val*im2
-###         mad_arr.append(robust.medabsdev(diff[mask]))
-###     mad_arr = np.array(mad_arr)
-###     scl = scl_arr[mad_arr==mad_arr.min()][0]
-### 
-###     # Check a range of scale values
-###     # Want to minimize the standard deviation of the differenced images
-###     scl_arr = np.linspace(0.85*scl,1.15*scl,50)
-###     mad_arr = []
-###     for val in scl_arr:
-###         diff = im1 - val*im2
-###         mad_arr.append(robust.medabsdev(diff[mask]))
-###     mad_arr = np.array(mad_arr)
-### 
-###     #plt.plot(scl_arr,mad_arr)
-###     return scl_arr[mad_arr==mad_arr.min()][0]
+    # ind = np.where(im1==im1[mask].max())
+    # ind = [ind[0][0], ind[1][0]]
+
+    # # Initial Guess
+    # scl = np.nanmean(im1[ind[0]-3:ind[0]+3,ind[1]-3:ind[1]+3]) / \
+    #       np.nanmean(im2[ind[0]-3:ind[0]+3,ind[1]-3:ind[1]+3])
+          
+    # # Wider range
+    # # Check a range of scale values
+    # # Want to minimize the standard deviation of the differenced images
+    # scl_arr = np.linspace(0.2*scl,2*scl,10)
+    # mad_arr = []
+    # for val in scl_arr:
+    #     diff = im1 - val*im2
+    #     mad_arr.append(robust.medabsdev(diff[mask]))
+    # mad_arr = np.array(mad_arr)
+    # scl = scl_arr[mad_arr==mad_arr.min()][0]
+
+    # # Check a range of scale values
+    # # Want to minimize the standard deviation of the differenced images
+    # scl_arr = np.linspace(0.85*scl,1.15*scl,50)
+    # mad_arr = []
+    # for val in scl_arr:
+    #     diff = im1 - val*im2
+    #     mad_arr.append(robust.medabsdev(diff[mask]))
+    # mad_arr = np.array(mad_arr)
+
+    # #plt.plot(scl_arr,mad_arr)
+    # return scl_arr[mad_arr==mad_arr.min()][0]
 
 
 def optimal_difference(im_sci, im_ref, scale, binsize=1, center=None, 
@@ -852,12 +845,12 @@ def hist_indices(values, bins=10, return_more=False):
     -------
     Find the standard deviation at each radius of an image
     
-    >>> rho = dist_image(image)
-    >>> binsize = 1
-    >>> bins = np.arange(rho.min(), rho.max() + binsize, binsize)
-    >>> igroups, vgroups, center_vals = hist_indices(rho, bins, True)
-    >>> # Get the standard deviation of each bin in image
-    >>> std = binned_statistic(igroups, image, func=np.std)
+        >>> rho = dist_image(image)
+        >>> binsize = 1
+        >>> bins = np.arange(rho.min(), rho.max() + binsize, binsize)
+        >>> igroups, vgroups, center_vals = hist_indices(rho, bins, True)
+        >>> # Get the standard deviation of each bin in image
+        >>> std = binned_statistic(igroups, image, func=np.std)
 
     """
     
@@ -917,10 +910,10 @@ def binned_statistic(x, values, func=np.mean, bins=10):
     -------
     Find the standard deviation at each radius of an image
     
-    >>> rho = dist_image(image)
-    >>> binsize = 1
-    >>> radial_bins = np.arange(rho.min(), rho.max() + binsize, binsize)
-    >>> radial_stds = binned_statistic(rho, image, func=np.std, bins=radial_bins)
+        >>> rho = dist_image(image)
+        >>> binsize = 1
+        >>> radial_bins = np.arange(rho.min(), rho.max() + binsize, binsize)
+        >>> radial_stds = binned_statistic(rho, image, func=np.std, bins=radial_bins)
     
     """
 
