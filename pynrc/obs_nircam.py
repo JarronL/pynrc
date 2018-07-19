@@ -1442,12 +1442,13 @@ class obs_hci(nrc_hci):
             obscurred by a corongraphic mask feature.
         zfact : float
             Zodiacal background factor (default=2.5)
-        locstr :
-            Object name or RA/DEC (decimal degrees or sexigesimal)
-        year : int
-            Year of observation
-        day : float
-            Day of observation
+        ra : float
+            Right ascension in decimal degrees
+        dec : float
+            Declination in decimal degrees
+        thisday : int
+            Calendar day to use for background calculation.  If not given, will use the
+            average of visible calendar days.
 
         """
 
@@ -1938,13 +1939,13 @@ class obs_hci(nrc_hci):
         use_cmask : bool
             Use the coronagraphic mask image to attenuate planet or disk that
             is obscurred by a corongraphic mask feature.
-        locstr :
-            Object name or RA/DEC (decimal degrees or sexigesimal)
-        year : int
-            Year of observation
-        day : float
-            Day of observation
-
+        ra : float
+            Right ascension in decimal degrees
+        dec : float
+            Declination in decimal degrees
+        thisday : int
+            Calendar day to use for background calculation.  If not given, will use the
+            average of visible calendar days.
 
         """
 
@@ -2044,13 +2045,13 @@ class obs_hci(nrc_hci):
             is obscurred by a corongraphic mask feature.
         zfact : float
             Zodiacal background factor (default=2.5)
-        locstr :
-            Object name or RA/DEC (decimal degrees or sexigesimal)
-        year : int
-            Year of observation
-        day : float
-            Day of observation
-
+        ra : float
+            Right ascension in decimal degrees
+        dec : float
+            Declination in decimal degrees
+        thisday : int
+            Calendar day to use for background calculation.  If not given, will use the
+            average of visible calendar days.
 
         """
 

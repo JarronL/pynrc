@@ -38,9 +38,6 @@ from astropy.table import Table
 from astropy.time import Time
 from astropy import units
 
-if not on_rtd: from jwst_backgrounds import jbt
-
-
 #from scipy.optimize import least_squares#, leastsq
 #from scipy.ndimage import fourier_shift
 from scipy.interpolate import RegularGridInterpolator, interp1d
@@ -2148,7 +2145,7 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
 
     Keyword Args
     -------------------
-    zodi_spec   - zfact, locstr, year, day
+    zodi_spec   - zfact, ra, dec, thisday, [locstr, year, day]
     pix_noise   - rn, ktc, idark, and p_excess
     psf_coeff   - npsf and ndeg
     read_filter - ND_acq
@@ -3365,8 +3362,8 @@ def zodi_spec(zfact=None, ra=None, dec=None, thisday=None, **kwargs):
     Notes
     -----
     Added the ability to query the Euclid background model using
-    :func:`zodi_euclid` for a specific location and observing
-    time. The two blackbodies will be scaled to the 1.0 and 5.5 um emission.
+    :func:`zodi_euclid` for a specific location and observing time.
+    The two blackbodies will be scaled to the 1.0 and 5.5 um emission.
     This functionality is deprecated in favor of jwst_backgrounds.
 
     Keyword Args
@@ -3380,6 +3377,7 @@ def zodi_spec(zfact=None, ra=None, dec=None, thisday=None, **kwargs):
 
     """
 
+    from jwst_backgrounds import jbt
     if (ra is not None) and (dec is not None):
         # Wavelength for bathtub plot, which we don't use here
         wave_bath = 2.5

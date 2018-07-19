@@ -1880,12 +1880,9 @@ class NIRCam(object):
     def bg_zodi(self, zfact=None, **kwargs):
         """Zodiacal background flux.
         
-        There are options to query the IPAC Euclid Background Model
-        (http://irsa.ipac.caltech.edu/applications/BackgroundModel/),
-        but this method takes a while. Instead, if the keywords
-        locstr, year, day are specified, this function will print
-        information on an equivalent zfact value that produces the
-        same flux within the bandpass. Values may be filter dependent.
+        There are options to call `jwst_backgrounds` to obtain better 
+        predictions of the background. Specify keywords `ra`, `dec`, 
+        and `thisday` to use `jwst_backgrounds`.
         
         Returned values are in units of e-/sec/pixel
 
@@ -1896,12 +1893,13 @@ class NIRCam(object):
 
         Keyword Args
         ------------
-        locstr : 
-            Object name or RA/DEC (decimal degrees or sexigesimal)
-        year : int
-            Year of observation
-        day : float
-            Day of observation
+        ra : float
+            Right ascension in decimal degrees
+        dec : float
+            Declination in decimal degrees
+        thisday : int
+            Calendar day to use for background calculation.  If not given, will use the
+            average of visible calendar days.
 
         Notes
         -----
@@ -1926,13 +1924,13 @@ class NIRCam(object):
         obs_zodi  = S.Observation(sp_zodi, bp, waveset)
         fzodi_pix = obs_zodi.countrate() * (self.pix_scale/206265.0)**2
         
-        # Recommend a zfact value if locstr, year, and day specified
-        if 'locstr' in kwargs.keys():
+        # Recommend a zfact value if ra, dec, and thisday specified
+        if 'ra' in kwargs.keys():
             sp_zodi_temp   = zodi_spec(zfact=1)
             obs_zodi_temp  = S.Observation(sp_zodi_temp, bp, waveset)
             fzodi_pix_temp = obs_zodi_temp.countrate() * (self.pix_scale/206265.0)**2
             zf_rec = fzodi_pix / fzodi_pix_temp
-            str1 = 'Using locstr,year,day keywords can be very slow. \n'
+            str1 = 'Using ra,dec,thisday keywords can be relatively slow. \n'
             str2 = 'For your specified loc and date, we recommend using zfact={:.1f}'\
                 .format(zf_rec)
             _log.warning(str1)
@@ -2116,12 +2114,13 @@ class NIRCam(object):
         ------------
         zfact : float
             Factor to scale Zodiacal spectrum (default 2.5)
-        locstr : 
-            Object name or RA/DEC (decimal degrees or sexigesimal)
-        year : int
-            Year of observation
-        day : float
-            Day of observation
+        ra : float
+            Right ascension in decimal degrees
+        dec : float
+            Declination in decimal degrees
+        thisday : int
+            Calendar day to use for background calculation.  If not given, will use the
+            average of visible calendar days.
 
         """
 
@@ -2280,12 +2279,13 @@ class NIRCam(object):
         ------------
         zfact : float
             Factor to scale Zodiacal spectrum (default 2.5)
-        locstr : 
-            Object name or RA/DEC (decimal degrees or sexigesimal)
-        year : int
-            Year of observation
-        day : float
-            Day of observation
+        ra : float
+            Right ascension in decimal degrees
+        dec : float
+            Declination in decimal degrees
+        thisday : int
+            Calendar day to use for background calculation.  If not given, will use the
+            average of visible calendar days.
 
         ideal_Poisson : bool
             Use total signal for noise estimate?
@@ -2304,8 +2304,8 @@ class NIRCam(object):
         
         Note
         ----
-        The keyword arguments locstr, year, day are not recommended for use 
-        given the amount of time it takes to query the Euclid web server. 
+        The keyword arguments ra, dec, thisday are not recommended for use 
+        given the amount of time it takes to query the web server. 
         Instead, use :meth:`bg_zodi` to match a zfact estimate.
                   
         Returns
