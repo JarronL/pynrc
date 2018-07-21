@@ -8,9 +8,6 @@ A JWST NIRCam ETC and Simulator
 .. image:: https://img.shields.io/pypi/v/pynrc.svg
         :target: https://pypi.python.org/pypi/pynrc
 
-.. image:: https://img.shields.io/travis/JarronL/pynrc.svg
-        :target: https://travis-ci.org/JarronL/pynrc
-
 .. image:: https://readthedocs.org/projects/pynrc/badge/?version=latest
         :target: https://pynrc.readthedocs.io/en/latest/?badge=latest
         :alt: Documentation Status

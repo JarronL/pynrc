@@ -1,6 +1,14 @@
 Revision History
 ================
 
+v0.7.0 (Jul 2018)
+-----------------
+
+- Release to work with WebbPSF 0.7.0.
+
+  - Field-dependent WFE
+  - Image plane distortions
+
 v0.6.5 (Mar 2018)
 -----------------
 
@@ -20,7 +28,7 @@ v0.6.3 (Mar 2018)
 -----------------
 
 - First PyPI release.
-- Effectively the same as 0.6.3, but better documentation of packaging and distributing.
+- Effectively the same as 0.6.2, but better documentation of packaging and distributing.
 
 
 v0.6.2 (Mar 2018)
@@ -61,7 +69,7 @@ v0.5.0 (Feb 2017)
 - ND Acquisition mode
 - Ramp settings optimizer
 - Can now simulate ramps with detector noise
-- Query Euclid's IPAC server for position-dependent Zodiacal emission
+- Query Euclid's IPAC server for time/position-dependent Zodiacal emission
 - Added example Jupyter notebooks
 
 v0.1.2 (Jan 2017)

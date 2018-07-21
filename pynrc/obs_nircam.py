@@ -2262,22 +2262,8 @@ def _wrap_convolve_for_mp(args):
 
 def _wrap_conv_trans_for_mp(args):
     """
-    Internal helper routine for parallelizing computations across multiple processors.
-
-    Create a list of arguments to pass to this function:
-        worker_args = [(inst, image, rho, offset_list, i) for i,inst in enumerate(nrc_star_list)]
-
-    Then create a theadpool:
-        pool = mp.Pool(nproc)
-        images = pool.map(_wrap_coeff_for_mp, worker_args)
-        pool.close()
-        images = np.array(images)
-
-    For single processing, just use:
-        images = [_wrap_convolve_for_mp(wa) for wa in worker_args]
-        images = np.array(images)
-
-    For multiprocessing:
+    Similar to `_wrap_convolve_for_mp` except bins data by mask
+    transmission value.
     """
 
     psf, model, tvals_edges, cmask, i = args
@@ -2305,9 +2291,9 @@ def _wrap_conv_trans_for_mp(args):
 def plot_contrasts_mjup(curves, nsig, wfe_list, obs=None, age=10,
     ax=None, colors=None, xr=[0,10], yr=None, file=None,
     twin_ax=False, return_axes=False, **kwargs):
-    """Plot contrast curves
+    """Plot mass contrast curves
 
-    Plot a series of contrast curves for corresponding WFE drifts.
+    Plot a series of mass contrast curves for corresponding WFE drifts.
 
     Parameters
     ----------
@@ -2531,10 +2517,12 @@ def planet_mags(obs, age=10, entropy=13, mass_list=[10,5,2,1], av_vals=[0,25], a
 
     return pmag
 
-import matplotlib.patches as mpatches
+
 def plot_planet_patches(ax, obs, age=10, entropy=13, mass_list=[10,5,2,1], av_vals=[0,25],
     cols=None, **kwargs):
     """Plot exoplanet magnitudes in region corresponding to extinction values."""
+
+    import matplotlib.patches as mpatches
 
     xlim = ax.get_xlim()
 
