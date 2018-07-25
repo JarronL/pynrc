@@ -5,8 +5,6 @@ nbsphinx
 numpy
 matplotlib>=2
 Cython
-astropy<3
-astropy-helpers
 pysynphot==0.9.7
 -e git+https://github.com/mperrin/poppy.git#egg=poppy
 -e git+https://github.com/mperrin/webbpsf.git#egg=webbpsf

@@ -7,7 +7,6 @@ Welcome to pyNRC's documentation!
 =================================
 
 .. automodule:: pynrc
-    :members:
     
 
 .. toctree::

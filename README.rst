@@ -22,7 +22,8 @@ pyNRC is a set of Python-based tools for planning observations with JWST NIRCam,
 such as an ETC, a simple image slope simulator, and an enhanced data simulator.
 
 While special attention has been placed on NIRCam coronagraphic modes, 
-this package also works for a variety of NIRCam observing modes including: 
+this package also works for a variety of NIRCam observing modes including:
+
 - direct imaging 
 - coronagraphic imaging
 - weak lens imaging
