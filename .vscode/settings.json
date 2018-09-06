@@ -1,3 +1,4 @@
 {
-    "python.pythonPath": "/Users/jwstnircam/anaconda2/envs/py3/bin/python"
+    "python.pythonPath": "/Users/jwstnircam/anaconda2/envs/py36_070/bin/python",
+    "python.linting.enabled": false
 }
