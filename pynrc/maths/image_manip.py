@@ -147,12 +147,9 @@ def fshift(image, delx=0, dely=0, pad=False, cval=0.0):
         Otherwise, the image is wrapped.
     cval : sequence or float, optional
         The values to set the padded values for each axis. Default is 0.
-        ((before_1, after_1), ... (before_N, after_N)) unique pad constants
-        for each axis.
-        ((before, after),) yields same before and after constants for each
-        axis.
-        (constant,) or int is a shortcut for before = after = constant for
-        all axes.
+        ((before_1, after_1), ... (before_N, after_N)) unique pad constants for each axis.
+        ((before, after),) yields same before and after constants for each axis.
+        (constant,) or int is a shortcut for before = after = constant for all axes.
 
         
     Returns
@@ -255,7 +252,7 @@ def fshift(image, delx=0, dely=0, pad=False, cval=0.0):
                           
                           
                           
-def fourier_imshift(image, xshift, yshift, pad=False):
+def fourier_imshift(image, xshift, yshift, pad=False, cval=0.0):
     """Fourier shift image
     
     Shift an image by use of Fourier shift theorem
@@ -271,6 +268,11 @@ def fourier_imshift(image, xshift, yshift, pad=False):
     pad : bool
         Should we pad the array before shifting, then truncate?
         Otherwise, the image is wrapped.
+    cval : sequence or float, optional
+        The values to set the padded values for each axis. Default is 0.
+        ((before_1, after_1), ... (before_N, after_N)) unique pad constants for each axis.
+        ((before, after),) yields same before and after constants for each axis.
+        (constant,) or int is a shortcut for before = after = constant for all axes.
 
     Returns
     -------
@@ -283,7 +285,7 @@ def fourier_imshift(image, xshift, yshift, pad=False):
         padx = np.abs(np.int(xshift)) + 1
         pady = np.abs(np.int(yshift)) + 1
         pad_vals = ([pady]*2,[padx]*2)
-        im = np.pad(image,pad_vals,'constant')
+        im = np.pad(image,pad_vals,'constant',constant_values=cval)
     else:
         padx = 0; pady = 0
         im = image
@@ -660,8 +662,7 @@ def scale_ref_image(im1, im2, mask=None, smooth_imgs=False,
     """Reference image scaling
     
     Find value to scale a reference image by minimizing residuals.
-    This assumed everything is already aligned if 
-    return_shift_values=False.
+    Assumes everything is already aligned if return_shift_values=False.
     
     Or simply turn on return_shift_values to return (dx,dy,scl). 
     Then fshift(im2,dx,dy) to shift the reference image.
