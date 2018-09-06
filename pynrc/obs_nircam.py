@@ -2288,7 +2288,7 @@ def _wrap_conv_trans_for_mp(args):
 
         return res
 
-def plot_contrasts_mjup(curves, nsig, wfe_list, obs=None, age=10,
+def plot_contrasts_mjup(curves, nsig, wfe_list, obs=None, age=100,
     ax=None, colors=None, xr=[0,10], yr=None, file=None,
     twin_ax=False, return_axes=False, **kwargs):
     """Plot mass contrast curves
@@ -2306,10 +2306,6 @@ def plot_contrasts_mjup(curves, nsig, wfe_list, obs=None, age=10,
     wfe_list : array-like
         List of WFE drift values corresponding to each set of sensitivities
         in `curves` argument.
-    file : string
-        Location and name of COND file. See isochrones stored at
-        https://phoenix.ens-lyon.fr/Grids/.
-        Default is model.AMES-Cond-2000.M-0.0.JWST.Vega
 
     Keyword Args
     ------------
@@ -2319,6 +2315,10 @@ def plot_contrasts_mjup(curves, nsig, wfe_list, obs=None, age=10,
         distances on opposing axes. Also necessary for mjup=True.
     age : float
         Required for plotting limiting planet masses.
+    file : string
+        Location and name of COND file. See isochrones stored at
+        https://phoenix.ens-lyon.fr/Grids/.
+        Default is model.AMES-Cond-2000.M-0.0.JWST.Vega
     ax : matplotlib.axes
         Axes on which to plot curves.
     colors : None, array-like
@@ -2364,7 +2364,7 @@ def plot_contrasts_mjup(curves, nsig, wfe_list, obs=None, age=10,
         ax3 = ax.twiny()
         xr3 = np.array(ax.get_xlim()) * obs.distance
         ax3.set_xlim(xr3)
-        ax3.set_xlabel('Separtion (AU)')
+        ax3.set_xlabel('Separation (AU)')
 
         ax3.xaxis.get_major_locator().set_params(nbins=9, steps=[1, 2, 5, 10])
 
@@ -2440,7 +2440,7 @@ def plot_contrasts(curves, nsig, wfe_list, obs=None, ax=None,
         ax3 = ax.twiny()
         xr3 = np.array(ax.get_xlim()) * obs.distance
         ax3.set_xlim(xr3)
-        ax3.set_xlabel('Separtion (AU)')
+        ax3.set_xlabel('Separation (AU)')
 
         ax3.xaxis.get_major_locator().set_params(nbins=9, steps=[1, 2, 5, 10])
 
