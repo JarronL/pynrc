@@ -1,0 +1,16 @@
+Fresh Installation
+
+WebbPSF
+
+1. conda config --append channels http://ssb.stsci.edu/astroconda
+2. conda install pysynphot poppy jwxml pysiaf
+3. conda update scikit-image --no-deps
+4. conda install webbpsf --no-deps
+
+JWST Background
+
+1. conda config --append channels conda-forge
+2. conda install pytest-runner --no-deps -c conda-forge
+3. conda install healpy=1.11 --no-deps -c conda-forge
+4. pip install jwst_backgrounds
+

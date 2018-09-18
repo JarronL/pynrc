@@ -48,7 +48,8 @@ def jl_poly(xvals, coeff, dim_reorder=False):
     dim = coeff.shape
     ndim = len(dim)
     if ndim>3:
-        raise ValueError('coefficient can only have 1, 2, or 3 dimensions. Found {} dimensions.'.format(ndim))
+        raise ValueError('coefficient can only have 1, 2, or 3 dimensions. \
+                          Found {} dimensions.'.format(ndim))
 
     # Create an array of exponent values
     parr = np.arange(dim[0], dtype='float')
@@ -57,23 +58,23 @@ def jl_poly(xvals, coeff, dim_reorder=False):
 
     # Reshape coeffs to 2D array
     cf = coeff.reshape(dim[0],-1)
-    if not dim_reorder:
-        # This is the Python preferred ordering
-        # Coefficients are assumed (deg+1,ny,nx)
-        # xvals have length nz
-        # Result to be order (nz,ny,nx)
-        yfit = np.dot(xfan.T,cf)
-
-        if ndim==1 or n==1: yfit = yfit.flatten()
-        if ndim==3: yfit = yfit.reshape((n,dim[1],dim[2]))
-    else:
+    if dim_reorder:
         # Coefficients are assumed (deg+1,nx,ny)
         # xvals have length nz
-        # Result to be order (nx,ny,nz)
+        # Result to be ordered (nx,ny,nz)
         yfit = np.dot(cf.T, xfan)
 
         if ndim==1 or n==1: yfit = yfit.flatten()
         if ndim==3: yfit = yfit.reshape((dim[1],dim[2],n))
+    else:
+        # This is the Python preferred ordering
+        # Coefficients are assumed (deg+1,ny,nx)
+        # xvals have length nz
+        # Result to be ordered (nz,ny,nx)
+        yfit = np.dot(xfan.T,cf)
+
+        if ndim==1 or n==1: yfit = yfit.flatten()
+        if ndim==3: yfit = yfit.reshape((n,dim[1],dim[2]))
 
     return yfit
 

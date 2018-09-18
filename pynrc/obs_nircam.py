@@ -1442,12 +1442,13 @@ class obs_hci(nrc_hci):
             obscurred by a corongraphic mask feature.
         zfact : float
             Zodiacal background factor (default=2.5)
-        locstr :
-            Object name or RA/DEC (decimal degrees or sexigesimal)
-        year : int
-            Year of observation
-        day : float
-            Day of observation
+        ra : float
+            Right ascension in decimal degrees
+        dec : float
+            Declination in decimal degrees
+        thisday : int
+            Calendar day to use for background calculation.  If not given, will use the
+            average of visible calendar days.
 
         """
 
@@ -1938,13 +1939,13 @@ class obs_hci(nrc_hci):
         use_cmask : bool
             Use the coronagraphic mask image to attenuate planet or disk that
             is obscurred by a corongraphic mask feature.
-        locstr :
-            Object name or RA/DEC (decimal degrees or sexigesimal)
-        year : int
-            Year of observation
-        day : float
-            Day of observation
-
+        ra : float
+            Right ascension in decimal degrees
+        dec : float
+            Declination in decimal degrees
+        thisday : int
+            Calendar day to use for background calculation.  If not given, will use the
+            average of visible calendar days.
 
         """
 
@@ -2044,13 +2045,13 @@ class obs_hci(nrc_hci):
             is obscurred by a corongraphic mask feature.
         zfact : float
             Zodiacal background factor (default=2.5)
-        locstr :
-            Object name or RA/DEC (decimal degrees or sexigesimal)
-        year : int
-            Year of observation
-        day : float
-            Day of observation
-
+        ra : float
+            Right ascension in decimal degrees
+        dec : float
+            Declination in decimal degrees
+        thisday : int
+            Calendar day to use for background calculation.  If not given, will use the
+            average of visible calendar days.
 
         """
 
@@ -2261,22 +2262,8 @@ def _wrap_convolve_for_mp(args):
 
 def _wrap_conv_trans_for_mp(args):
     """
-    Internal helper routine for parallelizing computations across multiple processors.
-
-    Create a list of arguments to pass to this function:
-        worker_args = [(inst, image, rho, offset_list, i) for i,inst in enumerate(nrc_star_list)]
-
-    Then create a theadpool:
-        pool = mp.Pool(nproc)
-        images = pool.map(_wrap_coeff_for_mp, worker_args)
-        pool.close()
-        images = np.array(images)
-
-    For single processing, just use:
-        images = [_wrap_convolve_for_mp(wa) for wa in worker_args]
-        images = np.array(images)
-
-    For multiprocessing:
+    Similar to `_wrap_convolve_for_mp` except bins data by mask
+    transmission value.
     """
 
     psf, model, tvals_edges, cmask, i = args
@@ -2301,12 +2288,12 @@ def _wrap_conv_trans_for_mp(args):
 
         return res
 
-def plot_contrasts_mjup(curves, nsig, wfe_list, obs=None, age=10,
+def plot_contrasts_mjup(curves, nsig, wfe_list, obs=None, age=100,
     ax=None, colors=None, xr=[0,10], yr=None, file=None,
     twin_ax=False, return_axes=False, **kwargs):
-    """Plot contrast curves
+    """Plot mass contrast curves
 
-    Plot a series of contrast curves for corresponding WFE drifts.
+    Plot a series of mass contrast curves for corresponding WFE drifts.
 
     Parameters
     ----------
@@ -2319,10 +2306,6 @@ def plot_contrasts_mjup(curves, nsig, wfe_list, obs=None, age=10,
     wfe_list : array-like
         List of WFE drift values corresponding to each set of sensitivities
         in `curves` argument.
-    file : string
-        Location and name of COND file. See isochrones stored at
-        https://phoenix.ens-lyon.fr/Grids/.
-        Default is model.AMES-Cond-2000.M-0.0.JWST.Vega
 
     Keyword Args
     ------------
@@ -2332,10 +2315,16 @@ def plot_contrasts_mjup(curves, nsig, wfe_list, obs=None, age=10,
         distances on opposing axes. Also necessary for mjup=True.
     age : float
         Required for plotting limiting planet masses.
+    file : string
+        Location and name of COND file. See isochrones stored at
+        https://phoenix.ens-lyon.fr/Grids/.
+        Default is model.AMES-Cond-2000.M-0.0.JWST.Vega
     ax : matplotlib.axes
         Axes on which to plot curves.
     colors : None, array-like
         List of colors for contrast curves. Default is gradient of blues.
+    twin_ax : bool
+        Plot opposing axes in alternate units.
     return_axes : bool
         Return the matplotlib axes to continue plotting. If `obs` is set,
         then this returns three sets of axes.
@@ -2377,7 +2366,7 @@ def plot_contrasts_mjup(curves, nsig, wfe_list, obs=None, age=10,
         ax3 = ax.twiny()
         xr3 = np.array(ax.get_xlim()) * obs.distance
         ax3.set_xlim(xr3)
-        ax3.set_xlabel('Separtion (AU)')
+        ax3.set_xlabel('Separation (AU)')
 
         ax3.xaxis.get_major_locator().set_params(nbins=9, steps=[1, 2, 5, 10])
 
@@ -2453,7 +2442,7 @@ def plot_contrasts(curves, nsig, wfe_list, obs=None, ax=None,
         ax3 = ax.twiny()
         xr3 = np.array(ax.get_xlim()) * obs.distance
         ax3.set_xlim(xr3)
-        ax3.set_xlabel('Separtion (AU)')
+        ax3.set_xlabel('Separation (AU)')
 
         ax3.xaxis.get_major_locator().set_params(nbins=9, steps=[1, 2, 5, 10])
 
@@ -2530,10 +2519,12 @@ def planet_mags(obs, age=10, entropy=13, mass_list=[10,5,2,1], av_vals=[0,25], a
 
     return pmag
 
-import matplotlib.patches as mpatches
+
 def plot_planet_patches(ax, obs, age=10, entropy=13, mass_list=[10,5,2,1], av_vals=[0,25],
     cols=None, **kwargs):
     """Plot exoplanet magnitudes in region corresponding to extinction values."""
+
+    import matplotlib.patches as mpatches
 
     xlim = ax.get_xlim()
 

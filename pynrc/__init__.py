@@ -76,7 +76,7 @@ from .nrc_utils import (read_filter, pix_noise, nrc_header, bp_2mass, bp_wise, \
 
 from .pynrc_core import (multiaccum, DetectorOps, NIRCam, planets_sb12)
 
-from .obs_nircam import (obs_coronagraphy, obs_hci, nrc_hci)
+from .obs_nircam import (obs_hci, nrc_hci)
 
 #from .ngNRC import slope_to_ramp, nproc_use_ng
 

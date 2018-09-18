@@ -1339,7 +1339,7 @@ class NIRCam(object):
         # For now, it's just easier to delete old instances and start from scratch
         # rather than tracking changes and updating only the changes. That could 
         # get complicated, and I don't think there is a memory leak from deleting
-        # the Detectors instances?
+        # the Detectors instances.
         try: del self.Detectors
         except AttributeError: pass
         self.Detectors = [DetectorOps(det, **kwargs) for det in det_list]
@@ -1555,7 +1555,7 @@ class NIRCam(object):
         wfe_drift : float
             Wavefront error drift amplitude in nm.
             Updates :attr:`wfe_drift` attribute and coefficients appropriately.
-        opd : tuple or HDUList
+        opd : tuple, str, or HDUList
             Tuple (file, slice) or filename or HDUList specifying OPD.
         tel_pupil : str
             File name or HDUList specifying telescope entrance pupil.
@@ -1725,7 +1725,7 @@ class NIRCam(object):
 
 
     def sat_limits(self, sp=None, bp_lim=None, units='vegamag', well_frac=0.8,
-        ngroup=None, verbose=False, **kwargs):
+        ngroup=None, trim_psf=33, verbose=False, **kwargs):
         """Saturation limits.        
         
         Generate the limiting magnitude (80% saturation) with the current instrument
@@ -1751,6 +1751,12 @@ class NIRCam(object):
             use those specified in the Detectors class. Can set
             ngroup=0 for the so-called Zero Frame in the event
             there are multiple reads per group.
+        trim_psf : int, None
+            Option to crop the PSF coefficient around the brightest pixel.
+            For PSFs with large `fov_pix` values, this option helps speed
+            up the saturation limit calculation. Afterall, we're really
+            only interested in the brightest pixel when calculating
+            saturation limits. Default = 5 (detector pixels).
         verbose : bool
             Print result details.
 
@@ -1785,15 +1791,34 @@ class NIRCam(object):
         kwargs = merge_dicts(kwargs, self._psf_info)
 
         # We don't necessarily need the entire image, so cut down to size
+        # 1. Create a temporary image at bp avg wavelength (monochromatic)
+        # 2. Find x,y position of max PSF
+        # 3. Cut out postage stamp region around that PSF coeff
         psf_coeff = self._psf_coeff
-        if not ('WEAK LENS' in self.pupil):
-            fov_pix = 51
-            fov_pix_over = fov_pix * kwargs['oversample']
+        if (trim_psf is not None) and (trim_psf < kwargs['fov_pix']):
+            
+            # Quickly create a temporary PSF to find max value location
+            wtemp = np.array([bp_lim.wave[0], bp_lim.avgwave(), bp_lim.wave[-1]])
+            ttemp = np.array([bp_lim.sample(w) for w in wtemp])
+            bptemp = S.ArrayBandpass(wave=wtemp, throughput=ttemp)
+            psf_temp, psf_temp_over = gen_image_coeff(bptemp, coeff=psf_coeff, \
+                fov_pix=kwargs['fov_pix'], oversample=kwargs['oversample'], \
+                return_oversample=True)
+
+            # Amount to shift PSF
+            yind, xind = np.argwhere(psf_temp_over==psf_temp_over.max())[0]
+            ypix, xpix = psf_temp_over.shape
+            ysh = int(yind - ypix/2)
+            xsh = int(xind - xpix/2)
+
+            fov_pix_over = trim_psf * kwargs['oversample']
             coeff = []
             for im in psf_coeff:
-                coeff.append(pad_or_cut_to_size(im, (fov_pix_over,fov_pix_over)))
+                im = fshift(im, xsh, ysh)
+                im = pad_or_cut_to_size(im, (fov_pix_over,fov_pix_over))
+                coeff.append(im)
             psf_coeff = np.array(coeff)
-            kwargs['fov_pix'] = fov_pix
+            kwargs['fov_pix'] = trim_psf
 
         satlim = sat_limit_webbpsf(self.bandpass, pupil=self.pupil, mask=self.mask,
             module=self.module, full_well=well_level, well_frac=well_frac,
@@ -1880,12 +1905,9 @@ class NIRCam(object):
     def bg_zodi(self, zfact=None, **kwargs):
         """Zodiacal background flux.
         
-        There are options to query the IPAC Euclid Background Model
-        (http://irsa.ipac.caltech.edu/applications/BackgroundModel/),
-        but this method takes a while. Instead, if the keywords
-        locstr, year, day are specified, this function will print
-        information on an equivalent zfact value that produces the
-        same flux within the bandpass. Values may be filter dependent.
+        There are options to call `jwst_backgrounds` to obtain better 
+        predictions of the background. Specify keywords `ra`, `dec`, 
+        and `thisday` to use `jwst_backgrounds`.
         
         Returned values are in units of e-/sec/pixel
 
@@ -1896,12 +1918,13 @@ class NIRCam(object):
 
         Keyword Args
         ------------
-        locstr : 
-            Object name or RA/DEC (decimal degrees or sexigesimal)
-        year : int
-            Year of observation
-        day : float
-            Day of observation
+        ra : float
+            Right ascension in decimal degrees
+        dec : float
+            Declination in decimal degrees
+        thisday : int
+            Calendar day to use for background calculation.  If not given, will use the
+            average of visible calendar days.
 
         Notes
         -----
@@ -1926,13 +1949,13 @@ class NIRCam(object):
         obs_zodi  = S.Observation(sp_zodi, bp, waveset)
         fzodi_pix = obs_zodi.countrate() * (self.pix_scale/206265.0)**2
         
-        # Recommend a zfact value if locstr, year, and day specified
-        if 'locstr' in kwargs.keys():
+        # Recommend a zfact value if ra, dec, and thisday specified
+        if 'ra' in kwargs.keys():
             sp_zodi_temp   = zodi_spec(zfact=1)
             obs_zodi_temp  = S.Observation(sp_zodi_temp, bp, waveset)
             fzodi_pix_temp = obs_zodi_temp.countrate() * (self.pix_scale/206265.0)**2
             zf_rec = fzodi_pix / fzodi_pix_temp
-            str1 = 'Using locstr,year,day keywords can be very slow. \n'
+            str1 = 'Using ra,dec,thisday keywords can be relatively slow. \n'
             str2 = 'For your specified loc and date, we recommend using zfact={:.1f}'\
                 .format(zf_rec)
             _log.warning(str1)
@@ -2116,12 +2139,13 @@ class NIRCam(object):
         ------------
         zfact : float
             Factor to scale Zodiacal spectrum (default 2.5)
-        locstr : 
-            Object name or RA/DEC (decimal degrees or sexigesimal)
-        year : int
-            Year of observation
-        day : float
-            Day of observation
+        ra : float
+            Right ascension in decimal degrees
+        dec : float
+            Declination in decimal degrees
+        thisday : int
+            Calendar day to use for background calculation.  If not given, will use the
+            average of visible calendar days.
 
         """
 
@@ -2280,12 +2304,13 @@ class NIRCam(object):
         ------------
         zfact : float
             Factor to scale Zodiacal spectrum (default 2.5)
-        locstr : 
-            Object name or RA/DEC (decimal degrees or sexigesimal)
-        year : int
-            Year of observation
-        day : float
-            Day of observation
+        ra : float
+            Right ascension in decimal degrees
+        dec : float
+            Declination in decimal degrees
+        thisday : int
+            Calendar day to use for background calculation.  If not given, will use the
+            average of visible calendar days.
 
         ideal_Poisson : bool
             Use total signal for noise estimate?
@@ -2304,8 +2329,8 @@ class NIRCam(object):
         
         Note
         ----
-        The keyword arguments locstr, year, day are not recommended for use 
-        given the amount of time it takes to query the Euclid web server. 
+        The keyword arguments ra, dec, thisday are not recommended for use 
+        given the amount of time it takes to query the web server. 
         Instead, use :meth:`bg_zodi` to match a zfact estimate.
                   
         Returns
