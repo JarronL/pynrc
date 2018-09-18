@@ -1754,9 +1754,10 @@ class NIRCam(object):
         trim_psf : int, None
             Option to crop the PSF coefficient around the brightest pixel.
             For PSFs with large `fov_pix` values, this option helps speed
-            up the saturation limit calculation. Afterall, we're really
+            up the saturation limit calculation. Afterall, we're usually
             only interested in the brightest pixel when calculating
-            saturation limits. Default = 5 (detector pixels).
+            saturation limits. Set to `None` to use the 'fov_pix' value.
+            Default = 33 (detector pixels).
         verbose : bool
             Print result details.
 
