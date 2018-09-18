@@ -2323,6 +2323,8 @@ def plot_contrasts_mjup(curves, nsig, wfe_list, obs=None, age=100,
         Axes on which to plot curves.
     colors : None, array-like
         List of colors for contrast curves. Default is gradient of blues.
+    twin_ax : bool
+        Plot opposing axes in alternate units.
     return_axes : bool
         Return the matplotlib axes to continue plotting. If `obs` is set,
         then this returns three sets of axes.
