@@ -61,6 +61,7 @@ class nrc_hci(NIRCam):
         # Cached PSFs
         # -----------
         # Generate cached PSFs for quick retrieval.
+        # A PSF centered on the mask and one fully off-axis.
         if verbose: print("Generating oversampled PSFs...")
         self._gen_cached_psfs()
 
@@ -260,6 +261,7 @@ class nrc_hci(NIRCam):
 
         # Original offset value for observation
         baroff_orig = self.bar_offset
+        self._bar_wfe_val = baroff_orig
 
         # Loop through offset locations and save PSFs
         psf_list = []
@@ -271,6 +273,7 @@ class nrc_hci(NIRCam):
 
         # Return to original bar offset position
         self.bar_offset = baroff_orig
+        self._bar_wfe_val = None
 
         self.psf_center_offsets = offset_vals
         self.psf_center_over = psf_list
@@ -306,7 +309,7 @@ class obs_hci(nrc_hci):
     wfe_ref_drift: float
         WFE drift in nm between the science and reference targets.
         Expected values are between ~3-10 nm.
-    wfe_ref_drift: float
+    wfe_roll_drift: float
         WFE drift in nm between science roll angles. Default=0.
     wind_mode : str
         'FULL', 'STRIPE', or 'WINDOW'
@@ -617,7 +620,7 @@ class obs_hci(nrc_hci):
         source image using a spectrum from Spiegel & Burrows (2012).
         Use self.kill_planets() to delete them.
 
-        Coordinate convention is for +V3 up and +V2 to left.
+        Coordinate convention is for +N up and +E to left.
 
         Parameters
         ----------
@@ -643,7 +646,7 @@ class obs_hci(nrc_hci):
             due to being embedded in a disk.
 
         xy : tuple, None
-            (X,Y) position in V2/V3 coordinates of companion.
+            (X,Y) position in sky coordinates of companion (N up, E left).
         rtheta : tuple, None
             Radius and position angle relative to stellar position.
             Alternative to xy keyword
@@ -718,7 +721,7 @@ class obs_hci(nrc_hci):
         Use info stored in self.planets to create a noiseless slope image
         of just the exoplanets (no star).
 
-        Coordinate convention is for +V3 up and +V2 to left.
+        Coordinate convention is for +N up and +E to left.
 
         Parameters
         ----------
@@ -832,7 +835,7 @@ class obs_hci(nrc_hci):
         The PA offset value will rotate the image CCW.
         Image units of e-/sec.
 
-        Coordinate convention is for +V3 up and +V2 to left.
+        Coordinate convention is for N up and E to left.
 
         Parameters
         ----------
@@ -1048,7 +1051,7 @@ class obs_hci(nrc_hci):
         """Make roll-subtracted image.
 
         Create a final roll-subtracted slope image based on current observation
-        settings. Coordinate convention is for +V3 up and +V2 to left.
+        settings. Coordinate convention is for +N up and +E to left.
 
         Procedure:
 
@@ -1383,7 +1386,7 @@ class obs_hci(nrc_hci):
         """Make roll-subtracted image.
 
         Create a final roll-subtracted slope image based on current observation
-        settings. Coordinate convention is for +V3 up and +V2 to left.
+        settings. Coordinate convention is for N up and E to left.
 
         Procedure:
 
@@ -1392,10 +1395,10 @@ class obs_hci(nrc_hci):
         - Add noise to all images
         - Scale ref image
         - Subtract ref image from both rolls
-        - De-rotate Roll 1 and Roll 2 to common V2/V3
+        - De-rotate Roll 1 and Roll 2 to common coordinates
         - Average Roll 1 and Roll 2
 
-        Returns an HDUList of final image (V3 rotated upwards).
+        Returns an HDUList of final image (N rotated upwards).
 
         Parameters
         ----------
@@ -1793,6 +1796,7 @@ class obs_hci(nrc_hci):
         # Normalize by psf max value
         if no_ref:
             # No reference image subtraction; pure roll subtraction
+            # Generate 2 PSFs separated by roll angle to find self-subtracted PSF peak
 
             off_vals = []
             max_vals = []

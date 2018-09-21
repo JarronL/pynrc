@@ -1559,6 +1559,8 @@ def wfed_coeff(filter, force=False, save=True, save_name=None, **kwargs):
         return np.load(save_name)
 
     _log.warn('Generating WFE Drift coefficients. This may take some time.')
+    # _log.warn('{}'.format(save_name))
+
     # Cycle through WFE drifts for fitting
     wfe_list = np.array([0,1,2,5,10,20,40])
     nwfe = len(wfe_list)
