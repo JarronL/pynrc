@@ -838,6 +838,7 @@ def hist_indices(values, bins=10, return_more=False):
         If bins is an int, it defines the number of equal-width bins 
         in the given range (10, by default). If bins is a sequence, 
         it defines the bin edges, including the rightmost edge.
+        In the latter case, the bins must encompass all values.
     return_more : bool
         Option to also return the values organized by bin and 
         the value of the centers (igroups, vgroups, center_vals).

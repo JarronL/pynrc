@@ -502,7 +502,7 @@ class NIRCamFieldAndWavelengthDependentAberration_mod(poppy.OpticalElement):
         npix = pupilheader['NAXIS1']
         self.pixelscale = pupilheader['PUPLSCAL'] * units.meter / units.pixel
 
-        # Field point coordinates in terms of arcsec
+        # Field point coordinates in terms of arcmin
         self.tel_coords = instrument._tel_coords()
         telcoords_am  = self.tel_coords.to(units.arcmin).value
         v2_tel,v3_tel = telcoords_am
@@ -523,7 +523,7 @@ class NIRCamFieldAndWavelengthDependentAberration_mod(poppy.OpticalElement):
         ymax = header['YMAX']
         ydel = header['YDEL']
 
-        # V2/V3 coordinates in arcsec
+        # V2/V3 coordinates in arcmin
         v2 = np.linspace(xmin, xmax, nx, endpoint=True)
         v3 = np.linspace(ymin, ymax, ny, endpoint=True)
 
@@ -2188,7 +2188,7 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
 
     For imaging, a single value is given assuming aperture photometry with a
     radius of ~1 FWHM rounded to the next highest integer pixel (or 2.5 pixels,
-    whichever is larger). For spectral observtions, this function returns an
+    whichever is larger). For spectral observations, this function returns an
     array of sensitivities at 0.1um intervals with apertures corresponding to
     2 spectral pixels and a number of spatial pixels equivalent to 1 FWHM rounded
     to the next highest integer (minimum of 5 spatial pixels).
@@ -2290,11 +2290,12 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
     # The number of pixels to span spatially for WebbPSF calculations
     fov_pix = int(fov_pix)
     oversample = int(oversample)
-    # Generate the PSF image for analysis
-    t0 = time.time()
+
+    # Generate the PSF image for analysis.
     # This process can take a while if being done over and over again.
     # Let's provide the option to skip this with a pre-generated image.
     # Remember, this is for a very specific NORMALIZED spectrum
+    t0 = time.time()
     if image is None:
         image = gen_image_coeff(bp, pupil, mask, module, sp_norm, coeff, fov_pix, oversample,
             offset_r=offset_r, offset_theta=offset_theta, **kwargs)
@@ -2578,7 +2579,7 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
         return out1, out2
 
 
-def sat_limit_webbpsf(filter_or_bp, pupil=None, mask=None, module='A',
+def sat_limit_webbpsf(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=None,
     sp=None, bp_lim=None, int_time=21.47354, full_well=81e3, well_frac=0.8,
     coeff=None, fov_pix=11, oversample=4, quiet=True, units='vegamag',
     offset_r=0, offset_theta=0, **kwargs):
@@ -2651,6 +2652,10 @@ def sat_limit_webbpsf(filter_or_bp, pupil=None, mask=None, module='A',
     if bp_lim is None:
         bp_lim = S.ObsBandpass('johnson,k')
         bp_lim.name = 'K-Band'
+
+    # If not set, select some settings based on filter (SW or LW)
+    args = channel_select(bp)
+    if pix_scale is None: pix_scale = args[0] # Pixel scale (arcsec/pixel)
 
     # Spectrum and bandpass to report magnitude that saturates NIRCam band
     if sp is None: sp = stellar_spectrum('G2V')
@@ -2752,7 +2757,7 @@ def sat_limit_webbpsf(filter_or_bp, pupil=None, mask=None, module='A',
          # Time to saturation for 10-mag source
          # Only need the maximum pixel value
         sat_time = sat_level / psf.max()
-        _log.debug('Approximate Time to {1:.2f} of Saturation: {0:.2f} sec'.\
+        _log.debug('Point source approximate Time to {1:.2f} of Saturation: {0:.2f} sec'.\
             format(sat_time,well_frac))
 
         # Magnitude necessary to saturate a given pixel
@@ -2762,19 +2767,49 @@ def sat_limit_webbpsf(filter_or_bp, pupil=None, mask=None, module='A',
         # Convert to desired unit
         sp_temp = sp.renorm(sat_mag, 'vegamag', bp_lim)
         obs_temp = S.Observation(sp_temp, bp_lim, binset=bp_lim.wave)
-        sat_mag = obs_temp.effstim(units)
+        res1 = obs_temp.effstim(units)
+        
+        out1 = {'satlim':res1, 'units':units, 'bp_lim':bp_lim.name, 'Spectrum':sp_norm.name}
+
+        # For surface brightness saturation (extended object)
+        # Assume the fiducial (sp_norm) to be in terms of mag/arcsec^2
+        # Multiply countrate() by pix_scale^2 to get in terms of per pixel (area)
+        # This is the count rate per pixel for the fiducial starting point
+        image_ext = obs.countrate() * pix_scale**2 # e-/sec/pixel
+        
+        sat_time = sat_level / image_ext
+        _log.debug('Extended object approximate Time to {1:.2f} of Saturation: {0:.2f} sec'.\
+            format(sat_time,well_frac))
+        
+        # Magnitude necessary to saturate a given pixel
+        ratio = int_time / sat_time
+        sat_mag_ext = mag_norm + 2.5*np.log10(ratio)
+
+        # Convert to desired unit
+        sp_temp = sp.renorm(sat_mag_ext, 'vegamag', bp_lim)
+        obs_temp = S.Observation(sp_temp, bp_lim, binset=bp_lim.wave)
+        res2 = obs_temp.effstim(units)
+
+        out2 = out1.copy()
+        out2['satlim'] = res2
+        out2['units'] = units+'/arcsec^2'
 
         # Print verbose information
         if not quiet:
             if bp_lim.name == bp.name:
-                print('{} Saturation Limit assuming {} source: {:.2f} {}'.\
-                    format(bp_lim.name, sp_norm.name, sat_mag, units) )
+                print('{} Saturation Limit assuming {} source (point source): {:.2f} {}'.\
+                    format(bp_lim.name, sp_norm.name, out1['satlim'], out1['units']) )
+                print('{} Saturation Limit assuming {} source (extended): {:.2f} {}'.\
+                    format(bp_lim.name, sp_norm.name, out2['satlim'], out2['units']) )
             else:
-                print('{} Saturation Limit for {} assuming {} source: {:.2f} {}'.\
-                    format(bp_lim.name, bp.name, sp_norm.name, sat_mag, units) )
+                print('{} Saturation Limit for {} assuming {} source (point source): {:.2f} {}'.\
+                    format(bp_lim.name, bp.name, sp_norm.name, out1['satlim'], out1['units']) )
+                print('{} Saturation Limit for {} assuming {} source (extended): {:.2f} {}'.\
+                    format(bp_lim.name, bp.name, sp_norm.name, out2['satlim'], out2['units']) )
 
-        return {'satmag':sat_mag, 'units':units, 'Spectrum':sp_norm.name,
-            'bp_lim':bp_lim.name}
+        return out1, out2
+#         return {'satlim':res_point, 'units':units, 'Spectrum':sp_norm.name,
+#             'bp_lim':bp_lim.name}
 
 
 def pix_noise(ngroup=2, nf=1, nd2=0, tf=10.737, rn=15.0, ktc=29.0, p_excess=(0,0),
