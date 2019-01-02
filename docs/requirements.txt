@@ -8,3 +8,6 @@ Cython
 astropy==3.0
 astropy-helpers==2.0.4
 
+-e git+https://github.com/spacetelescope/webbpsf.git#egg=webbpsf
+-e git+https://github.com/spacetelescope/poppy.git#egg=poppy
+-e git+https://github.com/spacetelescope/pysynphot.git#egg=pysynphot
