@@ -7,3 +7,5 @@ matplotlib
 Cython
 astropy==3.0.2
 astropy-helpers==3.0.2
+-e git+https://github.com/spacetelescope/poppy.git#egg=poppy
+
