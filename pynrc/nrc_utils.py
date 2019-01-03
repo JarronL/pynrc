@@ -3447,8 +3447,8 @@ def zodi_spec(zfact=None, ra=None, dec=None, thisday=None, **kwargs):
     dec : float
         Declination in decimal degrees
     thisday: int
-        Calendar day to use for background calculation.  If not given, will use the
-        average of visible calendar days.
+        Calendar day to use for background calculation.  If not given, will 
+        use the average of visible calendar days.
 
     Returns
     -------
@@ -3491,7 +3491,8 @@ def zodi_spec(zfact=None, ra=None, dec=None, thisday=None, **kwargs):
                 ind = np.where(calendar==thisday)[0][0]
                 ftot = farr[ind]
             else:
-                _log.warning("The input calendar day {}".format(thisday)+" is not available")
+                _log.warning("The input calendar day {}".format(
+                    thisday)+" is not available")
                 return
 
         sp = S.ArraySpectrum(wave=wvals*1e4, flux=ftot*1e6, fluxunits='Jy')
