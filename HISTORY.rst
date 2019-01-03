@@ -1,13 +1,19 @@
 Revision History
 ================
 
-v0.7.0 (Jul 2018)
+v0.7.0 (Jan 2019)
 -----------------
 
 - Release to work with WebbPSF 0.7.0.
 
   - Field-dependent WFE
   - Image plane distortions
+
+- Remove official support for Python 2
+- Can use ``jwst_backgrounds`` (not required)
+- Add info on saturation limits in terms of surface brightness 
+- Include option to create grism 2nd order
+- Detector pixel timing bugs
 
 v0.6.5 (Mar 2018)
 -----------------

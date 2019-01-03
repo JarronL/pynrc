@@ -139,10 +139,12 @@ if not on_rtd:
         #import errno
         #raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), opd_file)
 
+    _jbt_exists = True
     try:
         from jwst_backgrounds import jbt
-    except:
+    except ImportError:
         _log.info("  jwst_backgrounds not installed")
+        _jbt_exists = False
 
 
 
@@ -3448,12 +3450,12 @@ def zodi_spec(zfact=None, ra=None, dec=None, thisday=None, **kwargs):
     """Zodiacal light spectrum.
 
     New: Use `ra`, `dec`, and `thisday` keywords to call `jwst_backgrounds`
-    to obtain better predictions of the background.
+    to obtain more accurate predictions of the background.
 
-    Create a spectrum of the zodiacal light emission in order to estimate the
-    in-band sky background flux. This is simply the addition of two blackbodies
+    Creates a spectrum of the zodiacal light emission in order to estimate the
+    in-band sky background flux. This is primarily the addition of two blackbodies
     at T=5300K (solar scattered light) and T=282K (thermal dust emission)
-    that have been scaled to match the literature flux values.
+    that have been scaled to match literature flux values. 
 
     In reality, the intensity of the zodiacal dust emission varies as a
     function of viewing position. In this case, we have added the option
@@ -3461,8 +3463,9 @@ def zodi_spec(zfact=None, ra=None, dec=None, thisday=None, **kwargs):
     user-defined factor 'zfact'. The user can set zfact as a scalar in order
     to scale the entire spectrum. If defined as a list, tuple, or np array,
     then the each component gets scaled where T=5300K corresponds to the first
-    elements and T=282K is the second element of the array.
+    elements and T=282K is the second element of the array. 
 
+    The `zfact` parameter has no effect if `jwst_backgrounds` is called.
     Representative values for zfact:
 
         * 0.0 - No zodiacal emission
@@ -3482,8 +3485,8 @@ def zodi_spec(zfact=None, ra=None, dec=None, thisday=None, **kwargs):
     dec : float
         Declination in decimal degrees
     thisday: int
-        Calendar day to use for background calculation.  If not given, will use the
-        average of visible calendar days.
+        Calendar day to use for background calculation.  If not given, will 
+        use the average of visible calendar days.
 
     Returns
     -------
@@ -3503,6 +3506,8 @@ def zodi_spec(zfact=None, ra=None, dec=None, thisday=None, **kwargs):
     ------------
     locstr :
         Object name or RA/DEC (decimal degrees or sexigesimal).
+        Queries the `IPAC Euclid Background Model
+        <http://irsa.ipac.caltech.edu/applications/BackgroundModel/>`_
     year : int
         Year of observation.
     day : float
@@ -3512,28 +3517,33 @@ def zodi_spec(zfact=None, ra=None, dec=None, thisday=None, **kwargs):
 
     
     if (ra is not None) and (dec is not None):
-        # Wavelength for bathtub plot, which we don't use here
-        wave_bath = 2.5
-        bkg = jbt.background(ra, dec, wave_bath)
-        wvals = bkg.bkg_data['wave_array'] # Wavelength (um)
-        farr = bkg.bkg_data['total_bg'] # Total background (MJy/sr)
-
-        if thisday is None:
-            ftot = farr.mean(axis=0)
+        if _jbt_exists == False:
+            _log.warning("`jwst_backgrounds` not installed. `ra`, `dec`, and `thisday` parameters will not work.")
         else:
-            calendar = bkg.bkg_data['calendar']
-            if thisday in calendar:
-                ind = np.where(calendar==thisday)[0][0]
-                ftot = farr[ind]
+            # Wavelength for "bathtub plot" (not used here)
+            wave_bath = 2.5
+            bkg = jbt.background(ra, dec, wave_bath)
+            # Get wavelength and flux values 
+            wvals = bkg.bkg_data['wave_array'] # Wavelength (um)
+            farr = bkg.bkg_data['total_bg'] # Total background (MJy/sr)
+
+            if thisday is None:
+                # Use average of visible calendar days
+                ftot = farr.mean(axis=0)
             else:
-                _log.warning("The input calendar day {}".format(thisday)+" is not available")
-                return
+                calendar = bkg.bkg_data['calendar']
+                if thisday in calendar:
+                    ind = np.where(calendar==thisday)[0][0]
+                    ftot = farr[ind]
+                else:
+                    _log.warning("The input calendar day {}".format(thisday)+" is not available")
+                    return
 
-        sp = S.ArraySpectrum(wave=wvals*1e4, flux=ftot*1e6, fluxunits='Jy')
-        sp.convert('flam')
-        sp.name = 'Total Background'
+            sp = S.ArraySpectrum(wave=wvals*1e4, flux=ftot*1e6, fluxunits='Jy')
+            sp.convert('flam')
+            sp.name = 'Total Background'
 
-        return sp
+            return sp
 
 
     if zfact is None: zfact = 2.5
