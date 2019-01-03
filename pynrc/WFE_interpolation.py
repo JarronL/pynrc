@@ -22,9 +22,10 @@ else:
 
     for mod in ['SW', 'LW', 'SWA', 'LWA', 'SWB', 'LWB']:
         ind_nrc = ['NIRCam'+mod in row['instrument'] for row in ztable_full]
+        ind_nrc = np.where(ind_nrc)
 
         # Grab V2/V3 coordinates
-        # In units of arcsec
+        # In units of arcmin
         v2 = ztable_full[ind_nrc]['V2']
         v3 = ztable_full[ind_nrc]['V3']
 
@@ -61,18 +62,18 @@ else:
         hdr = hdu.header
 
         hdr['units'] = 'meters'
-        hdr['xunits'] = 'Arcsec'
+        hdr['xunits'] = 'Arcmin'
         hdr['xmin'] = X.min()
         hdr['xmax'] = X.max()
         hdr['xdel'] = dstep
-        hdr['yunits'] = 'Arcsec'
+        hdr['yunits'] = 'Arcmin'
         hdr['ymin'] = Y.min()
         hdr['ymax'] = Y.max()
         hdr['ydel'] = dstep
     
         #hdr['wave'] = 
 
-        hdr['comment'] = 'X and Y values correspond to V2 and V3 coordinates (arcsec).'
+        hdr['comment'] = 'X and Y values correspond to V2 and V3 coordinates (arcmin).'
         hdr['comment'] = 'Slices in the cube correspond to Zernikes 1 to 36.'
         hdr['comment'] = 'Zernike values calculated using 2D cubic interpolation.'
 

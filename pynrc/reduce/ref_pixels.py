@@ -399,7 +399,7 @@ def reffix_hxrg(cube, nchans=4, in_place=True, fixcol=False, **kwargs):
         Perform calculations in place. Input array is overwritten.
     nchans : int
         Number of output amplifier channels in the detector. Default=4.
-    fix_col : bool
+    fixcol : bool
         Perform reference column corrections?
         
     Keyword Args
@@ -448,11 +448,11 @@ def reffix_hxrg(cube, nchans=4, in_place=True, fixcol=False, **kwargs):
         cube = np.copy(cube)
 
     # Remove channel offsets
-    cube = reffix_amps(cube, in_place=True, **kwargs)
+    cube = reffix_amps(cube, nchans=nchans, in_place=in_place, **kwargs)
 
     # Fix 1/f noise using vertical reference pixels
     if fixcol:
-        cube = ref_filter(cube, in_place=True, **kwargs)
+        cube = ref_filter(cube, nchans=nchans, in_place=in_place, **kwargs)
 
     return cube
     
@@ -534,7 +534,7 @@ def reffix_amps(cube, nchans=4, in_place=True, altcol=True, supermean=False,
     smean = robust.mean(refs_all) if supermean else 0.0
     
     # Calculate avg reference values for each frame and channel
-    refs_amps_avg = calc_avg_amps(refs_all, cube.shape, nchans=4, altcol=True)
+    refs_amps_avg = calc_avg_amps(refs_all, cube.shape, nchans=nchans, altcol=altcol)
         
     for ch in range(nchans):
         # Channel indices

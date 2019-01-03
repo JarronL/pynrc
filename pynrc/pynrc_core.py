@@ -787,32 +787,33 @@ class DetectorOps(object):
         # If same_scan_direction, then all --> 
         # If reverse_scan_direction, then [<--,-->,<--,-->] or all <--
         if reverse_scan_direction:
-            arr = arr[::-1]
+            arr = arr[:,:,::-1]
         
-        if same_scan_direction: # Everything in same direction 
-            if nout>1:
-                data = arr.repeat(nout,2)
-            else:
-                data = arr
-        else: # Consecutive outputs reversed
-            if nout>1:
-                arr_list = []
-                for ch in range(nout):
-                    if np.mod(ch,2) == 0: arr_list.append(arr)
-                    else: arr_list.append(arr[:,:,::-1])
-                data = np.concatenate(arr_list, axis=2)
-            else:
-                data = arr
+        arr_list = []
+        if nout>1:
+            # Consecutive outputs reversed?
+            for ch in range(nout):
+                if (np.mod(ch,2) == 0) or (same_scan_direction == True): 
+                    arr_list.append(arr)
+                else: 
+                    arr_list.append(arr[:,:,::-1])
+            data = np.concatenate(arr_list, axis=2)
+        else:
+            data = arr
                 
         del arr, arr_list
 
         # Timing for averaged (bit-shifted) frames
         # Remove drops and average grouped data
-        if avg_groups and (nf>1 or nd2>0):
+        if (avg_groups and nf>1) or (nd2>0):
             # Trailing drop frames already excluded
             # so need to pull off last group of avg'ed frames
-            data_end = data[-nf:,:,:].mean(axis=0) if nf>1 else data[-1:,:,:]
-            data_end = data_end.reshape([1,ypix,xpix])
+            # in order to properly reshape things.
+            if avg_groups and (nf>1):
+                data_end = data[-nf:,:,:].mean(axis=0)
+            else:
+                data[-nf:,:,:]
+            data_end = data_end.reshape([-1,ypix,xpix])
 
             # Only care about first (n-1) groups
             # Last group is handled separately
@@ -827,7 +828,10 @@ class DetectorOps(object):
 
             # Average the frames within groups
             # In reality, the 16-bit data is bit-shifted
-            data = data.reshape([-1,ypix,xpix]) if nf==1 else data.mean(axis=1)
+            if avg_groups and (nf>1):
+                data.mean(axis=1)
+            else:
+                data = data.reshape([-1,ypix,xpix])
 
             # Add back the last group (already averaged)
             data = np.append(data,data_end,axis=0)
@@ -1830,7 +1834,7 @@ class NIRCam(object):
         satlim = sat_limit_webbpsf(self.bandpass, pupil=self.pupil, mask=self.mask,
             module=self.module, full_well=well_level, well_frac=well_frac,
             sp=sp, bp_lim=bp_lim, int_time=t_sat, quiet=quiet, units=units, 
-            coeff=psf_coeff, **kwargs)
+            pix_scale=self.pix_scale, coeff=psf_coeff, **kwargs)
 
         return satlim
 
