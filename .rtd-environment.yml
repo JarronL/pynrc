@@ -8,7 +8,6 @@ dependencies:
     - numpy>=1.13
     - matplotlib=2.0.2
     - astropy=3.1
-    - astropy-helpers=3.1
     - Cython
     - sphinx-automodapi
     - sphinx>=1.5.1
