@@ -1,6 +1,7 @@
 name: pynrc
 
 dependencies:
+    - python=3.5
     - numpy>=1.13
     - matplotlib>=2.0.2
     - astropy>=3
