@@ -2,11 +2,6 @@ sphinx-automodapi
 sphinx>=1.5.1
 ipykernel
 nbsphinx
-numpy>=1.13
-matplotlib
-Cython
-astropy>=3.1
-astropy-helpers>=3.1
 -e git+https://github.com/spacetelescope/poppy.git#egg=poppy
 -e git+https://github.com/spacetelescope/webbpsf.git#egg=webbpsf
 -e git+https://github.com/spacetelescope/pysynphot.git#egg=pysynphot
