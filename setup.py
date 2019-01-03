@@ -105,7 +105,7 @@ with open('HISTORY.rst') as history_file:
 
 requirements = [
           'Click>=6.0',
-          'numpy>=1.10.0',
+          'numpy>=1.13.0',
           'matplotlib>=2',
           'scipy>=0.16.0',
           'pysynphot>=0.9.7',
@@ -160,11 +160,12 @@ setup(
 
         # Specify the Python versions you support here. In particular, ensure
         # that you indicate whether you support Python 2, Python 3 or both.
-        'Programming Language :: Python :: 2',
-        'Programming Language :: Python :: 2.7',
+        #'Programming Language :: Python :: 2',
+        #'Programming Language :: Python :: 2.7',
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3.7',
     ],
 
     # You can just specify the packages manually here if your project is
