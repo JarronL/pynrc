@@ -73,7 +73,7 @@ Installing WebbPSF
 The AstroConda copy of WebbPSF has a ``webbpsf-data`` installation dependency, 
 which we do not want in our slightly customized installation, because the WebbPSF 
 data files get downloaded separately. Instead, we will do this in two parts to 
-first install the rest of the dependencies first, then WebbPSF with the 
+first install the most of the dependencies first, then WebbPSF with the 
 ``--no-deps`` flag::
 
     $ conda install jwxml poppy

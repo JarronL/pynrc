@@ -135,7 +135,8 @@ setup(
     long_description=readme + '\n\n' + history,
 
     # The project's main homepage.
-    url='https://github.com/JarronL/pynrc',
+    #url='https://github.com/JarronL/pynrc',
+    url='https://pynrc.readthedocs.io',
 
     # Author details
     author='Jarron Leisenring',

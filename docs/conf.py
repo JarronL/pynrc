@@ -83,7 +83,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'pynrc'
-copyright = u'2018, Jarron Leisenring'
+copyright = u'2019, Jarron Leisenring'
 author = u'Jarron Leisenring'
 
 # The version info for the project you're documenting, acts as replacement for

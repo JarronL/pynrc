@@ -16,7 +16,7 @@ coronagraphic imaging, slitless grism spectroscopy, DHS observations,
 and weak lens imaging. All PSFs are generated via WebbPSF 
 (https://webbpsf.readthedocs.io) to reproduce realistic JWST images and spectra.
 
-Developed by Jarron Leisenring and contributors at University of Arizona (2015-18).
+Developed by Jarron Leisenring and contributors at University of Arizona (2015 - 2019).
     
 
 .. toctree::

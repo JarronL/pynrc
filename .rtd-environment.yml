@@ -6,9 +6,9 @@ dependencies:
     - matplotlib>=2.0.2
     - astropy>=3
     - Cython
-    - sphinx-automodapi
     - pip:
         - sphinx>=1.5.1
+        - sphinx-automodapi
         - ipykernel
         - nbsphinx
         - git+https://github.com/spacetelescope/poppy.git#egg=poppy

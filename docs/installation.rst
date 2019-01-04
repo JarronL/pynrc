@@ -6,18 +6,22 @@ Installation
 Requirements
 ------------
 
-pyNRC requires Python 2.7+ or 3.5+ along with the following packages:
+pyNRC requires Python 3.5+ along with the following packages:
 
 * Recent version of `NumPy <http://www.numpy.org>`_, 
   `SciPy <https://www.scipy.org>`_,
   and `matplotlib <https://www.matplotlib.org>`_
 * `Astropy <http://www.astropy.org>`_ 2+
 * `pysynphot <https://pysynphot.readthedocs.io>`_ 0.9.7+
-* `WebbPSF <https://webbpsf.readthedocs.io>`_ 0.7.0+ 
+* `WebbPSF <https://webbpsf.readthedocs.io>`_ 0.8.0+ 
   and its dependencies.
+  
+**Recommended Python packages**:
+  
 * `jwst_backgrounds <https://github.com/spacetelescope/jwst_backgrounds>`_ 1.1.1+
 * `psutil <https://pypi.python.org/pypi/psutil>`_
 
+.. _install_conda:
 
 Installing with conda
 ---------------------
@@ -35,6 +39,9 @@ Installing with conda
 
         $ conda install pynrc
 
+
+.. _install_pip:
+
 Installing with pip
 --------------------
 
@@ -46,6 +53,8 @@ Note that the pip command only installs the program code.
 You still must download and install the data files, 
 as :ref:`described below <data_install>`.
 
+
+.. _install_dev_version:
 
 Installing from source
 ----------------------
