@@ -84,5 +84,8 @@ release: dist ## package and upload a release; tag on github
 	twine upload dist/*
 	python setup.py tag
 
+tag: ## package and upload a release; tag on github
+	python setup.py tag
+
 install: clean ## install the package to the active Python's site-packages
 	python setup.py install
