@@ -10,7 +10,7 @@ https://github.com/pypa/sampleproject
 import glob
 import os
 import sys
-import imp
+import importlib #imp
 import ast
 
 ################################################################

@@ -23,3 +23,4 @@ Sphinx/RTD
 1. pip install sphinx_automodapi
 2. conda install sphinx_rtd_theme
 3. conda install nbsphinx
+4. conda install twine

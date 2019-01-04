@@ -118,7 +118,13 @@ $ py.test tests.test_pynrc
 Deploying
 ---------
 
-A reminder for the maintainers on how to deploy.
+A reminder for the maintainers on how to deploy. 
+First, make sure the following packages are installed::
+
+    $ pip install sphinx_automodapi
+    $ conda install sphinx_rtd_theme
+    $ conda install nbsphinx
+    $ conda install twine
 
 1. Update version info in pynrc.version.
    Add entries to HISTORY.rst.
