@@ -1934,8 +1934,8 @@ class NIRCam(object):
         dec : float
             Declination in decimal degrees
         thisday : int
-            Calendar day to use for background calculation.  If not given, will use the
-            average of visible calendar days.
+            Calendar day to use for background calculation.  
+            If not given, will use the average of visible calendar days.
 
         Notes
         -----
@@ -1967,10 +1967,8 @@ class NIRCam(object):
             fzodi_pix_temp = obs_zodi_temp.countrate() * (self.pix_scale/206265.0)**2
             zf_rec = fzodi_pix / fzodi_pix_temp
             str1 = 'Using ra,dec,thisday keywords can be relatively slow. \n'
-            str2 = 'For your specified loc and date, we recommend using zfact={:.1f}'\
-                .format(zf_rec)
-            _log.warning(str1)
-            _log.warning(str2)
+            str2 = 'For your specified loc and date, we recommend using zfact={:.1f}'.format(zf_rec)
+            _log.warning(str1 + str2)
 
         # Don't forget about Lyot mask attenuation (not in bandpass throughput)
         if ('LYOT' in self.pupil):
@@ -2228,7 +2226,7 @@ class NIRCam(object):
                 file_list.append(file_out + '_' + file_time + "_{0:04d}".format(fileInd) + '.fits')
 
         # Create a list of arguments to pass
-        # For now, we're only doing the first detector. This will need to get more
+        # TODO: For now, we're only doing the first detector. This will need to get more
         # sophisticated for SW FPAs
         worker_arguments = [(det, im_slope, True, fout, filter, pupil, otime, \
                              targ_name, DMS, dark, bias, return_results) \
