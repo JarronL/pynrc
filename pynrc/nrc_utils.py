@@ -143,7 +143,7 @@ if not on_rtd:
     try:
         from jwst_backgrounds import jbt
     except ImportError:
-        _log.info("  jwst_backgrounds not installed")
+        _log.info("  jwst_backgrounds is not installed and will not be used for bg estimates.")
         _jbt_exists = False
 
 
@@ -482,6 +482,8 @@ class NIRCamFieldAndWavelengthDependentAberration_mod(poppy.OpticalElement):
         super(NIRCamFieldAndWavelengthDependentAberration_mod, self).__init__(
             name="Aberrations", **kwargs)
 
+
+        # Copied from WebbFieldDependentAberration in webbpsf/optics.py
         self.instrument = instrument
         self.instr_name = instrument.name
 
@@ -544,8 +546,7 @@ class NIRCamFieldAndWavelengthDependentAberration_mod(poppy.OpticalElement):
         # making the OPD.
         basis = poppy.zernike.zernike_basis_faster(
             nterms=len(self.zernike_coeffs),
-            npix=npix,
-            outside=0
+            npix=npix, outside=0
         )
         self.defocus_zern = basis[3]
 
@@ -553,51 +554,35 @@ class NIRCamFieldAndWavelengthDependentAberration_mod(poppy.OpticalElement):
         # Generate an OPD on the same sampling as the input wavefront -
         # but implicitly inverted in coordinate system
         # to match the OTE exit pupil orientation
+        # First, set the aperture amplitudes
         if include_oversize:
             # Try to model the oversized gaps around the internal pupils.
             # This is only relevant if you are trying to model pupil shear or rotations,
             # and in general we don't have good WFE data outside the nominal pupil anyway
             # so let's leave this detail off by default.
 
-            # internal pupils for NIRISS and MIRI instruments are 4 percent
-            # oversized tricontagons
-            if self.instrument.name == "NIRISS":
-                self.amplitude = fits.getdata(os.path.join(
-                    webbpsf.utils.get_webbpsf_data_path(),
-                    'tricontagon_oversized_4pct.fits.gz')
-                )
-                # cut out central region to match the OPD, which is hard coded
-                # to 1024
-                self.amplitude = self.amplitude[256:256 + 1024, 256:256 + 1024]
-            elif self.instrument.name == "MIRI":
-                self.amplitude = fits.getdata(os.path.join(
-                    webbpsf.utils.get_webbpsf_data_path(),
-                    'MIRI',
-                    'optics',
-                    'MIRI_tricontagon_oversized_rotated.fits.gz')
-                )
-
-            else:
-                # internal pupil is a 4 percent oversized circumscribing circle?
-                # For NIRCam:
-                # John stansberry 2016-09-07 reports "It is definitely oversized, but isn't really
-                # circular... Kinda vaguely 6-sided I guess. [...] I can dig up
-                # a drawing and/or some images that show the pupil stop."
-                y, x = np.indices((npix, npix), dtype=float)
-                y -= (npix - 1) / 2.0
-                x -= (npix - 1) / 2.0
-                r = np.sqrt(y ** 2 + x ** 2)
-                self.amplitude = (r < (npix - 1) / 2.0 * 1.04).astype(int)
+            # internal pupil is a 4 percent oversized circumscribing circle?
+            # For NIRCam:
+            # John stansberry 2016-09-07 reports "It is definitely oversized, but isn't really
+            # circular... Kinda vaguely 6-sided I guess. [...] I can dig up
+            # a drawing and/or some images that show the pupil stop."
+            y, x = np.indices((npix, npix), dtype=float)
+            y -= (npix - 1) / 2.0
+            x -= (npix - 1) / 2.0
+            r = np.sqrt(y ** 2 + x ** 2)
+            self.amplitude = (r < (npix - 1) / 2.0 * 1.04).astype(int)
         else:
             self.amplitude = None
 
+        # Create base OPD
         self.opd = np.zeros_like(basis[0])
         for i, b in enumerate(basis):
             self.opd += coeffs[i]*b
 
+        # Update amplitude from OPD (if include_oversize==False)
         if self.amplitude is None:
             self.amplitude = (self.opd != 0).astype(int)
-        else:
+        else: # Update OPD from amplitude (if include_oversize==True)
             aperture = self.amplitude
             self.opd[~np.isfinite(aperture)] = np.nan
             self.opd[aperture==0] = 0
@@ -705,169 +690,6 @@ class webbpsf_NIRCam_mod(webbpsf_NIRCam):
             return None
         else:
             return self._si_wfe_class(self)
-
-    # def _addAdditionalOptics(self,optsys, oversample=2):
-    #     """Slight re-write of the webbpsf version of this function -JML
-
-    #     Add coronagraphic optics for NIRCam
-
-    #     See Krist et al. 2007, 2009 SPIE
-
-    #     Three circular occulters: HWHM = 6 lambda/D at 2.1, 3.35, 4.3
-    #                                    = 0.4, 0.64, 0.8 arcsec (avg)
-    #                                    assuming D_tel=6.5m exactly:
-    #                                     = 0.3998, 0.6378, 0.8187 arcsec
-
-    #     Two linear bar occulters: Wedges vary from HWHM = 2 lam/D to 6 lam/D at 2.1 and 4.6 micron
-    #                 2.1e-6:    HWHM = 0.13327 to 0.3998
-    #                 4.6e-6:    HWHM = 0.27290 to 0.8187
-    #         The matching Lyot stop for the wedges are tuned for 4 lam/D.
-    #         The linear ones have a fixed width at either side: maybe ~ 3-4 arcsec. Then a linear taper
-    #         in between.
-
-
-    #     Values of Sigma:
-    #         For circular occulters, 0.3998 requires sigma = 5.253
-    #                                 0.8187 requires sigma = 2.5652
-    #                                 sigma = 2.10013932 / loc
-    #                                 vs. Krist's statement sigma = 2.1001/hwhm
-
-    #         For linear occulters, 0.3998 requires sigma = 4.5012
-    #                               0.13327 requires sigma = 13.5078
-
-    #                     # This is NOT a linear relationship! It's a tricky inverse sin nonlinear thing.
-
-    #     Empirical checks against John Krist's provided 430R and LWB files:
-    #         430R should have sigma = 2.588496
-
-
-    #     Since the Weak Lenses go in the pupil too, this function provides a convenient place to implement those as well.
-
-    #     """
-
-    #     #optsys.add_image(name='null for debugging NIRcam _addCoron') # for debugging
-    #     from webbpsf.optics import NIRCam_BandLimitedCoron
-
-    #     nd_squares = self.options.get('nd_squares', True)
-
-    #     SAM_box_size = None  # default
-
-    #     # Allow arbitrary offsets of the focal plane masks with respect to the pixel grid origin;
-    #     # In most use cases it's better to offset the star away from the mask instead, using
-    #     # options['source_offset_*'], but doing it this way instead is helpful when generating
-    #     # the Pandeia ETC reference PSF library.
-    #     shifts = {'shift_x': self.options.get('coron_shift_x', None),
-    #               'shift_y': self.options.get('coron_shift_y', None)}
-
-    #     if ((self.image_mask == 'MASK210R') or (self.image_mask == 'MASK335R') or
-    #             (self.image_mask == 'MASK430R')):
-    #         optsys.add_image( NIRCam_BandLimitedCoron(name=self.image_mask, module=self.module,
-    #                 nd_squares=nd_squares, **shifts), index=2)
-    #         trySAM = False # FIXME was True - see https://github.com/mperrin/poppy/issues/169
-    #         SAM_box_size = 5.0
-    #     elif ((self.image_mask == 'MASKSWB') or (self.image_mask == 'MASKLWB')):
-    #         bar_offset = self.options.get('bar_offset',None)
-    #         if bar_offset is not None:
-    #             try:
-    #                 _ = float(bar_offset)
-    #             except ValueError:
-    #                 bar_offset = None
-    #         auto_offset = self.filter if bar_offset is None else None
-
-    #         optsys.add_image( NIRCam_BandLimitedCoron(name=self.image_mask, module=self.module,
-    #                 nd_squares=nd_squares, bar_offset=bar_offset, auto_offset=auto_offset, **shifts),
-    #                 index=2)
-    #         trySAM = False #True FIXME
-    #         SAM_box_size = [5,20]
-    #     #elif ((self.pupil_mask is not None) and (self.pupil_mask.startswith('MASK'))):
-    #     else:
-    #         # no occulter selected but coronagraphic mode anyway. E.g. off-axis PSF
-    #         # but don't add this image plane for weak lens calculations
-    #         optsys.add_image(poppy.ScalarTransmission(name='No Image Mask Selected!'), index=2)
-    #         trySAM = False
-    #         SAM_box_size = 1.0 # irrelevant but variable still needs to be set.
-
-    #     # add pupil plane mask
-    #     if ('pupil_shift_x' in self.options and self.options['pupil_shift_x'] != 0) or \
-    #        ('pupil_shift_y' in self.options and self.options['pupil_shift_y'] != 0):
-    #         shift = (self.options['pupil_shift_x'], self.options['pupil_shift_y'])
-    #     else: shift = None
-
-
-    #     #NIRCam as-built weak lenses, from WSS config file
-    #     WLP4_diversity =  8.27398 # microns
-    #     WLP8_diversity = 16.4554  # microns
-    #     WLM8_diversity =-16.4143  # microns
-    #     WL_wavelength =   2.12    # microns
-
-    #     #optsys.add_pupil( name='null for debugging NIRcam _addCoron') # debugging
-    #     if self.pupil_mask == 'CIRCLYOT':
-    #         optsys.add_pupil(transmission=self._datapath+"/optics/NIRCam_Lyot_Somb.fits.gz", name=self.pupil_mask,
-    #                 flip_y=True, shift=shift, index=3)
-    #         optsys.planes[3].wavefront_display_hint='intensity'
-    #     elif self.pupil_mask == 'WEDGELYOT':
-    #         optsys.add_pupil(transmission=self._datapath+"/optics/NIRCam_Lyot_Sinc.fits.gz", name=self.pupil_mask,
-    #                 flip_y=True, shift=shift, index=3)
-    #         optsys.planes[3].wavefront_display_hint='intensity'
-    #     elif self.pupil_mask == 'WEAK LENS +4':
-    #         optsys.add_pupil(poppy.ThinLens(
-    #             name='Weak Lens +4',
-    #             nwaves=WLP4_diversity / WL_wavelength,
-    #             reference_wavelength=WL_wavelength*1e-6, #convert microns to meters
-    #             radius=self.pupil_radius
-    #         ), index=3)
-    #     elif self.pupil_mask == 'WEAK LENS +8':
-    #         optsys.add_pupil(poppy.ThinLens(
-    #             name='Weak Lens +8',
-    #             nwaves=WLP8_diversity / WL_wavelength,
-    #             reference_wavelength=WL_wavelength*1e-6,
-    #             radius=self.pupil_radius
-    #         ), index=3)
-    #     elif self.pupil_mask == 'WEAK LENS -8':
-    #         optsys.add_pupil(poppy.ThinLens(
-    #             name='Weak Lens -8',
-    #             nwaves=WLM8_diversity / WL_wavelength,
-    #             reference_wavelength=WL_wavelength*1e-6,
-    #             radius=self.pupil_radius
-    #         ), index=3)
-    #     elif self.pupil_mask == 'WEAK LENS +12 (=4+8)':
-    #         stack = poppy.CompoundAnalyticOptic(name='Weak Lens Pair +12', opticslist=[
-    #             poppy.ThinLens(
-    #                 name='Weak Lens +4',
-    #                 nwaves=WLP4_diversity / WL_wavelength,
-    #                 reference_wavelength=WL_wavelength*1e-6,
-    #                 radius=self.pupil_radius
-    #             ),
-    #             poppy.ThinLens(
-    #                 name='Weak Lens +8',
-    #                 nwaves=WLP8_diversity / WL_wavelength,
-    #                 reference_wavelength=WL_wavelength*1e-6,
-    #                 radius=self.pupil_radius
-    #             )]
-    #         )
-    #         optsys.add_pupil(stack, index=3)
-    #     elif self.pupil_mask == 'WEAK LENS -4 (=4-8)':
-    #         stack = poppy.CompoundAnalyticOptic(name='Weak Lens Pair -4', opticslist=[
-    #             poppy.ThinLens(
-    #                 name='Weak Lens +4',
-    #                 nwaves=WLP4_diversity / WL_wavelength,
-    #                 reference_wavelength=WL_wavelength*1e-6,
-    #                 radius=self.pupil_radius
-    #             ),
-    #             poppy.ThinLens(
-    #                 name='Weak Lens -8',
-    #                 nwaves=WLM8_diversity / WL_wavelength,
-    #                 reference_wavelength=WL_wavelength*1e-6,
-    #                 radius=self.pupil_radius
-    #             )]
-    #         )
-    #         optsys.add_pupil(stack, index=3)
-
-
-    #     elif (self.pupil_mask is None and self.image_mask is not None):
-    #         optsys.add_pupil(poppy.ScalarTransmission(name='No Lyot Mask Selected!'), index=3)
-
-    #     return (optsys, trySAM, SAM_box_size)
 
 
 def nproc_use(fov_pix, oversample, nwavelengths, coron=False):
@@ -1030,7 +852,7 @@ def _wrap_coeff_for_mp(args):
     # Return to previous setting
     poppy.conf.use_multiprocessing = mp_prev
     # return pad_or_cut_to_size(hdu_list[2].data, fov_pix_orig*oversample)
-    return hdu_list[0].data
+    return hdu_list[0]
 
 
 def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
@@ -1366,8 +1188,8 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         # Pass arguments to the helper function
 
         try:
-            images = pool.map(_wrap_coeff_for_mp, worker_arguments)
-            if images[0] is None:
+            hdu_arr = pool.map(_wrap_coeff_for_mp, worker_arguments)
+            if hdu_arr[0] is None:
                 raise RuntimeError('Returned None values. Issue with multiprocess or WebbPSF??')
 
         except Exception as e:
@@ -1382,15 +1204,20 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
             pool.close()
     else:
         # Pass arguments to the helper function
-        images = []
+        hdu_arr = []
         for wa in worker_arguments:
-            images.append(_wrap_coeff_for_mp(wa))
+            hdu_arr.append(_wrap_coeff_for_mp(wa))
     t1 = time.time()
 
     # Reset to original log levels
     setup_logging(log_prev, verbose=False)
     time_string = 'Took {:.2f} seconds to generate WebbPSF images'.format(t1-t0)
-    _log.debug(time_string)
+    _log.info(time_string)
+
+    # Extract image data from HDU array
+    images = []
+    for hdu in hdu_arr:
+        images.append(hdu.data)
 
     # Take into account reduced beam factor for grism data
     # Account for the circular pupil that does not allow all grism grooves to have their
@@ -1417,14 +1244,15 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         #np.save(save_name, coeff_all)
         hdu = fits.PrimaryHDU(coeff_all)
         hdr = hdu.header
+        head_temp = hdu_arr[0].header
 
-        setup_logging('WARN', verbose=False)
-        hdu_temp = inst.calc_psf(outfile=None, save_intermediates=False, \
-                                 oversample=oversample, fov_pixels=fov_pix, \
-                                 monochromatic=bp.avgwave()*1e-10, \
-                                 add_distortion=True, crop_psf=True)
-        setup_logging(log_prev, verbose=False)
-        head_temp = hdu_temp[2].header
+#         setup_logging('WARN', verbose=False)
+#         hdu_temp = inst.calc_psf(outfile=None, save_intermediates=False, \
+#                                  oversample=oversample, fov_pixels=fov_pix, \
+#                                  monochromatic=bp.avgwave()*1e-10, \
+#                                  add_distortion=False, crop_psf=False)
+#         setup_logging(log_prev, verbose=False)
+#         head_temp = hdu_temp[0].header
 
         hdr['DESCR']    = ('PSF Coeffecients', 'File Description')
         hdr['NWAVES']   = (npsf, 'Number of wavelengths used in calculation')
@@ -1489,7 +1317,7 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
 
         hdr.add_history(time_string)
 
-        hdu.writeto(save_name, clobber=True)
+        hdu.writeto(save_name, overwrite=True)
 
     return coeff_all
 
