@@ -1105,7 +1105,7 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     drift_file : str, None
         Delta OPD file to use for WFE drift.
     include_si_wfe : bool
-        Include SI WFE measurements? Default=False.
+        Include SI WFE measurements? Default=True.
     detector : str, None
         Name of detector [NRCA1, ..., NRCA5, NRCB1, ..., NRCB5].
     detector_position : tuple, None
@@ -3536,8 +3536,11 @@ def zodi_spec(zfact=None, ra=None, dec=None, thisday=None, **kwargs):
                     ind = np.where(calendar==thisday)[0][0]
                     ftot = farr[ind]
                 else:
-                    _log.warning("The input calendar day {}".format(thisday)+" is not available")
-                    return
+                    _log.warning("The input calendar day {}".format(thisday)+" is not available. \
+                                 Choosing closest visible day.")
+                    diff = np.abs(calendar-thisday)
+                    ind = np.argmin(diff)
+                    ftot = farr[ind]
 
             sp = S.ArraySpectrum(wave=wvals*1e4, flux=ftot*1e6, fluxunits='Jy')
             sp.convert('flam')
