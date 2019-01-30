@@ -105,7 +105,7 @@ with open('HISTORY.rst') as history_file:
 
 requirements = [
           'Click>=6.0',
-          'numpy>=1.13.0',
+          'numpy>=1.15.0',
           'matplotlib>=2',
           'scipy>=0.16.0',
           'pysynphot>=0.9.7',
