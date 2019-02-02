@@ -942,6 +942,8 @@ class NIRCam(object):
         Updates :attr:`wfe_drift` attribute.
     opd : tuple or HDUList
         Tuple (file, slice) or filename or HDUList specifying OPD.
+    include_si_wfe : bool
+        Include SI WFE measurements? Default=True.
     tel_pupil : str
         File name or HDUList specifying telescope entrance pupil.
     jitter : str or None
@@ -1517,7 +1519,7 @@ class NIRCam(object):
             
     def update_psf_coeff(self, fov_pix=None, oversample=None, 
         offset_r=None, offset_theta=None, tel_pupil=None, opd=None,
-        wfe_drift=None, jitter='gaussian', jitter_sigma=0.007, 
+        wfe_drift=None, include_si_wfe=None, jitter='gaussian', jitter_sigma=0.007,
         bar_offset=None, save=None, force=False, **kwargs):
         """Create new PSF coefficients.
         
@@ -1562,10 +1564,12 @@ class NIRCam(object):
             Updates :attr:`wfe_drift` attribute and coefficients appropriately.
         opd : tuple, str, or HDUList
             Tuple (file, slice) or filename or HDUList specifying OPD.
-        tel_pupil : str
+        include_si_wfe : bool
+            Include SI WFE measurements? Default=True.
+        tel_pupil : str or HDUList
             File name or HDUList specifying telescope entrance pupil.
-        jitter : str or None
-            Currently either 'gaussian' or None.
+        jitter : str
+            Either 'gaussian' or 'none'.
         jitter_sigma : float
             If ``jitter = 'gaussian'``, then this is the size of the blurring effect.
         save : bool
@@ -1626,9 +1630,12 @@ class NIRCam(object):
         if tel_pupil is None:
             try: tel_pupil = self._psf_info['tel_pupil']
             except (AttributeError, KeyError): tel_pupil = None
+        if include_si_wfe is None:
+            try: include_si_wfe = self._psf_info['include_si_wfe']
+            except (AttributeError, KeyError): include_si_wfe = True
         if jitter is None:
             try: jitter = self._psf_info['jitter']
-            except (AttributeError, KeyError): jitter = None
+            except (AttributeError, KeyError): jitter = 'gaussian'
         if jitter_sigma is None:
             try: jitter_sigma = self._psf_info['jitter_sigma']
             except (AttributeError, KeyError): jitter_sigma = 0.007
@@ -1638,12 +1645,15 @@ class NIRCam(object):
         if save is None:
             try: save = self._psf_info['save']
             except (AttributeError, KeyError): save = True
+            
+        if jitter=='none':
+            jitter = None
 
         #print(opd)
         self._psf_info={'fov_pix':fov_pix, 'oversample':oversample, 
             'offset_r':offset_r, 'offset_theta':offset_theta, 
             'tel_pupil':tel_pupil, 'save':save, 'force':force,
-            'opd':opd, 'jitter':jitter, 'jitter_sigma':jitter_sigma}
+            'include_si_wfe':include_si_wfe, 'opd':opd, 'jitter':jitter, 'jitter_sigma':jitter_sigma}
         self._psf_coeff = psf_coeff(self.bandpass, self.pupil, self.mask, self.module, 
             **self._psf_info)
 
@@ -1674,7 +1684,6 @@ class NIRCam(object):
             self._psf_coeff += cf_mod
         else:
             self._bar_offset = 0
-            
 
         # WFE Drift is handled differently than the rest of the parameters
         # This is because we use wfed_coeff() to determine the resid values
@@ -1711,7 +1720,7 @@ class NIRCam(object):
             self._psf_info_bg = {'fov_pix':self._fov_pix_bg, 'oversample':oversample, 
                 'offset_r':0, 'offset_theta':0, 'tel_pupil':tel_pupil, 
                 'opd':opd, 'jitter':jitter, 'jitter_sigma':jitter_sigma, 
-                'save':True, 'force':False}
+                'include_si_wfe':include_si_wfe, 'save':True, 'force':False}
             self._psf_coeff_bg = psf_coeff(self.bandpass, self.pupil, None, self.module, 
                 **self._psf_info_bg)
 
