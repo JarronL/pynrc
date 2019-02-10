@@ -844,7 +844,7 @@ def _wrap_coeff_for_mp(args):
         # current exception being handled.
         traceback.print_exc()
 
-        print()
+        print('')
         #raise e
         poppy.conf.use_multiprocessing = mp_prev
         return None
@@ -1206,7 +1206,10 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         # Pass arguments to the helper function
         hdu_arr = []
         for wa in worker_arguments:
-            hdu_arr.append(_wrap_coeff_for_mp(wa))
+            hdu = _wrap_coeff_for_mp(wa)
+            if hdu is None:
+                raise RuntimeError('Returned None values. Issue with multiprocess or WebbPSF??')
+            hdu_arr.append(hdu)
     t1 = time.time()
 
     # Reset to original log levels
