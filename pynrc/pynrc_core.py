@@ -286,10 +286,10 @@ class DetectorOps(object):
         #   - IPC and PPC in %
         #   - p_excess: Parameters that describe the excess variance observed in
         #     effective noise plots.
-        self._properties_SW = {'pixel_scale':0.0311, 'dark_current':0.002, 'read_noise':11.5, 
+        self._properties_SW = {'pixel_scale':pixscale_SW, 'dark_current':0.002, 'read_noise':11.5, 
                                'IPC':0.54, 'PPC':0.09, 'p_excess':(1.0,5.0), 'ktc':37.6,
                                'well_level':100e3, 'well_level_old':81e3}
-        self._properties_LW = {'pixel_scale':0.0630, 'dark_current':0.034, 'read_noise':10.0, 
+        self._properties_LW = {'pixel_scale':pixscale_LW, 'dark_current':0.034, 'read_noise':10.0, 
                                'IPC':0.60, 'PPC':0.19, 'p_excess':(1.5,10.0), 'ktc':36.8,
                                'well_level':80e3, 'well_level_old':75e3}
         # Automatically set the pixel scale based on detector selection
@@ -1298,40 +1298,52 @@ class NIRCam(object):
 
         """
 
-        if self.module=='A':
-            if self.channel=='LW':
-                det_list = [485]
-            elif self.mask is None:
-                det_list = [481,482,483,484]
-            elif ('WB' in self.mask) or ('WEDGELYOT' in self.pupil):
-                det_list = [484]
-            elif ('210R' in self.mask) or ('335R' in self.mask) or ('CIRCLYOT' in self.pupil):
-                det_list = [482]
-            else:
-                errmsg = 'No detector makes sense here ({} {} {}).'\
-                    .format(self.filter, self.pupil, self.mask)
-                raise ValueError(errmsg)
-                
-            #det_list = [481,482,483,484] if self.channel=='SW' else [485]
-            #if ('CIRCLYOT'  in self.pupil) and (self.channel=='SW'): det_list = [482]
-            #if ('WEDGELYOT' in self.pupil) and (self.channel=='SW'): det_list = [484]
-        if self.module=='B':
-            if self.channel=='LW':
-                det_list = [490]
-            elif self.mask is None:
-                det_list = [486,487,488,489]
-            elif ('WB' in self.mask) or ('WEDGELYOT' in self.pupil):
-                det_list = [488]
-            elif ('210R' in self.mask) or ('335R' in self.mask) or ('CIRCLYOT' in self.pupil):
-                det_list = [486]
-            else:
-                errmsg = 'No detector makes sense here ({} {} {}).'\
-                    .format(self.filter, self.pupil, self.mask)
-                raise ValueError(errmsg)
+        # First check if self.det_list already exists
+        if det_list is None:
+            try:
+                det_list = self.det_list
+            except AttributeError: 
+                pass
 
-            #det_list = [486,487,488,489] if self.channel=='SW' else [490]
-            #if ('CIRCLYOT'  in self.pupil) and (self.channel=='SW'): det_list = [486]
-            #if ('WEDGELYOT' in self.pupil) and (self.channel=='SW'): det_list = [488]
+        # if det_list is still None
+        if det_list is None:
+            if self.module=='A':
+                if self.channel=='LW':
+                    det_list = [485]
+                elif self.mask is None:
+                    det_list = [481,482,483,484]
+                elif ('WB' in self.mask) or ('WEDGELYOT' in self.pupil):
+                    det_list = [484]
+                elif ('210R' in self.mask) or ('335R' in self.mask) or ('CIRCLYOT' in self.pupil):
+                    det_list = [482]
+                else:
+                    errmsg = 'No detector makes sense here ({} {} {}).'\
+                        .format(self.filter, self.pupil, self.mask)
+                    raise ValueError(errmsg)
+                    
+                #det_list = [481,482,483,484] if self.channel=='SW' else [485]
+                #if ('CIRCLYOT'  in self.pupil) and (self.channel=='SW'): det_list = [482]
+                #if ('WEDGELYOT' in self.pupil) and (self.channel=='SW'): det_list = [484]
+            if self.module=='B':
+                if self.channel=='LW':
+                    det_list = [490]
+                elif self.mask is None:
+                    det_list = [486,487,488,489]
+                elif ('WB' in self.mask) or ('WEDGELYOT' in self.pupil):
+                    det_list = [488]
+                elif ('210R' in self.mask) or ('335R' in self.mask) or ('CIRCLYOT' in self.pupil):
+                    det_list = [486]
+                else:
+                    errmsg = 'No detector makes sense here ({} {} {}).'\
+                        .format(self.filter, self.pupil, self.mask)
+                    raise ValueError(errmsg)
+
+                #det_list = [486,487,488,489] if self.channel=='SW' else [490]
+                #if ('CIRCLYOT'  in self.pupil) and (self.channel=='SW'): det_list = [486]
+                #if ('WEDGELYOT' in self.pupil) and (self.channel=='SW'): det_list = [488]
+
+        # Save det_list to self.det_list
+        self.det_list = det_list
 
         # Check if kwargs is empty
         if not kwargs:
@@ -1347,13 +1359,15 @@ class NIRCam(object):
         # rather than tracking changes and updating only the changes. That could 
         # get complicated, and I don't think there is a memory leak from deleting
         # the Detectors instances.
-        try: del self.Detectors
-        except AttributeError: pass
+        try: 
+            del self.Detectors
+        except AttributeError: 
+            pass
         self.Detectors = [DetectorOps(det, **kwargs) for det in det_list]
 
         # Update stored kwargs
         kw1 = self.Detectors[0].to_dict()
-        _ = kw1.pop('detector',None)
+        _ = kw1.pop('detector', None)
         kw2 = self.multiaccum.to_dict()
         self._det_info = merge_dicts(kw1,kw2)
 
@@ -1891,10 +1905,11 @@ class NIRCam(object):
         well_level = self.well_level
         tf = self.multiaccum_times['t_frame']
 
-        ktc = self.Detectors[0].ktc
-        rn = self.Detectors[0].read_noise
-        idark = self.Detectors[0].dark_current
-        p_excess = self.Detectors[0].p_excess
+        det = self.Detectors[0]
+        ktc = det.ktc
+        rn = det.read_noise
+        idark = det.dark_current
+        p_excess = det.p_excess
 
 
         kw1 = self.multiaccum.to_dict()
@@ -2095,13 +2110,15 @@ class NIRCam(object):
 
     def gen_exposures(self, sp=None, im_slope=None, file_out=None, return_results=None,
                       targ_name=None, timeFileNames=False, DMS=True,
-                      dark=True, bias=True, nproc=None, **kwargs):
+                      det_name=None, dark=True, bias=True, nproc=None, **kwargs):
         """Generate raw mock data.
         
         Create a series of ramp integration saved to FITS files based on
         the current NIRCam settings. This method calls the :func:`gen_fits`
         function, which in turn calls the detector noise generator 
-        :mod:`~pynrc.simul.ngNRC`
+        :mod:`~pynrc.simul.ngNRC`.
+
+        Only works on one detector at a time.
 
         Currently, this image simulator does NOT take into account:
         
@@ -2114,7 +2131,7 @@ class NIRCam(object):
             - Zodiacal background roll off for grism edges
             - Cosmic Rays
             
-        To Do: Double-check the output for grism data w.r.t V2V3_to_det().
+        TODO: Double-check the output for grism data w.r.t V2V3_to_det().
 
 
         Parameters
@@ -2148,6 +2165,9 @@ class NIRCam(object):
             Instead, it's better to save the FITs to disk, especially if 
             NINTs is large. We include the return_results keyword if the 
             user would like to do both (or neither).
+        det_name : str, None
+            Name of detector (A1-B5). If not found or set to None, then the 
+            first detector in `self.det_list` and `self.Detectors` is uses
         dark : bool
             Include the dark current?
         bias : bool
@@ -2167,7 +2187,15 @@ class NIRCam(object):
 
         """
 
-        det = self.Detectors[0]
+        if det_name is not None:
+            ind = np.where(arr == det_name)[0]
+            if ind.size==1:
+                det = self.Detectors[ind]
+            else:
+                det = self.Detectors[0]
+        else:
+            det = self.Detectors[0]
+
         filter = self.filter
         pupil = self.pupil
         xpix = self.det_info['xpix']
@@ -2235,8 +2263,6 @@ class NIRCam(object):
                 file_list.append(file_out + '_' + file_time + "_{0:04d}".format(fileInd) + '.fits')
 
         # Create a list of arguments to pass
-        # TODO: For now, we're only doing the first detector. This will need to get more
-        # sophisticated for SW FPAs
         worker_arguments = [(det, im_slope, True, fout, filter, pupil, otime, \
                              targ_name, DMS, dark, bias, return_results) \
                             for fout,otime in zip(file_list, time_list)]

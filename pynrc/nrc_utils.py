@@ -4775,16 +4775,21 @@ def build_mask_detid(detid, oversample=1, ref_mask=None):
 
     # from jwxml import siaf
 
-    names = ['A1', 'A2', 'A3', 'A4', 'A5', 'ALONG',
-             'B1', 'B2', 'B3', 'B4', 'B5', 'BLONG']
+    names = ['A1', 'A2', 'A3', 'A4', 'A5',
+             'B1', 'B2', 'B3', 'B4', 'B5']
 
-    if detid not in names:
-        raise ValueError("Invalid detid: {0} \n\tValid names are: {1},\n\t{2}" \
-              .format(detid, ', '.join(names)))
+    # In case input is 'NRC??'
+    if 'NRC' in detid:
+        detid = detid[3:]
 
     # Convert ALONG to A5 name
     module = detid[0]
     detid = '{}5'.format(module) if 'LONG' in detid else detid
+
+    # Make sure we have a valid name
+    if detid not in names:
+        raise ValueError("Invalid detid: {0} \n\tValid names are: {1},\n\t{2}" \
+              .format(detid, ', '.join(names)))
 
     # These detectors don't see any of the mask structure
     names_ret0 = ['A1', 'A3', 'B2', 'B4']
