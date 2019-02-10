@@ -3453,7 +3453,7 @@ def zodi_euclid(locstr, year, day, wavelengths=[1,5.5], ido_viewin=0, **kwargs):
 
     def fetch_url(url):
         """
-        Need to add error handling.
+        TODO: Add error handling.
         """
         response = urlopen(url)
         response = response.read()
@@ -4770,7 +4770,7 @@ def build_mask_detid(detid, oversample=1, ref_mask=None):
         If None, then defaults are chosen for each detector.
     """
 
-    from jwxml import siaf
+    # from jwxml import siaf
 
     names = ['A1', 'A2', 'A3', 'A4', 'A5', 'ALONG',
              'B1', 'B2', 'B3', 'B4', 'B5', 'BLONG']

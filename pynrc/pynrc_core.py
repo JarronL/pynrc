@@ -279,7 +279,7 @@ class DetectorOps(object):
         # Typical values for SW/LW detectors that get saved based on SCA ID
         # After setting the SCA ID, these various parameters can be updated,
         # however they will be reset whenever the SCA ID is modified.
-        #   - Pixel Scales in arcsec/pix (SIAF PRDDEVSOC-D-012, 2016 April)
+        #   - Pixel Scales in arcsec/pix
         #   - Well saturation level in e-
         #   - Typical dark current values in e-/sec (ISIM CV3)
         #   - Read Noise in e-
