@@ -65,6 +65,12 @@ class nrc_hci(NIRCam):
         if verbose: print("Generating oversampled PSFs...")
         self._gen_cached_psfs()
 
+        # Set locations based on detector
+        self._set_xypos()
+        # Create mask throughput images seen by each detector
+        self._gen_cmask()
+
+
     @property
     def wfe_drift(self):
         """WFE drift relative to nominal PSF (nm)"""
@@ -278,6 +284,54 @@ class nrc_hci(NIRCam):
         self.psf_center_offsets = offset_vals
         self.psf_center_over = psf_list
 
+    def _set_xypos(self):
+        """
+        Set x0 and y0 subarray positions.
+        """
+
+        wind_mode = self.det_info['wind_mode']
+        if self.mask is not None:
+            full = True if 'FULL' in wind_mode else False
+            cdict = coron_ap_locs(self.module, self.channel, self.mask, full=full)
+            xcen, ycen = cdict['cen']
+
+            xpix, ypix = (self.det_info['xpix'], self.det_info['ypix'])
+            if full: x0, y0 = (0,0)
+            else: x0, y0 = (int(xcen-xpix/2), int(ycen-ypix/2))
+
+            # Make sure subarray sizes don't push out of bounds
+            if (y0 + ypix) > 2048: y0 = 2048 - ypix
+            if (x0 + xpix) > 2048: x0 = 2048 - xpix
+
+            self.update_detectors(x0=x0, y0=y0)
+
+    def _gen_cmask(self, oversample=1):
+        """
+        Generate coronagraphic mask transmission images.
+
+        Output images are in V2/V3 coordinates.
+        """
+        mask = self.mask
+        module = self.module
+        pixscale = self.pix_scale
+        wind_mode = self.det_info['wind_mode']
+
+        mask_dict = {}
+        for det in self.Detectors:
+            detid = det.detid
+
+            if mask is None:
+                mask_dict[detid] = None
+            elif 'FULL' in wind_mode:
+                mask_dict[detid] = build_mask_detid(detid, oversample, mask)
+            else:
+                fov = np.max([det.xpix, det.ypix]) * pixscale
+                im = coron_trans(mask, module=module, pixscale=pixscale,
+                                 fov=fov, nd_squares=True)
+                im = pad_or_cut_to_size(im, (det.ypix,det.xpix))
+                mask_dict[detid] = im
+
+        self.mask_images = mask_dict
 
 
 
@@ -372,11 +426,6 @@ class obs_hci(nrc_hci):
             self._gen_psf_list()
 
         self._gen_ref(verbose=verbose)
-
-        # Set locations based on detector
-        self._set_xypos()
-        # Create mask throughput images seen by each detector
-        self._gen_cmask()
 
         # Rescale input disk image to observation parameters
         self._disk_hdulist_input = disk_hdu
@@ -510,55 +559,6 @@ class obs_hci(nrc_hci):
             self.bar_offset = 0
             self.psf_list = [self.gen_offset_psf(offset, 0) for offset in self.offset_list]
             self.bar_offset = baroff_orig
-
-    def _set_xypos(self):
-        """
-        Set x0 and y0 subarray positions.
-        """
-
-        wind_mode = self.det_info['wind_mode']
-        if self.mask is not None:
-            full = True if 'FULL' in wind_mode else False
-            cdict = coron_ap_locs(self.module, self.channel, self.mask, full=full)
-            xcen, ycen = cdict['cen']
-
-            xpix, ypix = (self.det_info['xpix'], self.det_info['ypix'])
-            if full: x0, y0 = (0,0)
-            else: x0, y0 = (int(xcen-xpix/2), int(ycen-ypix/2))
-
-            # Make sure subarray sizes don't push out of bounds
-            if (y0 + ypix) > 2048: y0 = 2048 - ypix
-            if (x0 + xpix) > 2048: x0 = 2048 - xpix
-
-            self.update_detectors(x0=x0, y0=y0)
-
-    def _gen_cmask(self, oversample=1):
-        """
-        Generate coronagraphic mask transmission images.
-
-        Output images are in V2/V3 coordinates.
-        """
-        mask = self.mask
-        module = self.module
-        pixscale = self.pix_scale
-        wind_mode = self.det_info['wind_mode']
-
-        mask_dict = {}
-        for det in self.Detectors:
-            detid = det.detid
-
-            if mask is None:
-                mask_dict[detid] = None
-            elif 'FULL' in wind_mode:
-                mask_dict[detid] = build_mask_detid(detid, oversample, mask)
-            else:
-                fov = np.max([det.xpix, det.ypix]) * pixscale
-                im = coron_trans(mask, module=module, pixscale=pixscale,
-                                 fov=fov, nd_squares=True)
-                im = pad_or_cut_to_size(im, (det.ypix,det.xpix))
-                mask_dict[detid] = im
-
-        self.mask_images = mask_dict
 
     def planet_spec(self, Av=0, **kwargs):
         """Exoplanet spectrum.
