@@ -886,6 +886,9 @@ class NIRCam(object):
     
     Keyword Args
     ------------
+    det_list : list, None
+        List of detector names (481, 482, etc.) to consider.
+        If not set, then defaults are chosen based on observing mode.
     wind_mode : str
         Window mode type 'FULL', 'STRIPE', 'WINDOW'.
     xpix : int
@@ -972,9 +975,6 @@ class NIRCam(object):
 
     """
     
-    # Variable indicating whether or not to warn about 
-    _fov_pix_warn = True
-
     def __init__(self, filter='F210M', pupil=None, mask=None, module='A', ND_acq=False,
         **kwargs):
                  
@@ -1021,6 +1021,8 @@ class NIRCam(object):
                       'WLM8' :'WEAK LENS -8'}
             pupil = wl_alt.get(pupil, pupil)
 
+        # Variable indicating whether or not to warn about even/odd pixel
+        self._fov_pix_warn = True
 
         # Validate all values, set values, and update bandpass
         # Test and set the intrinsic/hidden variables directly rather than through setters
@@ -1343,6 +1345,7 @@ class NIRCam(object):
                 #if ('WEDGELYOT' in self.pupil) and (self.channel=='SW'): det_list = [488]
 
         # Save det_list to self.det_list
+        # This stores the name and order of those in self.Detectros
         self.det_list = det_list
 
         # Check if kwargs is empty
@@ -2172,6 +2175,10 @@ class NIRCam(object):
             Include the dark current?
         bias : bool
             Include the bias frame?
+        nproc : int
+            Advanced usage to explicitly specify the number of processors to use. 
+            Otherwise, a function is called to determine the optimum number of 
+            processes based on available memory and number of ramps being generated.
 
         Keyword Args
         ------------

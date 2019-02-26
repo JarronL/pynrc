@@ -1,7 +1,7 @@
 from __future__ import division, print_function, unicode_literals
 
 from astropy.convolution import convolve, convolve_fft
-from astropy.convolution import Gaussian2DKernel, Gaussian1DKernel
+from astropy.convolution import Gaussian1DKernel#, Gaussian2DKernel
 from scipy.ndimage.interpolation import rotate
 from scipy import fftpack
 from copy import deepcopy

@@ -1356,18 +1356,18 @@ def wfed_coeff(filter, force=False, save=True, save_name=None, **kwargs):
     Generate PSF coefficient, WFE drift modifications, then
     create an undrifted and drifted PSF.
 
-    >>> from pynrc.nrc_utils import *
+    >>> from pynrc import nrc_utils
     >>> fpix, osamp = (128, 4)
-    >>> coeff  = psf_coeff('F210M', fov_pix=fpix, oversample=osamp)
-    >>> wfe_cf = wfed_coeff('F210M', fov_pix=fpix, oversample=osamp)
-    >>> psf0   = gen_image_coeff('F210M', coeff=coeff, fov_pix=fpix, oversample=osamp)
+    >>> coeff  = nrc_utils.psf_coeff('F210M', fov_pix=fpix, oversample=osamp)
+    >>> wfe_cf = nrc_utils.wfed_coeff('F210M', fov_pix=fpix, oversample=osamp)
+    >>> psf0   = nrc_utils.gen_image_coeff('F210M', coeff=coeff, fov_pix=fpix, oversample=osamp)
 
     >>> # Drift the coefficients
     >>> wfe_drift = 5   # nm
     >>> cf_fit = wfe_cf.reshape([wfe_cf.shape[0], -1])
-    >>> cf_mod = jl_poly(np.array([wfe_drift]), cf_fit).reshape(coeff.shape)
+    >>> cf_mod = nrc_utils.jl_poly(np.array([wfe_drift]), cf_fit).reshape(coeff.shape)
     >>> cf_new = coeff + cf_mod
-    >>> psf5   = gen_image_coeff('F210M', coeff=cf_new, fov_pix=fpix, oversample=osamp)
+    >>> psf5nm = nrc_utils.gen_image_coeff('F210M', coeff=cf_new, fov_pix=fpix, oversample=osamp)
     """
 
     kwargs['force']     = True
@@ -1391,7 +1391,7 @@ def wfed_coeff(filter, force=False, save=True, save_name=None, **kwargs):
     if (not force) and os.path.exists(save_name):
         return np.load(save_name)
 
-    _log.warn('Generating WFE Drift coefficients. This may take some time.')
+    _log.warn('Generating WFE Drift coefficients. This may take some time...')
     # _log.warn('{}'.format(save_name))
 
     # Cycle through WFE drifts for fitting
@@ -1447,16 +1447,16 @@ def field_coeff(filter, force=False, save=True, save_name=None, **kwargs):
     Generate PSF coefficient, field position modifications, then
     create a PSF at some (V2,V3) location.
 
-    >>> from pynrc.nrc_utils import *
+    >>> from pynrc import nrc_utils
     >>> fpix, osamp = (128, 4)
-    >>> coeff    = psf_coeff('F210M', fov_pix=fpix, oversample=osamp)
-    >>> cf_resid = field_coeff('F210M', fov_pix=fpix, oversample=osamp)
+    >>> coeff    = nrc_utils.psf_coeff('F210M', fov_pix=fpix, oversample=osamp)
+    >>> cf_resid = nrc_utils.field_coeff('F210M', fov_pix=fpix, oversample=osamp)
 
     >>> # Some (V2,V3) location (arcmin)
     >>> v2, v3 = (1.2, -7)
-    >>> cf_mod = field_model(v2, v3, cf_resid)
+    >>> cf_mod = nrc_utils.field_model(v2, v3, cf_resid)
     >>> cf_new = coeff + cf_mod
-    >>> psf    = gen_image_coeff('F210M', coeff=cf_new, fov_pix=fpix, oversample=osamp)
+    >>> psf    = nrc_utils.gen_image_coeff('F210M', coeff=cf_new, fov_pix=fpix, oversample=osamp)
     """
 
 
@@ -1484,7 +1484,7 @@ def field_coeff(filter, force=False, save=True, save_name=None, **kwargs):
     if (not force) and os.path.exists(save_name):
         return np.load(save_name)
 
-    _log.warn('Generating field-dependent coefficients. This may take some time.')
+    _log.warn('Generating field-dependent coefficients. This may take some time...')
 
     # Cycle through a list of field points
     # These are the measured field positions
@@ -1578,7 +1578,7 @@ def field_model(x, y, cf):
 
 
 def wedge_coeff(filter, pupil, mask, force=False, save=True, save_name=None, **kwargs):
-    """PSF Coefficient Mod w.r.t. Field Position
+    """PSF Coefficient Mod w.r.t. Wedge Coronagraph Location
 
     Keyword Arguments match those in :func:`psf_coeff`.
 
@@ -1603,18 +1603,18 @@ def wedge_coeff(filter, pupil, mask, force=False, save=True, save_name=None, **k
     Generate PSF coefficient at bar_offset=0, generate position modifications,
     then use these results to create a PSF at some arbitrary offset location.
 
-    >>> from pynrc.nrc_utils import *
+    >>> from pynrc import nrc_utils
     >>> fpix, osamp = (320, 2)
     >>> filt, pupil, mask = ('F430M', 'WEDGELYOT', 'MASKLWB')
-    >>> coeff    = psf_coeff(filt, pupil, mask, fov_pix=fpix, oversample=osamp)
-    >>> cf_resid = wedge_coeff(filt, pupil, mask, fov_pix=fpix, oversample=osamp)
+    >>> coeff    = nrc_utils.psf_coeff(filt, pupil, mask, fov_pix=fpix, oversample=osamp)
+    >>> cf_resid = nrc_utils.wedge_coeff(filt, pupil, mask, fov_pix=fpix, oversample=osamp)
 
     >>> # The narrow location (arcsec)
     >>> bar_offset = 8
-    >>> cf_fit = cf_resid.reshape([cf_resid.shape[0], -1])
-    >>> cf_mod = jl_poly(np.array([bar_offset]), cf_fit).reshape(coeff.shape)
+    >>> cf_fit = nrc_utils.cf_resid.reshape([cf_resid.shape[0], -1])
+    >>> cf_mod = nrc_utils.jl_poly(np.array([bar_offset]), cf_fit).reshape(coeff.shape)
     >>> cf_new = coeff + cf_mod
-    >>> psf    = gen_image_coeff(filt, pupil, mask, coeff=cf_new, fov_pix=fpix, oversample=osamp)
+    >>> psf    = nrc_utils.gen_image_coeff(filt, pupil, mask, coeff=cf_new, fov_pix=fpix, oversample=osamp)
 
     """
 
@@ -1648,7 +1648,7 @@ def wedge_coeff(filter, pupil, mask, force=False, save=True, save_name=None, **k
     if (not force) and os.path.exists(save_name):
         return np.load(save_name)
 
-    _log.warn('Generating wedge field-dependent coefficients. This may take some time.')
+    _log.warn('Generating wedge field-dependent coefficients. This may take some time...')
 
     # Cycle through a list of bar offset locations
     values = np.arange(-8,8,1)
@@ -2056,8 +2056,8 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
     PSF Information
     -------------------
     coeff : A cube of polynomial coefficients for generating PSFs. This is
-        generally oversampled with a shape (fov_pix*oversamp, fov_pix*oversamp, deg).
-        If not set, this will be calculated using :func:`psf_coeff`.
+            generally oversampled with a shape (fov_pix*oversamp, fov_pix*oversamp, deg).
+            If not set, this will be calculated using :func:`psf_coeff`.
     fov_pix      : Number of detector pixels in the image coefficient and PSF.
     oversample   : Factor of oversampling of detector pixels.
     offset_r     : Radial offset of the target from center.
@@ -2067,7 +2067,7 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
     -------------------
     image        : Explicitly pass image data rather than calculating from coeff.
     return_image : Instead of calculating sensitivity, return the image calced from coeff.
-        Useful if needing to calculate sensitivities for many different settings.
+                   Useful if needing to calculate sensitivities for many different settings.
     rad_EE       : Extraction aperture radius (in pixels) for imaging mode.
     dw_bin       : Delta wavelength to calculate spectral sensitivities (grisms & DHS).
     ap_spec      : Instead of dw_bin, specify the spectral extraction aperture in pixels.
@@ -4759,7 +4759,7 @@ def build_mask(module='A', pixscale=0.03):
 def build_mask_detid(detid, oversample=1, ref_mask=None):
     """Create mask image for a given detector
 
-    Return an full coronagraphic mask image as seen by a given SCA.
+    Return a full coronagraphic mask image as seen by a given SCA.
     +V3 is up, and +V2 is to the left.
 
     Parameters
