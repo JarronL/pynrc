@@ -482,18 +482,13 @@ class NIRCamFieldAndWavelengthDependentAberration_mod(poppy.OpticalElement):
         super(NIRCamFieldAndWavelengthDependentAberration_mod, self).__init__(
             name="Aberrations", **kwargs)
 
-
         # Copied from WebbFieldDependentAberration in webbpsf/optics.py
         self.instrument = instrument
         self.instr_name = instrument.name
 
-        # work out which name to index into the CV results with, if for NIRCam
-        channel = instrument.channel[0].upper()
-        lookup_name = "NIRCam{channel}W{module}".format(
-            channel=channel,
-            module=instrument.module
-        )
-        _log.debug("Retrieving Zernike coefficients for " + lookup_name)
+        if instrument._zernike_file is None:
+            _log.warn('No Zernike file set, returning None.')
+            return None
 
         # Determine the pupil sampling of the first aperture in the
         # instrument's optical system
@@ -508,39 +503,7 @@ class NIRCamFieldAndWavelengthDependentAberration_mod(poppy.OpticalElement):
 
         # Field point coordinates in terms of arcmin
         self.tel_coords = instrument._tel_coords()
-        telcoords_am  = self.tel_coords.to(units.arcmin).value
-        v2_tel,v3_tel = telcoords_am
-
-        opd_dir = os.path.join(conf.PYNRC_PATH, 'opd_mod/')
-        zernike_file = os.path.join(opd_dir, lookup_name + '_zernikes_isim_cv3.fits')
-
-        # Zernike coordinate map
-        zmod_hdul = fits.open(zernike_file)
-        zdata = zmod_hdul[0].data
-        header = zmod_hdul[0].header
-
-        nz, ny, nx = zdata.shape
-        xmin = header['XMIN']
-        xmax = header['XMAX']
-        xdel = header['XDEL']
-        ymin = header['YMIN']
-        ymax = header['YMAX']
-        ydel = header['YDEL']
-
-        # V2/V3 coordinates in arcmin
-        v2 = np.linspace(xmin, xmax, nx, endpoint=True)
-        v3 = np.linspace(ymin, ymax, ny, endpoint=True)
-
-        # Linear interpolation of points for each of the 36 Zernike coefficients.
-        # For points outside of the bounds, it will linearly extrapolate.
-        func = RegularGridInterpolator((np.arange(36),v3,v2), zdata, method='linear',
-                                       bounds_error=False, fill_value=None)
-        pts = np.arange(36.).reshape(-1,1).repeat(3,axis=1)
-        pts[:,1] = v3_tel
-        pts[:,2] = v2_tel
-        coeffs = func(pts).tolist()
-
-        self.zernike_coeffs = coeffs
+        self.zernike_coeffs = self.get_base_zernikes()
 
         # Get the representation of focus in the same Zernike basis as used for
         # making the OPD.
@@ -577,7 +540,7 @@ class NIRCamFieldAndWavelengthDependentAberration_mod(poppy.OpticalElement):
         # Create base OPD
         self.opd = np.zeros_like(basis[0])
         for i, b in enumerate(basis):
-            self.opd += coeffs[i]*b
+            self.opd += self.zernike_coeffs[i]*b
 
         # Update amplitude from OPD (if include_oversize==False)
         if self.amplitude is None:
@@ -586,68 +549,86 @@ class NIRCamFieldAndWavelengthDependentAberration_mod(poppy.OpticalElement):
             aperture = self.amplitude
             self.opd[~np.isfinite(aperture)] = np.nan
             self.opd[aperture==0] = 0
+        
+        # Polynomial fits to defocus model values (nm RMS WFE).
+        # This works for coronagraphy as well.
+        cf_scale = -1.09746e7
+        sw_cf = np.array([-5.169185169, 50.62919436, -201.5444129, 415.9031962,  
+                          -465.9818413, 265.843112, -59.64330811]) / cf_scale
+        lw_cf = np.array([0.175718713, -1.100964635, 0.986462016, 1.641692934]) / cf_scale
+        self.fm_short = np.poly1d(sw_cf)
+        self.fm_long  = np.poly1d(lw_cf)
 
-        # TODO load here the wavelength dependence info.
-        self.focusmodel_file = os.path.join(webbpsf.utils.get_webbpsf_data_path(),
-            'NIRCam', 'optics', 'nircam_defocus_vs_wavelength.fits')
-        model_hdul = fits.open(self.focusmodel_file)
-        assert model_hdul[1].header['XTENSION'] == 'BINTABLE'
-        self.focus_model_data = model_hdul[1].data
-        model_wavelengths, model_defocus = (
-            self.focus_model_data['wavelength'].astype('=f8'),
-            self.focus_model_data['defocus_in_rms_wfe'].astype('=f8')
-        )
+        
+    def get_base_zernikes(self):
+        instrument = self.instrument
+        
+        # Get v2, v3 position
+        telcoords_am  = self.tel_coords.to(units.arcmin).value
+        v2_tel,v3_tel = telcoords_am
 
-        # Read in model data and set up interpolators.
-        short_wavelengths_mask = model_wavelengths < 2.45
-        self.fm_short = interp1d(model_wavelengths[short_wavelengths_mask],
-            model_defocus[short_wavelengths_mask], kind='cubic')
+        _log.debug("Retrieving Zernike coefficients from " + instrument._zernike_file)
 
-        long_wavelengths_mask = model_wavelengths > 2.45
-        # (n.b. row where model_wavelengths == 2.45 is nan)
-        self.fm_long = interp1d(model_wavelengths[long_wavelengths_mask],
-            model_defocus[long_wavelengths_mask], kind='cubic')
+        # Zernike coordinate map
+        zmod_hdul = fits.open(instrument._zernike_file)
+        zdata = zmod_hdul[0].data
+        header = zmod_hdul[0].header
 
+        nz, ny, nx = zdata.shape
+        xmin = header['XMIN']
+        xmax = header['XMAX']
+        xdel = header['XDEL']
+        ymin = header['YMIN']
+        ymax = header['YMAX']
+        ydel = header['YDEL']
 
-        model_hdul.close()
+        # V2/V3 coordinates in arcmin
+        v2 = np.linspace(xmin, xmax, nx, endpoint=True)
+        v3 = np.linspace(ymin, ymax, ny, endpoint=True)
+
+        # Linear interpolation of points for each of the 36 Zernike coefficients.
+        # For points outside of the bounds, it will linearly extrapolate.
+        func = RegularGridInterpolator((np.arange(36),v3,v2), zdata, method='linear',
+                                       bounds_error=False, fill_value=None)
+        pts = np.arange(36.).reshape(-1,1).repeat(3,axis=1)
+        pts[:,1] = v3_tel
+        pts[:,2] = v2_tel
+        coeffs = func(pts).tolist()
+
         zmod_hdul.close()
-
-    def get_opd(self, wave):
-        # Which wavelength was used to generate the OPD map we have already
-        # created from zernikes?
+        
+        return coeffs
+        
+        
+    def focus_model(self, wave_um):
+        # Get defocus value in RMS WFE (meters) of ideal model
         if self.instrument.channel.upper() == 'SHORT':
-            opd_ref_wave = 2.12
             focusmodel = self.fm_short
         else:
-            opd_ref_wave = 3.23
             focusmodel = self.fm_long
 
-        try:
-            wave_um = wave.wavelength.to(units.micron).value
+        return focusmodel(wave_um)
+        
+
+    def get_opd(self, wave):
+        # Which wavelength was used to generate the current OPD map?
+        focusmodel = self.focus_model
+        if self.instrument.channel.upper() == 'SHORT':
+            opd_ref_wave = 2.12
+        else:
+            opd_ref_wave = 3.23
+
+        # F323N deviates from the model and has it's own focus power
+        wave_um = wave.wavelength.to(units.micron).value
+        if 'F323N' in self.instrument.filter:
+            focus_at_wave = 1.206e-7
+        else:
             focus_at_wave = focusmodel(wave_um)
-        except ValueError:
-            # apply linear extrapolation if we are slightly outside the range of the focus model
-            # inputs. This is required to support the full range of the LW channel.
-            if wave_um < focusmodel.x[0]:
-                focus_at_wave = (
-                    focusmodel.y[0] +
-                    (wave_um - focusmodel.x[0]) * (focusmodel.y[0] - focusmodel.y[1]) /
-                    (focusmodel.x[0] - focusmodel.x[1])
-                )
-            else:
-                focus_at_wave = (
-                    focusmodel.y[-1] +
-                    (wave_um - focusmodel.x[-1]) * (focusmodel.y[-1] - focusmodel.y[-2]) /
-                    (focusmodel.x[-1] - focusmodel.x[-2])
-                )
 
         deltafocus = focus_at_wave - focusmodel(opd_ref_wave)
         _log.info("  Applying OPD focus adjustment based on NIRCam focus vs wavelength model")
         _log.info("  Delta focus from {} to {}: {:.3f} nm rms".format(
-            opd_ref_wave,
-            wave.wavelength.to(units.micron),
-            deltafocus * 1e9)
-        )
+                  opd_ref_wave, wave.wavelength.to(units.micron), deltafocus * 1e9) )
 
         mod_opd = self.opd - deltafocus * self.defocus_zern
 
@@ -677,19 +658,82 @@ class webbpsf_NIRCam_mod(webbpsf_NIRCam):
         if not self.include_si_wfe:
             return None
 
+        # Select the appropriate Zernike file
         opd_dir = os.path.join(conf.PYNRC_PATH, 'opd_mod/')
         channel = self.channel[0].upper()
         lookup_name = "NIRCam{}W{}".format(channel,self.module)
-        zfile = "{}_zernikes_isim_cv3.fits".format(lookup_name)
+        # Check if Lyot stop is in place (optical wedge)
+        pupil_mask = self._pupil_mask
+        if (pupil_mask is not None) and ('LYOT' in pupil_mask.upper()):
+            zfile = "{}_zernikes_coron.fits".format(lookup_name)
+        else:            
+            zfile = "{}_zernikes_isim_cv3.fits".format(lookup_name)
         zernike_file = os.path.join(opd_dir, zfile)
 
         if (not os.path.exists(zernike_file)) and (self.include_si_wfe==True):
             _log.warn('File {} does not exist. Setting include_si_wfe=False.'
                       .format(zfile))
             self.include_si_wfe = False
+            self._zernike_file = None
             return None
         else:
+            self._zernike_file = zernike_file
+            _log.info('Using SI WFE File {}.'.format(self._zernike_file))
             return self._si_wfe_class(self)
+
+    @webbpsf_NIRCam.detector.setter # override setter in this subclass
+    def detector(self, value):
+        """ Set detector, including reloading the relevant info from SIAF """
+        if value.upper() not in self.detector_list:
+            raise ValueError("Invalid detector. Valid detector names are: {}".format(', '.join(self.detector_list)))
+        # set the channel based on the requested detector
+        new_channel = 'long' if value[-1] == '5' else 'short'
+        self._switch_channel(new_channel)
+        self._detector = value.upper()
+
+        # Detector aperture name
+        # Need to account for coronagraphic masks
+        image_mask = self._image_mask
+        if (image_mask is not None) and (image_mask in self._image_mask_apertures):
+            apname =  self._image_mask_apertures[image_mask]
+        else:
+            apname = self._detectors[self._detector]
+        self._detector_geom_info = DetectorGeometry_mod(self.name, apname)
+
+
+from webbpsf.webbpsf_core import DetectorGeometry
+class DetectorGeometry_mod(DetectorGeometry):
+    """ 
+    Small rewrite to fix discrepancy between detector and science frames. -JML
+    
+    Utility class for converting between detector coordinates
+    in detector frame pixels and field of view angular coordinates in arcminutes.
+    """
+
+    def __init__(self, instrname, aperturename, shortname=None):
+        DetectorGeometry.__init__(self, instrname, aperturename, shortname=shortname)
+
+    def pix2angle(self, xpix, ypix, frame='det'):
+        """ Convert  from detector coordinates to telescope frame coordinates using SIAF transformations
+        See the pysiaf code for all the full details, or Lallo & Cox Tech Reports
+
+        Parameters
+        ------------
+        xpix, ypix : floats
+            X and Y pixel coordinates, 0 <= xpix, ypix < detector_size
+
+        Returns
+        --------
+        V2, V3 : floats
+            V2 and V3 coordinates, in arcMINUTES
+            Note that the astropy.units framework is used to return the result as a
+            dimensional Quantity.
+
+        """
+
+        tel_coords = np.asarray(self.aperture.convert(xpix, ypix, frame, 'tel') )
+        tel_coords_arcmin = tel_coords / 60. * units.arcmin  # arcsec to arcmin
+        return tel_coords_arcmin
 
 
 def nproc_use(fov_pix, oversample, nwavelengths, coron=False):
@@ -858,7 +902,7 @@ def _wrap_coeff_for_mp(args):
 def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     fov_pix=11, oversample=None, npsf=None, ndeg=None, tel_pupil=None,
     offset_r=None, offset_theta=None, jitter=None, jitter_sigma=0.007,
-    opd=None, wfe_drift=None, drift_file=None, include_si_wfe=True,
+    opd=None, wfe_drift=None, drift_file=None, include_si_wfe=False,
     detector=None, detector_position=None, bar_offset=None, 
     force=False, save=True, save_name=None, return_save_name=False, 
     quick=False, **kwargs):
@@ -927,7 +971,7 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     drift_file : str, None
         Delta OPD file to use for WFE drift.
     include_si_wfe : bool
-        Include SI WFE measurements? Default=True.
+        Include SI WFE measurements? Default=False.
     detector : str, None
         Name of detector [NRCA1, ..., NRCA5, NRCB1, ..., NRCB5].
     detector_position : tuple, None
@@ -949,13 +993,10 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         If None, then a name is automatically generated.
     quick : bool
         Only perform a fit over the filter bandpass with a smaller default
-        polynomial degree fit. Not compatible with save.
+        polynomial degree fit. Auto filename will have filter name appended.
     return_save_name : bool
 
     """
-
-    if (save and quick):
-        raise ValueError("Keywords `save` and `quick` cannot both be set to True.")
 
     grism_obs = (pupil is not None) and ('GRISM' in pupil)
     dhs_obs   = (pupil is not None) and ('DHS'   in pupil)
@@ -1087,9 +1128,20 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
             os.makedirs(save_dir)
 
         # Final filename to save coeff
-        fname = '{}{}_{}_{}_pix{}_os{}_jsig{:.0f}_r{:.1f}_th{:.1f}{}_{}.fits'.\
+        fname = '{}{}_{}_{}'.format(chan_str,module,ptemp,mtemp)
+        fname = fname + '_pix{}_os{}'.format(fov_pix,oversample)
+        fname = fname + '_jsig{:.0f}_r{:.1f}_th{:.1f}'.format(jitter_sigma*1000,rtemp,ttemp)
+        fname = fname + '{}_{}'.format(bar_str,otemp)
+        
+        fname = '{}{}_{}_{}_pix{}_os{}_jsig{:.0f}_r{:.1f}_th{:.1f}{}_{}'.\
             format(chan_str,module,ptemp,mtemp,fov_pix,oversample,\
                    jitter_sigma*1000,rtemp,ttemp,bar_str,otemp)
+                   
+        # Append filter name if using quick keyword
+        if quick:
+            fname = fname + '_{}'.format(filter)
+                   
+        fname = fname + '.fits'
         save_name = save_dir + fname
 
     if return_save_name:
@@ -1233,6 +1285,20 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         for i,im in enumerate(images):
             im_scale = frebin(im, scale=scale)
             images[i] = pad_or_cut_to_size(im_scale, im.shape)
+
+    # LW coronagraphy has slight PSF dispersion
+    if coron_obs and ('LW' in chan_str):
+        w0 = 3.23 # Relative to TA filter wavelength
+        pix_size = 18.0 # Pixels are 18 microns in size
+
+        dy0 = (-4.855 * w0**3) + (69.754 * w0**2) - (312.370 * w0)
+        # Shift in microns of each wavelength
+        dy_all = (-4.855 * waves**3) + (69.754 * waves**2) - (312.370 * waves) - dy0
+        
+        dely_pix_os = oversample * (dy_all / pix_size)
+        
+        for i,im in enumerate(images):
+            images[i] = fshift(im, dely=dely_pix_os[i], pad=True)
 
     # Turn results into an numpy array (npsf,ny,nx)
     images = np.array(images)
@@ -1793,13 +1859,15 @@ def gen_image_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         sp_norm = sp_flat.renorm(bp.unit_response(), 'flam', bp)
 
     # Make sp_norm a list of spectral objects if it already isn't
-    if not isinstance(sp_norm, list): sp_norm = [sp_norm]
+    if not isinstance(sp_norm, list): 
+        sp_norm = [sp_norm]
     nspec = len(sp_norm)
 
     # Set up an observation of the spectrum using the specified bandpass
     # Use the bandpass wavelength set to bin the fluxes
     obs_list = [S.Observation(sp, bp, binset=waveset) for sp in sp_norm]
-    for obs in obs_list: obs.convert('counts')
+    for obs in obs_list: 
+        obs.convert('counts')
 
     # Create a PSF for each wgood wavelength
     psf_fit = jl_poly(wgood, coeff, dim_reorder=True)
@@ -1826,6 +1894,7 @@ def gen_image_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         npix_spec_over = int(npix_spec * oversample)
 
         spec_list = []
+        spec_list_over = []
         for psf_fit in psf_list:
             # If GRISM90 (along columns) rotate by 90 deg CW (270 deg CCW)
             if 'GRISM90' in pupil:
@@ -1857,6 +1926,7 @@ def gen_image_coeff(filter_or_bp, pupil=None, mask=None, module='A',
 
             # Rebin ovesampled spectral image to real pixels
             spec_list.append(poppy.utils.krebin(spec_over, (fov_pix,npix_spec)))
+            spec_list_over.append(spec_over)
 
         # Wavelength solutions
         dw_over = dw/oversample
@@ -1864,11 +1934,13 @@ def gen_image_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         wspec_over = np.arange(npix_spec_over)*dw_over + w1_spec
         wspec = wspec_over.reshape((npix_spec,-1)).mean(axis=1)
 
-        if nspec == 1: spec_list = spec_list[0]
+        if nspec == 1: 
+            spec_list = spec_list[0]
+            spec_list_over = spec_list_over[0]
         # Return list of wavelengths for each horizontal pixel
         # as well as spectral image
         if return_oversample:
-            return (wspec, spec_list), (wspec_over, spec_over)
+            return (wspec, spec_list), (wspec_over, spec_list_over)
         else:
             return (wspec, spec_list)
 
@@ -1880,14 +1952,18 @@ def gen_image_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     else:
         # Create source image slopes (no noise)
         data_list = []
+        data_list_over = []
         for psf_fit in psf_list:
             data_over = psf_fit.sum(axis=2)
             data_over[data_over<__epsilon] = 0
+            data_list_over.append(data_over)
             data_list.append(poppy.utils.krebin(data_over, (fov_pix,fov_pix)))
 
-        if nspec == 1: data_list = data_list[0]
+        if nspec == 1: 
+            data_list = data_list[0]
+            data_list_over = data_list_over[0]
         if return_oversample:
-            return data_list, data_over
+            return data_list, data_list_over
         else:
             return data_list
 
