@@ -943,7 +943,7 @@ class NIRCam(object):
     opd : tuple or HDUList
         Tuple (file, slice) or filename or HDUList specifying OPD.
     include_si_wfe : bool
-        Include SI WFE measurements? Default=True.
+        Include SI WFE measurements? Default=False.
     tel_pupil : str
         File name or HDUList specifying telescope entrance pupil.
     jitter : str or None
@@ -1579,7 +1579,7 @@ class NIRCam(object):
         opd : tuple, str, or HDUList
             Tuple (file, slice) or filename or HDUList specifying OPD.
         include_si_wfe : bool
-            Include SI WFE measurements? Default=True.
+            Include SI WFE measurements? Default=False.
         tel_pupil : str or HDUList
             File name or HDUList specifying telescope entrance pupil.
         jitter : str
@@ -1646,7 +1646,7 @@ class NIRCam(object):
             except (AttributeError, KeyError): tel_pupil = None
         if include_si_wfe is None:
             try: include_si_wfe = self._psf_info['include_si_wfe']
-            except (AttributeError, KeyError): include_si_wfe = True
+            except (AttributeError, KeyError): include_si_wfe = False
         if jitter is None:
             try: jitter = self._psf_info['jitter']
             except (AttributeError, KeyError): jitter = 'gaussian'
@@ -2167,7 +2167,7 @@ class NIRCam(object):
             user would like to do both (or neither).
         det_name : str, None
             Name of detector (A1-B5). If not found or set to None, then the 
-            first detector in `self.det_list` and `self.Detectors` is uses
+            first detector in `self.det_list` and `self.Detectors` is used
         dark : bool
             Include the dark current?
         bias : bool

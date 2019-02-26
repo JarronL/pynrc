@@ -1,15 +1,17 @@
 Revision History
 ================
 
-v0.8.0 (Jan 2019)
+v0.8.0beta (ongoing)
 -----------------
 
 - Release to work with WebbPSF 0.8.0.
 - Phasing out support for Python 2
-- Can use ``jwst_backgrounds`` (not required)
 - Add info on saturation limits in terms of surface brightness 
 - Include option to create grism 2nd order
 - Detector pixel timing bugs
+- Field-dependent WFE extrapolated beyond FoV for better sampling diversity
+- Included field-dependent WFE for coronagraphy
+- Added wavelength dispersion of LW coronagraphic PSF
 
 v0.7.0 (Jun 2018)
 -----------------

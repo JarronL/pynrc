@@ -3,6 +3,7 @@ Planned Updates
 
 FoV aware positions
 +++++++++++++++++++
+    - Correct coronagraph field locations (CIRC vs BAR)
     - Background roll off at grism edges
     - Filter location relative offsets
     - SIAF info
