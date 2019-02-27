@@ -3,7 +3,7 @@ Planned Updates
 
 FoV aware positions
 +++++++++++++++++++
-    - Correct coronagraph field locations (CIRC vs BAR)
+    - Correct coronagraph field locations depending on Lyot optical wedge
     - Background roll off at grism edges
     - Filter location relative offsets
     - SIAF info
@@ -15,6 +15,8 @@ Detector updates in ngNRC.py
     - Pixel non-linearity
     - Intrapixel Capacitance (IPC)
     - Post-pixel Coupling (PPC) due to ADC "smearing"
+    - Pixel glow based on subarray size
+    - Charge diffusion (esp for saturated pixels)
     - Persistence/latent image
     - Optical distortions
     - QE variations across a pixel's surface
@@ -24,7 +26,6 @@ Detector updates in ngNRC.py
 PSF Related
 +++++++++++
     - Actual coronagraphic throughput from FITS files
-    - Include dispersion of coronagraph PSF
     - More PSF Jitter options
     - PSF convolution based on geometric spot size
     

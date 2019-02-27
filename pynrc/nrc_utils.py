@@ -104,6 +104,10 @@ from poppy import radial_profile, measure_fwhm
 #        measure_EE, measure_radial, measure_fwhm, measure_sharpness, measure_centroid, measure_strehl,
 #        specFromSpectralType, fwcentroid)
 
+# Detector geometry stuff
+import pysiaf
+from webbpsf.webbpsf_core import DetectorGeometry
+
 import pysynphot as S
 # Extend default wavelength range to 5.6 um
 S.refs.set_default_waveset(minwave=500, maxwave=56000, num=10000.0, delta=None, log=False)
@@ -681,6 +685,22 @@ class webbpsf_NIRCam_mod(webbpsf_NIRCam):
             _log.info('Using SI WFE File {}.'.format(self._zernike_file))
             return self._si_wfe_class(self)
 
+    def set_position_from_aperture_name(self, aperture_name):
+        """ Set the simulated center point of the array based on a named SIAF aperture.
+        This will adjust the detector and detector position attributes.
+        """
+        siaf = pysiaf.Siaf(self.name)
+        try:
+            ap = siaf[aperture_name]
+
+            self.detector_position = (ap.XSciRef, ap.YSciRef)
+            detname = aperture_name.split('_')[0]
+            self.detector = detname # As a side effect this auto reloads SIAF info, see detector.setter
+            _log.debug("From {} set det. pos. to {} {}".format(aperture_name, detname, self.detector_position))
+
+        except KeyError:
+            raise ValueError("Not a valid aperture name for {}: {}".format(self.name, aperture_name))
+
     @webbpsf_NIRCam.detector.setter # override setter in this subclass
     def detector(self, value):
         """ Set detector, including reloading the relevant info from SIAF """
@@ -701,7 +721,6 @@ class webbpsf_NIRCam_mod(webbpsf_NIRCam):
         self._detector_geom_info = DetectorGeometry_mod(self.name, apname)
 
 
-from webbpsf.webbpsf_core import DetectorGeometry
 class DetectorGeometry_mod(DetectorGeometry):
     """ 
     Small rewrite to fix discrepancy between detector and science frames. -JML
@@ -713,7 +732,7 @@ class DetectorGeometry_mod(DetectorGeometry):
     def __init__(self, instrname, aperturename, shortname=None):
         DetectorGeometry.__init__(self, instrname, aperturename, shortname=shortname)
 
-    def pix2angle(self, xpix, ypix, frame='det'):
+    def pix2angle(self, xpix, ypix, input_frame='sci'):
         """ Convert  from detector coordinates to telescope frame coordinates using SIAF transformations
         See the pysiaf code for all the full details, or Lallo & Cox Tech Reports
 
@@ -731,7 +750,7 @@ class DetectorGeometry_mod(DetectorGeometry):
 
         """
 
-        tel_coords = np.asarray(self.aperture.convert(xpix, ypix, frame, 'tel') )
+        tel_coords = np.asarray(self.aperture.convert(xpix, ypix, input_frame, 'tel') )
         tel_coords_arcmin = tel_coords / 60. * units.arcmin  # arcsec to arcmin
         return tel_coords_arcmin
 
@@ -1553,7 +1572,7 @@ def field_coeff(filter, force=False, save=True, save_name=None, **kwargs):
     _log.warn('Generating field-dependent coefficients. This may take some time.')
 
     # Cycle through a list of field points
-    # These are the measured field positions
+    # These are the measured CV3 field positions
     module = kwargs.get('module', 'A')
     kwargs['module'] = module
     if module=='A':
