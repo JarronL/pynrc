@@ -25,14 +25,16 @@ Detector updates in ngNRC.py
 
 PSF Related
 +++++++++++
+    - Coronagraph target acquisition uncertainties
+    - Small grid dither strategy in coronagraphic observations
     - Actual coronagraphic throughput from FITS files
     - More PSF Jitter options
     - PSF convolution based on geometric spot size
     
 Observation Classes
 +++++++++++++++++++
-    - Grism time series
     - Photometric time series (incl. weak lens)
+    - Grism time series
     - Wide-field grism
     - Wide field imaging (esp. SW modules)
 

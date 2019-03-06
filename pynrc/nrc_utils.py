@@ -106,6 +106,8 @@ from poppy import radial_profile, measure_fwhm
 
 # Detector geometry stuff
 import pysiaf
+siaf = pysiaf.Siaf('NIRCam')
+siaf.generate_toc()
 from webbpsf.webbpsf_core import DetectorGeometry
 
 import pysynphot as S
@@ -1057,9 +1059,9 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     inst.include_si_wfe = include_si_wfe
 
     # Detector position
-    # Select center of module's FoV if not specified
-    det_switch = {'SWA': 'A1', 'SWB':'B4', 'LWA':'A5', 'LWB':'B5'}
-    detpos_switch = {'SW':(0,2047), 'LW':(1024,1024)}
+    # define defaults
+    det_switch = {'SWA': 'A1', 'SWB':'B1', 'LWA':'A5', 'LWB':'B5'}
+    detpos_switch = {'SW':(1024,1024), 'LW':(1024,1024)}
     if (detector is None) and (detector_position is None):
         inst.detector = 'NRC' + det_switch.get(chan_str+module)
         inst.detector_position = detpos_switch.get(chan_str)
@@ -1506,7 +1508,7 @@ def wfed_coeff(filter, force=False, save=True, save_name=None, **kwargs):
     return cf_fit
 
 
-def field_coeff(filter, force=False, save=True, save_name=None, **kwargs):
+def field_coeff(filter, coeff0, force=False, save=True, save_name=None, **kwargs):
     """PSF Coefficient Mod w.r.t. Field Position
 
     Keyword Arguments match those in :func:`psf_coeff`.
@@ -1515,6 +1517,8 @@ def field_coeff(filter, force=False, save=True, save_name=None, **kwargs):
     ----------
     filter : str
         Name of a filter.
+    ceoff0 : ndarray
+        PSF coefficient to perform relative comparison.
     force : bool
         Forces a recalcuation of coefficients even if saved
         PSF already exists. (default: False)
@@ -1534,13 +1538,13 @@ def field_coeff(filter, force=False, save=True, save_name=None, **kwargs):
 
     >>> from pynrc.nrc_utils import *
     >>> fpix, osamp = (128, 4)
-    >>> coeff    = psf_coeff('F210M', fov_pix=fpix, oversample=osamp)
-    >>> cf_resid = field_coeff('F210M', fov_pix=fpix, oversample=osamp)
+    >>> coeff0    = psf_coeff('F210M', fov_pix=fpix, oversample=osamp)
+    >>> cf_resid = field_coeff('F210M', coeff0, fov_pix=fpix, oversample=osamp)
 
     >>> # Some (V2,V3) location (arcmin)
     >>> v2, v3 = (1.2, -7)
     >>> cf_mod = field_model(v2, v3, cf_resid)
-    >>> cf_new = coeff + cf_mod
+    >>> cf_new = coeff0 + cf_mod
     >>> psf    = gen_image_coeff('F210M', coeff=cf_new, fov_pix=fpix, oversample=osamp)
     """
 
@@ -1573,7 +1577,7 @@ def field_coeff(filter, force=False, save=True, save_name=None, **kwargs):
 
     # Cycle through a list of field points
     # These are the measured CV3 field positions
-    module = kwargs.get('module', 'A')
+    module = kwargs.get('module', 'A') # If not specified, choose 'A'
     kwargs['module'] = module
     if module=='A':
         values = [(0.869207643, -8.776820281), (0.452795003, -8.389423768),
@@ -1597,8 +1601,9 @@ def field_coeff(filter, force=False, save=True, save_name=None, **kwargs):
     # First is default value
     #kwargs['detector'] = None
     #kwargs['detector_position'] = None
+    #kwargs['include_si_wfe'] = False
+    #cf0 = psf_coeff(filter, **kwargs)
     kwargs['include_si_wfe'] = True
-    cf0 = psf_coeff(filter, **kwargs)
 
     cf_fields = []
     for (v2, v3) in values:
@@ -1615,7 +1620,7 @@ def field_coeff(filter, force=False, save=True, save_name=None, **kwargs):
         cf_fields.append(cf)
 
     cf_fields = np.array(cf_fields)
-    cf_fields -= cf0
+    cf_fields -= coeff0
 
     # least squares estimation
     # X*A = Z
@@ -1632,7 +1637,7 @@ def field_coeff(filter, force=False, save=True, save_name=None, **kwargs):
     q, r = np.linalg.qr(XX, 'reduced')
     qTb = np.dot(q.T, Z)
     A_lsq = np.linalg.lstsq(r, qTb)[0]
-    A_lsq = A_lsq.reshape([-1, cf0.shape[0], cf0.shape[1], cf0.shape[2]])
+    A_lsq = A_lsq.reshape([-1, coeff0.shape[0], coeff0.shape[1], coeff0.shape[2]])
 
     if save:
         np.save(save_name, A_lsq)
@@ -1740,7 +1745,6 @@ def wedge_coeff(filter, pupil, mask, force=False, save=True, save_name=None, **k
     nvals = len(values)
 
     # First is default value
-    # SI WFE isn't value for coronagraphic field points
     kwargs['include_si_wfe'] = False
     cf0 = psf_coeff(filter, bar_offset=0, **kwargs)
 
@@ -4851,7 +4855,7 @@ def build_mask(module='A', pixscale=0.03):
     return np.concatenate(allims, axis=1)
 
 
-def build_mask_detid(detid, oversample=1, ref_mask=None):
+def build_mask_detid(detid, oversample=1, ref_mask=None, pupil=None):
     """Create mask image for a given detector
 
     Return an full coronagraphic mask image as seen by a given SCA.
@@ -4866,6 +4870,9 @@ def build_mask_detid(detid, oversample=1, ref_mask=None):
     ref_mask : str or None
         Reference mask for placement of coronagraphic mask elements.
         If None, then defaults are chosen for each detector.
+    pupil : str or None
+        Which Lyot pupil stop is being used?
+        If None, then defaults based on ref_mask.
     """
 
     # from jwxml import siaf
@@ -4918,9 +4925,12 @@ def build_mask_detid(detid, oversample=1, ref_mask=None):
         cnames = ['MASKSWB', 'MASKLWB', 'MASK430R', 'MASK335R', 'MASK210R']
         ref_mask = 'MASK430R' if ref_mask is None else ref_mask
     allims = [coron_trans(cname, module, pixscale_over) for cname in cnames]
+    
+    if pupil is None:
+        pupil = 'WEDGELYOT' if 'WB' in ref_mask else 'CIRCLYOT'
 
     channel = 'LW' if '5' in detid else 'SW'
-    cdict = coron_ap_locs(module, channel, ref_mask, full=False)
+    cdict = coron_ap_locs(module, channel, ref_mask, pupil=pupil, full=False)
     xdet, ydet = cdict['cen']
 
     # Add an offset value before expanding to full size
@@ -4940,7 +4950,7 @@ def build_mask_detid(detid, oversample=1, ref_mask=None):
     cmask = pad_or_cut_to_size(cmask, (ypix_over,xpix_over))
 
     # Place cmask in detector coords
-    cmask = V2V3_to_det(cmask, detid)
+    cmask = sci_to_det(cmask, detid)
 
     # Shift cmask to appropriate location
     # ie., move MASK430R from center
@@ -4955,82 +4965,140 @@ def build_mask_detid(detid, oversample=1, ref_mask=None):
 
     # Place blocked region from coronagraph holder
     if detid=='A2':
-        i1, i2 = [int(920*oversample), int(360*oversample)]
-        cmask[0:i1,0:i2]=0
-        i1 = int(220*oversample)
-        cmask[0:i1,:] = 0
+        if 'CIRCLYOT' in pupil:
+            i1, i2 = [int(920*oversample), int(360*oversample)]
+            cmask[0:i1,0:i2]=0
+            i1 = int(220*oversample)
+            cmask[0:i1,:] = 0
+        else:
+            i1, i2 = [int(935*oversample), int(360*oversample)]
+            cmask[0:i1,0:i2]=0
+            i1 = int(235*oversample)
+            cmask[0:i1,:] = 0
+            
     elif detid=='A4':
-        i1, i2 = [int(920*oversample), int(1490*oversample)]
-        cmask[0:i1,i2:]=0
-        i1 = int(220*oversample)
-        cmask[0:i1,:] = 0
+        if 'CIRCLYOT' in pupil:
+            i1, i2 = [int(920*oversample), int(1490*oversample)]
+            cmask[0:i1,i2:]=0
+            i1 = int(220*oversample)
+            cmask[0:i1,:] = 0
+        else:
+            i1, i2 = [int(935*oversample), int(1490*oversample)]
+            cmask[0:i1,i2:]=0
+            i1 = int(235*oversample)
+            cmask[0:i1,:] = 0
+            
     elif detid=='A5':
-        i1, i2 = [int(1500*oversample), int(260*oversample)]
-        cmask[i1:,0:i2]=0
-        i1, i2 = [int(1500*oversample), int(1900*oversample)]
-        cmask[i1:,i2:]=0
-        i1 = int(1825*oversample)
-        cmask[i1:,:] = 0
+        if 'CIRCLYOT' in pupil:
+            i1, i2 = [int(1480*oversample), int(260*oversample)]
+            cmask[i1:,0:i2]=0
+            i1, i2 = [int(1480*oversample), int(1890*oversample)]
+            cmask[i1:,i2:]=0
+            i1 = int(1825*oversample)
+            cmask[i1:,:] = 0
+        else:
+            i1, i2 = [int(1485*oversample), int(265*oversample)]
+            cmask[i1:,0:i2]=0
+            i1, i2 = [int(1485*oversample), int(1895*oversample)]
+            cmask[i1:,i2:]=0
+            i1 = int(1830*oversample)
+            cmask[i1:,:] = 0
+            
     elif detid=='B1':
-        i1, i2 = [int(920*oversample), int(1640*oversample)]
-        cmask[0:i1,i2:]=0
-        i1 = int(210*oversample)
-        cmask[0:i1,:] = 0
-    elif detid=='B3':
-        i1, i2 = [int(920*oversample), int(500*oversample)]
-        cmask[0:i1,0:i2]=0
-        i1 = int(210*oversample)
-        cmask[0:i1,:] = 0
-    elif detid=='B5':
-        i1, i2 = [int(550*oversample), int(200*oversample)]
-        cmask[0:i1,0:i2]=0
-        i1, i2 = [int(550*oversample), int(1830*oversample)]
-        cmask[0:i1,i2:]=0
-        i1 = int(210*oversample)
-        cmask[0:i1,:] = 0
+        if 'CIRCLYOT' in pupil:
+            i1, i2 = [int(910*oversample), int(1635*oversample)]
+            cmask[0:i1,i2:]=0
+            i1 = int(210*oversample)
+            cmask[0:i1,:] = 0
+        else:
+            i1, i2 = [int(905*oversample), int(1630*oversample)]
+            cmask[0:i1,i2:]=0
+            i1 = int(205*oversample)
+            cmask[0:i1,:] = 0
 
-    # Convert back to V2/V3
-    cmask = det_to_V2V3(cmask, detid)
+    elif detid=='B3':
+        if 'CIRCLYOT' in pupil:
+            i1, i2 = [int(920*oversample), int(500*oversample)]
+            cmask[0:i1,0:i2]=0
+            i1 = int(210*oversample)
+            cmask[0:i1,:] = 0
+        else:
+            i1, i2 = [int(920*oversample), int(500*oversample)]
+            cmask[0:i1,0:i2]=0
+            i1 = int(210*oversample)
+            cmask[0:i1,:] = 0
+    elif detid=='B5':
+        if 'CIRCLYOT' in pupil:
+            i1, i2 = [int(560*oversample), int(185*oversample)]
+            cmask[0:i1,0:i2]=0
+            i1, i2 = [int(550*oversample), int(1830*oversample)]
+            cmask[0:i1,i2:]=0
+            i1 = int(215*oversample)
+            cmask[0:i1,:] = 0
+        else:
+            i1, i2 = [int(560*oversample), int(190*oversample)]
+            cmask[0:i1,0:i2]=0
+            i1, i2 = [int(550*oversample), int(1835*oversample)]
+            cmask[0:i1,i2:]=0
+            i1 = int(215*oversample)
+            cmask[0:i1,:] = 0
+
+    # Convert back to 'sci' orientation
+    cmask = det_to_sci(cmask, detid)
 
     return cmask
 
 
-def coron_ap_locs(module, channel, mask, full=False):
+def coron_ap_locs(module, channel, mask, pupil=None, full=False):
     """Coronagraph mask aperture locations and sizes
 
     Returns a dictionary of the detector aperture sizes
     and locations. Attributes `cen` and `loc` are in terms
-    of (x,y) pixels.
+    of (x,y) detector pixels.
     """
+    
+    if pupil is None:
+        pupil = 'WEDGELYOT' if 'WB' in mask else 'CIRCLYOT'
 
     if module=='A':
         if channel=='SW':
             if '210R' in mask:
-                cdict = {'det':'A2', 'cen':(713,529), 'size':640}
+                cdict_rnd = {'det':'A2', 'cen':(712,526), 'size':640}
+                cdict_bar = {'det':'A2', 'cen':(716,538), 'size':640}
             elif '335R' in mask:
-                cdict = {'det':'A2', 'cen':(1366,529), 'size':640}
+                cdict_rnd = {'det':'A2', 'cen':(1368,525), 'size':640}
+                cdict_bar = {'det':'A2', 'cen':(1372,536), 'size':640}
+            elif '430R' in mask:
+                cdict_rnd = {'det':'A2', 'cen':(2025,525), 'size':640}
+                cdict_bar = {'det':'A2', 'cen':(2029,536), 'size':640}
             elif 'SWB' in mask:
-                cdict = {'det':'A4', 'cen':(494,536), 'size':640}
+                cdict_rnd = {'det':'A4', 'cen':(487,523), 'size':640}
+                cdict_bar = {'det':'A4', 'cen':(490,536), 'size':640}
             elif 'LWB' in mask:
-                cdict = {'det':'A4', 'cen':(1145,536), 'size':640}
+                cdict_rnd = {'det':'A4', 'cen':(1141,523), 'size':640}
+                cdict_bar = {'det':'A4', 'cen':(1143,536), 'size':640}
             else:
                 raise ValueError('Mask {} not recognized for {} channel'\
                                  .format(mask, channel))
         elif channel=='LW':
             if '210R' in mask:
-                cdict = {'cen':(1720, 1670), 'size':320}
+                cdict_rnd = {'det':'A5', 'cen':(1720, 1670), 'size':320}
+                cdict_bar = {'det':'A5', 'cen':(1725, 1681), 'size':320}
             elif '335R' in mask:
-                cdict = {'cen':(1397,1672), 'size':320}
+                cdict_rnd = {'det':'A5', 'cen':(1397,1672), 'size':320}
+                cdict_bar = {'det':'A5', 'cen':(1402,1682), 'size':320}
             elif '430R' in mask:
-                cdict = {'cen':(1074,1673), 'size':320}
+                cdict_rnd = {'det':'A5', 'cen':(1074,1672), 'size':320}
+                cdict_bar = {'det':'A5', 'cen':(1078,1682), 'size':320}
             elif 'SWB' in mask:
-                cdict = {'cen':(758,1683), 'size':320}
+                cdict_rnd = {'det':'A5', 'cen':(752,1672), 'size':320}
+                cdict_bar = {'det':'A5', 'cen':(757,1682), 'size':320}
             elif 'LWB' in mask:
-                cdict = {'cen':(436,1683), 'size':320}
+                cdict_rnd = {'det':'A5', 'cen':(430,1672), 'size':320}
+                cdict_bar = {'det':'A5', 'cen':(435,1682), 'size':320}
             else:
                 raise ValueError('Mask {} not recognized for {} channel'\
                                  .format(mask, channel))
-            cdict['det'] = 'A5'
         else:
             raise ValueError('Channel {} not recognized'.format(channel))
 
@@ -5038,48 +5106,62 @@ def coron_ap_locs(module, channel, mask, full=False):
     elif module=='B':
         if channel=='SW':
             if '210R' in mask:
-                cdict = {'det':'B1', 'cen':(1293,515), 'size':640}
+                cdict_rnd = {'det':'B1', 'cen':(1293,515), 'size':640}
+                cdict_bar = {'det':'B1', 'cen':(1287,509), 'size':640}
             elif '335R' in mask:
-                cdict = {'det':'B1', 'cen':(637,514), 'size':640}
+                cdict_rnd = {'det':'B1', 'cen':(637,513), 'size':640}
+                cdict_bar = {'det':'B1', 'cen':(632,508), 'size':640}
+            elif '430R' in mask:
+                cdict_rnd = {'det':'B1', 'cen':(-20,513), 'size':640}
+                cdict_bar = {'det':'B1', 'cen':(-25,508), 'size':640}
             elif 'SWB' in mask:
-                cdict = {'det':'B3', 'cen':(871,518), 'size':640}
+                cdict_rnd = {'det':'B3', 'cen':(874,519), 'size':640}
+                cdict_bar = {'det':'B3', 'cen':(870,518), 'size':640}
             elif 'LWB' in mask:
-                cdict = {'det':'B3', 'cen':(1523,514), 'size':640}
+                cdict_rnd = {'det':'B3', 'cen':(1532,519), 'size':640}
+                cdict_bar = {'det':'B3', 'cen':(1526,510), 'size':640}
             else:
                 raise ValueError('Mask {} not recognized for {} channel'\
                                  .format(mask, channel))
         elif channel=='LW':
             if '210R' in mask:
-                cdict = {'cen':(1656,359), 'size':320}
+                cdict_rnd = {'det':'B5', 'cen':(1656,359), 'size':320}
+                cdict_bar = {'det':'B5', 'cen':(1660,359), 'size':320}
             elif '335R' in mask:
-                cdict = {'cen':(1334,360), 'size':320}
+                cdict_rnd = {'det':'B5', 'cen':(1334,360), 'size':320}
+                cdict_bar = {'det':'B5', 'cen':(1338,360), 'size':320}
             elif '430R' in mask:
-                cdict = {'cen':(1012,362), 'size':320}
+                cdict_rnd = {'det':'B5', 'cen':(1012,362), 'size':320}
+                cdict_bar = {'det':'B5', 'cen':(1015,361), 'size':320}
             elif 'SWB' in mask:
-                cdict = {'cen':(370,367), 'size':320}
+                cdict_rnd = {'det':'B5', 'cen':(366,364), 'size':320}
+                cdict_bar = {'det':'B5', 'cen':(370,364), 'size':320}
             elif 'LWB' in mask:
-                cdict = {'cen':(694,365), 'size':320}
+                cdict_rnd = {'det':'B5', 'cen':(689,363), 'size':320}
+                cdict_bar = {'det':'B5', 'cen':(693,364), 'size':320}
             else:
                 raise ValueError('Mask {} not recognized for {} channel'\
                                  .format(mask, channel))
-            cdict['det'] = 'B5'
         else:
             raise ValueError('Channel {} not recognized'.format(channel))
 
     else:
         raise ValueError('Module {} not recognized'.format(module))
 
+    # Choose whether to use round or bar Lyot mask
+    cdict = cdict_rnd if 'CIRC' in pupil else cdict_bar
+
     x0, y0 = np.array(cdict['cen']) - cdict['size']/2
     cdict['loc'] = (int(x0), int(y0))
 
 
-    # Add in V2/V3 coordinates
+    # Add in 'sci' coordinates (V2/V3 orientation)
     # X is flipped for A5, Y is flipped for all others
     cen = cdict['cen']
     if cdict['det'] == 'A5':
-        cdict['cen_V23'] = (2048-cen[0], cen[1])
+        cdict['cen_sci'] = (2048-cen[0], cen[1])
     else:
-        cdict['cen_V23'] = (cen[0], 2048-cen[1])
+        cdict['cen_sci'] = (cen[0], 2048-cen[1])
 
     if full:
         cdict['size'] = 2048

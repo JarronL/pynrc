@@ -8,6 +8,8 @@ _log = logging.getLogger('pynrc')
 
 __epsilon = np.finfo(float).eps
 
+import webbpsf, pysiaf
+
 def dist_image(image, pixscale=None, center=None, return_theta=False):
     """Pixel distances
     
@@ -129,7 +131,7 @@ def xy_rot(x, y, ang):
 def Tel2Sci_info(channel, coords, output="Sci"):
     """Telescope coords converted to Science coords
     
-    Returns the detector name associated with these coordinates
+    Returns the detector name associated with input coordinates.
 
     Parameters
     ----------
@@ -149,7 +151,8 @@ def Tel2Sci_info(channel, coords, output="Sci"):
     V2, V3 = coords
     
     # Figure out the detector and pixel position for some (V2,V3) coord
-    mysiaf = webbpsf.webbpsf_core.SIAF('NIRCam')
+#    mysiaf = webbpsf.webbpsf_core.SIAF('NIRCam')
+    mysiaf = pysiaf.Siaf('NIRCam')
     swa = ['A1', 'A2', 'A3', 'A4']
     swb = ['B1', 'B2', 'B3', 'B4']
     lwa = ['A5']
@@ -178,13 +181,12 @@ def Tel2Sci_info(channel, coords, output="Sci"):
     return detector, detector_position
     
 
-
-def det_to_V2V3(image, detid):
-    """Detector to V2/V3 coordinates
+def det_to_sci(image, detid):
+    """Detector to science orientation
     
-    Reorient image from detector coordinates to V2/V3 coordinate system.
+    Reorient image from detector coordinates to 'sci' coordinate system.
     This places +V3 up and +V2 to the LEFT. Detector pixel (0,0) is assumed 
-    to be in the bottom left. For now, we're simply performing axes flips.
+    to be in the bottom left. Simply performs axes flips.
     
     Parameters
     ----------
@@ -216,13 +218,12 @@ def det_to_V2V3(image, detid):
     
     return image
     
-def V2V3_to_det(image, detid):
-    """V2/V3 coordinate to detector orientation
+def sci_to_det(image, detid):
+    """Science coordinate to detector orientation
     
-    Reorient image from V2/V3 coordinates to detector coordinate system.
+    Reorient image from 'sci' coordinates to detector coordinate system.
     Assumes +V3 up and +V2 to the LEFT. The result places the detector
-    pixel (0,0) in the bottom left. For now, we're simply performing 
-    axes flips.
+    pixel (0,0) in the bottom left. Simply performs axes flips.
 
     Parameters
     ----------
@@ -232,10 +233,20 @@ def V2V3_to_det(image, detid):
         NIRCam detector/SCA ID, either 481-490 or A1-B5.
     """
     
-    # Flips occur along the same axis and manner as in det_to_V2V3()
-    return det_to_V2V3(image, detid)
+    # Flips occur along the same axis and manner as in det_to_sci()
+    return det_to_sci(image, detid)
+  
+def det_to_V2V3(image, detid):
+    """Same as `det_to_sci`"""
+    _log.warning('det_to_V2V3 function is deprecated. Please use det_to_sci()')
+    return det_to_sci(image, detid)
     
-    
+def V2V3_to_det(image, detid):
+    """Same as `sci_to_det`"""
+    _log.warning('V2V3_to_det function is deprecated. Please use sci_to_det()')
+    return sci_to_det(image, detid)
+
+
 def plotAxes(ax, position=(0.9,0.1), label1='V2', label2='V3', dir1=[-1,0], dir2=[0,1],
              angle=0, alength=0.12, width=2, headwidth=8, color='w'):
     """Compass arrows
