@@ -1,0 +1,87 @@
+pyNRC Paper Outline
+
+Introduction
+  - pyNRC is a set of Python-based tools for planning observations with JWST NIRCam
+  - includes an ETC, a simple slope slope simulator, and raw data simulator
+  - highlights features for coronagraphy for high contrast imaging, but can handle wide field imaging and grism spectroscopy
+    - predict contrast performance of the coronagraphs
+    - optimize detection algorithms for imaging of extrasolar planets
+    - test our ability to accurately spectral information of exoplanet atmospheres and debris disk constituents
+  - uses WebbPSF to simulate realistic PSFs
+    - handles WFE variations through spatial and temporal alterations of the OPD map
+  - includes detailed observation ramp simulator
+    - adds systematic offsets to science data and reference pixels
+    - to test systematic uncertainties of data processing
+  - mention other NIRCam simulators and their features
+    - Guitarra
+    - The ETC (pandeia)
+    - STIPS (or whatever it's called these days)
+    - PHOSIM
+
+
+Program Structure
+  - NIRCam instrument class
+    - holds info on instrument setup (filter, pupil, module, detector)
+    - Zodiacal bg emission (defers to JWST Backgrounds if installed)
+    - calculate saturation limits and sensitivities for a given NIRCam configuration
+    - determine optimum ramp configuration to maximize sensitivities
+    - simulate PSF images
+    - simulate ramp exposures from ideal slope images
+    - stores SIAF info
+  - Detector class (also stores multiaccum setup)
+    - basic detector performance (noise, dark current, well depth, etc.) 
+    - detailed detector timing information
+    - allows user to specify desired SCA configuration
+      - FULL, STRIPE, WINDOW, subarray size and position
+    - configure MULTIACCUM parameters
+      - number of resets, reads, integrations, etc.
+      - pre-defined patterns: RAPID, BRIGHT1, MEDIUM8, etc.
+  - ngNRC
+    - NIRCam detector noise generator
+    - NIRCams-specific implementation of ngHXRG
+    - Table of detector properties
+      - read noise, 1/f noise, dark current, gain, well depth, IPC, PPC, persistence,
+  - Instrument subclasses
+    - nrc_hci
+    - nrc_grism (planned)
+    - nrc_timeseries (planned)
+  - Observation classes
+    - obs_hci
+    - obs_wfss
+    - obs_ts_grism
+    - obs_ts_photometry
+  - Other tools
+  - Table of supported modes and their implementation status
+    - ETC, slopes, observation simulator
+
+
+Exposure Time Calculator
+  - saturation limits
+  - sensitivity limits
+  - ramp optimizer
+
+
+Creating Realistic PSFs
+  - Wavelength-dependent PSFs calculate using WebbPSF
+    - do not store grid of monochromatic PSFs
+    - perform high-order polynomial fit to PSFs and store coefficients in a FITS file
+    - PSFs generated with coefficients over a filter bandpass show negligible difference to those directly from WebbPSF
+    - utilize multiple processors for PSF generation
+  - Procedure allows for quick PSF generation of arbitrary input spectrum
+  - Custom OPDs
+  - Field-dependent WFE values
+    - modifies coefficients based on field position
+    - based on empirical measurements of NIRCam instrument during ISIM CV3 level testing
+  - Temporal WFE drift values
+    - change in thermal state of OTE after sun-telescope angle induces change in WFE Zernike components
+    - primarily focus (?)
+    - useful for observations with a coronagraphic sequence (Roll1, Roll2, Reference) 
+
+
+Example Simulations
+  - LMC Astrometric Field
+  - Coronagraphic Simulations
+    - produce position dependent PSFs
+    - includes model of focal plane masks 
+
+Example observations

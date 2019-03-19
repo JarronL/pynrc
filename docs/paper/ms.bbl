@@ -1,0 +1,60 @@
+\begin{thebibliography}{}
+\expandafter\ifx\csname natexlab\endcsname\relax\def\natexlab#1{#1}\fi
+\providecommand{\url}[1]{\href{#1}{#1}}
+\providecommand{\dodoi}[1]{doi:~\href{http://doi.org/#1}{\nolinkurl{#1}}}
+\providecommand{\doeprint}[1]{\href{http://ascl.net/#1}{\nolinkurl{http://ascl.net/#1}}}
+\providecommand{\doarXiv}[1]{\href{https://arxiv.org/abs/#1}{\nolinkurl{https://arxiv.org/abs/#1}}}
+
+\bibitem[{{Beichman} {et~al.}(2012){Beichman}, {Rieke}, {Eisenstein}, {Greene},
+  {Krist}, {McCarthy}, {Meyer}, \& {Stansberry}}]{beic12}
+{Beichman}, C.~A., {Rieke}, M., {Eisenstein}, D., {et~al.} 2012, \procspie,
+  8442, 84422N, \dodoi{10.1117/12.925447}
+
+\bibitem[{{Beletic} {et~al.}(2008){Beletic}, {Blank}, {Gulbransen}, {Lee},
+  {Loose}, {Piquette}, {Sprafke}, {Tennant}, {Zandian}, \& {Zino}}]{bele08}
+{Beletic}, J.~W., {Blank}, R., {Gulbransen}, D., {et~al.} 2008, \procspie,
+  7021, \dodoi{10.1117/12.790382}
+
+\bibitem[{{Greene} {et~al.}(2007){Greene}, {Beichman}, {Eisenstein}, {Horner},
+  {Kelly}, {Mao}, {Meyer}, {Rieke}, \& {Shi}}]{gree07}
+{Greene}, T., {Beichman}, C., {Eisenstein}, D., {et~al.} 2007, \procspie, 6693,
+  66930G, \dodoi{10.1117/12.732506}
+
+\bibitem[{{Greene} {et~al.}(2017){Greene}, {Kelly}, {Stansberry}, {Leisenring},
+  {Egami}, {Schlawin}, {Chu}, {Hodapp}, \& {Rieke}}]{gree17}
+{Greene}, T.~P., {Kelly}, D.~M., {Stansberry}, J., {et~al.} 2017, JATIS, 3,
+  035001, \dodoi{10.1117/1.JATIS.3.3.035001}
+
+\bibitem[{{Krist} {et~al.}(2007){Krist}, {Beichman}, {Trauger}, {Rieke},
+  {Somerstein}, {Green}, {Horner}, {Stansberry}, {Shi}, {Meyer}, {Stapelfeldt},
+  \& {Roellig}}]{kris07}
+{Krist}, J.~E., {Beichman}, C.~A., {Trauger}, J.~T., {et~al.} 2007, \procspie,
+  6693, 66930H, \dodoi{10.1117/12.734873}
+
+\bibitem[{{Perrin} {et~al.}(2018){Perrin}, {Pueyo}, {Van Gorkom}, {Brooks},
+  {Rajan}, {Girard}, \& {Lajoie}}]{perr18}
+{Perrin}, M.~D., {Pueyo}, L., {Van Gorkom}, K., {et~al.} 2018, \procspie,
+  10698, 1069809, \dodoi{10.1117/12.2313552}
+
+\bibitem[{{Perrin} {et~al.}(2014){Perrin}, {Sivaramakrishnan}, {Lajoie},
+  {Elliott}, {Pueyo}, {Ravindranath}, \& {Albert}}]{perr14}
+{Perrin}, M.~D., {Sivaramakrishnan}, A., {Lajoie}, C.-P., {et~al.} 2014,
+  \procspie, 9143, 91433X, \dodoi{10.1117/12.2056689}
+
+\bibitem[{{Perrin} {et~al.}(2012){Perrin}, {Soummer}, {Elliott}, {Lallo}, \&
+  {Sivaramakrishnan}}]{perr12}
+{Perrin}, M.~D., {Soummer}, R., {Elliott}, E.~M., {Lallo}, M.~D., \&
+  {Sivaramakrishnan}, A. 2012, \procspie, 8442, 84423D,
+  \dodoi{10.1117/12.925230}
+
+\bibitem[{{Rieke} {et~al.}(2005){Rieke}, {Kelly}, \& {Horner}}]{riek05}
+{Rieke}, M.~J., {Kelly}, D., \& {Horner}, S. 2005, \procspie, 5904, 1,
+  \dodoi{10.1117/12.615554}
+
+\bibitem[{{Schlawin} {et~al.}(2017){Schlawin}, {Rieke}, {Leisenring}, {Walker},
+  {Fraine}, {Kelly}, {Misselt}, {Greene}, {Line}, {Lewis}, \&
+  {Stansberry}}]{schl17}
+{Schlawin}, E., {Rieke}, M., {Leisenring}, J., {et~al.} 2017, \pasp, 129,
+  015001, \dodoi{10.1088/1538-3873/129/971/015001}
+
+\end{thebibliography}
