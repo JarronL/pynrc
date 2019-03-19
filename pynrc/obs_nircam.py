@@ -87,6 +87,7 @@ class nrc_hci(NIRCam):
     def _gen_cached_psfs(self):
         """Generate a set of cached PSF for quick retrieval."""
         if self.mask is None:
+            # If no mask center and bg and off-axis PSFs are all the same
             _, psf = self.gen_psf(return_oversample=True, use_bg_psf=False)
             self.psf_center_over = psf
             self.psf_offaxis_over = self.psf_center_over
@@ -128,8 +129,9 @@ class nrc_hci(NIRCam):
         """
 
         if sp is None:
-            psf_center  = None #self.psf_center_over
-            psf_offaxis = None #self.psf_offaxis_over
+            # No spectral information, so use cached PSFs
+            psf_center  = self.psf_center_over
+            psf_offaxis = self.psf_offaxis_over
         else:
             if self.mask is None:
                 # Direct imaging; both PSFs are the same
