@@ -5322,7 +5322,7 @@ def nrc_header(det_class, filter=None, pupil=None, obs_time=None, header=None,
         hdr['OBSLABEL']= ('Target 1 NIRCam Observation 1', 'Proposer label for the observation')
         hdr['EXPSTART']= (aTstart.mjd, 'UTC exposure start time')
         hdr['EXPEND']  = (aTend.mjd, 'UTC exposure end time')
-        hdr['EFFEXPTM']= (d.time_total_int, 'Effective exposure time (sec)')
+        hdr['EFFEXPTM']= (d.time_int_eff*d.time_int, 'Effective exposure time (sec)')
         hdr['NUMDTHPT']= ('1','Total number of points in pattern')
         hdr['PATT_NUM']= (1,'Position number in primary pattern')
 
@@ -5374,11 +5374,11 @@ def nrc_header(det_class, filter=None, pupil=None, obs_time=None, header=None,
     hdr['GROUPGAP']= (ma.nd2, 'Number of frames skipped')
     hdr['DRPFRMS3']= (ma.nd3, 'Number of frames skipped between integrations')
     hdr['FRMDIVSR']= (ma.nf,  'Divisor applied to each group image')
-    hdr['INTAVG']  = (1,   'Number of integrations averaged in one image')
-    hdr['NRESETS1']= (1,   'Number of reset frames prior to first integration')
-    hdr['NRESETS2']= (1,   'Number of reset frames between each integration')
-    hdr['INTTIME'] = (d.time_int,   'Total integration time for one MULTIACCUM')
-    hdr['EXPTIME'] = (d.time_exp,    'Exposure duration (seconds) calculated')
+    hdr['INTAVG']  = (1, 'Number of integrations averaged in one image')
+    hdr['NRESETS1']= (ma.nr1, 'Number of reset frames prior to first integration')
+    hdr['NRESETS2']= (ma.nr2, 'Number of reset frames between each integration')
+    hdr['INTTIME'] = (d.time_int, 'Total integration time for one MULTIACCUM')
+    hdr['EXPTIME'] = (d.time_exp, 'Exposure duration (seconds) calculated')
     if DMS == True:
         if (d.xpix == 2048) & (d.ypix == 2048):
             subName = 'FULL'
