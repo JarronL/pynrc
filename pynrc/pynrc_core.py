@@ -601,6 +601,23 @@ class DetectorOps(object):
     def time_int(self):
         """Photon collection time for a single integration (ramp)."""
         return self.time_ramp
+        
+    @property
+    def time_ramp_eff(self):
+        """Effective integration time for slope fit tf*(ng-1)"""
+        
+        ma = self.multiaccum
+        if ma.ngroup<=1:
+            return self.time_frame * (ma.nd1 + (ma.nf + 1) / 2)
+        else:
+            return self.time_group * (ma.ngroup - 1)
+
+    @property
+    def time_int_eff(self):
+        """Effective ramp time for slope fit tf*(ng-1)"""
+        
+        return self.time_ramp_eff
+
 
     @property
     def time_exp(self):
@@ -1493,14 +1510,14 @@ class NIRCam(object):
             except AttributeError: 
                 pass
 
-        # if det_list is still None
+        # if det_list is still None, set defaults
         if det_list is None:
             if self.module=='A':
-                if self.channel=='LW':
+                if self.channel=='LW': # Any LW A
                     det_list = [485]
-                elif self.mask is None:
+                elif (self.mask is None) and ('CLEAR' in self.pupil): # SW A Imaging
                     det_list = [481] #[481,482,483,484]
-                elif ('WB' in self.mask) or ('WEDGELYOT' in self.pupil):
+                elif ('WB' in self.mask) or ('WEDGELYOT' in self.pupil): # SW A Bar coronagraph
                     det_list = [484]
                 elif ('210R' in self.mask) or ('335R' in self.mask) or ('CIRCLYOT' in self.pupil):
                     det_list = [482]
@@ -1512,7 +1529,7 @@ class NIRCam(object):
             if self.module=='B':
                 if self.channel=='LW':
                     det_list = [490]
-                elif self.mask is None:
+                elif (self.mask is None) and ('CLEAR' in self.pupil):
                     det_list = [486] #[486,487,488,489]
                 elif ('WB' in self.mask) or ('WEDGELYOT' in self.pupil):
                     det_list = [488]
@@ -2290,8 +2307,8 @@ class NIRCam(object):
     
 
     def gen_exposures(self, sp=None, im_slope=None, file_out=None, return_results=None,
-                      targ_name=None, timeFileNames=False, DMS=True,
-                      det_name=None, dark=True, bias=True, nproc=None, **kwargs):
+                      targ_name=None, timeFileNames=False, DMS=True, det_name=None, 
+                      dark=True, bias=True, det_noise=True, nproc=None, **kwargs):
         """Generate raw mock data.
         
         Create a series of ramp integration saved to FITS files based on
@@ -2348,11 +2365,14 @@ class NIRCam(object):
             user would like to do both (or neither).
         det_name : str, None
             Name of detector (A1-B5). If not found or set to None, then the 
-            first detector in `self.det_list` and `self.Detectors` is used
+            first detector in `self.det_list` and `self.Detectors` is used.
         dark : bool
             Include the dark current?
         bias : bool
             Include the bias frame?
+        det_noise: bool
+            Include detector noise components? If set to False, then only 
+            perform Poisson noise. Darks and biases are also excluded.
 
         Keyword Args
         ------------
