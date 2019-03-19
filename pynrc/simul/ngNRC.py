@@ -275,7 +275,8 @@ def SCAnoise(det=None, scaid=None, params=None, caldir=None, file_out=None,
 
 def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None, 
                   filter=None, pupil=None, obs_time=None, targ_name=None,
-                  DMS=True, dark=True, bias=True, return_results=True):
+                  DMS=True, dark=True, bias=True, det_noise=True,
+                  return_results=True):
     """Convert slope image to simulated ramp
     
     For a given detector operations class and slope image, create a
@@ -320,7 +321,18 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
         Target name (optional)
     DMS : bool
         Package the data in the format used by DMS?
+    dark : bool
+        Include the dark current?
+    bias : bool
+        Include the bias frame?
+    det_noise: bool
+        Include detector noise components? If set to False, then only 
+        perform Poisson noise. Darks and biases are also excluded.
     """
+    
+    if (det_noise==False) and (im_slope is None):
+        _log.warning('No input slope image and det_noise=False. Nothing to return.')
+        return
 
     #import ngNRC
     # MULTIACCUM ramp information
@@ -354,18 +366,27 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
         frame = im_slope * t_frame
         # Add Poisson noise at each frame step
         sh0, sh1 = im_slope.shape
-        new_shape = (naxis3, sh0,sh1)
+        new_shape = (naxis3, sh0, sh1)
         ramp = np.random.poisson(lam=frame, size=new_shape)#.astype(np.float64)
         # Perform cumulative sum in place
         np.cumsum(ramp, axis=0, out=ramp)
+        
+        # Truncate anything above well level
+        well_max = det.well_level
+        ramp[ramp>well_max] = well_max
     else:
         ramp = 0
 
-    # Create dark ramp with read noise and 1/f noise
-    hdu = SCAnoise(det=det, dark=dark, bias=bias)
+    if det_noise==False:
+        hdu = fits.PrimaryHDU(ramp)
+    else:
+        # Create dark ramp with read noise and 1/f noise
+        hdu = SCAnoise(det=det, dark=dark, bias=bias)
+        # Add signal ramp to dark ramp
+        if im_slope is not None:
+            hdu.data += ramp.reshape(hdu.data.shape) 
     # Update header information
-    hdu.header = det.make_header(filter, pupil, obs_time,targ_name=targ_name,DMS=DMS)
-    hdu.data += ramp.reshape(hdu.data.shape) # Add signal ramp to dark ramp
+    hdu.header = det.make_header(filter, pupil, obs_time, targ_name=targ_name, DMS=DMS)
     data = hdu.data
 
     #### Add in IPC (TBI) ####
@@ -376,7 +397,7 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
     # Convert to ADU (16-bit UINT)
     if out_ADU:
         gain = det.gain
-        data /= gain
+        data = data / gain
         data[data < 0] = 0
         data[data >= 2**16] = 2**16 - 1
         data = data.astype('uint16')
@@ -391,7 +412,7 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
         data_end = data[-nf:,:,:].mean(axis=0) if nf>1 else data[-1:,:,:]
         data_end = data_end.reshape([1,ypix,xpix])
 
-        # Only care about first (n-1) groups
+        # Only care about first (n-1) groups for now
         # Last group is handled separately
         data = data[:-nf,:,:]
 
@@ -437,7 +458,8 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
         outHDU = hdu
     
     if file_out is not None:
-        outHDU.writeto(file_out, clobber='True')
+        outHDU.writeto(file_out, overwrite='True')
     
     # Only return outHDU if return_results=True
-    if return_results: return outHDU
+    if return_results: 
+        return outHDU

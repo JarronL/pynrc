@@ -8,6 +8,8 @@ _log = logging.getLogger('pynrc')
 
 __epsilon = np.finfo(float).eps
 
+import webbpsf, pysiaf
+
 def dist_image(image, pixscale=None, center=None, return_theta=False):
     """Pixel distances
     
@@ -55,7 +57,7 @@ def xy_to_rtheta(x, y):
     Input can either be a single value or numpy array.
 
     Parameters
-    ---------
+    ----------
     x : float or array
         X location values
     y : float or array
@@ -82,7 +84,7 @@ def rtheta_to_xy(r, theta):
     Input can either be a single value or numpy array.
 
     Parameters
-    ---------
+    ----------
     r : float or array
         Radial offset from the center in pixels
     theta : float or array
@@ -129,7 +131,7 @@ def xy_rot(x, y, ang):
 def Tel2Sci_info(channel, coords, output="Sci"):
     """Telescope coords converted to Science coords
     
-    Returns the detector name associated with these coordinates
+    Returns the detector name and position associated with input coordinates.
 
     Parameters
     ----------
@@ -149,7 +151,8 @@ def Tel2Sci_info(channel, coords, output="Sci"):
     V2, V3 = coords
     
     # Figure out the detector and pixel position for some (V2,V3) coord
-    mysiaf = webbpsf.webbpsf_core.SIAF('NIRCam')
+#    mysiaf = webbpsf.webbpsf_core.SIAF('NIRCam')
+    mysiaf = pysiaf.Siaf('NIRCam')
     swa = ['A1', 'A2', 'A3', 'A4']
     swb = ['B1', 'B2', 'B3', 'B4']
     lwa = ['A5']
@@ -178,13 +181,168 @@ def Tel2Sci_info(channel, coords, output="Sci"):
     return detector, detector_position
     
 
-
-def det_to_V2V3(image, detid):
-    """Detector to V2/V3 coordinates
+def ap_radec(ap_obs, ap_ref, coord_ref, pa_ref, base_off=(0,0), dith_off=(0,0),
+             get_cenpos=True, get_vert=False):
+    """Aperture reference point(s) RA/Dec
     
-    Reorient image from detector coordinates to V2/V3 coordinate system.
+    Return RA/Dec associated with the reference point (usually center) 
+    of a specific aperture.
+    
+    Parameters
+    ----------
+    ap_obs : str
+        Name of observed aperture (e.g., NRCA5_FULL)
+    ap_ref : str
+        Name of reference aperture (e.g., NRCALL_FULL)
+    coord_ref : tuple or list
+        Center position of reference aperture (RA/Dec deg)
+    pa_ref : float
+        Position angle of ap_ref
+        
+    Keywords
+    --------
+    base_off : list or tuple
+        X/Y offset of overall aperture offset (see APT pointing file)
+    dither_off : list or tuple
+        Additional offset from dithering (see APT pointing file)
+    get_cenpos : bool
+        Return aperture reference location coordinates?
+    get_vert: bool
+        Return closed polygon vertices (useful for plotting)?
+    """
+
+    if (get_cenpos==False) and (get_vert==False):
+        _log.warning("Neither get_cenpos nor get_vert were set to True. Nothing to return.")
+        return
+
+    nrc_siaf = pysiaf.Siaf('NIRCAM')
+    ap_siaf = nrc_siaf[ap_ref]
+    ap_siaf_obs = nrc_siaf[ap_obs]
+
+    # RA and Dec of ap ref location and the objects in the field
+    ra_ref, dec_ref = coord_ref
+
+    # Field offset as specified in APT Special Requirements
+    x_off, y_off  = (base_off[0] + dith_off[0], base_off[1] + dith_off[1])
+
+    # V2/V3 reference location aligned with RA/Dec reference
+    v2_ref, v3_ref = np.array(ap_siaf.reference_point('tel'))
+    
+    # Attitude correction matrix relative to reference aperture
+    att = pysiaf.utils.rotations.attitude(v2_ref-x_off, v3_ref+y_off, ra_ref, dec_ref, pa_ref)
+
+    # Get V2/V3 position of observed SIAF aperture and convert to RA/Dec
+    if get_cenpos==True:
+        v2_obs, v3_obs  = ap_siaf_obs.reference_point('tel')
+        ra_obs, dec_obs = pysiaf.utils.rotations.pointing(att, v2_obs, v3_obs)
+        cen_obs = (ra_obs, dec_obs)
+    
+    # Get V2/V3 vertices of observed SIAF aperture and convert to RA/Dec
+    if get_vert==True:
+        v2_vert, v3_vert  = ap_siaf_obs.closed_polygon_points('tel', rederive=False)
+        ra_vert, dec_vert = pysiaf.utils.rotations.pointing(att, v2_vert, v3_vert)
+        vert_obs = (ra_vert, dec_vert)
+
+    if (get_cenpos==True) and (get_vert==True):
+        return cen_obs, vert_obs
+    elif get_cenpos==True:
+        return cen_obs
+    elif get_vert==True:
+        return vert_obs
+    else:
+        _log.warning("Neither get_cenpos nor get_vert were set to True. Nothing to return.")
+        return
+
+    
+def radec_to_v2v3(coord_objs, siaf_ref_name, coord_ref, pa_ref, base_off=(0,0), dith_off=(0,0)):
+    """RA/Dec to V2/V3
+    
+    Convert a series of RA/Dec positions to telescope V2/V3 coordinates (in arcsec).
+    
+    Parameters
+    ----------
+    coord_objs : tuple 
+        (RA, Dec) positions (deg), where RA and Dec are numpy arrays.    
+    siaf_ref_name : str
+        Reference SIAF name (e.g., 'NRCALL_FULL') 
+    coord_ref : list or tuple
+        RA and Dec towards which reference SIAF points
+    pa_ref : float
+        Position angle of reference SIAF
+        
+    Keywords
+    --------
+    base_off : list or tuple
+        X/Y offset of overall aperture offset (see APT pointing file)
+    dither_off : list or tuple
+        Additional offset from dithering (see APT pointing file)
+    """
+    
+    # SIAF object setup
+    nrc_siaf = pysiaf.Siaf('NIRCam')
+    siaf_ref = nrc_siaf[siaf_ref_name]
+    
+    # RA and Dec of ap ref location and the objects in the field
+    ra_ref, dec_ref = coord_ref
+    ra_obj, dec_obj = coord_objs
+
+
+    # Field offset as specified in APT Special Requirements
+    x_off, y_off  = (base_off[0] + dith_off[0], base_off[1] + dith_off[1])
+
+    # V2/V3 reference location aligned with RA/Dec reference
+    v2_ref, v3_ref = np.array(siaf_ref.reference_point('tel'))
+
+    # Attitude correction matrix relative to NRCALL_FULL aperture
+    att = pysiaf.utils.rotations.attitude(v2_ref-x_off, v3_ref+y_off, ra_ref, dec_ref, pa_ref)
+
+    # Convert all RA/Dec coordinates into V2/V3 positions for objects
+    v2_obj, v3_obj = pysiaf.utils.rotations.getv2v3(att, ra_obj, dec_obj)
+
+    return (v2_obj, v3_obj)
+
+def v2v3_to_pixel(ap_obs, v2_obj, v3_obj, frame='det'):
+    """V2/V3 to pixel coordinates
+    
+    Convert object V2/V3 coordinates into detector pixel position.
+
+    Parameters
+    ==========
+    ap_obs : str
+        Name of observed aperture (e.g., NRCA5_FULL)
+    v2_obj : ndarray
+        V2 locations of stellar sources.
+    v3_obj : ndarray
+        V3 locations of stellar soruces.
+
+    Keywords
+    ========
+    frame : str
+        'det' or 'sci' coordinate frame. 'det' is always full frame reference.
+        'sci' is relative to subarray size if not a full frame aperture.
+    """
+    
+    # xpix and ypix locations
+    siaf = pysiaf.Siaf('NIRCAM')
+    ap_siaf = siaf[ap_obs]
+
+    if frame=='det':
+        xpix, ypix = ap_siaf.tel_to_det(v2_obj, v3_obj)
+    elif frame=='sci':
+        xpix, ypix = ap_siaf.tel_to_sci(v2_obj, v3_obj)
+    else:
+        raise ValueError("Do not recognize frame keyword value: {}".format(frame))
+        
+    return (xpix, ypix)
+
+
+
+def det_to_sci(image, detid):
+    """Detector to science orientation
+    
+    Reorient image from detector coordinates to 'sci' coordinate system.
     This places +V3 up and +V2 to the LEFT. Detector pixel (0,0) is assumed 
-    to be in the bottom left. For now, we're simply performing axes flips.
+    to be in the bottom left. Simply performs axes flips.
     
     Parameters
     ----------
@@ -216,13 +374,12 @@ def det_to_V2V3(image, detid):
     
     return image
     
-def V2V3_to_det(image, detid):
-    """V2/V3 coordinate to detector orientation
+def sci_to_det(image, detid):
+    """Science to detector orientation
     
-    Reorient image from V2/V3 coordinates to detector coordinate system.
+    Reorient image from 'sci' coordinates to detector coordinate system.
     Assumes +V3 up and +V2 to the LEFT. The result places the detector
-    pixel (0,0) in the bottom left. For now, we're simply performing 
-    axes flips.
+    pixel (0,0) in the bottom left. Simply performs axes flips.
 
     Parameters
     ----------
@@ -232,10 +389,20 @@ def V2V3_to_det(image, detid):
         NIRCam detector/SCA ID, either 481-490 or A1-B5.
     """
     
-    # Flips occur along the same axis and manner as in det_to_V2V3()
-    return det_to_V2V3(image, detid)
+    # Flips occur along the same axis and manner as in det_to_sci()
+    return det_to_sci(image, detid)
+  
+def det_to_V2V3(image, detid):
+    """Same as `det_to_sci`"""
+    _log.warning('det_to_V2V3 function is deprecated. Please use det_to_sci()')
+    return det_to_sci(image, detid)
     
-    
+def V2V3_to_det(image, detid):
+    """Same as `sci_to_det`"""
+    _log.warning('V2V3_to_det function is deprecated. Please use sci_to_det()')
+    return sci_to_det(image, detid)
+
+
 def plotAxes(ax, position=(0.9,0.1), label1='V2', label2='V3', dir1=[-1,0], dir2=[0,1],
              angle=0, alength=0.12, width=2, headwidth=8, color='w'):
     """Compass arrows

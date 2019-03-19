@@ -87,6 +87,7 @@ class nrc_hci(NIRCam):
     def _gen_cached_psfs(self):
         """Generate a set of cached PSF for quick retrieval."""
         if self.mask is None:
+            # If no mask center and bg and off-axis PSFs are all the same
             _, psf = self.gen_psf(return_oversample=True, use_bg_psf=False)
             self.psf_center_over = psf
             self.psf_offaxis_over = self.psf_center_over
@@ -128,8 +129,9 @@ class nrc_hci(NIRCam):
         """
 
         if sp is None:
-            psf_center  = None #self.psf_center_over
-            psf_offaxis = None #self.psf_offaxis_over
+            # No spectral information, so use cached PSFs
+            psf_center  = self.psf_center_over
+            psf_offaxis = self.psf_offaxis_over
         else:
             if self.mask is None:
                 # Direct imaging; both PSFs are the same
@@ -786,7 +788,7 @@ class obs_hci(nrc_hci):
             delx, dely = (xoff + bar_offpix, yoff)
             if ('FULL' in self.det_info['wind_mode']) and (self.mask is not None):
                 cdict = coron_ap_locs(self.module, self.channel, self.mask, full=True)
-                xcen, ycen = cdict['cen_V23']
+                xcen, ycen = cdict['cen_sci']
                 delx += (xcen - xpix/2)
                 dely += (ycen - ypix/2)
             psf_planet = fshift(psf_planet, delx=delx, dely=dely, pad=True)
@@ -868,7 +870,7 @@ class obs_hci(nrc_hci):
         # Shift to position relative to center of image
         if ('FULL' in self.det_info['wind_mode']) and (self.mask is not None):
             cdict = coron_ap_locs(self.module, self.channel, self.mask, full=True)
-            xcen, ycen = cdict['cen_V23']
+            xcen, ycen = cdict['cen_sci']
         else:
             xcen, ycen = (xpix/2, ypix/2)
         delx += (xcen - xpix/2)
@@ -887,9 +889,9 @@ class obs_hci(nrc_hci):
             cmask_temp = cmask.copy()
             if 'FULL' in self.det_info['wind_mode']:
                 #cdict = coron_ap_locs(self.module, self.channel, self.mask, full=True)
-                #xcen, ycen = cdict['cen_V23']
+                #xcen, ycen = cdict['cen_sci']
                 r, th = dist_image(cmask, pixscale=self.pixelscale,
-                                   center=cdict['cen_V23'], return_theta=True)
+                                   center=cdict['cen_sci'], return_theta=True)
                 x_asec, y_asec = rtheta_to_xy(r, th)
                 ind = (np.abs(x_asec)<10) & (np.abs(y_asec)<5)
                 cmask_temp[ind] = 1
@@ -1123,7 +1125,7 @@ class obs_hci(nrc_hci):
         bar_offpix = self.bar_offset / self.pixelscale
         if ('FULL' in self.det_info['wind_mode']) and (self.mask is not None):
             cdict = coron_ap_locs(self.module, self.channel, self.mask, full=True)
-            xcen, ycen = cdict['cen_V23']
+            xcen, ycen = cdict['cen_sci']
             xcen += bar_offpix
         else:
             xcen, ycen = (xpix/2 + bar_offpix, ypix/2)
@@ -1474,7 +1476,7 @@ class obs_hci(nrc_hci):
         bar_offpix = self.bar_offset / self.pixelscale
         if ('FULL' in self.det_info['wind_mode']) and (self.mask is not None):
             cdict = coron_ap_locs(self.module, self.channel, self.mask, full=True)
-            xcen, ycen = cdict['cen_V23']
+            xcen, ycen = cdict['cen_sci']
             xcen += bar_offpix
         else:
             xcen, ycen = (xpix/2 + bar_offpix, ypix/2)
@@ -1969,7 +1971,7 @@ class obs_hci(nrc_hci):
         bar_offpix = self.bar_offset / self.pixelscale
         if ('FULL' in self.det_info['wind_mode']) and (self.mask is not None):
             cdict = coron_ap_locs(self.module, self.channel, self.mask, full=True)
-            xcen, ycen = cdict['cen_V23']
+            xcen, ycen = cdict['cen_sci']
             xcen += bar_offpix
         else:
             xcen, ycen = (xpix/2 + bar_offpix, ypix/2)
