@@ -900,7 +900,7 @@ def _wrap_coeff_for_mp(args):
     try:
         hdu_list = inst.calc_psf(fov_pixels=fov_pix, oversample=oversample, monochromatic=w*1e-6,
                                  add_distortion=False, crop_psf=True)
-        # Distortions are ignored here. It's better do perform these later.
+        # Distortions are ignored here. It's prefered do perform these later.
         # See the WebbPSF functions in webbpsf.distortion
 
     except Exception as e:
@@ -1326,6 +1326,9 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
 
     # Simultaneous polynomial fits to all pixels using linear least squares
     # 7th-degree polynomial seems to do the trick
+    # TODO: Look into Legendre polynomial fits
+    #   - numpy.polynomial.legendre.Legendre.fit
+    #   - numpy.polynomial.legendre.legfit
     if ndeg is None:
         ndeg = 7 if quick else 10
     coeff_all = jl_poly_fit(waves, images, ndeg)
