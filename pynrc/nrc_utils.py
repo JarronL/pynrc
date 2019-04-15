@@ -1326,6 +1326,9 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
 
     # Simultaneous polynomial fits to all pixels using linear least squares
     # 7th-degree polynomial seems to do the trick
+    # TODO: Look into Legendre polynomial fits
+    #   - numpy.polynomial.legendre.Legendre.fit
+    #   - numpy.polynomial.legendre.legfit
     if ndeg is None:
         ndeg = 7 if quick else 10
     coeff_all = jl_poly_fit(waves, images, ndeg)
