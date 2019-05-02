@@ -900,7 +900,7 @@ def _wrap_coeff_for_mp(args):
     try:
         hdu_list = inst.calc_psf(fov_pixels=fov_pix, oversample=oversample, monochromatic=w*1e-6,
                                  add_distortion=False, crop_psf=True)
-        # Distortions are ignored here. It's better do perform these later.
+        # Distortions are ignored here. It's prefered do perform these later.
         # See the WebbPSF functions in webbpsf.distortion
 
     except Exception as e:
