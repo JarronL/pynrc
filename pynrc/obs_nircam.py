@@ -43,7 +43,6 @@ class nrc_hci(NIRCam):
         if 'STRIPE' in wind_mode: xpix = 2048
 
         #super(NIRCam,self).__init__(**kwargs)
-        # Not sure if this works for both Python 2 and 3
         NIRCam.__init__(self, wind_mode=wind_mode, xpix=xpix, ypix=ypix, **kwargs)
 
         # Background/off-axis PSF coeff updates

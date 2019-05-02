@@ -426,11 +426,13 @@ def reffix_hxrg(cube, nchans=4, in_place=True, fixcol=False, **kwargs):
     nright : int
         Specify the number of right reference columns.
     perint : bool
-        Smooth side reference pixel per integration, 
-        otherwise do frame-by-frame.
+        Smooth side reference pixel per integration, otherwise do frame-by-frame.
     avg_type :str
-        Type of ref col averaging to perform. Allowed values are
-        'pixel', 'frame', or 'int'.    
+        Type of side column averaging to perform to determine ref pixel drift. 
+        Allowed values are 'pixel', 'frame', or 'int':
+            * 'int'   : Subtract the avg value of all side ref pixels in ramp.
+            * 'frame' : For each frame, get avg of side ref pixels and subtract framewise.
+            * 'pixel' : For each ref pixel, subtract its avg value from all frames.
     """
 
     # Check the number of dimensions are valid.
@@ -711,8 +713,11 @@ def calc_avg_cols(refs_left=None, refs_right=None, avg_type='frame'):
     refs_right : ndarray
         Right reference columns.
     avg_type : str
-        Type of ref col averaging to perform. Allowed values are
-        'pixel', 'frame', or 'int'.
+        Type of ref column averaging to perform to determine ref pixel variation. 
+        Allowed values are 'pixel', 'frame', or 'int'.
+        'pixel' : For each ref pixel, subtract its avg value from all frames.
+        'frame' : For each frame, get avg ref pixel values and subtract framewise.
+        'int'   : Calculate avg of all ref pixels within the ramp and subtract.
 
     """
     

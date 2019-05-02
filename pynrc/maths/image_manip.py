@@ -824,8 +824,8 @@ def hist_indices(values, bins=10, return_more=False):
     This function bins an input of values and returns the indices for
     each bin. This is similar to the reverse indices functionality
     of the IDL histogram routine. It's also much faster than doing
-    a for loop and creating masks/indice at each iteration, because
-    we utilize a sparse matrix constructor. It's kinda magical...
+    a for loop and creating masks/indices at each iteration, because
+    we utilize a sparse matrix constructor. 
     
     Returns a list of indices grouped together according to the bin.
     Only works for evenly spaced bins.

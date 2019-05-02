@@ -621,17 +621,20 @@ class NIRCamFieldAndWavelengthDependentAberration_mod(poppy.OpticalElement):
         focusmodel = self.focus_model
         if self.instrument.channel.upper() == 'SHORT':
             opd_ref_wave = 2.12
+            opd_ref_focus = focusmodel(opd_ref_wave)
         else:
+            # All LW WFE measurements were made using F323N,
+            # which has it's own focus that deviates from focusmodel()
             opd_ref_wave = 3.23
+            opd_ref_focus = 1.206e-7
 
-        # F323N deviates from the model and has it's own focus power
-        wave_um = wave.wavelength.to(units.micron).value
-        if 'F323N' in self.instrument.filter:
-            focus_at_wave = 1.206e-7
+        # If F323N or F212N, then no focus offset necessary
+        if ('F323N' in self.instrument.filter) or ('F212N' in self.instrument.filter):
+            deltafocus = 0
         else:
-            focus_at_wave = focusmodel(wave_um)
+            wave_um = wave.wavelength.to(units.micron).value
+            deltafocus = focusmodel(wave_um) - opd_ref_focus
 
-        deltafocus = focus_at_wave - focusmodel(opd_ref_wave)
         _log.info("  Applying OPD focus adjustment based on NIRCam focus vs wavelength model")
         _log.info("  Delta focus from {} to {}: {:.3f} nm rms".format(
                   opd_ref_wave, wave.wavelength.to(units.micron), deltafocus * 1e9) )
