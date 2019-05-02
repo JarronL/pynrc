@@ -366,7 +366,7 @@ def linefit(inputX, inputY, iterMax=25, Bisector=False, BisquareLimit=6.0, Close
         yIn = yIn.compressed()
     n = len(xIn)
 
-    np.logical_not(yIn.maks)
+    np.logical_not(yIn.mask)
 
     x0 = xIn.sum() / n
     y0 = yIn.sum() / n
