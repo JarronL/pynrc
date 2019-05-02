@@ -3,6 +3,7 @@ Small collection of robust statistical estimators based on functions from
 Henry Freudenriech (Hughes STX) statistics library (called ROBLIB) that have
 been incorporated into the AstroIDL User's Library.  Function included are:
 
+  * medabsdev - median absolute deviation
   * biweightMean - biweighted mean estimator
   * mean - robust estimator of the mean of a data set
   * mode - robust estimate of the mode of a data set using the half-sample
@@ -22,7 +23,6 @@ For additional information about the original IDL routines, see:
 
 from __future__ import division, print_function#, unicode_literals
 
-import math
 import numpy as np
 
 import logging
@@ -34,10 +34,10 @@ __all__ = ['medabsdev','biweightMean', 'mean', 'mode', 'std', \
            'checkfit', 'linefit', 'polyfit', \
            '__version__', '__revision__', '__all__']
 
-__iterMax = 25
+
+# Numerical precision
+__epsilon = np.finfo(float).eps
 __delta = 5.0e-7
-#__epsilon = 1.0e-20
-__epsilon = np.finfo(float).eps # 2.22E-16
 
 def medabsdev(data, axis=None, keepdims=False, nan=True):
     """Median Absolute Deviation
@@ -70,25 +70,28 @@ def medabsdev(data, axis=None, keepdims=False, nan=True):
     sig_scale = 0.6744897501960817
     
     med = medfunc(data, axis=axis, keepdims=True)
-    abs = np.abs(data - med)
-    sigma = medfunc(abs, axis=axis, keepdims=True)  / sig_scale
+    absdiff = np.abs(data - med)
+    sigma = medfunc(absdiff, axis=axis, keepdims=True)  / sig_scale
     
     # Check if anything is near 0.0 (below machine precision)
     mask = sigma < __epsilon
     if np.any(mask):
-        sigma[mask] = (meanfunc(abs, axis=axis, keepdims=True))[mask] / 0.8
+        sigma[mask] = (meanfunc(absdiff, axis=axis, keepdims=True))[mask] / 0.8
     mask = sigma < __epsilon
     if np.any(mask):
         sigma[mask] = 0.0
         
-    if not keepdims:
+        
+    if len(sigma)==1:
+        return sigma[0]
+    elif not keepdims:
         return np.squeeze(sigma)
     else:
         return sigma
 
 
 
-def biweightMean(inputData, axis=None, dtype=None):
+def biweightMean(inputData, axis=None, dtype=None, iterMax=25):
     """Biweight Mean
     
     Calculate the mean of a data set using bisquare weighting.  
@@ -125,7 +128,7 @@ def biweightMean(inputData, axis=None, dtype=None):
             diff = 0
         while diff > closeEnough:
             nIter = nIter + 1
-            if nIter > __iterMax:
+            if nIter > iterMax:
                 break
             uu = ((y-y0)/(6.0*sigma))**2.0
             uu = np.where(uu > 1.0, 1.0, uu)
@@ -143,7 +146,93 @@ def biweightMean(inputData, axis=None, dtype=None):
     return y0
 
 
-def mean(inputData, Cut=3.0, axis=None, dtype=None):
+def mean(inputData, Cut=3.0, axis=None, dtype=None, keepdims=False, return_std=False):
+    """Robust Mean
+    
+    Robust estimator of the mean of a data set.  Based on the 
+    resistant_mean function from the AstroIDL User's Library.
+
+    RESISTANT_Mean trims away outliers using the median and the median 
+    absolute deviation. An approximation formula is used to correct for
+    the truncation caused by trimming away outliers.
+
+    """
+
+    inputData = np.array(inputData)
+    
+    if np.isnan(inputData).sum() > 0:
+        medfunc = np.nanmedian
+        meanfunc = np.nanmean
+    else:
+        medfunc = np.median
+        meanfunc = np.mean
+
+    if axis is None:
+        data = inputData.ravel()
+    else:
+        data = inputData
+        
+    if type(data).__name__ == "MaskedArray":
+        data = data.compressed()
+    if dtype is not None:
+        data = data.astype(dtype)
+
+    # Scale factor to return result equivalent to standard deviation.
+    sig_scale = 0.6744897501960817
+        
+    # Calculate the median absolute deviation
+    data0 = medfunc(data, axis=axis, keepdims=True)
+    absdiff = np.abs(data-data0)
+    medAbsDev = medfunc(absdiff, axis=axis, keepdims=True) / sig_scale
+
+    mask = medAbsDev < __epsilon
+    if np.any(mask):
+        medAbsDev[mask] = (meanfunc(absdiff, axis=axis, keepdims=True))[mask] / 0.8
+
+    # First cut using the median absolute deviation
+    cutOff = Cut*medAbsDev
+    good = absdiff <= cutOff
+    data_naned = data.copy()
+    data_naned[~good] = np.nan
+    dataMean = np.nanmean(data_naned, axis=axis, keepdims=True)
+    dataSigma = np.nanstd(data_naned, axis=axis, keepdims=True) #np.sqrt( np.nansum((data_naned-dataMean)**2.0) / len(good) )
+
+    # Calculate sigma
+    if Cut > 1.0:
+        sigmaCut = Cut
+    else:
+        sigmaCut = 1.0
+    if sigmaCut <= 4.5:
+        poly_sigcut = -0.15405 + 0.90723*sigmaCut - 0.23584*sigmaCut**2.0 + 0.020142*sigmaCut**3.0
+        dataSigma = dataSigma / poly_sigcut
+
+    cutOff = Cut*dataSigma
+    good = absdiff <= cutOff
+    data_naned = data.copy()
+    data_naned[~good] = np.nan
+    dataMean = np.nanmean(data_naned, axis=axis, keepdims=True)
+    if return_std:
+        dataSigma = np.nanstd(data_naned, axis=axis, keepdims=True)
+    
+    if len(dataMean)==1:
+        if return_std:
+            return dataMean[0], dataSigma[0]
+        else:
+            return dataMean[0]
+    if not keepdims:
+        if return_std:
+            return np.squeeze(dataMean), np.squeeze(dataSigma)
+        else:
+            return np.squeeze(dataMean)
+    else:
+        if return_std:
+            return dataMean, dataSigma
+        else:
+            return dataMean
+
+
+
+def mean_old(inputData, Cut=3.0, axis=None, dtype=None):
     """Robust mean
     
     Robust estimator of the mean of a data set.  Based on the 
@@ -153,9 +242,10 @@ def mean(inputData, Cut=3.0, axis=None, dtype=None):
         Added the 'axis' and 'dtype' keywords to make this function more
         compatible with np.mean()
     """
-
+           
+    inputData = np.array(inputData)
     if axis is not None:
-        fnc = lambda x: mean(x, dtype=dtype)
+        fnc = lambda x: mean_old(x, dtype=dtype)
         dataMean = np.apply_along_axis(fnc, axis, inputData)
     else:
         data = inputData.ravel()
@@ -165,15 +255,17 @@ def mean(inputData, Cut=3.0, axis=None, dtype=None):
             data = data.astype(dtype)
         
         data0 = np.median(data)
-        maxAbsDev = np.median(np.abs(data-data0)) / 0.6745
-        if maxAbsDev < __epsilon:
-            maxAbsDev = (np.abs(data-data0)).mean() / 0.8000
+        absdiff = np.abs(data-data0)
         
-        cutOff = Cut*maxAbsDev
-        good = np.where( np.abs(data-data0) <= cutOff )
+        medAbsDev = np.median(absdiff) / 0.6745
+        if medAbsDev < __epsilon:
+            medAbsDev = absdiff.mean() / 0.8000
+        
+        cutOff = Cut*medAbsDev
+        good = np.where( absdiff <= cutOff )
         good = good[0]
         dataMean = data[good].mean()
-        dataSigma = math.sqrt( ((data[good]-dataMean)**2.0).sum() / len(good) )
+        dataSigma = np.sqrt( ((data[good]-dataMean)**2.0).sum() / len(good) )
 
         if Cut > 1.0:
             sigmaCut = Cut
@@ -183,11 +275,11 @@ def mean(inputData, Cut=3.0, axis=None, dtype=None):
             dataSigma = dataSigma / (-0.15405 + 0.90723*sigmaCut - 0.23584*sigmaCut**2.0 + 0.020142*sigmaCut**3.0)
         
         cutOff = Cut*dataSigma
-        good = np.where(  np.abs(data-data0) <= cutOff )
+        good = np.where( absdiff <= cutOff )
         good = good[0]
         dataMean = data[good].mean()
         if len(good) > 3:
-            dataSigma = math.sqrt( ((data[good]-dataMean)**2.0).sum() / len(good) )
+            dataSigma = np.sqrt( ((data[good]-dataMean)**2.0).sum() / len(good) )
         
         if Cut > 1.0:
             sigmaCut = Cut
@@ -196,7 +288,7 @@ def mean(inputData, Cut=3.0, axis=None, dtype=None):
         if sigmaCut <= 4.5:
             dataSigma = dataSigma / (-0.15405 + 0.90723*sigmaCut - 0.23584*sigmaCut**2.0 + 0.020142*sigmaCut**3.0)
         
-        dataSigma = dataSigma / math.sqrt(len(good)-1)
+        dataSigma = dataSigma / np.sqrt(len(good)-1)
     
     return dataMean
 
@@ -251,8 +343,86 @@ def mode(inputData, axis=None, dtype=None):
     
     return dataMode
 
+def std(inputData, Zero=False, axis=None, dtype=None, keepdims=False):
+    """Robust Sigma
+    
+    Based on the robust_sigma function from the AstroIDL User's Library.
 
-def std(inputData, Zero=False, axis=None, dtype=None):
+    Calculate a resistant estimate of the dispersion of a distribution.
+    
+    Use the median absolute deviation as the initial estimate, then weight 
+    points using Tukey's Biweight. See, for example, "Understanding Robust
+    and Exploratory Data Analysis," by Hoaglin, Mosteller and Tukey, John
+    Wiley & Sons, 1983, or equation 9 in Beers et al. (1990, AJ, 100, 32).
+	"""
+
+    inputData = np.array(inputData)
+    
+    if np.isnan(inputData).sum() > 0:
+        medfunc = np.nanmedian
+        meanfunc = np.nanmean
+    else:
+        medfunc = np.median
+        meanfunc = np.mean
+
+    if axis is None:
+        data = inputData.ravel()
+    else:
+        data = inputData
+
+    if type(data).__name__ == "MaskedArray":
+        data = data.compressed()
+    if dtype is not None:
+        data = data.astype(dtype)
+
+    # Scale factor to return result equivalent to standard deviation.
+    sig_scale = 0.6744897501960817
+
+    # Calculate the median absolute deviation
+    if Zero:
+        data0 = 0.0
+    else:
+        data0 = medfunc(data, axis=axis, keepdims=True)
+    absdiff = np.abs(data-data0)
+    medAbsDev = medfunc(absdiff, axis=axis, keepdims=True) / sig_scale
+    mask = medAbsDev < __epsilon
+    if np.any(mask):
+        medAbsDev[mask] = (meanfunc(absdiff, axis=axis, keepdims=True))[mask] / 0.8
+        
+    # These will be set to 0 later
+    mask0 = medAbsDev < __epsilon
+        
+    u = (data-data0) / (6.0 * medAbsDev)
+    u2 = u**2.0
+    good = u2 <= 1.0
+    
+    # These values will be set to NaN later
+    # if fewer than 3 good points to calculate stdev
+    ngood = good.sum(axis=axis, keepdims=True)
+    mask_nan = ngood < 3
+    if mask_nan.sum() > 0:
+        print("WARNING: NaN's will be present due to weird distributions")
+    
+    # Set bad points to NaNs
+    u2[~good] = np.nan
+    
+    numerator = np.nansum( (data - data0)**2 * (1.0 - u2)**4.0, axis=axis, keepdims=True)
+    nElements = len(data) if axis is None else data.shape[axis]
+    denominator = np.nansum( (1.0 - u2) * (1.0 - 5.0*u2), axis=axis, keepdims=True)
+    sigma = np.sqrt( nElements*numerator / (denominator*(denominator-1.0)) )
+    
+    sigma[mask0] = 0
+    sigma[mask_nan] = np.nan
+
+    if len(sigma)==1:
+        return sigma[0]
+    elif not keepdims:
+        return np.squeeze(sigma)
+    else:
+        return sigma
+
+
+def std_old(inputData, Zero=False, axis=None, dtype=None):
     """
     Robust estimator of the standard deviation of a data set.  
 
@@ -264,7 +434,7 @@ def std(inputData, Zero=False, axis=None, dtype=None):
     """
 
     if axis is not None:
-        fnc = lambda x: std(x, dtype=dtype)
+        fnc = lambda x: std_old(x, dtype=dtype)
         sigma = np.apply_along_axis(fnc, axis, inputData)
     else:
         data = inputData.ravel()
@@ -277,14 +447,14 @@ def std(inputData, Zero=False, axis=None, dtype=None):
             data0 = 0.0
         else:
             data0 = np.median(data)
-        maxAbsDev = np.median(np.abs(data-data0)) / 0.6744897501960817
-        if maxAbsDev < __epsilon:
-            maxAbsDev = np.mean(np.abs(data-data0)) / 0.8000
-        if maxAbsDev < __epsilon:
+        medAbsDev = np.median(np.abs(data-data0)) / 0.6744897501960817
+        if medAbsDev < __epsilon:
+            medAbsDev = np.mean(np.abs(data-data0)) / 0.8000
+        if medAbsDev < __epsilon:
             sigma = 0.0
             return sigma
         
-        u = (data-data0) / 6.0 / maxAbsDev
+        u = (data-data0) / 6.0 / medAbsDev
         u2 = u**2.0
         good = np.where( u2 <= 1.0 )
         good = good[0]
@@ -298,7 +468,7 @@ def std(inputData, Zero=False, axis=None, dtype=None):
         denominator = ((1.0-u2[good])*(1.0-5.0*u2[good])).sum()
         sigma = nElements*numerator / (denominator*(denominator-1.0))
         if sigma > 0:
-            sigma = math.sqrt(sigma)
+            sigma = np.sqrt(sigma)
         else:
             sigma = 0.0
         
@@ -366,7 +536,7 @@ def linefit(inputX, inputY, iterMax=25, Bisector=False, BisquareLimit=6.0, Close
         yIn = yIn.compressed()
     n = len(xIn)
 
-    np.logical_not(yIn.maks)
+    np.logical_not(yIn.mask)
 
     x0 = xIn.sum() / n
     y0 = yIn.sum() / n
