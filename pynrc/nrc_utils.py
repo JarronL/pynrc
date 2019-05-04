@@ -623,10 +623,16 @@ class NIRCamFieldAndWavelengthDependentAberration_mod(poppy.OpticalElement):
             opd_ref_wave = 2.12
             opd_ref_focus = focusmodel(opd_ref_wave)
         else:
+            opd_ref_wave = 3.23
             # All LW WFE measurements were made using F323N,
             # which has it's own focus that deviates from focusmodel()
-            opd_ref_wave = 3.23
-            opd_ref_focus = 1.206e-7
+            # But only do this for direct imaging SI WFE values,
+            # because coronagraph WFE was measured in Zemax (no additional focus power).
+            pupil_mask = self.instrument._pupil_mask
+            if (pupil_mask is not None) and ('LYOT' in pupil_mask.upper()):
+                opd_ref_focus = focusmodel(opd_ref_wave)
+            else:
+                opd_ref_focus = 1.206e-7 # Not coronagraphy (e.g., imaging)
 
         # If F323N or F212N, then no focus offset necessary
         if ('F323N' in self.instrument.filter) or ('F212N' in self.instrument.filter):

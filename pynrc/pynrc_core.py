@@ -10,7 +10,7 @@ from __future__ import division, print_function#, unicode_literals
 from astropy.table import Table
 from .nrc_utils import *
 from .detops import *
-from .detops import _check_list
+from .detops import _check_list # hidden function
 
 import logging
 _log = logging.getLogger('pynrc')
