@@ -874,6 +874,8 @@ def hist_indices(values, bins=10, return_more=False):
     center_vals = bins[:-1] + binsize / 2.
     nbins = center_vals.size
 
+    # TODO: If input bins is an array that doesn't span the full set of input values,
+    # then we need to set a warning.
     digitized = ((nbins-1.0) / (v1-v0) * (values_flat-v0)).astype(np.int)
     csr = csr_matrix((values_flat, [digitized, np.arange(N)]), shape=(nbins, N))
 
