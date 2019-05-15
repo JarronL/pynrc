@@ -129,7 +129,6 @@ class nrc_hci(NIRCam):
 
         if sp is None:
             # No spectral information, so use cached PSFs
-            # No spectral information, so use cached PSFs
             # Let _psf_lin_comb() handle it
             psf_center  = None #self.psf_center_over
             psf_offaxis = None #self.psf_offaxis_over
