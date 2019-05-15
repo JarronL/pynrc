@@ -4563,7 +4563,7 @@ def cond_filter(table, filt, module='A', dist=None, **kwargs):
     # Interpolate
     mag_arr = np.interp(mass_arr, mass_data, mag_data)
 
-    # Extrapolat
+    # Extrapolate
     cf = jl_poly_fit(np.log(mass_data), mag_data)
     ind_out = (mass_arr < mass_data.min()) | (mass_arr > mass_data.max())
     mag_arr[ind_out] = jl_poly(np.log(mass_arr), cf)[ind_out]

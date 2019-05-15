@@ -129,8 +129,10 @@ class nrc_hci(NIRCam):
 
         if sp is None:
             # No spectral information, so use cached PSFs
-            psf_center  = self.psf_center_over
-            psf_offaxis = self.psf_offaxis_over
+            # No spectral information, so use cached PSFs
+            # Let _psf_lin_comb() handle it
+            psf_center  = None #self.psf_center_over
+            psf_offaxis = None #self.psf_offaxis_over
         else:
             if self.mask is None:
                 # Direct imaging; both PSFs are the same
@@ -236,7 +238,7 @@ class nrc_hci(NIRCam):
             yv = (np.arange(ny) - ny/2) * pixscale_over
             a = np.interp(offy_asec, yv, mask_cut**2)
             b = 1 - a
-
+            
             res = psf_offaxis*a + psf_center*b
 
         return res
@@ -297,14 +299,33 @@ class nrc_hci(NIRCam):
             xcen, ycen = cdict['cen']
 
             xpix, ypix = (self.det_info['xpix'], self.det_info['ypix'])
-            if full: x0, y0 = (0,0)
-            else: x0, y0 = (int(xcen-xpix/2), int(ycen-ypix/2))
+            if full: 
+                x0, y0 = (0,0)
+            else: 
+                x0, y0 = (int(xcen-xpix/2), int(ycen-ypix/2))
 
             # Make sure subarray sizes don't push out of bounds
-            if (y0 + ypix) > 2048: y0 = 2048 - ypix
-            if (x0 + xpix) > 2048: x0 = 2048 - xpix
+            if (y0 + ypix) > 2048: 
+                y0 = 2048 - ypix
+            if (x0 + xpix) > 2048: 
+                x0 = 2048 - xpix
 
             self.update_detectors(x0=x0, y0=y0)
+            
+    def get_psf_cen(self):
+        """
+        Determine center of mask where PSF is placed.
+        """
+        bar_offpix = self.bar_offset / self.pixelscale
+        if ('FULL' in self.det_info['wind_mode']) and (self.mask is not None):
+            cdict = coron_ap_locs(self.module, self.channel, self.mask, full=True)
+            xcen, ycen = cdict['cen_sci']
+            xcen += bar_offpix
+        else:
+            ypix, xpix = (self.det_info['ypix'], self.det_info['xpix'])
+            xcen, ycen = (xpix/2 + bar_offpix, ypix/2)
+            
+        return (xcen, ycen)          
 
     def _gen_cmask(self, oversample=1):
         """
@@ -2353,7 +2374,11 @@ def plot_contrasts_mjup(curves, nsig, wfe_list, obs=None, age=100,
     for j, wfe_ref_drift in enumerate(wfe_list):
         rr, contrast, mag_sens = curves[j]
         label='$\Delta$' + "WFE = {} nm".format(wfe_list[j])
-        yvals = np.interp(mag_sens, mag_data[isort], mass_data[isort])
+#         yvals = np.interp(mag_sens, mag_data[isort], np.log10(mass_data[isort]))
+#         yvals = 10**yvals
+        cf = jl_poly_fit(mag_data[isort], np.log10(mass_data[isort]))
+        yvals = 10**jl_poly(mag_sens, cf)
+
         ax.plot(rr, yvals, label=label, color=colors[j], zorder=1, lw=2)
 
     if xr is not None: ax.set_xlim(xr)
@@ -2503,8 +2528,10 @@ def planet_mags(obs, age=10, entropy=13, mass_list=[10,5,2,1], av_vals=[0,25], a
         mass_data, mag_data = cond_filter(tbl, filt, module=mod, dist=dist)
 
         # Mag information for the requested masses
-        mags0 = np.interp(mass_list, mass_data, mag_data)
-
+#         mags0 = np.interp(np.log(mass_list), np.log(mass_data), mag_data)
+        cf = jl_poly_fit(np.log(mass_data), mag_data)
+        mags0 = jl_poly(np.log(mass_list), cf)
+    
         # Apply extinction
         for i, m in enumerate(mass_list):
             if np.allclose(av_vals, 0):
