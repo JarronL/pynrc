@@ -463,3 +463,99 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
     # Only return outHDU if return_results=True
     if return_results: 
         return outHDU
+
+
+def ipc_convolve(im, alpha_min=0.0065, alpha_max=None, kernel=None):
+    """Convolve image with IPC kernel
+    
+    Given an image in electrons, apply IPC convolution
+    
+    Parameters
+    ==========
+    im : ndarray
+        Input image or array of images.
+    alpha_min : float
+        Minimum coupling coefficient between neighboring pixels.
+        If alpha_max is None, then this is taken to be constant
+        with respect to signal levels.
+    alpha_max : float or None
+        Maximum value of coupling coefficent. If specificed, then
+        coupling between pixel pairs is assumed to vary depending
+        on signal values. See Donlon et al., 2019, PASP 130.
+    kernel : ndarry or None
+        Option to directly specify the convolution kernel.
+    
+    Examples
+    ========
+    Constant Kernel
+
+        >>> im_ipc = ipc_convolve(im, alpha_min=0.0065)
+
+    Constant Kernel (manual)
+
+        >>> alpha = 0.0065
+        >>> k = np.array([[0,alpha,0], [alpha,1-4*alpha,alpha], [0,alpha,0]])
+        >>> im_ipc = ipc_convolve(im, kernel=k)
+
+    Signal-dependent Kernel
+
+        >>> im_ipc = ipc_convolve(im, alpha_min=0.0065, alpha_max=0.0145)
+
+    """
+
+    from astropy.convolution import convolve
+    
+    sh = im.shape
+    ndim = len(sh)
+    if ndim==2:
+        im = im.reshape([1,sh[0],sh[1]])
+        sh = im.shape
+    
+    # Pad images to have a 0 border
+    im_pad = np.pad(im, ((0,0),(1,1),(1,1)), 'constant')
+    
+    # Check for custom kernel (overrides alpha values)
+    if (kernel is not None) or (alpha_max is None):
+        # Reshape to stack all image along horizontal axes
+        im_reshape = im_pad.reshape([-1, im_pad.shape[-1]])
+    
+        if kernel is None:
+            kernel = np.array([[0.0, alpha_min, 0.0],
+                              [alpha_min, 1.-4*alpha_min, alpha_min],
+                              [0.0, alpha_min, 0.0]])
+    
+        # Convolve IPC kernel with images
+        im_ipc = convolve(im_reshape, kernel).reshape(im_pad.shape)
+    
+    # Exponential coupling strength
+    # Equation 7 of Donlon et al. (2018)
+    else:
+        arrsqr = im_pad**2
+
+        amin = alpha_min
+        amax = alpha_max
+        ascl = (amax-amin) / 2
+        
+        alpha_arr = []
+        for ax in [1,2]:
+            # Shift by -1
+            diff = np.abs(im_pad - np.roll(im_pad, -1, axis=ax))
+            sumsqr = arrsqr + np.roll(arrsqr, -1, axis=ax)
+            
+            imtemp = amin + ascl * np.exp(-diff/20000) + \
+                     ascl * np.exp(-np.sqrt(sumsqr / 2) / 10000)
+            alpha_arr.append(imtemp)
+            # Take advantage of symmetries to shift in other direction
+            alpha_arr.append(np.roll(imtemp, 1, axis=ax))
+            
+        alpha_arr = np.array(alpha_arr)
+
+        # Flux remaining in parent pixel
+        im_ipc = im_pad * (1 - alpha_arr.sum(axis=0))
+        # Flux shifted to adjoining pixels
+        for i, (shft, ax) in enumerate(zip([-1,+1,-1,+1], [1,1,2,2])):
+            im_ipc += alpha_arr[i]*np.roll(im_pad, shft, axis=ax)
+        del alpha_arr
+
+    # Trim excess
+    return im_ipc[:,1:-1,1:-1].squeeze()
