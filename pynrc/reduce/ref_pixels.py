@@ -983,7 +983,302 @@ def smooth_fft(data, delt, first_deriv=False, second_deriv=False):
         return Smoothed_Data
     
 
-#def extract_pink(im, nchans=4, chmed=True, chflip=True, method='savgol'):
-#
-#    ny, nx = im.shape
-#    chsize = nx / nchans
+def channel_averaging(im, nchans=4, same_scan_direction=False, off_chans=True, 
+    mn_func=np.nanmedian, **kwargs):
+    """Estimate common 1/f noise in image
+
+    For a given image, average the channels together to find 
+    the common pattern noise present within the channels.
+    Returns an array the same size as the input image.
+
+    Parameters
+    ==========
+    im : ndarray
+        Input image
+
+    Keyword Args
+    ============
+    nchans : int
+        Number of output channels
+    same_scan_direction : bool
+        Are all the output channels read in the same direction?
+        By default fast-scan readout direction is ``[-->,<--,-->,<--]``
+        If ``same_scan_direction``, then all ``-->``
+    off_chans : bool
+        Calculate indepenent values for each channel using the off channels.
+    mn_func : function
+        What function should we use to calculate the average.
+        Default `np.nanmedian`
+
+    """
+
+    ny, nx = im.shape
+    chsize = int(nx / nchans)
+
+    # Reshape to [ny,chsize,nchans]
+    im = im.reshape(ny,nchans,chsize).transpose([0,2,1])
+
+    # Flip channels if they're reversed
+    if same_scan_direction==False:
+        for ch in range(nchans):
+            if np.mod(ch,2)==1: im[:,:,ch] = im[:,::-1,ch]
+                
+    if off_chans == False:
+        im = im.reshape([-1,nchans])
+        ch_mn = mn_func(im, axis=1).reshape([ny,chsize])
+        im = im.reshape([ny,chsize,nchans])
+
+    arr_list = []
+    ind_chans = np.arange(nchans)
+    for ch in range(nchans):
+
+        # Take median of other channels
+        if off_chans:
+            ind_off = np.where(ind_chans != ch)[0]
+            im_off_chans = im[:,:,ind_off].reshape([-1,nchans-1])
+            ch_mn = mn_func(im_off_chans, axis=1).reshape([ny,chsize])
+        
+        # Consecutive outputs reversed?
+        if (np.mod(ch,2) == 0) or (same_scan_direction == True): 
+            arr_list.append(ch_mn)
+        else: 
+            arr_list.append(ch_mn[:,::-1])
+#    im = im.reshape([ny,chsize,nchans]).transpose([0,2,1]).reshape([ny,nx])
+            
+    return np.concatenate(arr_list, axis=1)
+
+
+def channel_smooth_fft(im_arr, winsize=64):
+    """Channel smoothing using smooth_fft
+
+    Function for generating a map of the 1/f noise within a series of input images.
+    The input images should show some clear noise structure for this to be useful.
+    Uses M. Robberto smoothing algorithm.
+
+    One might prefer the `channel_smooth_savgol` or `channel_smooth_butter`
+    functions due to their quickness.
+
+    Parameters
+    ==========
+    im_arr : ndarray
+        Input array of images
+    winsize : int
+        Window size chunks to break up 
+    """
+
+    sh = im_arr.shape
+    if len(sh)==2:
+        nz = 1
+        ny, chsize = sh
+    else:
+        nz, ny, chsize = sh
+
+    # Check that winsize is even
+    winsize = winsize+1 if winsize % 2 == 1 else winsize
+
+    # Reshape in case of nz=1
+    im_arr = im_arr.reshape([nz, -1])
+
+    res_arr = []
+    excess = winsize #int(winsize / 2)
+    for im in im_arr:
+        nwin = int(im.size / winsize) + 1
+        # Add some extra values to beginning and end to remove edge effects
+        im2 = np.concatenate((im[:excess][::-1], im, im[-excess:][::-1]))
+
+        res = []
+        for i in range(nwin):
+            i1 = 0 if i==0 else winsize*i
+            i2 = i1 + winsize + 2*excess
+            vals = im2[i1:i2]
+
+            # If smooth_fft fails, then just take median
+            # Failing generally means the distribution is consistent with white noise
+            try:
+                vals_smooth = smooth_fft(vals, 10e-6)
+                # Trim edges
+                vals_smooth = vals_smooth[excess:excess+winsize]
+            except:
+                vals_smooth = np.zeros(winsize) + np.nanmedian(vals)
+            res.append(vals_smooth)
+        res = np.array(res).ravel()[0:im.size]
+        res_arr.append(res.reshape([ny,-1]))
+
+    return np.array(res_arr).squeeze()
+
+def mask_helper():
+    """Helper to handle indices and logical indices of a mask.
+
+    Output:
+        - index, a function, with signature indices = index(logical_indices),
+          to convert logical indices of a mask to 'equivalent' indices
+    Example:
+        >>> # linear interpolation of NaNs
+        >>> mask = np.isnan(y)
+        >>> x = mask_helper(y)
+        >>> y[mask]= np.interp(x(mask), x(~mask), y[~mask])
+    """
+
+    return lambda z: np.nonzero(z)[0]
+
+def channel_smooth_savgol(im_arr, winsize=31, order=3, per_line=False, 
+    mask=None, **kwargs):
+    """Channel smoothing using savgol filter
+
+    Parameters
+    ==========
+    im_arr : ndarray
+        Input array of images (intended to be a cube of output channels). 
+        Each image is operated on separately. If only two dimensions,
+        then only a single input image is assumed. NaN's will be
+        interpolated over.
+
+    Keyword Args
+    ============
+    winsize : int
+        Size of the window filter.
+    order : int
+        Order of the polynomial used to fit the samples.
+    per_line : bool
+        Smooth each channel line separately with the hopes of avoiding
+        edge discontinuities.
+    mask : bool image or None
+        An image mask of pixels to ignore. Should be same size as im_arr.
+        This can be used to mask pixels that the filter should ignore, 
+        such as stellar sources or pixel outliers.
+    mode : str
+        Must be 'mirror', 'constant', 'nearest', 'wrap' or 'interp'.  This
+        determines the type of extension to use for the padded signal to
+        which the filter is applied.  When `mode` is 'constant', the padding
+        value is given by `cval`. 
+        When the 'interp' mode is selected (the default), no extension
+        is used.  Instead, a degree `polyorder` polynomial is fit to the
+        last `window_length` values of the edges, and this polynomial is
+        used to evaluate the last `window_length // 2` output values.
+    cval : float
+        Value to fill past the edges of the input if `mode` is 'constant'.
+        Default is 0.0.
+    """
+
+    from scipy.signal import savgol_filter
+
+    sh = im_arr.shape
+    if len(sh)==2:
+        nz = 1
+        ny, chsize = sh
+    else:
+        nz, ny, chsize = sh
+
+    # Check that winsize is odd
+    winsize = winsize-1 if winsize % 2 == 0 else winsize
+
+    # Reshape in case of nz=1
+    im_arr = im_arr.reshape([nz, -1])
+
+    res_arr = []
+    for i, im in enumerate(im_arr):
+        # im should be a 1D array
+
+        # Interpolate over masked data and NaN's
+        nans = np.isnan(im)
+        im_mask = nans if mask is None else nans | mask[i].flatten()
+        if im_mask.any():
+            # Create a copy so as to not change the original data
+            im = np.copy(im)
+
+            # Use a savgol filter to smooth out any outliers
+            res = im.copy()
+            res[~im_mask] = savgol_filter(im[~im_mask], 31, 3, mode='interp')
+
+            # Replace masked pixels with linear interpolation
+            x = mask_helper() # Returns the nonzero (True) indices of a mask
+            im[im_mask]= np.interp(x(im_mask), x(~im_mask), res[~im_mask])
+
+        if per_line:
+            im = im.reshape([ny,-1])
+
+            res = savgol_filter(im, winsize, order, axis=1, delta=1, **kwargs)
+            res_arr.append(res)
+        else:
+            res = savgol_filter(im, winsize, order, delta=1, **kwargs)
+            res_arr.append(res.reshape([ny,-1]))
+
+    return np.array(res_arr).squeeze()
+
+
+def channel_smooth_butter(im_arr, order=3, freq=0.1, per_line=False, mask=None):
+    """Channel smoothing using Butterworth filter
+
+    Parameters
+    ==========
+    im_arr : ndarray
+        Input array of images (intended to be a cube of output channels). 
+        Each image is operated on separately. If only two dimensions,
+        then only a single input image is assumed.
+
+    Keyword Args
+    ============
+    order : int
+        Order of the filter (high order have sharper frequency cut-off)
+    freq : float
+        Normalized frequency cut-off (between 0 and 1). 1 is Nyquist.
+    per_line : bool
+        Smooth each channel line separately with the hopes of avoiding
+        edge discontinuities.
+    mask : bool image or None
+        An image mask of pixels to ignore. Should be same size as im_arr.
+        This can be used to mask pixels that the filter should ignore, 
+        such as stellar sources or pixel outliers.
+    """
+
+    from scipy.signal import butter, filtfilt, savgol
+
+    sh = im_arr.shape
+    if len(sh)==2:
+        nz = 1
+        ny, chsize = sh
+    else:
+        nz, ny, chsize = sh
+
+    # Reshape in case of nz=1
+    im_arr = im_arr.reshape([nz, -1])
+
+    res_arr = []
+    b, a = butter(order, freq, btype='lowpass', analog=False)
+    for i, im in enumerate(im_arr):
+        # im should be a 1D array
+
+        # Interpolate over masked data and NaN's
+        # Replace masked pixels with linear interpolation
+        nans = np.isnan(im)
+        im_mask = nans if mask is None else nans | mask[i].flatten()
+        if im_mask.any():
+            # Create a copy so as to not change the original data
+            im = np.copy(im)
+
+            # Use a savgol filter to smooth out any outliers
+            res = im.copy()
+            res[~im_mask] = savgol_filter(im[~im_mask], 31, 3, mode='interp')
+
+            # Replace masked pixels with linear interpolation
+            x = mask_helper() # Returns the nonzero (True) indices of a mask
+            im[im_mask]= np.interp(x(im_mask), x(~im_mask), res[~im_mask])
+
+        # Do filter line-by-line
+        if per_line:
+            im = im.reshape([ny,-1])
+
+            res_lines = []
+            for line in im:
+                res = filtfilt(b, a, line)
+                res_lines.append(res)
+            res_lines = np.array(res_lines)
+            res_arr.append(res_lines.reshape([ny,-1]))
+        else:
+            res = filtfilt(b, a, im)
+            res_arr.append(res.reshape([ny,-1]))
+
+    return np.array(res_arr).squeeze()
+
+
+
