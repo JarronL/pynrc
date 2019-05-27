@@ -329,8 +329,14 @@ class HXRGNoise:
         self.f2 = np.fft.rfftfreq(2*self.nstep2) # ... for 2*nstep elements
         self.f3 = np.fft.rfftfreq(2*self.naxis3)
 
+        # First element should not be 0
+        self.f1[0] = self.f1[1]
+        self.f2[0] = self.f2[1]
+        self.f3[0] = self.f3[1]
+
         # Define pinkening filters. F1 and p_filter1 are used to
         # generate ACN. F2 and p_filter2 are used to generate 1/f noise.
+        # F2 and p_filter2 are used to generate reference instabilities.
         self.alpha = -1 # Hard code for 1/f noise until proven otherwise
         self.p_filter1 = np.sqrt(self.f1**self.alpha)
         self.p_filter2 = np.sqrt(self.f2**self.alpha)
@@ -449,13 +455,15 @@ class HXRGNoise:
         """
         return(np.random.standard_normal(nstep))    
 
-    def pink_noise(self, mode):
+    def pink_noise(self, mode, fmin=None):
         """Generate a vector of non-periodic pink noise.
 
         Parameters
         ----------
         mode : str
             Selected from 'pink', 'acn', or 'ref_inst'.
+        fmin : float, optional
+            Low-frequency cutoff. A value of 0 means no cut-off.
         """
 
         # Configure depending on mode setting
@@ -476,39 +484,71 @@ class HXRGNoise:
             p_filter = self.p_filter3
 
         # Generate seed noise
-        mynoise = self.white_noise(nstep2)
+        # mynoise = self.white_noise(nstep2)
 
         # Save the mean and standard deviation of the first half.
         # These are restored later. We do not subtract the mean here.
         # This happens when we multiply the FFT by the pinkening filter
         # which has no power at f=0.
-        the_mean = np.mean(mynoise[:nstep2//2])
-        the_std = np.std(mynoise[:nstep2//2])
+        # the_mean = np.mean(mynoise[:nstep2//2])
+        # the_std = np.std(mynoise[:nstep2//2])
+
+        # Build scaling factors for all frequencies
+        fmin = 1./nstep2 if fmin is None else np.max([fmin, 1./nstep2])
+        # fmin = np.max([fmin, 1./nstep2])
+        ix  = np.sum(f < fmin)   # Index of the cutoff
+        if ix > 1 and ix < len(f):
+            f = f.copy()
+            p_filter = p_filter.copy()
+            f[:ix] = f[ix]
+            p_filter[:ix] = p_filter[ix]
+
+        # Calculate theoretical output standard deviation from scaling
+        w = p_filter[1:-1]
+        w_last = p_filter[-1] * (1 + (nstep2 % 2)) / 2. # correct f = +-0.5
+        the_std = 2 * np.sqrt(np.sum(w**2) + w_last**2) / nstep2
+        # the_mean = 0.0
+
+        # Generate scaled random power + phase
+        sr = np.random.normal(scale=p_filter)
+        si = np.random.normal(scale=p_filter)
+
+        # If the signal length is even, frequencies +/- 0.5 are equal
+        # so the coefficient must be real.
+        if (nstep2 % 2) == 0: 
+            si[-1] = 0
+
+        # Regardless of signal length, the DC component must be real
+        si[0] = 0
+
+        # Combine power + corrected phase to Fourier components
+        thefft  = sr + 1J * si
 
         #p0 = time.time()
         # Apply the pinkening filter.
         if self.use_fftw:
-            thefft = pyfftw.interfaces.numpy_fft.rfft(mynoise, overwrite_input=True, \
-                planner_effort='FFTW_ESTIMATE', threads=self.ncores)
-            del mynoise
-            thefft = np.multiply(thefft, p_filter)
+            # thefft = pyfftw.interfaces.numpy_fft.rfft(mynoise, overwrite_input=True, \
+            #     planner_effort='FFTW_ESTIMATE', threads=self.ncores)
+            # del mynoise
+            # thefft = np.multiply(thefft, p_filter)
             result = pyfftw.interfaces.numpy_fft.irfft(thefft, overwrite_input=True,\
                 planner_effort='FFTW_ESTIMATE', threads=self.ncores)
         else:
-            thefft = np.fft.rfft(mynoise)
-            del mynoise
-            thefft = np.multiply(thefft, p_filter)
+            # thefft = np.fft.rfft(mynoise)
+            # del mynoise
+            # thefft = np.multiply(thefft, p_filter)
             result = np.fft.irfft(thefft)
+
         #p1 = time.time()
         #print("FFT and IFFT took",p1-p0," seconds")
 
-        # Keep 1st half of nstep
-        result = result[:nstep//2] 
+        # Keep 1st half of nstep and scale to unit variance
+        result = result[:nstep//2] / the_std
 
-        # Restore the mean and standard deviation
-        result *= the_std / np.std(result)
-        result -= np.mean(result)
-        result += the_mean
+        # Set mean and stdev to 0.0 and 1.0
+        # result *= the_std / np.std(result)
+        # result -= np.mean(result)
+        # result += the_mean
         #result = result - np.mean(result) + the_mean
   
         # Done
