@@ -65,6 +65,9 @@ def medabsdev(data, axis=None, keepdims=False, nan=True):
     """
     medfunc = np.nanmedian if nan else np.median
     meanfunc = np.nanmean if nan else np.mean
+
+    if (axis is None) and (keepdims==False):
+        data = data.ravel()
     
     # Scale factor to return result equivalent to standard deviation.
     sig_scale = 0.6744897501960817
@@ -146,15 +149,43 @@ def biweightMean(inputData, axis=None, dtype=None, iterMax=25):
     return y0
 
 
-def mean(inputData, Cut=3.0, axis=None, dtype=None, keepdims=False, return_std=False):
+def mean(inputData, Cut=3.0, axis=None, dtype=None, keepdims=False, 
+    return_std=False, return_mask=False):
     """Robust Mean
     
-    Robust estimator of the mean of a data set.  Based on the 
-    resistant_mean function from the AstroIDL User's Library.
+    Robust estimator of the mean of a data set. Based on the `resistant_mean` 
+    function from the AstroIDL User's Library. NaN values are excluded.
 
-    RESISTANT_Mean trims away outliers using the median and the median 
+    This function trims away outliers using the median and the median 
     absolute deviation. An approximation formula is used to correct for
     the truncation caused by trimming away outliers.
+
+    Parameters
+    ==========
+    inputData : ndarray
+        The input data.
+
+    Keyword Args
+    ============
+    Cut : float
+        Sigma for rejection; default is 3.0.
+    axis : None or int or tuple of ints, optional
+        Axis or axes along which the deviation is computed. The
+        default is to compute the deviation of the flattened array.
+        
+        If this is a tuple of ints, a standard deviation is performed over
+        multiple axes, instead of a single axis or all the axes as before.
+        This is the equivalent of reshaping the input data and then taking
+        the standard devation.
+    keepdims : bool, optional
+        If this is set to True, the axes which are reduced are left
+        in the result as dimensions with size one. With this option,
+        the result will broadcast correctly against the original `arr`.
+    return_std : bool
+        Also return the std dev calculated using only the "good" data?
+    return_mask : bool
+        If set to True, then return only boolean array of good (1) and 
+        rejected (0) values.
 
     """
 
@@ -195,7 +226,8 @@ def mean(inputData, Cut=3.0, axis=None, dtype=None, keepdims=False, return_std=F
     data_naned = data.copy()
     data_naned[~good] = np.nan
     dataMean = np.nanmean(data_naned, axis=axis, keepdims=True)
-    dataSigma = np.nanstd(data_naned, axis=axis, keepdims=True) #np.sqrt( np.nansum((data_naned-dataMean)**2.0) / len(good) )
+    dataSigma = np.nanstd(data_naned, axis=axis, keepdims=True)
+    #dataSigma = np.sqrt( np.nansum((data_naned-dataMean)**2.0) / len(good) )
 
     # Calculate sigma
     if Cut > 1.0:
@@ -208,6 +240,10 @@ def mean(inputData, Cut=3.0, axis=None, dtype=None, keepdims=False, return_std=F
 
     cutOff = Cut*dataSigma
     good = absdiff <= cutOff
+
+    if return_mask:
+        return ~np.isnan(data_naned)
+
     data_naned = data.copy()
     data_naned[~good] = np.nan
     dataMean = np.nanmean(data_naned, axis=axis, keepdims=True)
@@ -343,7 +379,7 @@ def mode(inputData, axis=None, dtype=None):
     
     return dataMode
 
-def std(inputData, Zero=False, axis=None, dtype=None, keepdims=False):
+def std(inputData, Zero=False, axis=None, dtype=None, keepdims=False, return_mask=False):
     """Robust Sigma
     
     Based on the robust_sigma function from the AstroIDL User's Library.
@@ -354,6 +390,30 @@ def std(inputData, Zero=False, axis=None, dtype=None, keepdims=False):
     points using Tukey's Biweight. See, for example, "Understanding Robust
     and Exploratory Data Analysis," by Hoaglin, Mosteller and Tukey, John
     Wiley & Sons, 1983, or equation 9 in Beers et al. (1990, AJ, 100, 32).
+
+    Parameters
+    ==========
+    inputData : ndarray
+        The input data.
+
+    Keyword Args
+    ============
+    axis : None or int or tuple of ints, optional
+        Axis or axes along which the deviation is computed. The
+        default is to compute the deviation of the flattened array.
+        
+        If this is a tuple of ints, a standard deviation is performed over
+        multiple axes, instead of a single axis or all the axes as before.
+        This is the equivalent of reshaping the input data and then taking
+        the standard devation.
+    keepdims : bool, optional
+        If this is set to True, the axes which are reduced are left
+        in the result as dimensions with size one. With this option,
+        the result will broadcast correctly against the original `arr`.
+    return_mask : bool
+        If set to True, then only return boolean array of good (1) and 
+        rejected (0) values.
+
 	"""
 
     inputData = np.array(inputData)
@@ -395,11 +455,14 @@ def std(inputData, Zero=False, axis=None, dtype=None, keepdims=False):
     u = (data-data0) / (6.0 * medAbsDev)
     u2 = u**2.0
     good = u2 <= 1.0
+
+    if return_mask:
+        return good & ~np.isnan(data)
     
     # These values will be set to NaN later
     # if fewer than 3 good points to calculate stdev
     ngood = good.sum(axis=axis, keepdims=True)
-    mask_nan = ngood < 3
+    mask_nan = ngood < 2
     if mask_nan.sum() > 0:
         print("WARNING: NaN's will be present due to weird distributions")
     
