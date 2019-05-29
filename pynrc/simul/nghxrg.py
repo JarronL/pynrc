@@ -483,19 +483,8 @@ class HXRGNoise:
             f = self.f3
             p_filter = self.p_filter3
 
-        # Generate seed noise
-        # mynoise = self.white_noise(nstep2)
-
-        # Save the mean and standard deviation of the first half.
-        # These are restored later. We do not subtract the mean here.
-        # This happens when we multiply the FFT by the pinkening filter
-        # which has no power at f=0.
-        # the_mean = np.mean(mynoise[:nstep2//2])
-        # the_std = np.std(mynoise[:nstep2//2])
-
         # Build scaling factors for all frequencies
         fmin = 1./nstep2 if fmin is None else np.max([fmin, 1./nstep2])
-        # fmin = np.max([fmin, 1./nstep2])
         ix  = np.sum(f < fmin)   # Index of the cutoff
         if ix > 1 and ix < len(f):
             f = f.copy()
@@ -507,7 +496,6 @@ class HXRGNoise:
         w = p_filter[1:-1]
         w_last = p_filter[-1] * (1 + (nstep2 % 2)) / 2. # correct f = +-0.5
         the_std = 2 * np.sqrt(np.sum(w**2) + w_last**2) / nstep2
-        # the_mean = 0.0
 
         # Generate scaled random power + phase
         sr = np.random.normal(scale=p_filter)
@@ -527,16 +515,9 @@ class HXRGNoise:
         #p0 = time.time()
         # Apply the pinkening filter.
         if self.use_fftw:
-            # thefft = pyfftw.interfaces.numpy_fft.rfft(mynoise, overwrite_input=True, \
-            #     planner_effort='FFTW_ESTIMATE', threads=self.ncores)
-            # del mynoise
-            # thefft = np.multiply(thefft, p_filter)
             result = pyfftw.interfaces.numpy_fft.irfft(thefft, overwrite_input=True,\
                 planner_effort='FFTW_ESTIMATE', threads=self.ncores)
         else:
-            # thefft = np.fft.rfft(mynoise)
-            # del mynoise
-            # thefft = np.multiply(thefft, p_filter)
             result = np.fft.irfft(thefft)
 
         #p1 = time.time()
@@ -544,14 +525,7 @@ class HXRGNoise:
 
         # Keep 1st half of nstep and scale to unit variance
         result = result[:nstep//2] / the_std
-
-        # Set mean and stdev to 0.0 and 1.0
-        # result *= the_std / np.std(result)
-        # result -= np.mean(result)
-        # result += the_mean
-        #result = result - np.mean(result) + the_mean
   
-        # Done
         return(result)
 
 

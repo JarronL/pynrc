@@ -418,7 +418,7 @@ class NIRCam(object):
         self._grism = ['GRISM0', 'GRISM90']
         # Weak lens are only in SW pupil wheel (+4 in filter wheel)
         weak_lens = ['+4', '+8', '-8', '+12 (=4+8)', '-4 (=4-8)']
-        self._weak_lens = ['WEAK LENS '+s for s in weak_lens]	
+        self._weak_lens = ['WEAK LENS '+s for s in weak_lens]
 
         # Specify ice and nvr scalings
         self._ice_scale = kwargs['ice_scale'] if 'ice_scale' in kwargs.keys() else None
@@ -461,7 +461,11 @@ class NIRCam(object):
                           'WLM4' :'WEAK LENS -4 (=4-8)',
                           'WLM8' :'WEAK LENS -8'}
                 pupil = wl_alt.get(pupil, pupil)
-
+            # Pair F200W throughput with WL+4
+            # The F212N2 throughput is then handled in read_filter() function 
+            wl_list = ['WEAK LENS +12 (=4+8)', 'WEAK LENS -4 (=4-8)', 'WEAK LENS +4']
+            if (pupil in wl_list) and (filter!='F200W'):
+                filter = 'F200W'
 
             # Validate all values, set values, and update bandpass
             # Test and set the intrinsic/hidden variables directly rather than through setters
@@ -875,9 +879,12 @@ class NIRCam(object):
                     det_list = [485]
                 elif (self.mask is None) and ('CLEAR' in self.pupil): # SW A Imaging
                     det_list = [481] #[481,482,483,484]
-                elif ('WB' in self.mask) or ('WEDGELYOT' in self.pupil): # SW A Bar coronagraph
+                elif (self.mask is None) and ('WEAK' in self.pupil): # Weak Lens
+                    det_list = [481] #[481,482,483,484]
+                elif ('WEDGELYOT' in self.pupil) or ((self.mask is not None) and ('WB' in self.mask)):
+                    # SW A Bar coronagraph
                     det_list = [484]
-                elif ('210R' in self.mask) or ('335R' in self.mask) or ('CIRCLYOT' in self.pupil):
+                elif ('CIRCLYOT' in self.pupil) or ((self.mask is not None) and (('210R' in self.mask) or ('335R' in self.mask))):
                     det_list = [482]
                 else:
                     errmsg = 'No detector makes sense here ({} {} {}).'\
@@ -889,9 +896,11 @@ class NIRCam(object):
                     det_list = [490]
                 elif (self.mask is None) and ('CLEAR' in self.pupil):
                     det_list = [486] #[486,487,488,489]
-                elif ('WB' in self.mask) or ('WEDGELYOT' in self.pupil):
+                elif (self.mask is None) and ('WEAK' in self.pupil): # Weak Lens
+                    det_list = [486] #[486,487,488,489]
+                elif ('WEDGELYOT' in self.pupil) or ((self.mask is not None) and ('WB' in self.mask)):
                     det_list = [488]
-                elif ('210R' in self.mask) or ('335R' in self.mask) or ('CIRCLYOT' in self.pupil):
+                elif ('CIRCLYOT' in self.pupil) or ((self.mask is not None) and (('210R' in self.mask) or ('335R' in self.mask))):
                     det_list = [486]
                 else:
                     errmsg = 'No detector makes sense here ({} {} {}).'\
@@ -1003,11 +1012,11 @@ class NIRCam(object):
             wstr = '{} mask is no visible in SW module (filter is {})'.format(mask,filter)
             do_warn(wstr)
 
-        # WEAK LENS +4 only valid with F212N
-        # Or is is F210M???
+        # Ned F200W paired with WEAK LENS +4
+        # The F212N2 filter is handled in the read_filter function
         wl_list = ['WEAK LENS +12 (=4+8)', 'WEAK LENS -4 (=4-8)', 'WEAK LENS +4']
-        if (pupil in wl_list) and (filter!='F212N'):
-            wstr = '{} is only valid with filter F212N.'.format(pupil)
+        if (pupil in wl_list) and (filter!='F200W'):
+            wstr = '{} is only valid with filter F200W.'.format(pupil)
             do_warn(wstr)
 
         # Items in the same SW pupil wheel
