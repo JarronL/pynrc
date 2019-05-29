@@ -833,7 +833,7 @@ class HXRGNoise:
 
                 # By default fast-scan readout direction is [-->,<--,-->,<--]
                 # If reverse_scan_direction is True, then [<--,-->,<--,-->]
-                # Would be nice to include option for all --> or all <--
+                # TODO: Include option for all --> or all <--
                 modnum = 1 if self.reverse_scan_direction else 0
                 if np.mod(op,2) == modnum:
                     #self.c_pink_map[:,:,x0:x1] = tt

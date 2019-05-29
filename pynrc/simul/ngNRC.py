@@ -465,7 +465,7 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
         return outHDU
 
 
-def ipc_convolve(im, alpha_min=0.0065, alpha_max=None, kernel=None):
+def add_ipc(im, alpha_min=0.0065, alpha_max=None, kernel=None):
     """Convolve image with IPC kernel
     
     Given an image in electrons, apply IPC convolution
@@ -489,17 +489,17 @@ def ipc_convolve(im, alpha_min=0.0065, alpha_max=None, kernel=None):
     ========
     Constant Kernel
 
-        >>> im_ipc = ipc_convolve(im, alpha_min=0.0065)
+        >>> im_ipc = add_ipc(im, alpha_min=0.0065)
 
     Constant Kernel (manual)
 
         >>> alpha = 0.0065
         >>> k = np.array([[0,alpha,0], [alpha,1-4*alpha,alpha], [0,alpha,0]])
-        >>> im_ipc = ipc_convolve(im, kernel=k)
+        >>> im_ipc = add_ipc(im, kernel=k)
 
     Signal-dependent Kernel
 
-        >>> im_ipc = ipc_convolve(im, alpha_min=0.0065, alpha_max=0.0145)
+        >>> im_ipc = add_ipc(im, alpha_min=0.0065, alpha_max=0.0145)
 
     """
 
@@ -521,8 +521,8 @@ def ipc_convolve(im, alpha_min=0.0065, alpha_max=None, kernel=None):
     
         if kernel is None:
             kernel = np.array([[0.0, alpha_min, 0.0],
-                              [alpha_min, 1.-4*alpha_min, alpha_min],
-                              [0.0, alpha_min, 0.0]])
+                               [alpha_min, 1.-4*alpha_min, alpha_min],
+                               [0.0, alpha_min, 0.0]])
     
         # Convolve IPC kernel with images
         im_ipc = convolve(im_reshape, kernel).reshape(im_pad.shape)
@@ -559,3 +559,61 @@ def ipc_convolve(im, alpha_min=0.0065, alpha_max=None, kernel=None):
 
     # Trim excess
     return im_ipc[:,1:-1,1:-1].squeeze()
+    
+    
+def add_ppc(im, ppc_frac=0.002, nchans=4, 
+    same_scan_direction=False, reverse_scan_direction=False,
+    in_place=False):
+    """ Add Post-Pixel Coupling (PPC)
+    
+    This effect is due to the incomplete settling of the analog
+    signal when the ADC sample-and-hold pulse occurs. The measured
+    signals for a given pixel will have a value that has not fully
+    transitioned to the real analog signal. Mathematically, this
+    can be treated in the same way as IPC, but with a different
+    convolution kernel.
+    
+    Parameters
+    ==========
+    im : Image or array of images
+    
+    same_scan_direction : bool
+        Are all the output channels read in the same direction?
+        By default fast-scan readout direction is ``[-->,<--,-->,<--]``
+        If ``same_scan_direction``, then all ``-->``
+    reverse_scan_direction : bool
+        If ``reverse_scan_direction``, then ``[<--,-->,<--,-->]`` or all ``<--``
+    """
+
+                       
+    sh = im.shape
+    ndim = len(sh)
+    if ndim==2:
+        im = im.reshape([1,sh[0],sh[1]])
+        sh = im.shape
+
+    nz, ny, nx = im.shape
+    chsize = nx // nchans
+    
+    # Do each channel separately
+    kernel = np.array([[0.0, 0.0, 0.0],
+                       [0.0, 1.0-ppc_frac, ppc_frac],
+                       [0.0, 0.0, 0.0]])
+                       
+    res = im if in_place else im.copy()
+    for ch in np.arange(nchans):
+        if same_scan_direction:
+            k = kernel if reverse_scan_direction else kernel[:,::-1]
+        elif np.mod(ch,2)==0:
+            k = kernel if reverse_scan_direction else kernel[:,::-1]
+        else:
+            k = kernel[:,::-1] if reverse_scan_direction else kernel
+
+        x1 = chsize*ch
+        x2 = x1 + chsize
+        res[:,:,x1:x2] = add_ipc(im[:,:,x1:x2], kernel=kernel)
+    
+                      
+    return res.squeeze()
+
+
