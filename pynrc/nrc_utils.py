@@ -238,6 +238,7 @@ def read_filter(filter, pupil=None, mask=None, module=None, ND_acq=False,
     filt_dir = conf.PYNRC_PATH + 'throughputs/'
     filt_file = filter + '_nircam_plus_ote_throughput_mod' + m + '_sorted.txt'
     bp = S.FileBandpass(filt_dir+filt_file)
+    bp_name = filter
 
     _log.debug('Reading file: '+filt_file)
 
@@ -271,7 +272,7 @@ def read_filter(filter, pupil=None, mask=None, module=None, ND_acq=False,
 
         # Multiply filter throughput by grism
         th_new = th_grism * bp.throughput
-        bp = S.ArrayBandpass(bp.wave, th_new, name=filter)
+        bp = S.ArrayBandpass(bp.wave, th_new)
 
         # spectral resolution in um/pixel
         # res is in pixels/um and dw is inverse
@@ -295,7 +296,7 @@ def read_filter(filter, pupil=None, mask=None, module=None, ND_acq=False,
 
         # Multiply filter throughput by DHS
         th_new = th_dhs * bp.throughput
-        bp = S.ArrayBandpass(bp.wave, th_new, name=filter)
+        bp = S.ArrayBandpass(bp.wave, th_new)
 
         # Mean spectral dispersion (dw/pix)
         res = 290.0
@@ -348,7 +349,7 @@ def read_filter(filter, pupil=None, mask=None, module=None, ND_acq=False,
         # Interpolate substrate transmission onto filter wavelength grid and multiply
         th_coron_sub = np.interp(bp.wave/1e4, wtemp, ttemp, left=0, right=0)
         th_new = th_coron_sub * bp.throughput
-        bp = S.ArrayBandpass(bp.wave, th_new, name=filter)
+        bp = S.ArrayBandpass(bp.wave, th_new)
 
 
     # Lyot stop wedge modifications
@@ -394,23 +395,47 @@ def read_filter(filter, pupil=None, mask=None, module=None, ND_acq=False,
             th_wedge = np.interp(bp.wave/1e4, wtemp, ttemp, left=0, right=0)
 
         th_new = th_wedge * bp.throughput
-        bp = S.ArrayBandpass(bp.wave, th_new, name=filter)
+        bp = S.ArrayBandpass(bp.wave, th_new, name=bp.name)
 
 
     # Weak Lens substrate transmission
-    if (pupil is not None) and ('WEAK LENS' in pupil):
-        # Even though this says WL+8, this should work for all lenses
+    if (pupil is not None) and (('WL' in pupil) or ('WEAK LENS' in pupil)):
+
+        if 'WL' in pupil:
+            wl_alt = {'WLP4' :'WEAK LENS +4', 
+                      'WLP8' :'WEAK LENS +8', 
+                      'WLP12':'WEAK LENS +12 (=4+8)', 
+                      'WLM4' :'WEAK LENS -4 (=4-8)',
+                      'WLM8' :'WEAK LENS -8'}
+            wl_name = wl_alt.get(pupil, pupil)
+        else:
+            wl_name = pupil
+
+        # Throughput for WL+4
+        hdulist = fits.open(conf.PYNRC_PATH + 'throughputs/jwst_nircam_wlp4.fits')
+        wtemp = hdulist[1].data['WAVELENGTH']
+        ttemp = hdulist[1].data['THROUGHPUT']
+        th_wl4 = np.interp(bp.wave/1e4, wtemp, ttemp, left=0, right=0)
+
+        # Throughput for WL+/-8
         hdulist = fits.open(conf.PYNRC_PATH + 'throughputs/jwst_nircam_wlp8.fits')
         wtemp = hdulist[1].data['WAVELENGTH']
         ttemp = hdulist[1].data['THROUGHPUT']
+        th_wl8 = np.interp(bp.wave/1e4, wtemp, ttemp, left=0, right=0)
 
-        # If two lenses, then we need to multiply throughput twice
-        wl_list = ['WEAK LENS +12 (=4+8)', 'WEAK LENS -4 (=4-8)']
-        pow = 2 if pupil in wl_list else 1
-
-        th_wl = np.interp(bp.wave/1e4, wtemp, ttemp, left=0, right=0)
-        th_new = th_wl**pow * bp.throughput
-        bp = S.ArrayBandpass(bp.wave, th_new, name=filter)
+        # If two lenses
+        wl48_list = ['WEAK LENS +12 (=4+8)', 'WEAK LENS -4 (=4-8)']
+        if (wl_name in wl48_list):
+            th_wl = th_wl4 * th_wl8
+            bp_name = 'F212N'
+        elif 'WEAK LENS +4' in wl_name:
+            th_wl = th_wl4
+            bp_name = 'F212N'
+        else:
+            th_wl = th_wl8
+            
+        th_new = th_wl * bp.throughput
+        bp = S.ArrayBandpass(bp.wave, th_new)
 
 
     # Water ice and NVR additions (for LW channel only)
@@ -446,7 +471,7 @@ def read_filter(filter, pupil=None, mask=None, module=None, ND_acq=False,
             th_new = th_nvr * th_new
 
         # Create new bandpass
-        bp = S.ArrayBandpass(bp.wave, th_new, name=filter)
+        bp = S.ArrayBandpass(bp.wave, th_new)
 
 
     # Resample to common dw to ensure consistency
@@ -459,7 +484,7 @@ def read_filter(filter, pupil=None, mask=None, module=None, ND_acq=False,
     # Need to place zeros at either end so Pysynphot doesn't extrapolate
     warr = np.concatenate(([bp.wave.min()-dw],bp.wave,[bp.wave.max()+dw]))
     tarr = np.concatenate(([0],bp.throughput,[0]))
-    bp   = S.ArrayBandpass(warr, tarr, name=filter)
+    bp   = S.ArrayBandpass(warr, tarr, name=bp_name)
 
     return bp
 
