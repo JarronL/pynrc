@@ -1,7 +1,7 @@
 from __future__ import division, print_function, unicode_literals
 
 from astropy.convolution import convolve, convolve_fft
-from astropy.convolution import Gaussian1DKernel#, Gaussian2DKernel
+from astropy.convolution import Gaussian1DKernel, Gaussian2DKernel
 from scipy.ndimage.interpolation import rotate
 from scipy import fftpack
 from copy import deepcopy
@@ -509,7 +509,7 @@ class obs_hci(nrc_hci):
             hdr = disk_hdul[0].header
 
             # Get rid of the central star flux
-            # and anything interior to a few pixls
+            # and anything interior to a few pixels
             image = disk_hdul[0].data
             image_rho = dist_image(image)
             image[image_rho < 4] = 0
@@ -605,7 +605,7 @@ class obs_hci(nrc_hci):
             Initial entropy (8.0-13.0) in increments of 0.25
 
         accr : bool
-            Include accretion (default: False)?
+            Include accretion? Default: False.
         mmdot : float
             From Zhu et al. (2015), the Mjup^2/yr value.
             If set to None then calculated from age and mass.
@@ -675,7 +675,7 @@ class obs_hci(nrc_hci):
             What are the spatial units? Valid values are 'AU', 'asec', or 'pix'.
 
         accr : bool
-            Include accretion (default: False)?
+            Include accretion? default: False
         mmdot : float
             From Zhu et al. (2015), the Mjup^2/yr value.
             If set to None then calculated from age and mass.
@@ -1552,6 +1552,10 @@ class obs_hci(nrc_hci):
             if oversample != 1:
                 im_roll1 = frebin(im_roll1, scale=oversample)
                 im_roll2 = frebin(im_roll2, scale=oversample)
+            if oversample>1:
+                kernel = Gaussian2DKernel(0.5*oversample)
+                im_roll1 = convolve_fft(im_roll1, kernel, allow_huge=True)
+                im_roll2 = convolve_fft(im_roll2, kernel, allow_huge=True)
 
             diff_r1 = im_roll1 - im_roll2
             diff_r2 = -1 * diff_r1
@@ -1604,7 +1608,11 @@ class obs_hci(nrc_hci):
         if oversample != 1:
             im_ref   = frebin(im_ref, scale=oversample)
             im_roll1 = frebin(im_roll1, scale=oversample)
-
+        if oversample>1:
+            kernel = Gaussian2DKernel(0.5*oversample)
+            im_ref = convolve_fft(im_ref, kernel, allow_huge=True)
+            im_roll1 = convolve_fft(im_roll1, kernel, allow_huge=True)
+                    
         # Telescope Roll 2 with reference subtraction
         if (abs(roll_angle) > eps):
             # Subtraction with and without scaling
@@ -1642,6 +1650,10 @@ class obs_hci(nrc_hci):
             _log.debug('scale2: {0:.3f}'.format(scale2))
             if oversample != 1:
                 im_roll2 = frebin(im_roll2, scale=oversample)
+            if oversample>1:
+                kernel = Gaussian2DKernel(0.5*oversample)
+                im_roll2 = convolve_fft(im_roll2, kernel, allow_huge=True)
+                
             # Subtraction with and without scaling
             im_diff1_r2 = im_roll2 - im_ref
             im_diff2_r2 = im_roll2 - im_ref * scale2
@@ -1933,6 +1945,10 @@ class obs_hci(nrc_hci):
     def gen_slope_image(self, PA=0, exclude_disk=False, exclude_planets=False,
         exclude_noise=False, zfact=None, do_ref=False, im_star=None, **kwargs):
         """Create slope image of observation
+        
+        Beware that stellar position (centered on a pixel) will likely not
+        fall in the exact center of the slope image (between pixel borders)
+        because images are generally even while psf_fovs may be odd.
 
         Parameters
         ----------
@@ -1953,6 +1969,7 @@ class obs_hci(nrc_hci):
         im_star : ndarray or None
             Pass a precomputed slope image of the stellar source already
             positioned at it's correct location.
+        
 
         Keyword Args
         ------------
@@ -2138,7 +2155,7 @@ def model_to_hdulist(args_model, sp_star, filter_or_bp,
     ----------
     args_model - tuple
         Arguments describing the necessary model information:
-            - fname   : Name of model file
+            - fname   : Name of model file or an HDUList
             - scale0  : Pixel scale (in arcsec/pixel)
             - dist0   : Assumed model distance
             - wave_um : Wavelength of observation
@@ -2181,25 +2198,31 @@ def model_to_hdulist(args_model, sp_star, filter_or_bp,
 
     #### Read in the image, then convert from mJy/arcsec^2 to photons/sec/pixel
 
-    # Open file
-    hdulist = fits.open(fname)
-    #data    = hdulist[0].data#.copy()
-    #header  = hdulist[0].header
-    #hdutemp.close()
+    if isinstance(fname, fits.HDUList):
+        hdulist = deepcopy(fname)
+    else:
+        # Open file
+        hdulist = fits.open(fname)
+        #data    = hdulist[0].data#.copy()
+        #header  = hdulist[0].header
+        #hdutemp.close()
 
     # Break apart units0
     units_list = units0.split('/')
-    if 'Jy' in units_list[0]:
-        units_pysyn = S.units.Jy()
     if 'mJy' in units_list[0]:
         units_pysyn = S.units.mJy()
-    if 'muJy' in units_list[0]:
+    elif 'uJy' in units_list[0]:
         units_pysyn = S.units.muJy()
-    if 'nJy' in units_list[0]:
+    elif 'nJy' in units_list[0]:
         units_pysyn = S.units.nJy()
-    if 'MJy' in units_list[0]:
+    elif 'MJy' in units_list[0]:
         hdulist[0].data *= 1000 # Convert to Jy
         units_pysyn = S.units.Jy()
+    elif 'Jy' in units_list[0]: # Jy should be last
+        units_pysyn = S.units.Jy()
+    else:
+        errstr = "Do not recognize units0='{}'".format(units0)
+        raise ValueError(errstr)
 
     # Convert from input units to photlam (photons/sec/cm^2/A/angular size)
     im = units_pysyn.ToPhotlam(wave0, hdulist[0].data)
@@ -2313,322 +2336,3 @@ def _wrap_conv_trans_for_mp(args):
 
         return res
 
-def plot_contrasts_mjup(curves, nsig, wfe_list, obs=None, age=100,
-    ax=None, colors=None, xr=[0,10], yr=None, file=None,
-    twin_ax=False, return_axes=False, **kwargs):
-    """Plot mass contrast curves
-
-    Plot a series of mass contrast curves for corresponding WFE drifts.
-
-    Parameters
-    ----------
-    curves : list
-        A list with length corresponding to `wfe_list`. Each list element
-        has three arrays in a tuple: the radius in arcsec, n-sigma contrast,
-        and n-sigma sensitivity limit (vega mag).
-    nsig : float
-        N-sigma limit corresponding to sensitivities/contrasts.
-    wfe_list : array-like
-        List of WFE drift values corresponding to each set of sensitivities
-        in `curves` argument.
-
-    Keyword Args
-    ------------
-    obs : :class:`obs_hci`
-        Corresponding observation class that created the contrast curves.
-        Uses distances and stellar magnitude to plot contrast and AU
-        distances on opposing axes. Also necessary for mjup=True.
-    age : float
-        Required for plotting limiting planet masses.
-    file : string
-        Location and name of COND file. See isochrones stored at
-        https://phoenix.ens-lyon.fr/Grids/.
-        Default is model.AMES-Cond-2000.M-0.0.JWST.Vega
-    ax : matplotlib.axes
-        Axes on which to plot curves.
-    colors : None, array-like
-        List of colors for contrast curves. Default is gradient of blues.
-    twin_ax : bool
-        Plot opposing axes in alternate units.
-    return_axes : bool
-        Return the matplotlib axes to continue plotting. If `obs` is set,
-        then this returns three sets of axes.
-
-    """
-    if ax is None:
-        fig, ax = plt.subplots()
-    if colors is None:
-        lin_vals = np.linspace(0.2,0.8,len(wfe_list))
-        colors = plt.cm.Blues_r(lin_vals)
-
-    # Grab COND model data
-    tbl = cond_table(age=age, file=file)
-    filt = obs.filter
-    mod = obs.module
-    dist = obs.distance
-    mass_data, mag_data = cond_filter(tbl, filt, module=mod, dist=dist)
-    isort = np.argsort(mag_data)
-
-    # Plot the data
-    for j, wfe_ref_drift in enumerate(wfe_list):
-        rr, contrast, mag_sens = curves[j]
-        label='$\Delta$' + "WFE = {} nm".format(wfe_list[j])
-#         yvals = np.interp(mag_sens, mag_data[isort], np.log10(mass_data[isort]))
-#         yvals = 10**yvals
-        cf = jl_poly_fit(mag_data[isort], np.log10(mass_data[isort]))
-        yvals = 10**jl_poly(mag_sens, cf)
-
-        ax.plot(rr, yvals, label=label, color=colors[j], zorder=1, lw=2)
-
-    if xr is not None: ax.set_xlim(xr)
-    if yr is not None: ax.set_ylim(yr)
-
-    ax.xaxis.get_major_locator().set_params(nbins=10, steps=[1, 2, 5, 10])
-    ax.yaxis.get_major_locator().set_params(nbins=10, steps=[1, 2, 5, 10])
-
-    ylabel = 'Mass Limits ($M_{\mathrm{Jup}}$)'
-    ax.set_ylabel(ylabel)
-    ax.set_xlabel('Separation (arcsec)')
-
-    if twin_ax:
-        # Plot opposing axes in alternate units
-        ax3 = ax.twiny()
-        xr3 = np.array(ax.get_xlim()) * obs.distance
-        ax3.set_xlim(xr3)
-        ax3.set_xlabel('Separation (AU)')
-
-        ax3.xaxis.get_major_locator().set_params(nbins=9, steps=[1, 2, 5, 10])
-
-        if return_axes:
-            return (ax, ax3)
-    else:
-        if return_axes:
-            return ax
-
-
-def plot_contrasts(curves, nsig, wfe_list, obs=None, ax=None,
-    colors=None, xr=[0,10], yr=[25,5], return_axes=False):
-    """Plot contrast curves
-
-    Plot a series of contrast curves for corresponding WFE drifts.
-
-    Parameters
-    ----------
-    curves : list
-        A list with length corresponding to `wfe_list`. Each list element
-        has three arrays in a tuple: the radius in arcsec, n-sigma contrast,
-        and n-sigma sensitivity limit (vega mag).
-    nsig : float
-        N-sigma limit corresponding to sensitivities/contrasts.
-    wfe_list : array-like
-        List of WFE drift values corresponding to each set of sensitivities
-        in `curves` argument.
-
-    Keyword Args
-    ------------
-    obs : :class:`obs_hci`
-        Corresponding observation class that created the contrast curves.
-        Uses distances and stellar magnitude to plot contrast and AU
-        distances on opposing axes.
-    ax : matplotlib.axes
-        Axes on which to plot curves.
-    colors : None, array-like
-        List of colors for contrast curves. Default is gradient of blues.
-    return_axes : bool
-        Return the matplotlib axes to continue plotting. If `obs` is set,
-        then this returns three sets of axes.
-
-    """
-    if ax is None:
-        fig, ax = plt.subplots()
-    if colors is None:
-        lin_vals = np.linspace(0.3,0.8,len(wfe_list))
-        colors = plt.cm.Blues_r(lin_vals)
-    for j, wfe_ref_drift in enumerate(wfe_list):
-        rr, contrast, mag_sens = curves[j]
-        label='$\Delta$' + "WFE = {} nm".format(wfe_list[j])
-        ax.plot(rr, mag_sens, label=label, color=colors[j], zorder=1, lw=2)
-
-    if xr is not None: ax.set_xlim(xr)
-    if yr is not None: ax.set_ylim(yr)
-
-
-    ax.xaxis.get_major_locator().set_params(nbins=10, steps=[1, 2, 5, 10])
-    ax.yaxis.get_major_locator().set_params(nbins=10, steps=[1, 2, 5, 10])
-
-    ax.set_ylabel('{:.0f}-$\sigma$ Sensitivities (mag)'.format(nsig))
-    ax.set_xlabel('Separation (arcsec)')
-
-    # Plot opposing axes in alternate units
-    if obs is not None:
-        yr1 = np.array(ax.get_ylim())
-        yr2 = 10**((obs.star_flux('vegamag') - yr1) / 2.5)
-        ax2 = ax.twinx()
-        ax2.set_yscale('log')
-        ax2.set_ylim(yr2)
-        ax2.set_ylabel('{:.0f}-$\sigma$ Contrast'.format(nsig))
-
-        ax3 = ax.twiny()
-        xr3 = np.array(ax.get_xlim()) * obs.distance
-        ax3.set_xlim(xr3)
-        ax3.set_xlabel('Separation (AU)')
-
-        ax3.xaxis.get_major_locator().set_params(nbins=9, steps=[1, 2, 5, 10])
-
-        if return_axes:
-            return (ax, ax2, ax3)
-    else:
-        if return_axes:
-            return ax
-
-
-def planet_mags(obs, age=10, entropy=13, mass_list=[10,5,2,1], av_vals=[0,25], atmo='hy3s',
-    cond=False, **kwargs):
-    """Exoplanet Magnitudes
-
-    Determine a series of exoplanet magnitudes for given observation.
-    By default, use Spiegel & Burrows 2012 models, but has the option
-    to use the COND models from https://phoenix.ens-lyon.fr/Grids.
-    These are useful because SB12 model grids only ranges from 1-1000 Myr
-    with masses 1-15 MJup.
-
-    cond : bool
-        Instead of plotting sensitivities, use COND models to plot the
-        limiting planet masses.
-    file : string
-        Location and name of COND file. See isochrones stored at
-        https://phoenix.ens-lyon.fr/Grids/.
-        Default is model.AMES-Cond-2000.M-0.0.JWST.Vega
-    """
-
-    if av_vals is None:
-        av_vals = [0,0]
-
-    pmag = {}
-    for i,m in enumerate(mass_list):
-        flux_list = []
-        for j,av in enumerate(av_vals):
-            sp = obs.planet_spec(mass=m, age=age, Av=av, entropy=entropy, atmo=atmo, **kwargs)
-            sp_obs = S.Observation(sp, obs.bandpass, binset=obs.bandpass.wave)
-            flux = sp_obs.effstim('vegamag')
-            flux_list.append(flux)
-        pmag[m] = tuple(flux_list)
-
-    # Do COND models instead
-    # But still want SB12 models to get A_V information
-    if cond:
-        # COND Table
-        tbl = cond_table(age=age, **kwargs)
-
-        # All mass and mag data for specified filter
-        filt = obs.filter
-        mod = obs.module
-        dist = obs.distance
-        mass_data, mag_data = cond_filter(tbl, filt, module=mod, dist=dist)
-
-        # Mag information for the requested masses
-#         mags0 = np.interp(np.log(mass_list), np.log(mass_data), mag_data)
-        cf = jl_poly_fit(np.log(mass_data), mag_data)
-        mags0 = jl_poly(np.log(mass_list), cf)
-    
-        # Apply extinction
-        for i, m in enumerate(mass_list):
-            if np.allclose(av_vals, 0):
-                dm = np.array([0,0])
-            else:
-                #SB12 at A_V=0
-                sp = obs.planet_spec(mass=m, age=age, Av=0, entropy=entropy, atmo=atmo, **kwargs)
-                sp_obs = S.Observation(sp, obs.bandpass, binset=obs.bandpass.wave)
-                sb12_mag = sp_obs.effstim('vegamag')
-
-                # Get magnitude offset due to extinction
-                dm = np.array(pmag[m]) - sb12_mag
-                dm2 = pmag[m][1] - sb12_mag
-
-            # Apply extinction to COND models
-            pmag[m] = tuple(mags0[i] + dm)
-
-    return pmag
-
-
-def plot_planet_patches(ax, obs, age=10, entropy=13, mass_list=[10,5,2,1], av_vals=[0,25],
-    cols=None, **kwargs):
-    """Plot exoplanet magnitudes in region corresponding to extinction values."""
-
-    import matplotlib.patches as mpatches
-
-    xlim = ax.get_xlim()
-
-
-    #lin_vals = np.linspace(0,0.5,4)
-    #cols = plt.cm.Purples_r(lin_vals)[::-1]
-    if cols is None:
-        cols = plt.cm.tab10(np.linspace(0,1,10))
-
-    dist = obs.distance
-
-    if entropy<8: entropy=8
-    if entropy>13: entropy=13
-
-    pmag = planet_mags(obs, age, entropy, mass_list, av_vals, **kwargs)
-    for i,m in enumerate(mass_list):
-        label = 'Mass = {} '.format(m) + '$M_{\mathrm{Jup}}$'
-        if av_vals is None:
-            ax.plot(xlim, pmag[m], color=cols[i], lw=1, ls='--', label=label)
-        else:
-            pm_min, pm_max = pmag[m]
-            rect = mpatches.Rectangle((xlim[0], pm_min), xlim[1], pm_max-pm_min,
-                                     alpha=0.2, color=cols[i], label=label, zorder=2)
-            ax.add_patch(rect)
-            ax.plot(xlim, [pm_min]*2, color=cols[i], lw=1, alpha=0.3)
-            ax.plot(xlim, [pm_max]*2, color=cols[i], lw=1, alpha=0.3)
-
-    entropy_switch = {13:'Hot', 8:'Cold'}
-    entropy_string = entropy_switch.get(entropy, "Warm")
-    ent_str = entropy_string + ' Start'
-
-    if av_vals is None:
-        av_str = ''
-    else:
-        av_str = ' ($A_V = [{:.0f},{:.0f}]$)'.format(av_vals[0],av_vals[1])
-    #age_str = 'Age = {:.0f} Myr; '.format(age)
-    #dist_str = 'Dist = {:.1f} pc; '.format(dist) if dist is not None else ''
-    #dist_str=""
-
-    #ax.set_title('{} -- {} ({}{}{})'.format(obs.filter,ent_str,age_str,dist_str,av_str))
-
-    #ax.set_title('{} -- {}{}'.format(obs.filter,ent_str,av_str))
-
-
-def plot_hdulist(hdulist, xr=None, yr=None, ax=None, return_ax=False,
-    cmap=None, scale='linear', vmin=None, vmax=None, axes_color='white'):
-
-    from webbpsf import display_psf
-
-    if ax is None:
-        fig, ax = plt.subplots()
-    if cmap is None:
-        cmap = matplotlib.rcParams['image.cmap']
-
-    data = hdulist[0].data
-    if vmax is None:
-        vmax = 0.75 * np.nanmax(data) if scale=='linear' else vmax
-    if vmin is None:
-        vmin = 0 if scale=='linear' else vmax/1e6
-
-    ax, cb = display_psf(hdulist, ax=ax, title='', colorbar=True, cmap=cmap,
-                         scale=scale, vmin=vmin, vmax=vmax, return_ax=True)
-    cb.set_label('counts/sec')
-
-    ax.set_xlim(xr)
-    ax.set_ylim(yr)
-    ax.set_xlabel('Arcsec')
-    ax.set_ylabel('Arcsec')
-
-
-    ax.tick_params(axis='both', color=axes_color, which='both')
-    for k in ax.spines.keys():
-        ax.spines[k].set_color(axes_color)
-
-    ax.xaxis.get_major_locator().set_params(nbins=9, steps=[1, 2, 5, 10])
-    ax.yaxis.get_major_locator().set_params(nbins=9, steps=[1, 2, 5, 10])

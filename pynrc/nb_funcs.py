@@ -9,11 +9,12 @@ import matplotlib.patches as mpatches
 
 from copy import deepcopy
 
-from .nrc_utils import S, stellar_spectrum, jupiter_spec, bp_2mass
-from .nrc_utils import dist_image, pad_or_cut_to_size
-from .nrc_utils import read_filter, channel_select, coron_ap_locs
+#from .nrc_utils import S, stellar_spectrum, jupiter_spec, cond_table, cond_filter
+#from .nrc_utils import read_filter, bp_2mass, channel_select, coron_ap_locs
+#from .nrc_utils import dist_image, pad_or_cut_to_size
+from .nrc_utils import *
 from .obs_nircam import model_to_hdulist, obs_hci
-from .obs_nircam import plot_contrasts, plot_contrasts_mjup, planet_mags, plot_planet_patches
+#from .obs_nircam import plot_contrasts, plot_contrasts_mjup, planet_mags, plot_planet_patches
 
 import logging
 _log = logging.getLogger('nb_funcs')
@@ -40,6 +41,7 @@ def make_key(filter, pupil=None, mask=None):
     return key
 
 
+# Disk Models
 def model_info(source, filt, dist):
     
     base_dir  = '/Volumes/NIRData/Andras_models_v2/'
@@ -62,6 +64,101 @@ def model_info(source, filt, dist):
     args_model = (model_dir+fname, model_scale, dist, w0, 'Jy/pixel')
 
     return args_model
+
+def disk_rim_model(a_asec, b_asec, pa=0, sig_asec=0.1, flux_frac=0.5,
+                   flux_tot=1.0, flux_units='mJy', wave_um=None, dist_pc=None,
+                   pixsize=0.007, fov_pix=401):
+    """
+    Simple geometric model of an inner disk rim that simply creates an
+    ellipsoidal ring with a brightness gradient along the major axis.
+    
+    Parameters
+    ----------
+    a_asec : float
+        Semi-major axis of ellipse
+    ba_asec : float
+        Semi-minor axis of ellipse
+        
+    Keyword Args
+    ------------
+    pa : float
+        Position angle of major axis
+    sig_asec : float
+        Sigma width of ring model
+    flux_frac : float
+        A brightness gradient can be applied along the semi-major axis. 
+        This parameter dictates the relative brightness of the minimum flux
+        (at the center of the axis) compared to the flux at the out edge
+        of the geometric ring.
+    flux_tot : float
+        The total integrated flux of disk model.
+    flux_units : str
+        Units corresponding to `flux_tot`.
+    wave_um : float or None
+        Wavelength (in um) corresponding to `flux_tot`. Saved in output
+        FITS header unless the value is None.
+    dist_pc : float or None
+        Assumed distance of model (in pc). Saved in output FITS header 
+        unless the value is None.
+    pixsize : float
+        Desired model pixel size in arcsec.
+    fov_pix : int
+        Number of pixels for x/y dimensions of output model data.
+    """
+    
+    
+    from astropy.modeling.models import Ellipse2D
+    from astropy.convolution import Gaussian2DKernel, convolve_fft
+    from astropy.io import fits
+
+    
+    # Get polar and cartesian pixel coordinate grid
+    sh = (fov_pix, fov_pix)
+    r_pix, th_ang = dist_image(np.ones(sh), return_theta=True)
+    x_pix, y_pix = rtheta_to_xy(r_pix, th_ang)
+    
+    # In terms of arcsec
+    x_asec = pixsize * x_pix
+    y_asec = pixsize * y_pix
+    r_asec = pixsize * r_pix
+    
+    # Semi major/minor axes (pix)
+    a_pix = a_asec / pixsize
+    b_pix = b_asec / pixsize
+
+    # Create ellipse functions
+    e1 = Ellipse2D(theta=0, a=a_pix+1, b=b_pix+1)
+    e2 = Ellipse2D(theta=0, a=a_pix-1, b=b_pix-1)
+    
+    # Make the two ellipse images and subtract
+    e1_im = e1(x_pix,y_pix)
+    e2_im = e2(x_pix,y_pix)
+    e_im = e1_im - e2_im
+
+    # Produce a brightness gradient along major axis
+    grad_im = (1-flux_frac) * np.abs(x_pix) / a_pix + flux_frac
+    e_im = e_im * grad_im
+    
+    # Convolve image with Gaussian to simulate scattering
+    sig_pix = sig_asec / pixsize
+    kernel = Gaussian2DKernel(sig_pix)
+    e_im = convolve_fft(e_im, kernel)
+
+    # Rotate
+    th_deg = pa - 90.
+    e_im = rotate_offset(e_im, angle=-th_deg, order=3, reshape=False)
+    
+    e_im = flux_tot * e_im / np.sum(e_im)
+    
+    hdu = fits.PrimaryHDU(e_im)
+    hdu.header['PIXELSCL'] = (pixsize, "Pixel Scale (asec/pix)")
+    hdu.header['UNITS'] = "{}/pixel".format(flux_units)
+    if wave_um is not None:
+        hdu.header['WAVE'] = (wave_um, "Wavelength (microns)")
+    if dist_pc is not None:
+        hdu.header['DISTANCE'] = (dist_pc, "Distance (pc)")
+        
+    return fits.HDUList([hdu])
 
 
 def obs_wfe(wfe_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None, 
@@ -259,7 +356,7 @@ def do_contrast(obs_dict, wfe_list, filt_keys, nsig=5, roll_angle=10, verbose=Tr
     return contrast_all
 
 
-def do_gen_hdus(obs_dict, filt_keys, wfe_ref_drift, verbose=True, **kwargs):
+def do_gen_hdus(obs_dict, filt_keys, wfe_ref_drift, wfe_roll_drift, verbose=True, **kwargs):
     
     """
     kwargs to pass to gen_roll_image() and their defaults:
@@ -270,8 +367,11 @@ def do_gen_hdus(obs_dict, filt_keys, wfe_ref_drift, verbose=True, **kwargs):
     oversample    = None
     exclude_disk  = False
     exclude_noise = False
+    no_ref        = False
     opt_diff      = True
     use_cmask     = False
+    ref_scale_all = False
+    quick_PSF     = True
     """
     
     hdulist_dict = {}
@@ -279,6 +379,7 @@ def do_gen_hdus(obs_dict, filt_keys, wfe_ref_drift, verbose=True, **kwargs):
         if verbose: print(key)
         obs = obs_dict[key]
         obs.wfe_ref_drift = wfe_ref_drift
+        obs.wfe_roll_drift = wfe_roll_drift
         hdulist = obs.gen_roll_image(**kwargs)
         
         hdulist_dict[key] = hdulist
@@ -316,45 +417,53 @@ def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True,
     nsat1_ref = len(ref_levels1[ref_mask1])
     nsat2_ref = len(ref_levels2[ref_mask2])
 
+    # Get saturation radius
+    if nsat1_sci == nsat1_ref == 0:
+        sat_rad = 0
+    else:
+        rho_asec = dist_image(sci_mask1, pixscale=obs.pix_scale)
+        sat_rad = rho_asec[sci_mask1].max()
+    
     if verbose:
-        print(obs.sp_sci.name)
-        print('{} saturated pixel at NGROUP=2'.format(nsat1_sci))
-        print('{} saturated pixel at NGROUP={}'.format(nsat2_sci,ng_max))
-        print('')
-        print(obs.sp_ref.name)
-        print('{} saturated pixel at NGROUP=2'.format(nsat1_ref))
-        print('{} saturated pixel at NGROUP={}'.format(nsat2_ref,ng_max))
-        
-    if nsat2_sci==nsat2_ref==0:
+        print('Sci: {}'.format(obs.sp_sci.name))
+        print('  {} saturated pixel at NGROUP={}; Max Well: {:.2f}'\
+            .format(nsat1_sci, ng_min, sci_levels1.max()))
+        print('  {} saturated pixel at NGROUP={}; Max Well: {:.2f}'\
+            .format(nsat2_sci, ng_max, sci_levels2.max()))
+        print('  Sat Dist NG={}: {:.2f} arcsec'.format(ng_min, sat_rad))
+        print('Ref: {}'.format(obs.sp_ref.name))
+        print('  {} saturated pixel at NGROUP={}; Max Well: {:.2f}'.\
+            format(nsat1_ref, ng_min, ref_levels1.max()))
+        print('  {} saturated pixel at NGROUP={}; Max Well: {:.2f}'.\
+            format(nsat2_ref, ng_max, ref_levels2.max()))
+
+    if (nsat2_sci==nsat2_ref==0) and (plot==True):
         plot=False
-        if verbose:
-            print('')
-            print('No saturation detected.')
+        print('Plotting turned off; no saturation detected.')
 
     if plot:
         fig, axes_all = plt.subplots(2,2, figsize=(8,8))
 
         xlim = ylim = np.array([-1,1])*xylim
 
-        
         # Plot science source
         nsat1, nsat2 = (nsat1_sci, nsat2_sci)
         sat_mask1, sat_mask2 = (sci_mask1, sci_mask2)
         sp = obs.sp_sci
-        nrc = obs
 
-        xpix, ypix = (nrc.det_info['xpix'], nrc.det_info['ypix'])
-        bar_offpix = nrc.bar_offset / nrc.pixelscale
-        if ('FULL' in nrc.det_info['wind_mode']) and (nrc.mask is not None):
-            cdict = coron_ap_locs(nrc.module, nrc.channel, nrc.mask, full=True)
+        xpix, ypix = (obs.det_info['xpix'], obs.det_info['ypix'])
+        bar_offpix = obs.bar_offset / obs.pixelscale
+        if ('FULL' in obs.det_info['wind_mode']) and (obs.mask is not None):
+            cdict = coron_ap_locs(obs.module, obs.channel, obs.mask, full=True)
             xcen, ycen = cdict['cen_V23']
             xcen += bar_offpix
         else:
             xcen, ycen = (xpix/2 + bar_offpix, ypix/2)
+        # rho = dist_image(sci_mask1, center=(xcen,ycen))
+
         delx, dely = (xcen - xpix/2, ycen - ypix/2)
-        
         extent_pix = np.array([-xpix/2-delx,xpix/2-delx,-ypix/2-dely,ypix/2-dely])
-        extent = extent_pix * nrc.pix_scale
+        extent = extent_pix * obs.pix_scale
 
         axes = axes_all[0]
         axes[0].imshow(sat_mask1, extent=extent)
@@ -378,7 +487,6 @@ def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True,
         nsat1, nsat2 = (nsat1_ref, nsat2_ref)
         sat_mask1, sat_mask2 = (ref_mask1, ref_mask2)
         sp = obs.sp_ref
-        nrc = obs.nrc_ref
 
         axes = axes_all[1]
         axes[0].imshow(sat_mask1, extent=extent)
@@ -400,15 +508,6 @@ def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True,
 
         fig.tight_layout()
         
-    #masks = [[sci_mask1,sci_mask2], [ref_mask1,ref_mask2]]
-        
-    # Return saturation radius
-    if nsat1_sci == nsat1_ref == 0:
-        sat_rad = 0
-    else:
-        sat_mask = sci_mask1 if nsat1_sci > nsat1_ref else ref_mask1
-        rho = dist_image(sat_mask, center=(xcen,ycen))
-        sat_rad = rho[sat_mask].max() * obs.pixelscale
         
     if return_fig_axes and plot:
         return (fig, axes), sat_rad
@@ -472,13 +571,404 @@ def average_slopes(hdulist):
     
     return slope_final
     
+    
+###########################################
+# Plotting images and contrast curves
+###########################################
+    
+def plot_contrasts_mjup(curves, nsig, wfe_list, obs=None, sat_rad=None, age=100,
+    ax=None, colors=None, xr=[0,10], yr=None, file=None,
+    twin_ax=False, return_axes=False, **kwargs):
+    """Plot mass contrast curves
+
+    Plot a series of mass contrast curves for corresponding WFE drifts.
+
+    Parameters
+    ----------
+    curves : list
+        A list with length corresponding to `wfe_list`. Each list element
+        has three arrays in a tuple: the radius in arcsec, n-sigma contrast,
+        and n-sigma sensitivity limit (vega mag).
+    nsig : float
+        N-sigma limit corresponding to sensitivities/contrasts.
+    wfe_list : array-like
+        List of WFE drift values corresponding to each set of sensitivities
+        in `curves` argument.
+
+    Keyword Args
+    ------------
+    obs : :class:`obs_hci`
+        Corresponding observation class that created the contrast curves.
+        Uses distances and stellar magnitude to plot contrast and AU
+        distances on opposing axes. Also necessary for mjup=True.
+    sat_rad : float
+        Saturation radius in arcsec. If >0, then that part of the contrast
+        curve is excluded from the plot
+    age : float
+        Required for plotting limiting planet masses.
+    file : string
+        Location and name of COND file. See isochrones stored at
+        https://phoenix.ens-lyon.fr/Grids/.
+        Default is model.AMES-Cond-2000.M-0.0.JWST.Vega
+    ax : matplotlib.axes
+        Axes on which to plot curves.
+    colors : None, array-like
+        List of colors for contrast curves. Default is gradient of blues.
+    twin_ax : bool
+        Plot opposing axes in alternate units.
+    return_axes : bool
+        Return the matplotlib axes to continue plotting. If `obs` is set,
+        then this returns three sets of axes.
+
+    """
+    if sat_rad is None:
+        sat_rad = 0
+
+    if ax is None:
+        fig, ax = plt.subplots()
+    if colors is None:
+        lin_vals = np.linspace(0.2,0.8,len(wfe_list))
+        colors = plt.cm.Blues_r(lin_vals)
+
+    # Grab COND model data
+    tbl = cond_table(age=age, file=file)
+    filt = obs.filter
+    mod = obs.module
+    dist = obs.distance
+    mass_data, mag_data = cond_filter(tbl, filt, module=mod, dist=dist)
+    isort = np.argsort(mag_data)
+
+    # Plot the data
+    for j, wfe_ref_drift in enumerate(wfe_list):
+        rr, contrast, mag_sens = curves[j]
+        label='$\Delta$' + "WFE = {} nm".format(wfe_list[j])
+#         yvals = np.interp(mag_sens, mag_data[isort], np.log10(mass_data[isort]))
+#         yvals = 10**yvals
+        cf = jl_poly_fit(mag_data[isort], np.log10(mass_data[isort]))
+        yvals = 10**jl_poly(mag_sens, cf)
+
+        xvals = rr[rr>sat_rad]
+        yvals = yvals[rr>sat_rad]
+        ax.plot(xvals, yvals, label=label, color=colors[j], zorder=1, lw=2)
+
+    if xr is not None: ax.set_xlim(xr)
+    if yr is not None: ax.set_ylim(yr)
+
+    ax.xaxis.get_major_locator().set_params(nbins=10, steps=[1, 2, 5, 10])
+    ax.yaxis.get_major_locator().set_params(nbins=10, steps=[1, 2, 5, 10])
+
+    ylabel = 'Mass Limits ($M_{\mathrm{Jup}}$)'
+    ax.set_ylabel(ylabel)
+    ax.set_xlabel('Separation (arcsec)')
+
+    if twin_ax:
+        # Plot opposing axes in alternate units
+        ax3 = ax.twiny()
+        xr3 = np.array(ax.get_xlim()) * obs.distance
+        ax3.set_xlim(xr3)
+        ax3.set_xlabel('Separation (AU)')
+
+        ax3.xaxis.get_major_locator().set_params(nbins=9, steps=[1, 2, 5, 10])
+
+        if return_axes:
+            return (ax, ax3)
+    else:
+        if return_axes:
+            return ax
+
+
+def plot_contrasts(curves, nsig, wfe_list, obs=None, sat_rad=None, ax=None,
+    colors=None, xr=[0,10], yr=[25,5], return_axes=False):
+    """Plot contrast curves
+
+    Plot a series of contrast curves for corresponding WFE drifts.
+
+    Parameters
+    ----------
+    curves : list
+        A list with length corresponding to `wfe_list`. Each list element
+        has three arrays in a tuple: the radius in arcsec, n-sigma contrast,
+        and n-sigma sensitivity limit (vega mag).
+    nsig : float
+        N-sigma limit corresponding to sensitivities/contrasts.
+    wfe_list : array-like
+        List of WFE drift values corresponding to each set of sensitivities
+        in `curves` argument.
+
+    Keyword Args
+    ------------
+    obs : :class:`obs_hci`
+        Corresponding observation class that created the contrast curves.
+        Uses distances and stellar magnitude to plot contrast and AU
+        distances on opposing axes.
+    sat_rad : float
+        Saturation radius in arcsec. If >0, then that part of the contrast
+        curve is excluded from the plot
+    ax : matplotlib.axes
+        Axes on which to plot curves.
+    colors : None, array-like
+        List of colors for contrast curves. Default is gradient of blues.
+    return_axes : bool
+        Return the matplotlib axes to continue plotting. If `obs` is set,
+        then this returns three sets of axes.
+
+    """
+    if sat_rad is None:
+        sat_rad = 0
+    
+    if ax is None:
+        fig, ax = plt.subplots()
+    if colors is None:
+        lin_vals = np.linspace(0.3,0.8,len(wfe_list))
+        colors = plt.cm.Blues_r(lin_vals)
+        
+    for j, wfe_ref_drift in enumerate(wfe_list):
+        rr, contrast, mag_sens = curves[j]
+        xvals = rr[rr>sat_rad]
+        yvals = mag_sens[rr>sat_rad]
+        label='$\Delta$' + "WFE = {} nm".format(wfe_list[j])
+        ax.plot(xvals, yvals, label=label, color=colors[j], zorder=1, lw=2)
+
+    if xr is not None: ax.set_xlim(xr)
+    if yr is not None: ax.set_ylim(yr)
+
+
+    ax.xaxis.get_major_locator().set_params(nbins=10, steps=[1, 2, 5, 10])
+    ax.yaxis.get_major_locator().set_params(nbins=10, steps=[1, 2, 5, 10])
+
+    ax.set_ylabel('{:.0f}-$\sigma$ Sensitivities (mag)'.format(nsig))
+    ax.set_xlabel('Separation (arcsec)')
+
+    # Plot opposing axes in alternate units
+    if obs is not None:
+        yr1 = np.array(ax.get_ylim())
+        yr2 = 10**((obs.star_flux('vegamag') - yr1) / 2.5)
+        ax2 = ax.twinx()
+        ax2.set_yscale('log')
+        ax2.set_ylim(yr2)
+        ax2.set_ylabel('{:.0f}-$\sigma$ Contrast'.format(nsig))
+
+        ax3 = ax.twiny()
+        xr3 = np.array(ax.get_xlim()) * obs.distance
+        ax3.set_xlim(xr3)
+        ax3.set_xlabel('Separation (AU)')
+
+        ax3.xaxis.get_major_locator().set_params(nbins=9, steps=[1, 2, 5, 10])
+
+        if return_axes:
+            return (ax, ax2, ax3)
+    else:
+        if return_axes:
+            return ax
+
+
+def planet_mags(obs, age=10, entropy=13, mass_list=[10,5,2,1], av_vals=[0,25], atmo='hy3s',
+    cond=False, **kwargs):
+    """Exoplanet Magnitudes
+
+    Determine a series of exoplanet magnitudes for given observation.
+    By default, use Spiegel & Burrows 2012 models, but has the option
+    to use the COND models from https://phoenix.ens-lyon.fr/Grids.
+    These are useful because SB12 model grids only ranges from 1-1000 Myr
+    with masses 1-15 MJup.
+
+    cond : bool
+        Instead of plotting sensitivities, use COND models to plot the
+        limiting planet masses.
+    file : string
+        Location and name of COND file. See isochrones stored at
+        https://phoenix.ens-lyon.fr/Grids/.
+        Default is model.AMES-Cond-2000.M-0.0.JWST.Vega
+    """
+
+    if av_vals is None:
+        av_vals = [0,0]
+
+    pmag = {}
+    for i,m in enumerate(mass_list):
+        flux_list = []
+        for j,av in enumerate(av_vals):
+            sp = obs.planet_spec(mass=m, age=age, Av=av, entropy=entropy, atmo=atmo, **kwargs)
+            sp_obs = S.Observation(sp, obs.bandpass, binset=obs.bandpass.wave)
+            flux = sp_obs.effstim('vegamag')
+            flux_list.append(flux)
+        pmag[m] = tuple(flux_list)
+
+    # Do COND models instead
+    # But still want SB12 models to get A_V information
+    if cond:
+        # COND Table
+        tbl = cond_table(age=age, **kwargs)
+
+        # All mass and mag data for specified filter
+        filt = obs.filter
+        mod = obs.module
+        dist = obs.distance
+        mass_data, mag_data = cond_filter(tbl, filt, module=mod, dist=dist)
+
+        # Mag information for the requested masses
+#         mags0 = np.interp(np.log(mass_list), np.log(mass_data), mag_data)
+        cf = jl_poly_fit(np.log(mass_data), mag_data)
+        mags0 = jl_poly(np.log(mass_list), cf)
+    
+        # Apply extinction
+        for i, m in enumerate(mass_list):
+            if np.allclose(av_vals, 0):
+                dm = np.array([0,0])
+            else:
+                #SB12 at A_V=0
+                sp = obs.planet_spec(mass=m, age=age, Av=0, entropy=entropy, atmo=atmo, **kwargs)
+                sp_obs = S.Observation(sp, obs.bandpass, binset=obs.bandpass.wave)
+                sb12_mag = sp_obs.effstim('vegamag')
+
+                # Get magnitude offset due to extinction
+                dm = np.array(pmag[m]) - sb12_mag
+                dm2 = pmag[m][1] - sb12_mag
+
+            # Apply extinction to COND models
+            pmag[m] = tuple(mags0[i] + dm)
+
+    return pmag
+
+
+def plot_planet_patches(ax, obs, age=10, entropy=13, mass_list=[10,5,2,1], av_vals=[0,25],
+    cols=None, update_title=False, **kwargs):
+    """Plot exoplanet magnitudes in region corresponding to extinction values."""
+
+    import matplotlib.patches as mpatches
+
+    xlim = ax.get_xlim()
+
+
+    #lin_vals = np.linspace(0,0.5,4)
+    #cols = plt.cm.Purples_r(lin_vals)[::-1]
+    if cols is None:
+        cols = plt.cm.tab10(np.linspace(0,1,10))
+
+    dist = obs.distance
+
+    if entropy<8: entropy=8
+    if entropy>13: entropy=13
+
+    pmag = planet_mags(obs, age, entropy, mass_list, av_vals, **kwargs)
+    for i,m in enumerate(mass_list):
+        label = 'Mass = {} '.format(m) + '$M_{\mathrm{Jup}}$'
+        if av_vals is None:
+            ax.plot(xlim, pmag[m], color=cols[i], lw=1, ls='--', label=label)
+        else:
+            pm_min, pm_max = pmag[m]
+            rect = mpatches.Rectangle((xlim[0], pm_min), xlim[1], pm_max-pm_min,
+                                     alpha=0.2, color=cols[i], label=label, zorder=2)
+            ax.add_patch(rect)
+            ax.plot(xlim, [pm_min]*2, color=cols[i], lw=1, alpha=0.3)
+            ax.plot(xlim, [pm_max]*2, color=cols[i], lw=1, alpha=0.3)
+
+    entropy_switch = {13:'Hot', 8:'Cold'}
+    entropy_string = entropy_switch.get(entropy, "Warm")
+    ent_str = entropy_string + ' Start'
+
+    if av_vals is None:
+        av_str = ''
+    else:
+        av_str = ' ($A_V = [{:.0f},{:.0f}]$)'.format(av_vals[0],av_vals[1])
+    #age_str = 'Age = {:.0f} Myr; '.format(age)
+    #dist_str = 'Dist = {:.1f} pc; '.format(dist) if dist is not None else ''
+    #dist_str=""
+
+    #ax.set_title('{} -- {} ({}{}{})'.format(obs.filter,ent_str,age_str,dist_str,av_str))
+
+    if update_title:
+        ax.set_title('{} -- {}{}'.format(obs.filter,ent_str,av_str))
+
+
+def plot_hdulist(hdulist, xr=None, yr=None, ax=None, return_ax=False,
+    cmap=None, scale='linear', vmin=None, vmax=None, axes_color='white',
+    half_pix_shift=True, cb_label='Counts/sec', **kwargs):
+
+    from webbpsf import display_psf
+
+    if ax is None:
+        fig, ax = plt.subplots()
+    if cmap is None:
+        cmap = matplotlib.rcParams['image.cmap']
+
+    # Has to do with even/odd number of pixels in array
+    # Usually everything is centered in the middle of a pixel
+    # and for odd array sizes that is where (0,0) will be plotted.
+    # However, even array sizes will have (0,0) at the pixel border,
+    # so this just shifts the entire image accordingly.
+    if half_pix_shift:
+        oversamp = hdulist[0].header['OVERSAMP']
+        shft = 0.5*oversamp
+        hdul = deepcopy(hdulist)
+        hdul[0].data = fshift(hdul[0].data, shft, shft)
+    else:
+        hdul = hdulist
+
+    data = hdul[0].data
+    if vmax is None:
+        vmax = 0.75 * np.nanmax(data) if scale=='linear' else np.nanmax(data)
+    if vmin is None:
+        vmin = 0 if scale=='linear' else vmax/1e6
+
+    
+    out = display_psf(hdul, ax=ax, title='', cmap=cmap,
+                      scale=scale, vmin=vmin, vmax=vmax, return_ax=True, **kwargs)
+    try:
+        ax, cb = out
+        cb.set_label(cb_label)
+    except:
+        ax = out
+
+    ax.set_xlim(xr)
+    ax.set_ylim(yr)
+    ax.set_xlabel('Arcsec')
+    ax.set_ylabel('Arcsec')
+
+
+    ax.tick_params(axis='both', color=axes_color, which='both')
+    for k in ax.spines.keys():
+        ax.spines[k].set_color(axes_color)
+
+    ax.xaxis.get_major_locator().set_params(nbins=9, steps=[1, 2, 5, 10])
+    ax.yaxis.get_major_locator().set_params(nbins=9, steps=[1, 2, 5, 10])
+    
+    if return_ax:
+        return ax
+
+
+    
+    
 ###########################################
 # Plotting images and contrast curves
 ###########################################
 
+def update_yscale(ax, scale_type, ylim=None):
+    
+    # Some fancy log+linear plotting
+    from matplotlib.ticker import FixedLocator, ScalarFormatter
+    if scale_type=='symlog':
+        ylim = [0,100] if ylim is None else ylim
+        ax.set_ylim(ylim)
+        yr = ax.get_ylim()
+        ax.set_yscale('symlog', linthreshy=10, linscaley=2)
+        ax.set_yticks(list(range(0,10)) + [10,100,1000])
+        #ax.get_yaxis().set_major_formatter(ScalarFormatter())
+        ax.yaxis.set_major_formatter(ScalarFormatter())
+
+        minor_log = list(np.arange(20,100,10)) + list(np.arange(200,1000,100))
+        minorLocator = FixedLocator(minor_log)
+        ax.yaxis.set_minor_locator(minorLocator)
+        ax.set_ylim([0,yr[1]])
+    elif scale_type=='log':
+        ax.set_yscale('log')
+        ylim = [0.1,100] if ylim is None else ylim
+        ax.set_ylim(ylim)
+        ax.yaxis.set_major_formatter(ScalarFormatter())
+
 def do_plot_contrasts(curves_ref, curves_roll, nsig, wfe_list, obs, age, age2=None, 
-    sat_rad=0, jup_mag=True, xr=[0,10], xr2=[0,10], yscale2='symlog',
-    save_fig=False, outdir='', return_fig_axes=False):
+    sat_rad=0, jup_mag=True, xr=[0,10], yr=[22,8], xr2=[0,10], yscale2='symlog', yr2=None,
+    save_fig=False, outdir='', return_fig_axes=False, **kwargs):
     """
     Plot series of contrast curves.
     """
@@ -497,13 +987,17 @@ def do_plot_contrasts(curves_ref, curves_roll, nsig, wfe_list, obs, age, age2=No
 
     ax = axes[0]
     if curves_ref is not None:
-        plot_contrasts(curves_ref, nsig, wfe_list, obs=obs, ax=ax, colors=c1, xr=xr)
+        ax, ax2, ax3 = plot_contrasts(curves_ref, nsig, wfe_list, 
+            obs=obs, ax=ax, colors=c1, xr=xr, yr=yr, return_axes=True)
     if curves_roll is not None:
         obs_kw = None if curves_ref is not None else obs
-        plot_contrasts(curves_roll, nsig, wfe_list, obs=obs_kw, ax=ax, colors=c2, xr=xr)
+        ax = plot_contrasts(curves_roll, nsig, wfe_list, 
+            obs=obs_kw, ax=ax, colors=c2, xr=xr, yr=yr, return_axes=True)
+        if obs_kw is not None:
+            ax, ax2, ax3 = ax
     #plot_planet_patches(ax, obs, age=age, av_vals=None, cond=True)
 
-    ax.set_ylim([22,8])
+    #ax.set_ylim([22,8])
 
     # Legend organization
     nwfe = len(wfe_list)
@@ -581,23 +1075,24 @@ def do_plot_contrasts(curves_ref, curves_roll, nsig, wfe_list, obs, age, age2=No
     ax.legend(handles=handles_new, labels=labels_new, loc='upper right', title='COND Models')
         
     # Some fancy log+linear plotting
-    from matplotlib.ticker import FixedLocator, ScalarFormatter
-    if yscale2=='symlog':
-        ax.set_ylim([0,100])
-        yr = ax.get_ylim()
-        ax.set_yscale('symlog', linthreshy=10, linscaley=2)
-        ax.set_yticks(list(range(0,10)) + [10,100,1000])
-        #ax.get_yaxis().set_major_formatter(ScalarFormatter())
-        ax.yaxis.set_major_formatter(ScalarFormatter())
-
-        minor_log = list(np.arange(20,100,10)) + list(np.arange(200,1000,100))
-        minorLocator = FixedLocator(minor_log)
-        ax.yaxis.set_minor_locator(minorLocator)
-        ax.set_ylim([0,yr[1]])
-    elif yscale2=='log':
-        ax.set_yscale('log')
-        ax.set_ylim([0.1,100])
-        ax.yaxis.set_major_formatter(ScalarFormatter())
+    update_yscale(ax, yscale2, ylim=yr2)
+#     from matplotlib.ticker import FixedLocator, ScalarFormatter
+#     if yscale2=='symlog':
+#         ax.set_ylim([0,100])
+#         yr = ax.get_ylim()
+#         ax.set_yscale('symlog', linthreshy=10, linscaley=2)
+#         ax.set_yticks(list(range(0,10)) + [10,100,1000])
+#         #ax.get_yaxis().set_major_formatter(ScalarFormatter())
+#         ax.yaxis.set_major_formatter(ScalarFormatter())
+# 
+#         minor_log = list(np.arange(20,100,10)) + list(np.arange(200,1000,100))
+#         minorLocator = FixedLocator(minor_log)
+#         ax.yaxis.set_minor_locator(minorLocator)
+#         ax.set_ylim([0,yr[1]])
+#     elif yscale2=='log':
+#         ax.set_yscale('log')
+#         ax.set_ylim([0.1,100])
+#         ax.yaxis.set_major_formatter(ScalarFormatter())
 
     # Saturation regions
     if sat_rad > 0:
@@ -609,8 +1104,12 @@ def do_plot_contrasts(curves_ref, curves_roll, nsig, wfe_list, obs, age, age2=No
 
     name_sci = obs.sp_sci.name
     name_ref = obs.sp_ref.name
-    title_str = '{} (dist = {:.1f} pc; PSF Ref: {}) -- {} Contrast Curves'\
-        .format(name_sci, obs.distance, name_ref, obs.filter)
+    if curves_ref is None:
+        title_str = '{} (dist = {:.1f} pc) -- {} Contrast Curves'\
+            .format(name_sci, obs.distance, obs.filter)
+    else:
+        title_str = '{} (dist = {:.1f} pc; PSF Ref: {}) -- {} Contrast Curves'\
+            .format(name_sci, obs.distance, name_ref, obs.filter)
     fig.suptitle(title_str, fontsize=16)
     fig.tight_layout()
     fig.subplots_adjust(top=0.85, bottom=0.1 , left=0.05, right=0.97)
@@ -620,7 +1119,7 @@ def do_plot_contrasts(curves_ref, curves_roll, nsig, wfe_list, obs, age, age2=No
         fig.savefig(outdir+fname)
         
     if return_fig_axes:
-        return fig, axes
+        return fig, ([axes[0], ax2, ax3], axes[1])
         
         
 def plot_images(obs_dict, hdu_dict, filt_keys, wfe_drift, fov=10, 
@@ -695,7 +1194,7 @@ def plot_images(obs_dict, hdu_dict, filt_keys, wfe_drift, fov=10,
                 texp = obs.multiaccum_times['t_exp']
                 texp = round(2*texp/100)*100
                 exp_text = "{:.0f} sec".format(texp)
-                ax.set_title('{} ({})'.format(obs.filter, exp_text))
+                ax.set_ylabel('{} ({})'.format(obs.filter, exp_text))
 
             xlim = [-fov/2,fov/2]
             ylim = [-fov/2,fov/2]
