@@ -276,7 +276,9 @@ class NRC_refs(object):
     
         # Check to make sure refs_amps_avg is valid
         if (self.refs_amps_avg is None):
-            raise ValueError('self.refs_amps_avg is set to None')
+            _log.warning('self.refs_amps_avg is set to None. No offsets applied.')
+            return
+            #raise ValueError('self.refs_amps_avg is set to None')
 
         # Supermean
         # the average of the average is the DC level of the output channel
@@ -355,7 +357,9 @@ class NRC_refs(object):
 
         # Check to make sure refs_amps_avg1 and refs_amps_avg2 are valid
         if refvals is None:
-            raise ValueError('self.refs_side_avg set to None')
+            _log.warning('self.refs_side_avg is set to None. No smoothing applied.')
+            return
+            #raise ValueError('self.refs_side_avg set to None')
         
         # Time to go through an entire row.
         # The delta time does't seem to make any difference in the final data product
