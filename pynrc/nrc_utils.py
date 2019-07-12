@@ -1075,7 +1075,7 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         opd = (opd, 0)
     # Default WFE drift
     wfe_drift = 0 if wfe_drift is None else wfe_drift
-    assert wfe_drift >= 0
+    assert wfe_drift >= 0, "wfe_drift must not be negative"
 
     # Get filter throughput and create bandpass
     if isinstance(filter_or_bp, six.string_types):
@@ -4396,8 +4396,8 @@ def sp_accr(mmdot, rin=2, dist=10, truncated=False,
     mdot_vals = np.unique(tbl['MMdot'])
     nmdot = len(mdot_vals)
 
-    assert (rin >=rin_vals.min())  & (rin <=rin_vals.max())
-    assert (mmdot>=mdot_vals.min()) & (mmdot<=mdot_vals.max())
+    assert (rin >=rin_vals.min())  & (rin <=rin_vals.max()), "rin is out of range"
+    assert (mmdot>=mdot_vals.min()) & (mmdot<=mdot_vals.max()), "mmdot is out of range"
 
     if truncated:
         mag_names = ('J2', 'H2', 'K2', 'L2', 'M2', 'N2')
