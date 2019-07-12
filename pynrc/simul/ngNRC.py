@@ -372,6 +372,7 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
         np.cumsum(ramp, axis=0, out=ramp)
         
         # Truncate anything above well level
+        # TODO: Update per detector
         well_max = det.well_level
         ramp[ramp>well_max] = well_max
     else:
@@ -617,3 +618,79 @@ def add_ppc(im, ppc_frac=0.002, nchans=4,
     return res.squeeze()
 
 
+# npix = 20
+# arr = np.random.rand(npix) * 4000
+# arr[1] = 0
+# #arr[-1] = 2**16-1
+# 
+# pixel_time = 10. # usec
+# 
+# darr = np.roll(arr,-1) - arr
+# tarr = np.arange(100.) / pixel_time
+# tau = 1.5
+# vt = darr.reshape([-1,1])*(1-np.exp(-tarr.reshape([1,-1])/tau))
+# vt = vt.ravel()
+# 
+# arr_full = arr.repeat(len(tarr))
+# arr_new = np.roll(arr_full + vt, len(tarr))
+# 
+# tfull = np.arange(len(arr_new)) * pixel_time / len(tarr)
+# 
+# # Pixel sample times
+# t_sample = np.arange(npix)*pixel_time + 6.
+# v_sample = np.interp(t_sample, tfull, arr_new)
+# 
+# fig, ax = plt.subplots(1,1, figsize=(12,5))
+# ax.plot(tfull, arr_full)#[0:-20])
+# ax.plot(tfull, arr_new)
+# ax.xaxis.get_major_locator().set_params(nbins=9, steps=[1, 2, 5, 10])
+# 
+# fig.tight_layout()
+# 
+# from astropy.convolution import convolve
+# alpha = 0.018
+# kernel = np.array([0.0, 1-alpha, alpha])
+# arr_ppc = convolve(arr, kernel)
+# 
+# 
+# arr[1] = 0
+# arr[-1] = 2**16-1
+# # Convert to usec timestep
+# arr = arr.repeat(10)
+# 
+# from scipy.ndimage import gaussian_filter1d
+# res = gaussian_filter1d(arr, 1.5)
+# 
+# plt.clf()
+# plt.plot(arr[0:-20])
+# plt.plot(res[0:-20])
+# 
+# 
+# res = arr.copy()
+# res = res.reshape([npix,-1])
+# res[:, 0:3] = np.nan
+# res[:, -3:] = np.nan
+# res = res.ravel()
+# 
+# im_mask = np.isnan(res)
+# x = mask_helper() # Returns the nonzero (True) indices of a mask
+# res[im_mask]= np.interp(x(im_mask), x(~im_mask), res[~im_mask])
+# 
+# plt.clf()
+# plt.plot(arr[0:-20])
+# plt.plot(res[0:-20])
+# 
+# 
+# from scipy.signal import butter, filtfilt
+# b, a = butter(3, 0.2, btype='lowpass', analog=False)
+# res = filtfilt(b, a, arr)
+# 
+# from scipy.signal import savgol_filter
+# winsize = 5
+# res2 = savgol_filter(arr, winsize, 3)
+# 
+# plt.clf()
+# plt.plot(arr)
+# plt.plot(res)
+# #plt.plot(res2)
+# 
