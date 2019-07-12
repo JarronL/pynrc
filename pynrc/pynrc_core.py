@@ -74,7 +74,7 @@ class DetectorOps(det_timing):
         det_timing.__init__(self, wind_mode=wind_mode, xpix=xpix, ypix=ypix, 
                             x0=x0, y0=y0, mode='JWST', nff=nff, **kwargs)
 
-        # Typical values for SW/LW detectors that get saved based on SCA ID
+        # Typical values for SW/LW detectors that get saved based on SCA ID.
         # After setting the SCA ID, these various parameters can be updated,
         # however they will be reset whenever the SCA ID is modified.
         #   - Pixel Scales in arcsec/pix
@@ -436,23 +436,10 @@ class NIRCam(object):
         self._bar_wfe_val = None 
         self._fov_pix_bg = 33
 
-        if apname is not None:
-            # Set filter
-            filter = filter.upper()
-            _check_list(filter, self.filter_list, 'filter')
-            self._filter = filter
         
-            self.update_from_SIAF(apname, **kwargs)
-
-        else:
-            self._siaf_ap = None
-
-            # Set everything to upper case first
-            filter = filter.upper()
-            pupil = 'CLEAR' if pupil is None else pupil.upper()
-            if mask is not None: mask = mask.upper()
-            module = 'A' if module is None else module.upper()
-
+        # Check Weak Lens alternate inputs
+        if pupil is not None:
+            pupil = pupil.upper()
             # If alternate Weak Lens values are specified
             if 'WL' in pupil:
                 wl_alt = {'WLP4' :'WEAK LENS +4', 
@@ -467,15 +454,26 @@ class NIRCam(object):
             if (pupil in wl_list) and (filter!='F200W'):
                 filter = 'F200W'
 
+        # Set filter
+        filter = filter.upper()
+        _check_list(filter, self.filter_list, 'filter')
+        self._filter = filter
+
+        if apname is None:
+            self._siaf_ap = None
+
+            # Set everything to upper case first
+            pupil = 'CLEAR' if pupil is None else pupil.upper()
+            if mask is not None: mask = mask.upper()
+            module = 'A' if module is None else module.upper()
+
             # Validate all values, set values, and update bandpass
             # Test and set the intrinsic/hidden variables directly rather than through setters
             _check_list(module, ['A','B'], 'module')
-            _check_list(filter, self.filter_list, 'filter')
             _check_list(pupil, self.pupil_list, 'pupil')
             _check_list(mask, self.mask_list, 'mask')
 
             self._module = module
-            self._filter = filter
             self._pupil = pupil
             self._mask = mask
             self._ND_acq = ND_acq
@@ -484,6 +482,8 @@ class NIRCam(object):
             self._validate_wheels()
             self.update_detectors(**kwargs)
             self.update_psf_coeff(**kwargs)
+        else:
+            self.update_from_SIAF(apname, pupil=pupil, **kwargs)
 
 
 
@@ -504,7 +504,8 @@ class NIRCam(object):
     @property
     def filter(self):
         """Name of filter bandpass"""
-        return self._filter
+#         return self._filter
+        return self.bandpass.name
     @filter.setter
     def filter(self, value):
         """Set the filter name"""
@@ -593,11 +594,11 @@ class NIRCam(object):
     @property
     def channel(self):
         """NIRCam wavelength channel ('SW' or 'LW')."""
-        if self.filter in self._filters_sw: return 'SW'
-        if self.filter in self._filters_lw: return 'LW'
+        if self._filter in self._filters_sw: return 'SW'
+        if self._filter in self._filters_lw: return 'LW'
 
         # If we got this far, then something went wrong.
-        err_str = 'Something went wrong. Do not recognize filter {}'.format(self.filter)
+        err_str = 'Something went wrong. Do not recognize filter {}'.format(self._filter)
         _log.error(err_str)
         raise ValueError(err_str)
 
@@ -607,7 +608,7 @@ class NIRCam(object):
         return self._bandpass
     def _update_bp(self):
         """Update bandpass based on filter, pupil, and module, etc."""
-        self._bandpass = read_filter(self.filter, self.pupil, self.mask, 
+        self._bandpass = read_filter(self._filter, self._pupil, self._mask, 
                                      self.module, self.ND_acq,
                                      ice_scale=self._ice_scale, nvr_scale=self._nvr_scale)
 
@@ -689,7 +690,7 @@ class NIRCam(object):
         """Science Instrument aperture info class"""
         return self._siaf_ap
         
-    def update_from_SIAF(self, apname, **kwargs):
+    def update_from_SIAF(self, apname, pupil=None, **kwargs):
         """Update detector properties based on SIAF aperture"""
 
         allap = list(self.siaf_nrc.apernames)
@@ -723,34 +724,34 @@ class NIRCam(object):
         y0 = int(ycorn[indmin[0][0]])
               
         # Update pupil and mask info
-        pupil = None
         mask = None
         ND_acq = False
         filter = None
         if '_MASKSWB' in apname:
-            pupil = 'WEDGELYOT'
+            pupil = 'WEDGELYOT' if pupil is None else pupil
             mask  = 'MASKSWB'
         elif '_MASKLWB' in apname:
-            pupil = 'WEDGELYOT'
+            pupil = 'WEDGELYOT' if pupil is None else pupil
             mask  = 'MASKLWB'            
         elif '_MASK210R' in apname:
-            pupil = 'CIRCLYOT'
+            pupil = 'CIRCLYOT' if pupil is None else pupil
             mask  = 'MASK210R'
         elif '_MASK335R' in apname:
-            pupil = 'CIRCLYOT'
+            pupil = 'CIRCLYOT' if pupil is None else pupil
             mask  = 'MASK335R'
         elif '_MASK430R' in apname:
-            pupil = 'CIRCLYOT'
+            pupil = 'CIRCLYOT' if pupil is None else pupil
             mask  = 'MASK430R'
         elif '_GRISMC' in apname:
-            pupil = 'GRISM90'
+            pupil = 'GRISM90' if pupil is None else pupil
         elif '_GRISM' in apname:
-            pupil = 'GRISM0'
+            pupil = 'GRISM0' if pupil is None else pupil
 
         # ND Square
         if '_TAMASK' in apname:
             ND_acq = True
-            pupil = 'WEDGELYOT' if 'WB' in apname else 'CIRCLYOT'
+            if pupil is None:
+                pupil = 'WEDGELYOT' if 'WB' in apname else 'CIRCLYOT'
 
         # Look for filter specified in aperture name
         if ('_F1' in apname) or ('_F2' in apname) or ('_F3' in apname) or ('_F4' in apname):
@@ -888,7 +889,7 @@ class NIRCam(object):
                     det_list = [482]
                 else:
                     errmsg = 'No detector makes sense here ({} {} {}).'\
-                        .format(self.filter, self.pupil, self.mask)
+                        .format(self._filter, self._pupil, self._mask)
                     raise ValueError(errmsg)
                     
             if self.module=='B':
@@ -904,7 +905,7 @@ class NIRCam(object):
                     det_list = [486]
                 else:
                     errmsg = 'No detector makes sense here ({} {} {}).'\
-                        .format(self.filter, self.pupil, self.mask)
+                        .format(self._filter, self._pupil, self._mask)
                     raise ValueError(errmsg)
 
         # Save det_list to self.det_list
@@ -969,9 +970,9 @@ class NIRCam(object):
             _log.warning(wstr)
             _log.warning('Proceed at your own risk!')
 
-        filter  = self.filter
-        pupil   = self.pupil
-        mask    = self.mask
+        filter  = self._filter
+        pupil   = self._pupil
+        mask    = self._mask
         channel = self.channel
 
         if mask is None: mask = ''
@@ -1239,7 +1240,7 @@ class NIRCam(object):
 
         # Bar masks can have offsets
         if (self.mask is not None) and ('WB' in self.mask):
-            r_bar, th_bar = self.offset_bar(self.filter, self.mask)
+            r_bar, th_bar = self.offset_bar(self._filter, self.mask)
             # Want th_bar to be -90 so that r_bar matches webbpsf
             if th_bar>0: 
                 r_bar  = -1 * r_bar
@@ -1257,7 +1258,7 @@ class NIRCam(object):
             wedge_kwargs = dict(self._psf_info)
             wedge_kwargs['module'] = self.module
             
-            wedge_cf = wedge_coeff(self.filter, self.pupil, self.mask, **wedge_kwargs)
+            wedge_cf = wedge_coeff(self._filter, self._pupil, self._mask, **wedge_kwargs)
             cf_fit = wedge_cf.reshape([wedge_cf.shape[0], -1])
             cf_mod = jl_poly(np.array([bar_offset]), cf_fit)
             cf_mod = cf_mod.reshape(self._psf_coeff.shape)
@@ -1276,8 +1277,8 @@ class NIRCam(object):
             _log.info('Updating WFE drift ({}nm) for fov_pix={} and oversample={}'.\
                       format(wfe_drift,fov_pix,oversample))
             wfe_kwargs = dict(self._psf_info)
-            wfe_kwargs['pupil']  = self.pupil
-            wfe_kwargs['mask']   = self.mask
+            wfe_kwargs['pupil']  = self._pupil
+            wfe_kwargs['mask']   = self._mask
             wfe_kwargs['module'] = self.module
             if self._bar_wfe_val is None:
                 wfe_kwargs['bar_offset'] = self.bar_offset
@@ -1611,24 +1612,30 @@ class NIRCam(object):
             _log.warning('ngroup*t_group is greater than t_int.')
     
         # Slope image of input source
-        image = self.gen_psf(sp)
-        if is_grism: 
-            wave, image = image
-            
-        if full_size:
-            shape = (self.det_info['ypix'], self.det_info['xpix'])
-            image = pad_or_cut_to_size(image, shape)
-            
-        # Add in zodi background to full image
-        image += self.bg_zodi(**kwargs)
-
-        # Well levels after "saturation time"
-        sat_level = image * t_sat / self.well_level
-    
-        if is_grism:
-            return (wave, sat_level)
+        if image is not None:
+            return image * t_sat / self.well_level
         else:
-            return sat_level
+
+            image = self.gen_psf(sp)
+            if is_grism: 
+                wave, image = image
+            
+            if full_size:
+                shape = (self.det_info['ypix'], self.det_info['xpix'])
+                image = pad_or_cut_to_size(image, shape)
+            
+            # Add in zodi background to full image
+            image += self.bg_zodi(**kwargs)
+
+            # Well levels after "saturation time"
+            sat_level = image * t_sat / self.well_level
+    
+            if is_grism:
+                return (wave, sat_level)
+            else:
+                return sat_level
+                
+        
 
 
     def gen_psf(self, sp=None, return_oversample=False, use_bg_psf=False, **kwargs):
@@ -1769,8 +1776,8 @@ class NIRCam(object):
         else:
             det = self.Detectors[0]
 
-        filter = self.filter
-        pupil = self.pupil
+        filter = self._filter
+        pupil = self._pupil
         xpix = self.det_info['xpix']
         ypix = self.det_info['ypix']
 

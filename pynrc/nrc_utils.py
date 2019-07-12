@@ -437,6 +437,13 @@ def read_filter(filter, pupil=None, mask=None, module=None, ND_acq=False,
         th_new = th_wl * bp.throughput
         bp = S.ArrayBandpass(bp.wave, th_new)
 
+        # Select which wavelengths to keep
+        igood = bp_igood(bp, min_trans=0.005, fext=0.1)
+        wgood = (bp.wave)[igood]
+        w1 = wgood.min()
+        w2 = wgood.max()
+        wrange = w2 - w1
+
 
     # Water ice and NVR additions (for LW channel only)
     if ((ice_scale is not None) or (nvr_scale is not None)) and ('LW' in channel):
@@ -1005,6 +1012,8 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         generate with webbPSF. If not specified, then the default is to
         produce 20 PSFs/um. The wavelength range is determined by
         choosing those wavelengths where throughput is >0.001.
+        There's a minimum of 5 monochromatic PSFs calculated over
+        the bandpass.
     ndeg : int
         Polynomial degree for PSF fitting.
         Default = 10 (7 if quick=True).
@@ -1268,17 +1277,21 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     # Select which wavelengths to use
     # If doing a "quick" PSF, only fit the filter wavelength range.
     # Otherwise, we fit the full channel wavelength.
+    # If WLP4 is used, always using a narrow band, so turn on quick flag
+    wl4_list = ['WEAK LENS +12 (=4+8)', 'WEAK LENS -4 (=4-8)', 'WEAK LENS +4']
+    if (pupil in wl4_list):
+        quick = True
     if quick:
         w1 = bp.wave.min() / 1e4
         w2 = bp.wave.max() / 1e4
     else:
-        w1,w2 = (0.5,2.5) if 'SW' in chan_str else (2.4,5.1)
+        w1, w2 = (0.5,2.5) if 'SW' in chan_str else (2.4,5.1)
 
     # Create set of monochromatic PSFs to fit.
     if npsf is None:
         dn = 20 # 20 PSF simulations per um
         npsf = np.ceil(dn * (w2-w1))
-    npsf = int(npsf)
+    npsf = 5 if npsf<5 else int(npsf)
     waves = np.linspace(w1, w2, npsf)
 
     # How many processors to split into?
@@ -1398,6 +1411,7 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
                 hdr[key] = ('none', 'No key found')
 
         # psf_coeff() Keyword Values
+        hdr['FILTER'] = (filter, 'Filter Input')
         hdr['PUPIL']  = (ptemp, 'Pupil Setting')
         hdr['MASK']   = (mtemp, 'Coronagraphic Mask Setting')
         hdr['MODULE'] = (module, 'NIRCam Module A or B')
@@ -1405,6 +1419,8 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         hdr['OSAMP']  = (oversample, 'WebbPSF pixel oversample')
         hdr['NPSF']   = (npsf, 'Number of wavelengths to calc')
         hdr['NDEG']   = (ndeg, 'Polynomial fit degree')
+        hdr['WAVE1']  = (w1, 'First wavelength in calc')
+        hdr['WAVE2']  = (w2, 'Last of wavelength in calc')
         if tel_pupil is None:
             hdr['TELPUP'] = ('None', 'Telescope pupil')
         elif isinstance(tel_pupil, fits.HDUList):
@@ -3363,8 +3379,9 @@ def stellar_spectrum(sptype, *renorm_args, **kwargs):
             sp = S.Icat(catname, v0, v1, v2)
         sp.name = '({:.0f},{:0.1f},{:0.1f})'.format(v0,v1,v2)
     elif 'flat' in sptype.lower():
-        waveset = S.refs._default_waveset
-        sp = S.ArraySpectrum(waveset, 0*waveset + 10.)
+        # waveset = S.refs._default_waveset
+        # sp = S.ArraySpectrum(waveset, 0*waveset + 10.)
+        sp = S.FlatSpectrum(10, fluxunits='photlam')
         sp.name = 'Flat spectrum in photlam'
     elif sptype in sptype_list:
         v0,v1,v2 = lookuptable[sptype]
@@ -5345,8 +5362,8 @@ def nrc_header(det_class, filter=None, pupil=None, obs_time=None, header=None,
     hdr['FOV']     = ('{:.2f}x{:.2f}'.format(fovx,fovy), 'Field of view in arcsec')
 
     if DMS == True:
-        hdr['TARG_RA']=  (80.4875, 'Target RA at mid time of exposure') #arbitrary position
-        hdr['TARG_DEC']= (-69.498333, 'Target Dec at mid time of exposure') #arbitrary position
+        hdr['TARG_RA']=  (0.0, 'Target RA at mid time of exposure') #arbitrary position
+        hdr['TARG_DEC']= (0.0, 'Target Dec at mid time of exposure') #arbitrary position
 
         hdr['PROGRAM'] = ('12345', 'Program number')
         hdr['OBSERVTN']= ('001',   'Observation number')
@@ -5403,10 +5420,10 @@ def nrc_header(det_class, filter=None, pupil=None, obs_time=None, header=None,
     hdr[grpName]   = (ma.ngroup,     'Number groups in an integration')
     hdr[intName]   = (ma.nint,     'Number of integrations in an exposure')
 
-
-    hdr['TSAMPLE'] = (tsample,           'Delta time between samples in microsec')
+    # Timing information
+    hdr['TSAMPLE'] = (tsample,        'Delta time between samples in microsec')
     hdr['TFRAME']  = (d.time_frame,   'Time in seconds between frames')
-    hdr['TGROUP']  = (d.time_group,     'Delta time between groups')
+    hdr['TGROUP']  = (d.time_group,   'Delta time between groups')
     hdr['DRPFRMS1']= (ma.nd1, 'Number of frame skipped prior to first integration')
     hdr['GROUPGAP']= (ma.nd2, 'Number of frames skipped')
     hdr['DRPFRMS3']= (ma.nd3, 'Number of frames skipped between integrations')
@@ -5416,6 +5433,8 @@ def nrc_header(det_class, filter=None, pupil=None, obs_time=None, header=None,
     hdr['NRESETS2']= (ma.nr2, 'Number of reset frames between each integration')
     hdr['INTTIME'] = (d.time_int, 'Total integration time for one MULTIACCUM')
     hdr['EXPTIME'] = (d.time_exp, 'Exposure duration (seconds) calculated')
+    
+    # Subarray names
     if DMS == True:
         if (d.xpix == 2048) & (d.ypix == 2048):
             subName = 'FULL'
@@ -5438,8 +5457,9 @@ def nrc_header(det_class, filter=None, pupil=None, obs_time=None, header=None,
         hdr['SUBARRAY']= (subName, 'Detector subarray string')
     else:
         hdr['SUBARRAY']= (sub_bool, 'T if subarray used, F if not')
-        hdr['HWINMODE']= (hwinmode, 'If enabled, single output mode used, otherwise')
+        hdr['HWINMODE']= (hwinmode, 'If enabled, single output mode used')
 
+    # Readout Patterns
     if DMS == True:
         hdr['READPATT']= (ma.read_mode, 'Readout pattern name')
         hdr['ZROFRAME']= (True,       'T if zeroth frame present, F if not')
@@ -5607,6 +5627,9 @@ def create_detops(header, DMS=False, read_mode=None, nint=None, ngroup=None,
         Number of fast row resets.
 
     """
+    # Create detector class
+    from pynrc.pynrc_core import DetectorOps
+
     # Detector ID
     detector = header['SCA_ID'] if detector is None else detector
 
@@ -5624,21 +5647,36 @@ def create_detops(header, DMS=False, read_mode=None, nint=None, ngroup=None,
         y0 = y1 - 1
 
     # Subarray setting, Full, Stripe, or Window
+#     if wind_mode is None:
+#         if DMS:
+#             if 'FULL' in header['SUBARRAY']:
+#                 wind_mode = 'FULL'
+#             elif 'GRISM' in header['SUBARRAY']:
+#                 wind_mode = 'STRIPE'
+#             else:
+#                 wind_mode = 'WINDOW'
+#         else:
+#             if not header['SUBARRAY']:
+#                 wind_mode = 'FULL'
+#             elif 'DISABLE' in header['HWINMODE']:
+#                 wind_mode = 'STRIPE'
+#             else:
+#                 wind_mode = 'WINDOW'
+
+    # Subarray setting: Full, Stripe, or Window
     if wind_mode is None:
-        if DMS:
-            if 'FULL' in header['SUBARRAY']:
-                wind_mode = 'FULL'
-            elif 'GRISM' in header['SUBARRAY']:
-                wind_mode = 'STRIPE'
-            else:
-                wind_mode = 'WINDOW'
+        if DMS and ('FULL' in header['SUBARRAY']):
+            wind_mode = 'FULL'
+        elif (not DMS) and (not header['SUBARRAY']):
+            wind_mode = 'FULL'
         else:
-            if not header['SUBARRAY']:
-                wind_mode = 'FULL'
-            elif 'DISABLE' in header['HWINMODE']:
-                wind_mode = 'STRIPE'
-            else:
-                wind_mode = 'WINDOW'
+            # Test if STRIPE or WINDOW
+            det_stripe = DetectorOps(detector, 'STRIPE', xpix, ypix, x0, y0)
+            det_window = DetectorOps(detector, 'WINDOW', xpix, ypix, x0, y0)
+            dt_stripe = np.abs(header['TFRAME'] - det_stripe.time_frame)
+            dt_window = np.abs(header['TFRAME'] - det_window.time_frame)
+            wind_mode = 'STRIPE' if dt_stripe<dt_window else 'WINDOW'
+
 
     # Add MultiAccum info
     if DMS: hnames = ['READPATT', 'NINTS', 'NGROUPS']
@@ -5649,9 +5687,6 @@ def create_detops(header, DMS=False, read_mode=None, nint=None, ngroup=None,
     ngroup    = header[hnames[2]] if ngroup    is None else ngroup
 
     ma_args = {'read_mode':read_mode, 'nint':nint, 'ngroup':ngroup}
-
-    # Create detector class
-    from pynrc.pynrc_core import DetectorOps
 
     return DetectorOps(detector, wind_mode, xpix, ypix, x0, y0, nff, **ma_args)
 
