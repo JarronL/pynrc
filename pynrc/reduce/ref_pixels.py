@@ -11,6 +11,7 @@ import numpy as np
 import pynrc
 from pynrc.maths import robust
 #from pynrc.maths import nrc_utils
+from scipy.signal import savgol_filter
 
 #from . import *
 #from .nrc_utils import *
@@ -81,7 +82,7 @@ class NRC_refs(object):
     
     """
 
-    def __init__(self, data, header, DMS=False, altcol=True, do_all=False):
+    def __init__(self, data, header, DMS=False, altcol=True, do_all=False, **kwargs):
     
         # Convert to float if necessary
         if 'float' not in data.dtype.name:
@@ -109,7 +110,7 @@ class NRC_refs(object):
         self.altcol = altcol            
 
         # Create a detector class
-        self._create_detops()
+        self._create_detops(**kwargs)
 
         # Reference info from header
         self.nref_t = self.header['TREFROW']
@@ -137,8 +138,8 @@ class NRC_refs(object):
             self.calc_col_smooth()
             self.correct_col_refs()
         
-    def _create_detops(self, read_mode=None, nint=None, ngroup=None,
-        detector=None, wind_mode=None, xpix=None, ypix=None, x0=None, y0=None):
+    def _create_detops(self, read_mode=None, nint=None, ngroup=None, detector=None, 
+        wind_mode=None, xpix=None, ypix=None, x0=None, y0=None, **kwargs):
         """
         Create a detector class based on header settings.
         """
@@ -162,22 +163,19 @@ class NRC_refs(object):
             y1 = header['SUBSTRT2'] if DMS else header['ROWCORNR']
             y0 = y1 - 1
             
-        # Subarray setting, Full, Stripe, or Window
+        # Subarray setting: Full, Stripe, or Window
         if wind_mode is None:
-            if DMS:
-                if 'FULL' in header['SUBARRAY']:
-                    wind_mode = 'FULL'
-                elif 'GRISM' in header['SUBARRAY']:
-                    wind_mode = 'STRIPE'
-                else:
-                    wind_mode = 'WINDOW'
+            if DMS and ('FULL' in header['SUBARRAY']):
+                wind_mode = 'FULL'
+            elif (not DMS) and (not header['SUBARRAY']):
+                wind_mode = 'FULL'
             else:
-                if not header['SUBARRAY']:
-                    wind_mode = 'FULL'
-                elif xpix==2048:
-                    wind_mode = 'STRIPE'
-                else:
-                    wind_mode = 'WINDOW'
+                # Test if STRIPE or WINDOW
+                det_stripe = pynrc.DetectorOps(detector, 'STRIPE', xpix, ypix, x0, y0)
+                det_window = pynrc.DetectorOps(detector, 'WINDOW', xpix, ypix, x0, y0)
+                dt_stripe = np.abs(header['TFRAME'] - det_stripe.time_frame)
+                dt_window = np.abs(header['TFRAME'] - det_window.time_frame)
+                wind_mode = 'STRIPE' if dt_stripe<dt_window else 'WINDOW'
 
         # Add MultiAccum info
         if DMS: hnames = ['READPATT', 'NINTS', 'NGROUPS']  
@@ -337,7 +335,7 @@ class NRC_refs(object):
         self.refs_side_avg = calc_avg_cols(rl, rr, avg_type)
                     
 
-    def calc_col_smooth(self, perint=False, edge_wrap=False):
+    def calc_col_smooth(self, perint=False, edge_wrap=False, savgol=False, **kwargs):
         """Optimal smoothing of side reference pixels
         
         Geneated smoothed version of column reference values.
@@ -367,8 +365,9 @@ class NRC_refs(object):
         
         # Save smoothed values
         self.refs_side_smth = calc_col_smooth(refvals, self.data.shape, \
-                                              perint, edge_wrap, delt)
-
+                                              perint=perint, edge_wrap=edge_wrap, 
+                                              delt=delt, savgol=savgol, **kwargs)
+    
     def correct_col_refs(self):
         """Remove 1/f noise from data
         
@@ -433,6 +432,14 @@ def reffix_hxrg(cube, nchans=4, in_place=True, fixcol=False, **kwargs):
             * 'int'   : Subtract the avg value of all side ref pixels in ramp.
             * 'frame' : For each frame, get avg of side ref pixels and subtract framewise.
             * 'pixel' : For each ref pixel, subtract its avg value from all frames.
+
+    savgol : bool
+        Using Savitsky-Golay filter method rather than FFT.
+    winsize : int
+        Size of the window filter.
+    order : int
+        Order of the polynomial used to fit the samples.
+
     """
 
     # Check the number of dimensions are valid.
@@ -450,11 +457,11 @@ def reffix_hxrg(cube, nchans=4, in_place=True, fixcol=False, **kwargs):
         cube = np.copy(cube)
 
     # Remove channel offsets
-    cube = reffix_amps(cube, nchans=nchans, in_place=in_place, **kwargs)
+    cube = reffix_amps(cube, nchans=nchans, in_place=True, **kwargs)
 
     # Fix 1/f noise using vertical reference pixels
     if fixcol:
-        cube = ref_filter(cube, nchans=nchans, in_place=in_place, **kwargs)
+        cube = ref_filter(cube, nchans=nchans, in_place=True, **kwargs)
 
     return cube
     
@@ -555,8 +562,8 @@ def reffix_amps(cube, nchans=4, in_place=True, altcol=True, supermean=False,
     # Add back supermean
     if supermean: cube += smean
 
-    if ndim==2: return cube[0]
-    else: return cube
+    cube = cube.squeeze()
+    return cube
 
 
 def ref_filter(cube, nchans=4, in_place=True, avg_type='frame', perint=False, 
@@ -591,6 +598,15 @@ def ref_filter(cube, nchans=4, in_place=True, avg_type='frame', perint=False,
         Specify the number of left reference columns.
     nright : int
         Specify the number of right reference columns.
+
+    Keyword Arguments
+    =================
+    savgol : bool
+        Using Savitsky-Golay filter method rather than FFT.
+    winsize : int
+        Size of the window filter.
+    order : int
+        Order of the polynomial used to fit the samples.
     """               
            
     if not in_place:
@@ -628,12 +644,14 @@ def ref_filter(cube, nchans=4, in_place=True, avg_type='frame', perint=False,
     # The delta time does't seem to make any difference in the final data product
     # Just for vizualization purposes...
     delt = 10E-6 * (nx/nchans + 12.)
-    refvals_smoothed = calc_col_smooth(refvals, cube.shape, perint, edge_wrap, delt)
+    refvals_smoothed = calc_col_smooth(refvals, cube.shape, perint=perint, 
+        edge_wrap=edge_wrap, delt=delt, **kwargs)
     
     # Final correction
     #for i,im in enumerate(cube): im -= refvals_smoothed[i].reshape([ny,1])
     cube -= refvals_smoothed.reshape([nz,ny,1])
 
+    cube = cube.squeeze()
     return cube
 
     
@@ -782,7 +800,8 @@ def calc_avg_cols(refs_left=None, refs_right=None, avg_type='frame'):
 
 
 
-def calc_col_smooth(refvals, data_shape, perint=False, edge_wrap=False, delt=5.24E-4):
+def calc_col_smooth(refvals, data_shape, perint=False, edge_wrap=False, 
+    delt=5.24E-4, savgol=False, winsize=31, order=3, **kwargs):
     """Perform optimal smoothing of side ref pix
     
     Geneated smoothed version of column reference values.
@@ -792,15 +811,24 @@ def calc_col_smooth(refvals, data_shape, perint=False, edge_wrap=False, delt=5.2
     ----------
     refvals : ndarray
         Averaged column reference pixels
-    data_shape : 
+    data_shape : tuple
         Shape of original data (nz,ny,nx)
+        
+    Keyword Arguments
+    =================
     perint : bool
         Smooth side reference pixel per int, otherwise per frame.
     edge_wrap : bool
         Add a partial frames to the beginning and end of each averaged
-        time seires pixels in order to get rid of edge effects.
+        time series pixels in order to get rid of edge effects.
     delt : float
         Time between reference pixel samples. 
+    savgol : bool
+        Using Savitsky-Golay filter method rather than FFT.
+    winsize : int
+        Size of the window filter.
+    order : int
+        Order of the polynomial used to fit the samples.
     """
     
     nz,ny,nx = data_shape
@@ -808,23 +836,41 @@ def calc_col_smooth(refvals, data_shape, perint=False, edge_wrap=False, delt=5.2
     # May want to revisit the do-all-at-once or break-up decision
     # This may depend on preamp reset per frame or per integration
     # For now, we'll do it frame-by-frame by default (perint=False)
-    if perint:
+    if perint: # per integration
         if edge_wrap: # Wrap around to avoid edge effects
             refvals2 = np.vstack((refvals[0][::-1], refvals, refvals[-1][::-1]))
-            refvals_smoothed2 = smooth_fft(refvals2, delt)
+            if savgol: # SavGol filter
+                refvals_smoothed2 = savgol_filter(refvals2.ravel(), winsize, order, delta=1)
+            else: # Or "optimal" smoothing algorithm
+                refvals_smoothed2 = smooth_fft(refvals2, delt)
             refvals_smoothed = refvals_smoothed2[ny:-ny].reshape(refvals.shape)
         else:
-            refvals_smoothed = smooth_fft(refvals, delt).reshape(refvals.shape)
+            if savgol:
+                refvals_smoothed = savgol_filter(refvals.ravel(), winsize, order, delta=1)
+            else:
+                refvals_smoothed = smooth_fft(refvals, delt)
+            refvals_smoothed = refvals_smoothed.reshape(refvals.shape)
+
+
     else:
+        refvals_smoothed = []
         if edge_wrap: # Wrap around to avoid edge effects
-            refvals_smoothed = []
             for ref in refvals:
-                ref2 = np.concatenate((ref[:ny/2][::-1], ref, ref[ny/2:][::-1]))
-                ref_smth = smooth_fft(ref2, delt)
-                refvals_smoothed.append(ref_smth[ny/2:ny/2+ny])
+                ref2 = np.concatenate((ref[:ny//2][::-1], ref, ref[ny//2:][::-1]))
+                if savgol:
+                    ref_smth = savgol_filter(ref2, winsize, order, delta=1)
+                else:
+                    ref_smth = smooth_fft(ref2, delt)
+                refvals_smoothed.append(ref_smth[ny//2:ny//2+ny])
             refvals_smoothed = np.array(refvals_smoothed)
         else:
-            refvals_smoothed = np.array([smooth_fft(ref, delt) for ref in refvals])
+            for ref in refvals:
+                if savgol:
+                    ref_smth = savgol_filter(ref, winsize, order, delta=1)
+                else: 
+                    ref_smth = smooth_fft(ref, delt)
+                refvals_smoothed.append(ref_smth)
+            refvals_smoothed = np.array(refvals_smoothed)
     
     return refvals_smoothed
 
@@ -1159,8 +1205,6 @@ def channel_smooth_savgol(im_arr, winsize=31, order=3, per_line=False,
         Value to fill past the edges of the input if `mode` is 'constant'.
         Default is 0.0.
     """
-
-    from scipy.signal import savgol_filter
 
     sh = im_arr.shape
     if len(sh)==2:
