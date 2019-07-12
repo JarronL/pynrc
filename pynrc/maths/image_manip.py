@@ -262,9 +262,9 @@ def fourier_imshift(image, xshift, yshift, pad=False, cval=0.0):
     image : nd array
         N x K image
     xshift : float
-        Pixel value by which to shift image in the x direction
+        Number of pixels to shift image in the x direction
     yshift : float
-        Pixel value by which to shift image in the y direction
+        Number of pixels to shift image in the y direction
     pad : bool
         Should we pad the array before shifting, then truncate?
         Otherwise, the image is wrapped.
