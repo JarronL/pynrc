@@ -946,7 +946,7 @@ def plot_hdulist(hdulist, xr=None, yr=None, ax=None, return_ax=False,
 def update_yscale(ax, scale_type, ylim=None):
     
     # Some fancy log+linear plotting
-    from matplotlib.ticker import FixedLocator, ScalarFormatter
+    from matplotlib.ticker import FixedLocator, ScalarFormatter, LogFormatterSciNotation
     if scale_type=='symlog':
         ylim = [0,100] if ylim is None else ylim
         ax.set_ylim(ylim)
@@ -964,7 +964,7 @@ def update_yscale(ax, scale_type, ylim=None):
         ax.set_yscale('log')
         ylim = [0.1,100] if ylim is None else ylim
         ax.set_ylim(ylim)
-        ax.yaxis.set_major_formatter(ScalarFormatter())
+        ax.yaxis.set_major_formatter(LogFormatterSciNotation())
 
 def do_plot_contrasts(curves_ref, curves_roll, nsig, wfe_list, obs, age, age2=None, 
     sat_rad=0, jup_mag=True, xr=[0,10], yr=[22,8], xr2=[0,10], yscale2='symlog', yr2=None,
