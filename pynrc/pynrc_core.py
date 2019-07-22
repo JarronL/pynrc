@@ -1567,7 +1567,7 @@ class NIRCam(object):
 
         return fzodi_pix
         
-    def saturation_levels(self, sp, full_size=True, ngroup=2, **kwargs):
+    def saturation_levels(self, sp, image = None, full_size=True, ngroup=2, **kwargs):
         """Saturation levels.
         
         Create image showing level of saturation for each pixel.
