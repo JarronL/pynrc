@@ -232,7 +232,22 @@ def obs_wfe(wfe_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None,
                                 wind_mode=wind_mode, xpix=subuse, ypix=subuse,
                                 disk_hdu=hdu_disk, verbose=verbose, bar_offset=bar_offset)
         fov_pix = fov_pix_orig
-        
+
+        # if there's a disk input, then we want to remove disk 
+        # contributions from stellar flux and recompute to make 
+        # sure total flux counts matches what we computed for 
+        # sp_sci in previous section to match real photometry
+        if args_disk is not None:
+            obs = obs_dict[key]
+    
+            star_flux = obs.star_flux(sp=sp_sci) # Pass original input spectrum
+            disk_flux = obs.disk_hdulist[0].data.sum()
+            obs.sp_sci = sp_sci * (1 - disk_flux / star_flux)
+            obs.sp_sci.name = sp_sci.name
+
+            if sp_ref is sp_sci:
+                obs.sp_ref = obs.sp_sci
+                
     return obs_dict
 
 
@@ -663,6 +678,11 @@ def plot_contrasts_mjup(curves, nsig, wfe_list, obs=None, sat_rad=None, age=100,
 
     if twin_ax:
         # Plot opposing axes in alternate units
+        yr2 = np.array(ax.get_ylim()) * 318.0 # Convert to Earth masses
+        ax2 = ax.twinx()
+        ax2.set_ylim(yr2)
+        ax2.set_ylabel('Earth Masses')
+
         ax3 = ax.twiny()
         xr3 = np.array(ax.get_xlim()) * obs.distance
         ax3.set_xlim(xr3)
@@ -671,7 +691,7 @@ def plot_contrasts_mjup(curves, nsig, wfe_list, obs=None, sat_rad=None, age=100,
         ax3.xaxis.get_major_locator().set_params(nbins=9, steps=[1, 2, 5, 10])
 
         if return_axes:
-            return (ax, ax3)
+            return (ax, ax2, ax3)
     else:
         if return_axes:
             return ax
@@ -892,7 +912,7 @@ def plot_hdulist(hdulist, xr=None, yr=None, ax=None, return_ax=False,
     if cmap is None:
         cmap = matplotlib.rcParams['image.cmap']
 
-    # Has to do with even/odd number of pixels in array
+    # This has to do with even/odd number of pixels in array.
     # Usually everything is centered in the middle of a pixel
     # and for odd array sizes that is where (0,0) will be plotted.
     # However, even array sizes will have (0,0) at the pixel border,
@@ -965,9 +985,10 @@ def update_yscale(ax, scale_type, ylim=None):
         ylim = [0.1,100] if ylim is None else ylim
         ax.set_ylim(ylim)
         ax.yaxis.set_major_formatter(LogFormatterSciNotation())
+        
 
 def do_plot_contrasts(curves_ref, curves_roll, nsig, wfe_list, obs, age, age2=None, 
-    sat_rad=0, jup_mag=True, xr=[0,10], yr=[22,8], xr2=[0,10], yscale2='symlog', yr2=None,
+    sat_rad=0, jup_mag=True, xr=[0,10], yr=[22,8], xr2=[0,10], yscale2='log', yr2=None,
     save_fig=False, outdir='', return_fig_axes=False, **kwargs):
     """
     Plot series of contrast curves.
@@ -989,6 +1010,7 @@ def do_plot_contrasts(curves_ref, curves_roll, nsig, wfe_list, obs, age, age2=No
     if curves_ref is not None:
         ax, ax2, ax3 = plot_contrasts(curves_ref, nsig, wfe_list, 
             obs=obs, ax=ax, colors=c1, xr=xr, yr=yr, return_axes=True)
+        axes1_all = [ax, ax2, ax3]
     if curves_roll is not None:
         obs_kw = None if curves_ref is not None else obs
         ax = plot_contrasts(curves_roll, nsig, wfe_list, 
@@ -1028,7 +1050,9 @@ def do_plot_contrasts(curves_ref, curves_roll, nsig, wfe_list, obs, age, age2=No
     ax = axes[1]
     age1 = age
     if curves_ref is not None:
-        plot_contrasts_mjup(curves_ref, nsig, wfe_list, obs=obs, age=age1, ax=ax, colors=c1, xr=xr2, twin_ax=True, yr=None)
+        ax, ax2, ax3 = plot_contrasts_mjup(curves_ref, nsig, wfe_list, 
+            obs=obs, age=age1, ax=ax, colors=c1, xr=xr2, twin_ax=True, yr=None)
+        axes2_all = [ax, ax2, ax3]
     if curves_roll is not None:
         twin_kw = False if curves_ref is not None else True
         plot_contrasts_mjup(curves_roll, nsig, wfe_list, obs=obs, age=age1, ax=ax, colors=c2, xr=xr2, twin_ax=twin_kw, yr=None)
@@ -1074,25 +1098,11 @@ def do_plot_contrasts(curves_ref, curves_roll, nsig, wfe_list, obs, age, age2=No
 
     ax.legend(handles=handles_new, labels=labels_new, loc='upper right', title='COND Models')
         
-    # Some fancy log+linear plotting
+    # Update fancing y-axis scaling on right plot
     update_yscale(ax, yscale2, ylim=yr2)
-#     from matplotlib.ticker import FixedLocator, ScalarFormatter
-#     if yscale2=='symlog':
-#         ax.set_ylim([0,100])
-#         yr = ax.get_ylim()
-#         ax.set_yscale('symlog', linthreshy=10, linscaley=2)
-#         ax.set_yticks(list(range(0,10)) + [10,100,1000])
-#         #ax.get_yaxis().set_major_formatter(ScalarFormatter())
-#         ax.yaxis.set_major_formatter(ScalarFormatter())
-# 
-#         minor_log = list(np.arange(20,100,10)) + list(np.arange(200,1000,100))
-#         minorLocator = FixedLocator(minor_log)
-#         ax.yaxis.set_minor_locator(minorLocator)
-#         ax.set_ylim([0,yr[1]])
-#     elif yscale2=='log':
-#         ax.set_yscale('log')
-#         ax.set_ylim([0.1,100])
-#         ax.yaxis.set_major_formatter(ScalarFormatter())
+    yr_temp = np.array(ax.get_ylim()) * 318.0
+    update_yscale(axes2_all[1], yscale2, ylim=yr_temp)
+
 
     # Saturation regions
     if sat_rad > 0:
@@ -1112,15 +1122,127 @@ def do_plot_contrasts(curves_ref, curves_roll, nsig, wfe_list, obs, age, age2=No
             .format(name_sci, obs.distance, name_ref, obs.filter)
     fig.suptitle(title_str, fontsize=16)
     fig.tight_layout()
-    fig.subplots_adjust(top=0.85, bottom=0.1 , left=0.05, right=0.97)
+    fig.subplots_adjust(top=0.85, bottom=0.1 , left=0.05, right=0.95)
 
     fname = "{}_contrast_{}.pdf".format(name_sci.replace(" ", ""), obs.mask)
     if save_fig: 
         fig.savefig(outdir+fname)
         
     if return_fig_axes:
-        return fig, ([axes[0], ax2, ax3], axes[1])
+        return fig, (axes1_all, axes2_all)
         
+        
+        
+def do_plot_contrasts2(key1, key2, curves_all, nsig, obs_dict, wfe_list, age, sat_dict=None,
+                       label1='Curves1', label2='Curves2', xr=[0,10], yr=[24,8], 
+                       yscale2='log', yr2=None, av_vals=[0,10], curves_all2=None, 
+                       c1=None, c2=None, **kwargs):
+
+    fig, axes = plt.subplots(1,2, figsize=(14,5))
+
+    lin_vals = np.linspace(0.2,0.8,len(wfe_list))
+    if c1 is None: c1 = plt.cm.Blues_r(lin_vals)
+    if c2 is None: c2 = plt.cm.Reds_r(lin_vals)
+    c3 = plt.cm.Purples_r(lin_vals)
+    c4 = plt.cm.Greens_r(lin_vals)
+
+    # Left plot (5-sigma sensitivities)
+    ax = axes[0]
+
+    k = key1
+    curves = curves_all[k]
+    obs = obs_dict[k]
+    sat_rad = None if sat_dict is None else sat_dict[k]
+    ax, ax2, ax3 = plot_contrasts(curves, nsig, wfe_list, obs=obs, sat_rad=sat_rad,
+                                  ax=ax, colors=c1, xr=xr, yr=yr, return_axes=True)
+    axes1_all = [ax, ax2, ax3]
+    # Planet mass locations
+    plot_planet_patches(ax, obs, age=age, update_title=True, av_vals=av_vals, **kwargs)
+
+    if key2 is not None:
+        k = key2
+        curves = curves_all[k] if curves_all2 is None else curves_all2[k]
+        obs = None
+        sat_rad = None if sat_dict is None else sat_dict[k]
+        plot_contrasts(curves, nsig, wfe_list, obs=obs, sat_rad=sat_rad, 
+                       ax=ax, xr=xr, yr=yr, colors=c2)
+
+
+
+    # Right plot (Converted to MJup/MEarth)
+    ax = axes[1]
+    k = key1
+    curves = curves_all[k]
+    obs = obs_dict[k]
+    sat_rad = None if sat_dict is None else sat_dict[k]
+    ax, ax2, ax3 = plot_contrasts_mjup(curves, nsig, wfe_list, obs=obs, age=age, sat_rad=sat_rad, 
+                             ax=ax, colors=c1, xr=xr, twin_ax=True, return_axes=True)
+    axes2_all = [ax, ax2, ax3]
+    
+    if key2 is not None:
+        k = key2
+        curves = curves_all[k] if curves_all2 is None else curves_all2[k]
+        obs = obs_dict[k]
+        sat_rad = None if sat_dict is None else sat_dict[k]
+        plot_contrasts_mjup(curves, nsig, wfe_list, obs=obs, age=age, sat_rad=sat_rad, 
+                            ax=ax, colors=c2, xr=xr)
+
+    ax.set_title('Mass Sensitivities -- COND Models')
+
+    # Update fancing y-axis scaling on right plot
+    ax = axes2_all[0]
+    update_yscale(ax, yscale2, ylim=yr2)
+    yr_temp = np.array(ax.get_ylim()) * 318.0
+    update_yscale(axes2_all[1], yscale2, ylim=yr_temp)
+
+    # Left legend
+    nwfe = len(wfe_list)
+    ax=axes[0]
+    handles, labels = ax.get_legend_handles_labels()
+    h1 = handles[0:nwfe][::-1]
+    h2 = handles[nwfe:2*nwfe][::-1]
+    h3 = handles[2*nwfe:]
+    h1_t = [mpatches.Patch(color='none', label=label1)]
+    h2_t = [mpatches.Patch(color='none', label=label2)]
+    h3_t = [mpatches.Patch(color='none', label='SB12 Models')]
+    if key2 is not None:
+        handles_new = h1_t + h1 + h2_t + h2 + h3_t + h3
+        ncol = 3
+    else:
+        h3 = handles[nwfe:]
+        handles_new = h1_t + h1 + h3_t + h3
+        ncol = 2
+    ax.legend(ncol=ncol, handles=handles_new, loc=1, fontsize=9)
+
+    # Right legend
+    ax=axes[1]
+    handles, labels = ax.get_legend_handles_labels()
+    h1 = handles[0:nwfe][::-1]
+    h2 = handles[nwfe:2*nwfe][::-1]
+    h1_t = [mpatches.Patch(color='none', label=label1)]
+    h2_t = [mpatches.Patch(color='none', label=label2)]
+    if key2 is not None:
+        handles_new = h1_t + h1 + h2_t + h2
+        ncol = 2
+    else:
+        handles_new = h1_t + h1
+        ncol = 1
+    ax.legend(ncol=ncol, handles=handles_new, loc=1, fontsize=9)
+
+    # Title
+    name_sci = obs.sp_sci.name
+    dist = obs.distance
+    age_str = 'Age = {:.0f} Myr'.format(age)
+    dist_str = 'Distance = {:.1f} pc'.format(dist) if dist is not None else ''
+    title_str = '{} ({}, {})'.format(name_sci,age_str,dist_str)
+
+    fig.suptitle(title_str, fontsize=16);
+
+    fig.tight_layout()
+    fig.subplots_adjust(top=0.8, bottom=0.1 , left=0.05, right=0.95)
+
+    return (fig, (axes1_all, axes2_all))
+    
         
 def plot_images(obs_dict, hdu_dict, filt_keys, wfe_drift, fov=10, 
                 save_fig=False, outdir='', return_fig_axes=False):
