@@ -1819,6 +1819,7 @@ class NIRCam(object):
         # Create times indicating start of new ramp
         t0 = datetime.datetime.now()
         time_list = [t0] # First ramp time start
+        nint = self.multiaccum.nint
         if nint>1: # Second ramp time start
             dt = self.multiaccum_times['t_int_tot1'] if timeFileNames == True else 0
             time_list.append(time_list[0] + datetime.timedelta(seconds=dt))
