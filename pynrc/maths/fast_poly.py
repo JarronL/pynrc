@@ -7,7 +7,7 @@ import numpy as np
 def jl_poly(xvals, coeff, dim_reorder=False):
     """Evaluate polynomial
     
-    Replacement for np.polynomial.polynomial.polyval(wgood, coeff)
+    Replacement for `np.polynomial.polynomial.polyval(wgood, coeff)`
     to evaluate y-values given a set of xvals and coefficients.
     Uses matrix multiplication, which is much faster. Beware, the
     default output array shapes organization may differ from the 
@@ -23,10 +23,8 @@ def jl_poly(xvals, coeff, dim_reorder=False):
         to the polynomial degree + 1. Order such that lower degrees
         are first, and higher degrees are last.
     dim_reorder : bool
-        Reorder output shape to mimic the polyval routine,
-        where the first dimensions correspond to the coeff latter 
-        dimensions, and the final dimension is equal to the number 
-        of xvals.
+        If true, then result to be ordered (nx,ny,nz), otherwise we
+        use the Python preferred ordering (nz,ny,nx)
                        
     Returns
     -------
@@ -64,7 +62,7 @@ def jl_poly(xvals, coeff, dim_reorder=False):
         # Result to be ordered (nx,ny,nz)
         yfit = np.dot(cf.T, xfan)
 
-        if ndim==1 or n==1: yfit = yfit.flatten()
+        if ndim==1 or n==1: yfit = yfit.ravel()
         if ndim==3: yfit = yfit.reshape((dim[1],dim[2],n))
     else:
         # This is the Python preferred ordering
@@ -73,7 +71,7 @@ def jl_poly(xvals, coeff, dim_reorder=False):
         # Result to be ordered (nz,ny,nx)
         yfit = np.dot(xfan.T,cf)
 
-        if ndim==1 or n==1: yfit = yfit.flatten()
+        if ndim==1 or n==1: yfit = yfit.ravel()
         if ndim==3: yfit = yfit.reshape((n,dim[1],dim[2]))
 
     return yfit
@@ -88,9 +86,9 @@ def jl_poly_fit(x, yvals, deg=1, QR=True, robust_fit=False, niter=25):
     to produce a slope image.
     
     Gives the option of performing QR decomposition, which provides
-    a considerable speed-up compared to simply using np.linalg.lstsq().
+    a considerable speed-up compared to simply using `np.linalg.lstsq()`.
     In addition to being fast, it has better numerical stability than
-    linear regressions that involve matrix inversions (ie., dot(x.T,x)).
+    linear regressions that involve matrix inversions (ie., `dot(x.T,x)`).
     
     Returns the coefficients of the fit for each pixel.
     
