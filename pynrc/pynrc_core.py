@@ -277,6 +277,8 @@ class NIRCam(object):
         Specify which coronagraphic occulter (default: None).
     module : str
         NIRCam Module 'A' or 'B' (default: 'A').
+    apname : str
+        Use SIAF aperture name insted of pupil, mask, module, etc.
     ND_acq : bool
         ND square acquisition (default: False).
     ice_scale : float
