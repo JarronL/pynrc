@@ -184,7 +184,7 @@ class DetectorOps(det_timing):
         """Detector channel 'SW' or 'LW' (inferred from detector ID)"""
         return 'LW' if self.detid.endswith('5') else 'SW'
 
-    def pixel_noise(self, fsrc=0.0, fzodi=0.0, fbg=0.0, verbose=False, **kwargs):
+    def pixel_noise(self, fsrc=0.0, fzodi=0.0, fbg=0.0, ng=None, verbose=False, **kwargs):
         """Noise values per pixel.
         
         Return theoretical noise calculation for the specified MULTIACCUM exposure 
@@ -196,17 +196,25 @@ class DetectorOps(det_timing):
 
         Parameters
         ----------
-        fsrc : float
+        fsrc : float or image
             Flux of source in e-/sec/pix
-        fzodi : float
+        fzodi : float or image
             Flux of the zodiacal background in e-/sec/pix
-        fbg : float
+        fbg : float or image
             Flux of telescope background in e-/sec/pix
+        ng : None or int or image
+            Option to explicitly states number of groups. This is specifically
+            used to enable the ability of only calculating pixel noise for
+            unsaturated groups for each pixel. If a numpy array, then it should
+            be the same shape as `fsrc` image. By default will us `self.ngroup`.
+        verbose : bool
+            Print out results at the end.
+
+        Keyword Arguments
+        -----------------
         ideal_Poisson : bool
             If set to True, use total signal for noise estimate,
             otherwise MULTIACCUM equation is used.
-        verbose : bool
-            Print out results at the end.
 
         Notes
         -----
