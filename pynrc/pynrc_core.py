@@ -225,8 +225,11 @@ class DetectorOps(det_timing):
         """
 
         ma = self.multiaccum
+        if ng is none:
+            ng = ma.ngroup
+
         # Pixel noise per ramp (e-/sec/pix)
-        pn = pix_noise(ma.ngroup, ma.nf, ma.nd2, tf=self.time_frame, \
+        pn = pix_noise(ng, ma.nf, ma.nd2, tf=self.time_frame, \
                        rn=self.read_noise, ktc=self.ktc, p_excess=self.p_excess, \
                        idark=self.dark_current, fsrc=fsrc, fzodi=fzodi, fbg=fbg, **kwargs)
 

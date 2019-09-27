@@ -2801,7 +2801,7 @@ def sat_limit_webbpsf(filter_or_bp, pupil=None, mask=None, module='A', pix_scale
 
 def pix_noise(ngroup=2, nf=1, nd2=0, tf=10.737, rn=15.0, ktc=29.0, p_excess=(0,0),
     fsrc=0.0, idark=0.003, fzodi=0, fbg=0, ideal_Poisson=False,
-    ff_noise = True, **kwargs):
+    ff_noise=False, **kwargs):
     """Noise per pixel
 
     Theoretical noise calculation of a generalized MULTIACCUM ramp in terms of e-/sec.
@@ -2839,6 +2839,7 @@ def pix_noise(ngroup=2, nf=1, nd2=0, tf=10.737, rn=15.0, ktc=29.0, p_excess=(0,0
         otherwise MULTIACCUM equation is used?
     ff_noise : bool
         Include flat field errors in calculation? From JWST-CALC-003894.
+        Default=False.
 
     Notes
     -----
