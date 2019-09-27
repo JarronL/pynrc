@@ -225,7 +225,7 @@ class DetectorOps(det_timing):
         """
 
         ma = self.multiaccum
-        if ng is none:
+        if ng is None:
             ng = ma.ngroup
 
         # Pixel noise per ramp (e-/sec/pix)
