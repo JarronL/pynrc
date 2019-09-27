@@ -700,11 +700,16 @@ class NIRCam(object):
         """Science Instrument aperture info class"""
         return self._siaf_ap
         
+    @property
+    def siaf_ap_names(self):
+        """Give all possible SIAF aperture names"""
+        return list(self.siaf_nrc.apernames)
+        
     def update_from_SIAF(self, apname, pupil=None, **kwargs):
         """Update detector properties based on SIAF aperture"""
 
-        allap = list(self.siaf_nrc.apernames)
-        if not (apname in allap):
+        #allap = list(self.siaf_nrc.apernames)
+        if not (apname in self.siaf_ap_names):
             _log.warning('Cannot find {} in siaf.apernames list.'.format(apname))
             return
             
