@@ -1574,7 +1574,7 @@ class NIRCam(object):
 
         return fzodi_pix
         
-    def saturation_levels(self, sp, full_size=True, ngroup=2, **kwargs):
+    def saturation_levels(self, sp, full_size=True, ngroup=2, image=None, **kwargs):
         """Saturation levels.
         
         Create image showing level of saturation for each pixel.
@@ -1596,6 +1596,9 @@ class NIRCam(object):
             which is the very first frame that is read-out and saved 
             separately. This is the equivalent to ngroup=1 for RAPID
             and BRIGHT1 observations.
+        image : ndarray
+            Rather than generating an image on the fly, pass a pre-computed
+            slope image. Overrides `sp` and `full_size`
         
         """
         
@@ -1618,7 +1621,7 @@ class NIRCam(object):
         if t_sat>t_int:
             _log.warning('ngroup*t_group is greater than t_int.')
     
-        # Slope image of input source
+        # Slope image of input 
         if image is not None:
             return image * t_sat / self.well_level
         else:
