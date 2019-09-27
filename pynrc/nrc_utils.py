@@ -1197,7 +1197,7 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         fname = fname + '_jsig{:.0f}_r{:.1f}_th{:.1f}'.format(jitter_sigma*1000,rtemp,ttemp)
         fname = fname + '{}_{}'.format(bar_str,otemp)
         
-        fname = '{}{}_{}_{}_pix{}_os{}_jsig{:.0f}_r{:.1f}_th{:.1f}{}_{}'.\
+        fname = '{}{}_{}_{}_pix{}_os{}_jsig{:.0f}_r{:.2f}_th{:+.1f}{}_{}'.\
             format(chan_str,module,ptemp,mtemp,fov_pix,oversample,\
                    jitter_sigma*1000,rtemp,ttemp,bar_str,otemp)
                    
@@ -1947,6 +1947,8 @@ def gen_image_coeff(filter_or_bp, pupil=None, mask=None, module='A',
 
     # Create a PSF for each wgood wavelength
     psf_fit = jl_poly(wgood, coeff, dim_reorder=True)
+    # Just in case weird coeff gives negative values
+    psf_fit[psf_fit<0] = 0
 
     # Multiply each monochromatic PSFs by the binned e/sec at each wavelength
     # Array broadcasting: [nx,ny,nwave] x [0,0,nwave]
