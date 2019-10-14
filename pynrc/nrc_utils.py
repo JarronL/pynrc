@@ -1557,6 +1557,7 @@ def wfed_coeff(filter, force=False, save=True, save_name=None, **kwargs):
 
     if save:
         np.save(save_name, cf_fit)
+    _log.warn('Done.')
 
     return cf_fit
 
@@ -1694,6 +1695,7 @@ def field_coeff(filter, coeff0, force=False, save=True, save_name=None, **kwargs
 
     if save:
         np.save(save_name, A_lsq)
+    _log.warn('Done.')
 
     return A_lsq
 
@@ -1822,6 +1824,7 @@ def wedge_coeff(filter, pupil, mask, force=False, save=True, save_name=None, **k
     if save:
         np.save(save_name, cf_fit)
 
+    _log.warn('Done.')
     return cf_fit
 
 

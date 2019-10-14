@@ -41,7 +41,8 @@ def dist_image(image, pixscale=None, center=None, return_theta=False):
     y = y - center[1]
 
     rho = np.sqrt(x**2 + y**2)
-    if pixscale is not None: rho *= pixscale
+    if pixscale is not None: 
+        rho *= pixscale
 
     if return_theta:
         return rho, np.arctan2(-x,y)*180/np.pi
