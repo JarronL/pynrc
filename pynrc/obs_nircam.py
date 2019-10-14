@@ -1120,6 +1120,9 @@ class obs_hci(nrc_hci):
             but still add Poisson noise from disk.
         exclude_noise : bool
             Don't add random Gaussian noise (detector+photon)
+        ideal_Poisson : bool
+            If set to True, use total signal for noise estimate,
+            otherwise MULTIACCUM equation is used.
         quick_PSF : bool
             Rather than generate a spectrum-weighted PSF for planets, use
             the cached PSF scaled by the photon count through the bandpass.
@@ -1445,6 +1448,9 @@ class obs_hci(nrc_hci):
             Zodiacal background factor (default=2.5)
         exclude_noise : bool
             Don't add random Gaussian noise (detector+photon)?
+        ideal_Poisson : bool
+            If set to True, use total signal for noise estimate,
+            otherwise MULTIACCUM equation is used.
         opt_diff : bool
             Optimal reference differencing (scaling only on the inner regions)
 
@@ -1652,7 +1658,9 @@ class obs_hci(nrc_hci):
         thisday : int
             Calendar day to use for background calculation.  If not given, will use the
             average of visible calendar days.
-
+        ideal_Poisson : bool
+            If set to True, use total signal for noise estimate,
+            otherwise MULTIACCUM equation is used.
         """
 
         if do_ref:
@@ -1702,7 +1710,11 @@ class obs_hci(nrc_hci):
 
         # Noise per pixel
         if not exclude_noise:
-            im_noise = det.pixel_noise(fsrc=im_final)
+            # For each pixel, how many groups until saturation?
+            ng_sat = obs.well_level / (im_final * det.time_group)
+            ng_sat[ng_sat > obs.det_info['ngroup']] = obs.det_info['ngroup']
+        
+            im_noise = det.pixel_noise(fsrc=im_final, ng=ng_sat, **kwargs)
             # Add random noise
             im_final += np.random.normal(scale=im_noise)
 
@@ -1717,7 +1729,7 @@ class obs_hci(nrc_hci):
 
 
     def saturation_levels(self, ngroup=2, do_ref=False, image=None, **kwargs):
-        """Saturation levels.
+        """Saturation levels
 
         Create image showing level of saturation for each pixel.
         Saturation at different number of groups is possible with
