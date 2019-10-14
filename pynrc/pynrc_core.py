@@ -1256,6 +1256,33 @@ class NIRCam(object):
         self._psf_coeff = psf_coeff(self.bandpass, self.pupil, self.mask, self.module, 
             **self._psf_info)
 
+        # WFE Drift is handled differently than the rest of the parameters
+        # This is because we use wfed_coeff() to determine the resid values
+        # for the PSF coefficients to generate a drifted PSF.
+        if wfe_drift is not None:
+            self._wfe_drift = wfe_drift
+            
+        wfe_drift = self._wfe_drift
+        if wfe_drift>0:
+            _log.info('Updating WFE drift ({}nm) for fov_pix={} and oversample={}'.\
+                      format(wfe_drift,fov_pix,oversample))
+            wfe_kwargs = dict(self._psf_info)
+            wfe_kwargs['pupil']  = self._pupil
+            wfe_kwargs['mask']   = self._mask
+            wfe_kwargs['module'] = self.module
+#             if self._bar_wfe_val is None:
+#                 wfe_kwargs['bar_offset'] = self.bar_offset
+#             else:
+#                 wfe_kwargs['bar_offset'] = self._bar_wfe_val
+            wfe_kwargs['bar_offset'] = 0
+            #del wfe_kwargs['save'], wfe_kwargs['force']
+
+            wfe_cf = wfed_coeff(self.bandpass, **wfe_kwargs)
+            cf_fit = wfe_cf.reshape([wfe_cf.shape[0], -1])
+            cf_mod = jl_poly(np.array([wfe_drift]), cf_fit)
+            cf_mod = cf_mod.reshape(self._psf_coeff.shape)
+            self._psf_coeff += cf_mod
+            
         # Bar masks can have offsets
         if (self.mask is not None) and ('WB' in self.mask):
             r_bar, th_bar = self.offset_bar(self._filter, self.mask)
@@ -1284,33 +1311,7 @@ class NIRCam(object):
         else:
             self._bar_offset = 0
 
-        # WFE Drift is handled differently than the rest of the parameters
-        # This is because we use wfed_coeff() to determine the resid values
-        # for the PSF coefficients to generate a drifted PSF.
-        if wfe_drift is not None:
-            self._wfe_drift = wfe_drift
-            
-        wfe_drift = self._wfe_drift
-        if wfe_drift>0:
-            _log.info('Updating WFE drift ({}nm) for fov_pix={} and oversample={}'.\
-                      format(wfe_drift,fov_pix,oversample))
-            wfe_kwargs = dict(self._psf_info)
-            wfe_kwargs['pupil']  = self._pupil
-            wfe_kwargs['mask']   = self._mask
-            wfe_kwargs['module'] = self.module
-            if self._bar_wfe_val is None:
-                wfe_kwargs['bar_offset'] = self.bar_offset
-            else:
-                wfe_kwargs['bar_offset'] = self._bar_wfe_val
-            #del wfe_kwargs['save'], wfe_kwargs['force']
 
-            wfe_cf = wfed_coeff(self.bandpass, **wfe_kwargs)
-            cf_fit = wfe_cf.reshape([wfe_cf.shape[0], -1])
-            cf_mod = jl_poly(np.array([wfe_drift]), cf_fit)
-            cf_mod = cf_mod.reshape(self._psf_coeff.shape)
-            self._psf_coeff += cf_mod
-            
-    
         # If there is a coronagraphic spot or bar, then we may need to
         # generate another background PSF for sensitivity information.
         # It's easiest just to ALWAYS do a small footprint without the
