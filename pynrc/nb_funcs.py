@@ -985,6 +985,10 @@ def update_yscale(ax, scale_type, ylim=None):
         ylim = [0.1,100] if ylim is None else ylim
         ax.set_ylim(ylim)
         ax.yaxis.set_major_formatter(LogFormatterSciNotation())
+    elif 'lin' in scale_type:
+        ax.set_yscale('linear')
+        ylim = [0,100] if ylim is None else ylim
+        ax.set_ylim(ylim)
         
 
 def do_plot_contrasts(curves_ref, curves_roll, nsig, wfe_list, obs, age, age2=None, 
@@ -1008,15 +1012,15 @@ def do_plot_contrasts(curves_ref, curves_roll, nsig, wfe_list, obs, age, age2=No
 
     ax = axes[0]
     if curves_ref is not None:
-        ax, ax2, ax3 = plot_contrasts(curves_ref, nsig, wfe_list, 
+        ax1, ax2, ax3 = plot_contrasts(curves_ref, nsig, wfe_list, 
             obs=obs, ax=ax, colors=c1, xr=xr, yr=yr, return_axes=True)
-        axes1_all = [ax, ax2, ax3]
     if curves_roll is not None:
         obs_kw = None if curves_ref is not None else obs
-        ax = plot_contrasts(curves_roll, nsig, wfe_list, 
+        axes2 = plot_contrasts(curves_roll, nsig, wfe_list, 
             obs=obs_kw, ax=ax, colors=c2, xr=xr, yr=yr, return_axes=True)
-        if obs_kw is not None:
-            ax, ax2, ax3 = ax
+        if curves_ref is None:
+            ax1, ax2, ax3 = axes2
+    axes1_all = [ax1, ax2, ax3]
     #plot_planet_patches(ax, obs, age=age, av_vals=None, cond=True)
 
     #ax.set_ylim([22,8])
@@ -1050,12 +1054,17 @@ def do_plot_contrasts(curves_ref, curves_roll, nsig, wfe_list, obs, age, age2=No
     ax = axes[1]
     age1 = age
     if curves_ref is not None:
-        ax, ax2, ax3 = plot_contrasts_mjup(curves_ref, nsig, wfe_list, 
-            obs=obs, age=age1, ax=ax, colors=c1, xr=xr2, twin_ax=True, yr=None)
-        axes2_all = [ax, ax2, ax3]
+        ax1, ax2, ax3 = plot_contrasts_mjup(curves_ref, nsig, wfe_list, obs=obs, 
+            age=age1, ax=ax, colors=c1, xr=xr2, twin_ax=True, yr=None, return_axes=True)
     if curves_roll is not None:
         twin_kw = False if curves_ref is not None else True
-        plot_contrasts_mjup(curves_roll, nsig, wfe_list, obs=obs, age=age1, ax=ax, colors=c2, xr=xr2, twin_ax=twin_kw, yr=None)
+        axes2 = plot_contrasts_mjup(curves_roll, nsig, wfe_list, obs=obs, 
+            age=age1, ax=ax, colors=c2, xr=xr2, twin_ax=twin_kw, yr=None, return_axes=True)
+        if curves_ref is None:
+            ax1, ax2, ax3 = axes2
+    axes2_all = [ax1, ax2, ax3]
+
+            
     if age2 is not None:
         if curves_ref is not None:
             plot_contrasts_mjup(curves_ref, nsig, wfe_list, obs=obs, age=age2, ax=ax, colors=c3, xr=xr2, yr=None)
