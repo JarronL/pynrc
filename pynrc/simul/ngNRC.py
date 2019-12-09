@@ -469,7 +469,8 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
 def add_ipc(im, alpha_min=0.0065, alpha_max=None, kernel=None):
     """Convolve image with IPC kernel
     
-    Given an image in electrons, apply IPC convolution
+    Given an image in electrons, apply IPC convolution.
+    NIRCam average IPC values (alpha) reported 0.005 - 0.006.
     
     Parameters
     ==========

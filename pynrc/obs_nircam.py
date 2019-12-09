@@ -965,7 +965,7 @@ class obs_hci(nrc_hci):
             # by offsetting vertically from center of mask.
             tvals = np.interp(self.offset_list, yarr, mask_cut)
 
-            # Resort tvals and self.psf_list by transmission
+            # Re-sort tvals and self.psf_list by transmission
             isort = np.argsort(tvals)
             tvals = tvals[isort]
             psf_list_sort = [self.psf_list[i] for i in isort]

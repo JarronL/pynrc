@@ -974,7 +974,7 @@ def rotate_offset(data, angle, cen=None, cval=0.0, order=1,
         The two axes that define the plane of rotation. Default is the first
         two axes.
     reshape : bool, optional
-        If `reshape` is true, the output shape is adapted so that the input
+        If `reshape` is True, the output shape is adapted so that the input
         array is contained completely in the output. Default is True.
     order : int, optional
         The order of the spline interpolation, default is 1.
@@ -1039,6 +1039,7 @@ def rotate_offset(data, angle, cen=None, cval=0.0, order=1,
     #images_shift = images_shift.squeeze()
     
     # Rotate images
+    # TODO: Should reshape=True or reshape=reshape?
     images_shrot = rotate(images_shift, angle, reshape=True, **kwargs)
     
     if reshape:
