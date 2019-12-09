@@ -184,7 +184,8 @@ class DetectorOps(det_timing):
         """Detector channel 'SW' or 'LW' (inferred from detector ID)"""
         return 'LW' if self.detid.endswith('5') else 'SW'
 
-    def pixel_noise(self, fsrc=0.0, fzodi=0.0, fbg=0.0, ng=None, verbose=False, **kwargs):
+    def pixel_noise(self, fsrc=0.0, fzodi=0.0, fbg=0.0, rn=None, ktc=None, idark=None,
+        p_excess=None, ng=None, verbose=False, **kwargs):
         """Noise values per pixel.
         
         Return theoretical noise calculation for the specified MULTIACCUM exposure 
@@ -202,11 +203,22 @@ class DetectorOps(det_timing):
             Flux of the zodiacal background in e-/sec/pix
         fbg : float or image
             Flux of telescope background in e-/sec/pix
+        idark : float or image
+            Option to specify dark current in e-/sec/pix.
+        rn : float
+            Option to specify Read Noise per pixel (e-).
+        ktc : float
+            Option to specify kTC noise (in e-). Only valid for single frame (n=1)
+        p_excess : array-like
+            Optional. An array or list of two elements that holds the parameters
+            describing the excess variance observed in effective noise plots.
+            By default these are both 0. For NIRCam detectors, recommended
+            values are [1.0,5.0] for SW and [1.5,10.0] for LW.
         ng : None or int or image
             Option to explicitly states number of groups. This is specifically
             used to enable the ability of only calculating pixel noise for
             unsaturated groups for each pixel. If a numpy array, then it should
-            be the same shape as `fsrc` image. By default will us `self.ngroup`.
+            be the same shape as `fsrc` image. By default will use `self.ngroup`.
         verbose : bool
             Print out results at the end.
 
@@ -227,11 +239,19 @@ class DetectorOps(det_timing):
         ma = self.multiaccum
         if ng is None:
             ng = ma.ngroup
+        if rn is None:
+            rn = self.read_noise
+        if ktc is None:
+            ktc = self.ktc
+        if p_excess is None:
+            p_excess = self.p_excess
+        if idark is None:
+            idark = self.dark_current
 
         # Pixel noise per ramp (e-/sec/pix)
-        pn = pix_noise(ng, ma.nf, ma.nd2, tf=self.time_frame, \
-                       rn=self.read_noise, ktc=self.ktc, p_excess=self.p_excess, \
-                       idark=self.dark_current, fsrc=fsrc, fzodi=fzodi, fbg=fbg, **kwargs)
+        pn = pix_noise(ng, ma.nf, ma.nd2, tf=self.time_frame, 
+                       rn=rn, ktc=ktc, p_excess=p_excess, 
+                       idark=idark, fsrc=fsrc, fzodi=fzodi, fbg=fbg, **kwargs)
 
         # Divide by sqrt(Total Integrations)
         final = pn / np.sqrt(ma.nint)
@@ -436,6 +456,8 @@ class NIRCam(object):
         # Specify ice and nvr scalings
         self._ice_scale = kwargs['ice_scale'] if 'ice_scale' in kwargs.keys() else None
         self._nvr_scale = kwargs['nvr_scale'] if 'nvr_scale' in kwargs.keys() else None
+        self._ote_scale = kwargs['ote_scale'] if 'ote_scale' in kwargs.keys() else None
+        self._nc_scale = kwargs['nc_scale'] if 'nc_scale' in kwargs.keys() else None
 
         # Let's figure out what keywords the user has set and try to 
         # interpret what he/she actually wants. If certain values have
@@ -623,7 +645,8 @@ class NIRCam(object):
         """Update bandpass based on filter, pupil, and module, etc."""
         self._bandpass = read_filter(self._filter, self._pupil, self._mask, 
                                      self.module, self.ND_acq,
-                                     ice_scale=self._ice_scale, nvr_scale=self._nvr_scale)
+                                     ice_scale=self._ice_scale, nvr_scale=self._nvr_scale,
+                                     ote_scale=self._ote_scale, nc_scale=self._nc_scale)
 
     def plot_bandpass(self, ax=None, color=None, title=None, **kwargs):
         """
