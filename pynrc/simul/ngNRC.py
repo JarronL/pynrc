@@ -27,7 +27,7 @@ from astropy.table import Table
 
 # HxRG Noise Generator
 from . import nghxrg as ng
-from pynrc.nrc_utils import nrc_header
+from pynrc.nrc_utils import nrc_header, pad_or_cut_to_size
 
 #import pdb
 from copy import deepcopy
@@ -485,7 +485,7 @@ def add_ipc(im, alpha_min=0.0065, alpha_max=None, kernel=None):
         coupling between pixel pairs is assumed to vary depending
         on signal values. See Donlon et al., 2019, PASP 130.
     kernel : ndarry or None
-        Option to directly specify the convolution kernel.
+        Option to directly specify the convolution kernel. 
     
     Examples
     ========
@@ -577,14 +577,20 @@ def add_ppc(im, ppc_frac=0.002, nchans=4,
     
     Parameters
     ==========
-    im : Image or array of images
-    
+    im : ndarray
+        Image or array of images
+    ppc_frac : float
+        Fraction of signal contaminating next pixel in readout. 
+    nchans : int
+        Number of readout output channel amplifiers.
     same_scan_direction : bool
         Are all the output channels read in the same direction?
         By default fast-scan readout direction is ``[-->,<--,-->,<--]``
         If ``same_scan_direction``, then all ``-->``
     reverse_scan_direction : bool
         If ``reverse_scan_direction``, then ``[<--,-->,<--,-->]`` or all ``<--``
+    in_place : bool
+        Apply in place to input image.
     """
 
                        
@@ -605,18 +611,195 @@ def add_ppc(im, ppc_frac=0.002, nchans=4,
     res = im if in_place else im.copy()
     for ch in np.arange(nchans):
         if same_scan_direction:
-            k = kernel if reverse_scan_direction else kernel[:,::-1]
-        elif np.mod(ch,2)==0:
-            k = kernel if reverse_scan_direction else kernel[:,::-1]
-        else:
             k = kernel[:,::-1] if reverse_scan_direction else kernel
+        elif np.mod(ch,2)==0:
+            k = kernel[:,::-1] if reverse_scan_direction else kernel
+        else:
+            k = kernel if reverse_scan_direction else kernel[:,::-1]
 
         x1 = chsize*ch
         x2 = x1 + chsize
-        res[:,:,x1:x2] = add_ipc(im[:,:,x1:x2], kernel=kernel)
+        res[:,:,x1:x2] = add_ipc(im[:,:,x1:x2], kernel=k)
     
                       
     return res.squeeze()
+
+
+def ipc_deconvolve(im, kernel, kfft=None):
+    """Simple IPC image deconvolution
+    
+    Given an image (or image cube), apply an IPC deconvolution kernel
+    to obtain the intrinsic flux distribution. Should also work for 
+    PPC kernels. This simply calculates the FFT of the image(s) and
+    kernel, divides them, then applies an iFFT to determine the
+    deconvolved image.
+    
+    If performing PPC deconvolution, make sure to perform channel-by-channel
+    with the kernel in the appropriate scan direction.
+ 
+    Parameters
+    ==========
+    im : ndarray
+        Image or array of images. 
+    kernel : ndarry
+        Deconvolution kernel.
+    kfft : Complex ndarray
+        Option to directy supply the kernel's FFT rather than
+        calculating it within the function. The supplied ndarray
+        should have shape (ny,nx) equal to the input `im`. Useful
+        if calling ``ipc_deconvolve`` multiple times.
+    """
+
+    # bias the image to avoid negative pixel values in image
+    min_im = np.min(im)
+    im = im - min_im
+
+    # FFT of input image
+    imfft = np.fft.fft2(im)
+
+    # FFT of kernel
+    if kfft is None:
+        ipc_big = pad_or_cut_to_size(kernel, (im.shape[-2],im.shape[-1]))
+        kfft = np.fft.fft2(ipc_big)
+
+    im_final = np.fft.fftshift(np.fft.ifft2(imfft/kfft).real, axes=(-2,-1)) + min_im
+
+    return im_final
+
+
+def get_ipc_kernel(imdark, tint, boxsize=5, nchans=4, bg_remove=True,
+                   hotcut=[5000,50000], calc_ppc=False,
+                   same_scan_direction=False, reverse_scan_direction=False):
+    """ Derive IPC/PPC Convolution Kernels
+    
+    Find the IPC and PPC kernels used to convolve detector pixel data.
+
+    same_scan_direction : bool
+        Are all the output channels read in the same direction?
+        By default fast-scan readout direction is ``[-->,<--,-->,<--]``
+        If ``same_scan_direction``, then all ``-->``
+    reverse_scan_direction : bool
+        If ``reverse_scan_direction``, then ``[<--,-->,<--,-->]`` or all ``<--``
+
+    """
+    
+    ny, nx = imdark.shape
+    chsize = int(ny / nchans)
+
+    imtemp = imdark * tint
+
+    boxhalf = int(boxsize/2)
+    boxsize = int(2*boxhalf + 1)
+    distmin = np.ceil(np.sqrt(2.0) * boxhalf)
+
+    # Get rid of pixels around border
+    pixmask = ((imtemp>hotcut[0]) & (imtemp<hotcut[1]))
+    pixmask[0:4+boxhalf, :] = False
+    pixmask[-4-boxhalf, :]  = False
+    pixmask[:, 0:4+boxhalf] = False
+    pixmask[:, -4-boxhalf]  = False
+
+    # Ignore borders between amplifiers
+    for ch in range(1, nchans):
+        x1 = ch*chsize - boxhalf
+        x2 = x1 + 2*boxhalf
+        pixmask[:, x1:x2] = False
+    indy, indx = np.where(pixmask)
+    nhot = len(indy)
+    if nhot < 2:
+        print("No hot pixels found!")
+        return None
+
+    # Only want isolated pixels
+    # Get distances for every pixel
+    # If too close, then set equal to 0
+    for i in range(nhot):
+        d = np.sqrt((indx-indx[i])**2 + (indy-indy[i])**2)
+        ind_close = np.where((d>0) & (d<distmin))[0]
+        if len(ind_close)>0: pixmask[indy[i], indx[i]] = 0
+    indy, indx = np.where(pixmask)
+    nhot = len(indy)
+    if nhot < 2:
+        print("No hot pixels found!")
+        return None
+
+    # Stack all hot pixels in a cube
+    hot_all = []
+    for iy, ix in zip(indy, indx):
+        x1, y1 = np.array([ix,iy]) - boxhalf
+        x2, y2 = np.array([x1,y1]) + boxsize
+        sub = imtemp[y1:y2, x1:x2]
+
+        # Flip channels along x-axis for PPC
+        if calc_ppc:
+            # Check if an even or odd channel (index 0)
+            for ch in np.arange(0,nchans,2):
+                even = True if (ix > ch*chsize) and (ix < (ch+1)*chsize-1) else False
+        
+            if same_scan_direction:
+                flip = True if reverse_scan_direction else False
+            elif even:
+                flip = True if reverse_scan_direction else False
+            else:
+                flip = False if reverse_scan_direction else True
+
+            if flip: sub = sub[:,::-1]
+
+        hot_all.append(sub)
+    hot_all = np.array(hot_all)
+
+    # Remove average dark current values
+    if boxsize>3 and bg_remove==True:
+        for im in hot_all:
+            im -= np.median([im[0,:], im[:,0], im[-1,:], im[:,-1]])
+
+    # Normalize by sum in 3x3 region
+    norm_all = hot_all.copy()
+    for im in norm_all:
+        im /= im[boxhalf-1:boxhalf+2, boxhalf-1:boxhalf+2].sum()
+
+    # Take average of normalized stack
+    ipc_im_avg = np.median(norm_all, axis=0)
+#     ipc_im_sig = robust.medabsdev(norm_all, axis=0)
+
+    corner_val = (ipc_im_avg[boxhalf-1,boxhalf-1] + 
+                 ipc_im_avg[boxhalf+1,boxhalf+1] + 
+                 ipc_im_avg[boxhalf+1,boxhalf-1] + 
+                 ipc_im_avg[boxhalf-1,boxhalf+1]) / 4
+    if corner_val<0: corner_val = 0
+
+    # Determine post-pixel coupling value?
+    if calc_ppc:
+        ipc_val = (ipc_im_avg[boxhalf-1,boxhalf] + \
+                  ipc_im_avg[boxhalf,boxhalf-1] + \
+                  ipc_im_avg[boxhalf+1,boxhalf]) / 3
+        if ipc_val<0: ipc_val = 0
+            
+        ppc_val = ipc_im_avg[boxhalf,boxhalf+1] - ipc_val
+        if ppc_val<0: ppc_val = 0
+
+        k_ipc = np.array([[corner_val, ipc_val, corner_val],
+                         [ipc_val, 1-4*ipc_val, ipc_val],
+                         [corner_val, ipc_val, corner_val]])
+        k_ppc = np.zeros([3,3])
+        k_ppc[1,1] = 1 - ppc_val
+        k_ppc[1,2] = ppc_val
+        
+        return (k_ipc, k_ppc)
+        
+    # Just determine IPC
+    else:
+        ipc_val = (ipc_im_avg[boxhalf-1,boxhalf] + 
+                  ipc_im_avg[boxhalf,boxhalf-1] + 
+                  ipc_im_avg[boxhalf,boxhalf+1] + 
+                  ipc_im_avg[boxhalf+1,boxhalf]) / 4
+        if ipc_val<0: ipc_val = 0
+
+        kernel = np.array([[corner_val, ipc_val, corner_val],
+                           [ipc_val, 1-4*ipc_val, ipc_val],
+                           [corner_val, ipc_val, corner_val]])
+        
+        return kernel
 
 
 # npix = 20
