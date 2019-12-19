@@ -1107,6 +1107,8 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
 
     """
 
+    from .version import __version__
+
     grism_obs = (pupil is not None) and ('GRISM' in pupil)
     dhs_obs   = (pupil is not None) and ('DHS'   in pupil)
     coron_obs = (pupil is not None) and ('LYOT'  in pupil)
@@ -1498,6 +1500,7 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         hdr['FORCE']    = (force, "Forced calculations?")
         hdr['SAVE']     = (save, "Save file?")
         hdr['FILENAME'] = (os.path.basename(save_name), "File save name")
+        hdr['PYNRCVER'] = (__version__, "pyNRC version")
 
         hdr.insert('DATAVERS', '', after=True)
         hdr.insert('DATAVERS', ('','psf_coeff() Keyword Values'), after=True)
