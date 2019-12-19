@@ -19,7 +19,7 @@ class nrc_hci(NIRCam):
     """NIRCam coronagraphy (and direct imaging)
 
     Subclass of the :mod:`~pynrc.NIRCam` instrument class with updates for PSF
-    geneation of off-axis PSFs. If a coronagraph is not present,
+    generation of off-axis PSFs. If a coronagraph is not present,
     then this is effetively the same as the :mod:`~pynrc.NIRCam` class.
 
     Parameters

@@ -1457,7 +1457,7 @@ class NIRCam(object):
             fov_pix_over = trim_psf * kwargs['oversample']
             coeff = []
             for im in psf_coeff:
-                im = fshift(im, xsh, ysh)
+                im = fshift(im, -xsh, -ysh)
                 im = pad_or_cut_to_size(im, (fov_pix_over,fov_pix_over))
                 coeff.append(im)
             psf_coeff = np.array(coeff)
