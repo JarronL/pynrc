@@ -695,9 +695,9 @@ def get_ipc_kernel(imdark, tint, boxsize=5, nchans=4, bg_remove=True,
     # Get rid of pixels around border
     pixmask = ((imtemp>hotcut[0]) & (imtemp<hotcut[1]))
     pixmask[0:4+boxhalf, :] = False
-    pixmask[-4-boxhalf, :]  = False
+    pixmask[-4-boxhalf:, :] = False
     pixmask[:, 0:4+boxhalf] = False
-    pixmask[:, -4-boxhalf]  = False
+    pixmask[:, -4-boxhalf:] = False
 
     # Ignore borders between amplifiers
     for ch in range(1, nchans):
