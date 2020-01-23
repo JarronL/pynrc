@@ -1403,7 +1403,7 @@ class obs_hci(nrc_hci):
         #    final = rotate(final, PA1, reshape=False)
 
         hdu = fits.PrimaryHDU(final)
-        hdu.header['EXTNAME'] = ('ROLL_SUB')
+        hdu.header['EXTNAME'] = ('REF_SUB')
         hdu.header['OVERSAMP'] = oversample
         hdu.header['PIXELSCL'] = sci.pix_scale / hdu.header['OVERSAMP']
         hdulist = fits.HDUList([hdu])
