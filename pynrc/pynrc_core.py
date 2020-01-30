@@ -185,7 +185,7 @@ class DetectorOps(det_timing):
         return 'LW' if self.detid.endswith('5') else 'SW'
 
     def pixel_noise(self, fsrc=0.0, fzodi=0.0, fbg=0.0, rn=None, ktc=None, idark=None,
-        p_excess=None, ng=None, verbose=False, **kwargs):
+        p_excess=None, ng=None, nf=None, verbose=False, **kwargs):
         """Noise values per pixel.
         
         Return theoretical noise calculation for the specified MULTIACCUM exposure 
@@ -239,6 +239,8 @@ class DetectorOps(det_timing):
         ma = self.multiaccum
         if ng is None:
             ng = ma.ngroup
+        if nf is None:
+            nf = ma.nf
         if rn is None:
             rn = self.read_noise
         if ktc is None:
@@ -249,10 +251,10 @@ class DetectorOps(det_timing):
             idark = self.dark_current
 
         # Pixel noise per ramp (e-/sec/pix)
-        pn = pix_noise(ng, ma.nf, ma.nd2, tf=self.time_frame, 
+        pn = pix_noise(ngroup=ng, nf=nf, nd2=ma.nd2, tf=self.time_frame, 
                        rn=rn, ktc=ktc, p_excess=p_excess, 
                        idark=idark, fsrc=fsrc, fzodi=fzodi, fbg=fbg, **kwargs)
-
+    
         # Divide by sqrt(Total Integrations)
         final = pn / np.sqrt(ma.nint)
         if verbose:
