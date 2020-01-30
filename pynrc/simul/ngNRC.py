@@ -673,7 +673,21 @@ def get_ipc_kernel(imdark, tint, boxsize=5, nchans=4, bg_remove=True,
     """ Derive IPC/PPC Convolution Kernels
     
     Find the IPC and PPC kernels used to convolve detector pixel data.
+    Finds all hot pixels within hotcut parameters and measures the
+    average relative flux within adjacent pixels.
 
+    Parameters
+    ==========
+
+    Keyword Parameters
+    ==================
+    boxsize : int
+        Size of the box. Should be odd, but if even, then adds +1.
+    hotcut : array-like
+        Min and max values of hot pixels (above bg and bias) to cosider.
+    bg_remove : bool
+        Remove the average dark current values for each hot pixel cut-out.
+        Only works if boxsize>3.
     same_scan_direction : bool
         Are all the output channels read in the same direction?
         By default fast-scan readout direction is ``[-->,<--,-->,<--]``
