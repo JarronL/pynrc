@@ -505,14 +505,14 @@ class obs_hci(nrc_hci):
             ypix = self.det_info['ypix']
             oversample = self.psf_info['oversample']
 
-            disk_hdul = self._disk_hdulist_input
+            disk_hdul = deepcopy(self._disk_hdulist_input)
             hdr = disk_hdul[0].header
 
             # Get rid of the central star flux
             # and anything interior to a few pixels
-            image = disk_hdul[0].data
-            image_rho = dist_image(image)
-            image[image_rho < 4] = 0
+            #image = disk_hdul[0].data
+            #image_rho = dist_image(image)
+            #image[image_rho < 4] = 0
 
             # Resample disk to detector pixel scale
             # args_in  = (input pixelscale,  input distance)
@@ -1715,6 +1715,11 @@ class obs_hci(nrc_hci):
             ng_sat[ng_sat > obs.det_info['ngroup']] = obs.det_info['ngroup']
         
             im_noise = det.pixel_noise(fsrc=im_final, ng=ng_sat, **kwargs)
+            # Fix any values due to ng<1
+            ind_fix = (np.isnan(im_noise)) | (ng_sat < 1)
+            if np.sum(ind_fix)>0:
+                im_noise[ind_fix] = det.pixel_noise(fsrc=im_final[ind_fix], ng=1, nf=1, **kwargs)
+
             # Add random noise
             im_final += np.random.normal(scale=im_noise)
 
