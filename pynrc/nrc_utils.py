@@ -2025,9 +2025,9 @@ def gen_image_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         spec_list = []
         spec_list_over = []
         for psf_fit in psf_list:
-            # If GRISM90 (along columns) rotate by 90 deg CW (270 deg CCW)
+            # If GRISM90 (along columns) rotate image by 90 deg CW 
             if 'GRISM90' in pupil:
-                psf_fit = np.rot90(psf_fit, k=3) # Rotate PSFs by 3*90 deg CCW
+                psf_fit = np.rot90(psf_fit, k=1) 
 
             # Create oversampled spectral image
             spec_over = np.zeros([fov_pix_over, npix_spec_over])
@@ -2048,13 +2048,16 @@ def gen_image_coeff(filter_or_bp, pupil=None, mask=None, module='A',
             spec_over[spec_over<__epsilon] = 0 #__epsilon
 
             # Rotate spectrum to its V2/V3 coordinates
-            if 'GRISM90' in pupil: # Rotate 90 deg CCW
-                spec_over = np.rot90(spec_over, k=1)
+            spec_bin = poppy.utils.krebin(spec_over, (fov_pix,npix_spec))
+            if 'GRISM90' in pupil: # Rotate image 90 deg CCW
+                spec_over = np.rot90(spec_over, k=-1)
+                spec_bin = np.rot90(spec_bin, k=-1)
             elif module=='B': # Flip right to left
                 spec_over = spec_over[:,::-1]
+                spec_bin = spec_bin[:,::-1]
 
             # Rebin ovesampled spectral image to real pixels
-            spec_list.append(poppy.utils.krebin(spec_over, (fov_pix,npix_spec)))
+            spec_list.append(spec_bin)
             spec_list_over.append(spec_over)
 
         # Wavelength solutions
@@ -4546,6 +4549,260 @@ def jupiter_spec(dist=10, waveout='angstrom', fluxout='flam', base_dir=None):
     return sp
 
 
+def linder_table(file=None, **kwargs):
+    """Load Linder Model Table
+
+    Function to read in isochrone models from Linder et al. 2019.
+    Returns an astropy Table.
+
+    Parameters
+    ----------
+    age : float
+        Age in Myr. If set to None, then an array of ages from the file 
+        is used to generate dictionary. If set, chooses the closest age
+        supplied in table.
+    file : string
+        Location and name of COND file. See isochrones stored at
+        https://phoenix.ens-lyon.fr/Grids/.
+        Default is model.AMES-Cond-2000.M-0.0.JWST.Vega
+    """
+
+    # Default file to read and load
+    if file is None:
+        base_dir = conf.PYNRC_PATH + 'linder/isochrones/'
+        file = base_dir + 'BEX_evol_mags_-3_MH_0.00.dat'
+
+    with open(file) as f:
+        content = f.readlines()
+
+    content = [x.strip('\n') for x in content]
+
+    cnames = content[2].split(',')
+    cnames = [name.split(':')[1] for name in cnames]
+    ncol = len(cnames)
+    
+    content_arr = []
+    for line in content[4:]:
+        arr = np.array(line.split()).astype(np.float)
+        if len(arr)>0: 
+            content_arr.append(arr)
+    
+    content_arr = np.array(content_arr)
+
+    # Convert to Astropy Table
+    tbl = Table(rows=content_arr, names=cnames)
+    
+    return tbl
+    
+def linder_filter(table, filt, age, dist=None, 
+    cond_interp=True, cond_file=None, **kwargs):
+    """Linder Mags vs Mass Arrays
+    
+    Given a Linder table, NIRCam filter, and age, return arrays of MJup 
+    and Vega mags. If distance (pc) is provided, then return the apparent 
+    magnitude, otherwise absolute magnitude at 10pc.
+    
+    This function takes the isochrones tables from Linder et al 2019 and
+    creates a irregular contour grid of filter magnitude and lag(age)
+    where the z-axis is log(mass). This is mapped onto a regular grid
+    that is interpolated within the data boundaries and linearly
+    extrapolated outside of the region of available data.
+    
+    Parameters
+    ==========
+    table : astropy table
+        Astropy table output from `linder_table`
+    filt : string
+        Name of NIRCam filter
+    age : float
+        Age of planet mass
+    """
+
+    from scipy.interpolate import griddata, RegularGridInterpolator
+    
+    
+    def _trim_nan_image(xgrid, ygrid, zgrid):
+        """NaN Trimming of Image
+    
+        Remove rows/cols with NaN's while trying to preserve
+        the maximum footprint of real data.
+        """
+    
+        xgrid2, ygrid2, zgrid2 = xgrid, ygrid, zgrid
+    
+        # Create a mask of NaN'ed values
+        nan_mask = np.isnan(zgrid2)
+        nrows, ncols = nan_mask.shape
+        # Determine number of NaN's along each row and col
+        num_nans_cols = nan_mask.sum(axis=0)
+        num_nans_rows = nan_mask.sum(axis=1)
+    
+        # First, crop all rows/cols that are only NaN's
+        xind_good = np.where(num_nans_cols < nrows)[0]
+        yind_good = np.where(num_nans_rows < ncols)[0]
+        # get border limits
+        x1, x2 = (xind_good.min(), xind_good.max()+1)
+        y1, y2 = (yind_good.min(), yind_good.max()+1)
+        # Trim of NaN borders
+        xgrid2 = xgrid2[x1:x2]
+        ygrid2 = ygrid2[y1:y2]
+        zgrid2 = zgrid2[y1:y2,x1:x2]
+    
+        # Find a optimal rectangule subsection free of NaN's
+        # Iterative cropping
+        ndiff = 5
+        while np.isnan(zgrid2.sum()):
+            # Make sure ndiff is not negative
+            if ndiff<0:
+                break
+
+            npix = zgrid2.size
+
+            # Create a mask of NaN'ed values
+            nan_mask = np.isnan(zgrid2)
+            nrows, ncols = nan_mask.shape
+            # Determine number of NaN's along each row and col
+            num_nans_cols = nan_mask.sum(axis=0)
+            num_nans_rows = nan_mask.sum(axis=1)
+
+            # Look for any appreciable diff row-to-row/col-to-col
+            col_diff = num_nans_cols - np.roll(num_nans_cols,-1) 
+            row_diff = num_nans_rows - np.roll(num_nans_rows,-1)
+            # For edge wrapping, just use last minus previous
+            col_diff[-1] = col_diff[-2]
+            row_diff[-1] = row_diff[-2]
+        
+            # Keep rows/cols composed mostly of real data 
+            # and where number of NaN's don't change dramatically
+            xind_good = np.where( ( np.abs(col_diff) <= ndiff  ) & 
+                                  ( num_nans_cols < 0.5*nrows ) )[0]
+            yind_good = np.where( ( np.abs(row_diff) <= ndiff  ) & 
+                                  ( num_nans_rows < 0.5*ncols ) )[0]
+            # get border limits
+            x1, x2 = (xind_good.min(), xind_good.max()+1)
+            y1, y2 = (yind_good.min(), yind_good.max()+1)
+    
+            # Trim of NaN borders
+            xgrid2 = xgrid2[x1:x2]
+            ygrid2 = ygrid2[y1:y2]
+            zgrid2 = zgrid2[y1:y2,x1:x2]
+        
+            # Check for convergence
+            # If we've converged, reduce 
+            if npix==zgrid2.size:
+                ndiff -= 1
+                
+        # Last ditch effort in case there are still NaNs
+        # If so, remove rows/cols 1 by 1 until no NaNs
+        while np.isnan(zgrid2.sum()):
+            xgrid2 = xgrid2[1:-1]
+            ygrid2 = ygrid2[1:-1]
+            zgrid2 = zgrid2[1:-1,1:-1]
+            
+        return xgrid2, ygrid2, zgrid2
+
+    try:
+        x = table[filt]
+    except KeyError:
+        # In case specific filter doesn't exist, interpolate
+        x = []
+        cnames = ['SPHEREY','NACOJ', 'NACOH', 'NACOKs', 'NACOLp', 'NACOMp',
+                  'F115W', 'F150W', 'F200W', 'F277W', 'F356W', 'F444W', 'F560W']
+        wvals = np.array([1.04, 1.27, 1.66, 2.20, 3.80, 4.80,
+                          1.15, 1.50, 2.00, 2.76, 3.57, 4.41, 5.60])
+                          
+        # Sort by wavelength 
+        isort = np.argsort(wvals)
+        cnames = list(np.array(cnames)[isort])
+        wvals = wvals[isort]
+
+        # Turn table data into array and interpolate at filter wavelength
+        tbl_arr = np.array([table[cn].data for cn in cnames]).transpose()
+        bp = read_filter(filt)
+        wint = bp.avgwave() / 1e4
+        x = np.array([np.interp(wint, wvals, row) for row in tbl_arr])
+        
+    y = table['log(Age/yr)'].data
+    z = table['Mass/Mearth'].data
+    zlog = np.log10(z)
+
+    #######################################################
+    # Grab COND model data to fill in higher masses
+    base_dir = conf.PYNRC_PATH + 'cond_models/'
+    if cond_file is None: 
+        cond_file = base_dir + 'model.AMES-Cond-2000.M-0.0.JWST.Vega'
+        
+    npsave_file = cond_file + '.{}.npy'.format(filt)
+    
+    try:
+        mag2, age2, mass2_mjup = np.load(npsave_file)
+    except:
+        d_tbl2 = cond_table(file=cond_file) # Dictionary of ages
+        mass2_mjup = []
+        mag2 = []
+        age2 = []
+        for k in d_tbl2.keys():
+            tbl2 = d_tbl2[k]
+            mass2_mjup = mass2_mjup + list(tbl2['MJup'].data)
+            mag2 = mag2 + list(tbl2[filt+'a'].data)
+            age2 = age2 + list(np.ones(len(tbl2))*k)
+    
+        mass2_mjup = np.array(mass2_mjup)
+        mag2 = np.array(mag2)
+        age2 = np.array(age2)
+    
+        mag_age_mass = np.array([mag2,age2,mass2_mjup])
+        np.save(npsave_file, mag_age_mass)    
+
+    # Irregular grid
+    x2 = mag2
+    y2 = np.log10(age2 * 1e6)
+    z2 = mass2_mjup * 318
+    zlog2 = np.log10(z2)
+    
+
+    #######################################################
+    
+    xlim = np.array([x2.min(),x.max()+5]) 
+    ylim = np.array([6,10])  # 10^6 to 10^10 yrs
+    dx = (xlim[1] - xlim[0]) / 200
+    dy = (ylim[1] - ylim[0]) / 200
+    xgrid = np.arange(xlim[0], xlim[1]+dx, dx)
+    ygrid = np.arange(ylim[0], ylim[1]+dy, dy)
+    X, Y = np.meshgrid(xgrid, ygrid)
+    
+    zgrid = griddata((x,y), zlog, (X, Y), method='cubic')
+    zgrid_cond = griddata((x2,y2), zlog2, (X, Y), method='cubic')
+
+    # There will be NaN's along the border that need to be replaced
+    ind_nan = np.isnan(zgrid)
+    # First replace with COND grid
+    zgrid[ind_nan] = zgrid_cond[ind_nan]
+    ind_nan = np.isnan(zgrid)
+    
+    # Remove rows/cols with NaN's
+    xgrid2, ygrid2, zgrid2 = _trim_nan_image(xgrid, ygrid, zgrid)
+
+    # Create regular grid interpolator function for extrapolation at NaN's
+    func = RegularGridInterpolator((ygrid2,xgrid2), zgrid2, method='linear',
+                                   bounds_error=False, fill_value=None)
+
+    # Fix NaN's in zgrid and rebuild func
+    pts = np.array([Y[ind_nan], X[ind_nan]]).transpose()
+    zgrid[ind_nan] = func(pts)
+
+    func = RegularGridInterpolator((ygrid,xgrid), zgrid, method='linear',
+                                   bounds_error=False, fill_value=None)
+    
+    # Get mass limits for series of magnitudes at a given age                                
+    age_log = np.log10(age*1e6)
+    mag_abs_arr = xgrid
+    pts = np.array([(age_log,xval) for xval in mag_abs_arr])
+    mass_arr = 10**func(pts) / 318.0 # Convert to MJup
+    
+    mag_app_arr = mag_abs_arr + 5*np.log10(dist/10.0)
+    return mass_arr, mag_app_arr
+    
 
 def cond_table(age=None, file=None, **kwargs):
     """Load COND Model Table
@@ -4559,8 +4816,9 @@ def cond_table(age=None, file=None, **kwargs):
     Parameters
     ----------
     age : float
-        Age of table in myr. If set to None, then an array
-        of ages from the file is used to generate dictionary.
+        Age in Myr. If set to None, then an array of ages from the file 
+        is used to generate dictionary. If set, chooses the closest age
+        supplied in table.
     file : string
         Location and name of COND file. See isochrones stored at
         https://phoenix.ens-lyon.fr/Grids/.

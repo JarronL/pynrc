@@ -436,8 +436,9 @@ def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True,
     if nsat1_sci == nsat1_ref == 0:
         sat_rad = 0
     else:
-        rho_asec = dist_image(sci_mask1, pixscale=obs.pix_scale)
-        sat_rad = rho_asec[sci_mask1].max()
+        mask_temp = sci_mask1 if nsat1_sci>nsat1_ref else ref_mask1
+        rho_asec = dist_image(mask_temp, pixscale=obs.pix_scale)
+        sat_rad = rho_asec[mask_temp].max()
     
     if verbose:
         print('Sci: {}'.format(obs.sp_sci.name))
@@ -592,7 +593,7 @@ def average_slopes(hdulist):
 ###########################################
     
 def plot_contrasts_mjup(curves, nsig, wfe_list, obs=None, sat_rad=None, age=100,
-    ax=None, colors=None, xr=[0,10], yr=None, file=None,
+    ax=None, colors=None, xr=[0,10], yr=None, file=None, linder_models=True,
     twin_ax=False, return_axes=False, **kwargs):
     """Plot mass contrast curves
 
@@ -622,9 +623,7 @@ def plot_contrasts_mjup(curves, nsig, wfe_list, obs=None, sat_rad=None, age=100,
     age : float
         Required for plotting limiting planet masses.
     file : string
-        Location and name of COND file. See isochrones stored at
-        https://phoenix.ens-lyon.fr/Grids/.
-        Default is model.AMES-Cond-2000.M-0.0.JWST.Vega
+        Location and name of COND or Linder isochrone file.
     ax : matplotlib.axes
         Axes on which to plot curves.
     colors : None, array-like
@@ -645,22 +644,31 @@ def plot_contrasts_mjup(curves, nsig, wfe_list, obs=None, sat_rad=None, age=100,
         lin_vals = np.linspace(0.2,0.8,len(wfe_list))
         colors = plt.cm.Blues_r(lin_vals)
 
-    # Grab COND model data
-    tbl = cond_table(age=age, file=file)
     filt = obs.filter
     mod = obs.module
     dist = obs.distance
-    mass_data, mag_data = cond_filter(tbl, filt, module=mod, dist=dist)
-    isort = np.argsort(mag_data)
+    if linder_models:
+        # Grab Linder model data
+        tbl = linder_table(file=file)
+        mass_data, mag_data = linder_filter(tbl, filt, age, dist=dist)
+    else:
+        # Grab COND model data
+        tbl = cond_table(age=age, file=file)
+        mass_data, mag_data = cond_filter(tbl, filt, module=mod, dist=dist)
 
     # Plot the data
+    isort = np.argsort(mag_data)
     for j, wfe_ref_drift in enumerate(wfe_list):
         rr, contrast, mag_sens = curves[j]
         label='$\Delta$' + "WFE = {} nm".format(wfe_list[j])
-#         yvals = np.interp(mag_sens, mag_data[isort], np.log10(mass_data[isort]))
-#         yvals = 10**yvals
-        cf = jl_poly_fit(mag_data[isort], np.log10(mass_data[isort]))
-        yvals = 10**jl_poly(mag_sens, cf)
+
+        # Interpolate in log space
+        xv, yv = mag_data[isort], np.log10(mass_data[isort])
+        xint = mag_sens
+        yint = np.interp(xint, xv, yv)
+        # Choose the lowest mass value brighter than the given mag limits
+        yvals = np.array([np.min(yint[xint<=xv]) for xv in xint])
+        yvals = 10**yvals
 
         xvals = rr[rr>sat_rad]
         yvals = yvals[rr>sat_rad]
@@ -783,7 +791,7 @@ def plot_contrasts(curves, nsig, wfe_list, obs=None, sat_rad=None, ax=None,
 
 
 def planet_mags(obs, age=10, entropy=13, mass_list=[10,5,2,1], av_vals=[0,25], atmo='hy3s',
-    cond=False, **kwargs):
+    cond=False, linder=False, **kwargs):
     """Exoplanet Magnitudes
 
     Determine a series of exoplanet magnitudes for given observation.
@@ -795,10 +803,11 @@ def planet_mags(obs, age=10, entropy=13, mass_list=[10,5,2,1], av_vals=[0,25], a
     cond : bool
         Instead of plotting sensitivities, use COND models to plot the
         limiting planet masses.
+    linder : bool
+        Instead of plotting sensitivities, use Linder models to plot the
+        limiting planet masses.
     file : string
-        Location and name of COND file. See isochrones stored at
-        https://phoenix.ens-lyon.fr/Grids/.
-        Default is model.AMES-Cond-2000.M-0.0.JWST.Vega
+        Location and name of COND or Linder file.
     """
 
     if av_vals is None:
@@ -816,20 +825,23 @@ def planet_mags(obs, age=10, entropy=13, mass_list=[10,5,2,1], av_vals=[0,25], a
 
     # Do COND models instead
     # But still want SB12 models to get A_V information
-    if cond:
-        # COND Table
-        tbl = cond_table(age=age, **kwargs)
-
+    if cond or linder:
         # All mass and mag data for specified filter
         filt = obs.filter
         mod = obs.module
         dist = obs.distance
-        mass_data, mag_data = cond_filter(tbl, filt, module=mod, dist=dist)
+        if linder:
+            tbl = linder_table(**kwargs)
+            mass_data, mag_data = linder_filter(tbl, filt, age, dist=dist, **kwargs)
+        else:
+            # Grab COND model data
+            tbl = cond_table(age=age, **kwargs)
+            mass_data, mag_data = cond_filter(tbl, filt, module=mod, dist=dist, **kwargs)
 
         # Mag information for the requested masses
-#         mags0 = np.interp(np.log(mass_list), np.log(mass_data), mag_data)
-        cf = jl_poly_fit(np.log(mass_data), mag_data)
-        mags0 = jl_poly(np.log(mass_list), cf)
+        isort = np.argsort(mass_data)
+        xv, yv = np.log10(mass_data[isort]), mag_data[isort]
+        mags0 = np.interp(np.log10(mass_list), np.log10(mass_data[isort]), mag_data[isort])
     
         # Apply extinction
         for i, m in enumerate(mass_list):
@@ -1145,7 +1157,7 @@ def do_plot_contrasts(curves_ref, curves_roll, nsig, wfe_list, obs, age, age2=No
 def do_plot_contrasts2(key1, key2, curves_all, nsig, obs_dict, wfe_list, age, sat_dict=None,
                        label1='Curves1', label2='Curves2', xr=[0,10], yr=[24,8], 
                        yscale2='log', yr2=None, av_vals=[0,10], curves_all2=None, 
-                       c1=None, c2=None, **kwargs):
+                       c1=None, c2=None, linder_models=True, **kwargs):
 
     fig, axes = plt.subplots(1,2, figsize=(14,5))
 
@@ -1185,7 +1197,8 @@ def do_plot_contrasts2(key1, key2, curves_all, nsig, obs_dict, wfe_list, age, sa
     obs = obs_dict[k]
     sat_rad = None if sat_dict is None else sat_dict[k]
     ax, ax2, ax3 = plot_contrasts_mjup(curves, nsig, wfe_list, obs=obs, age=age, sat_rad=sat_rad, 
-                             ax=ax, colors=c1, xr=xr, twin_ax=True, return_axes=True)
+                             ax=ax, colors=c1, xr=xr, twin_ax=True, return_axes=True,
+                             linder_models=linder_models)
     axes2_all = [ax, ax2, ax3]
     
     if key2 is not None:
@@ -1194,11 +1207,12 @@ def do_plot_contrasts2(key1, key2, curves_all, nsig, obs_dict, wfe_list, age, sa
         obs = obs_dict[k]
         sat_rad = None if sat_dict is None else sat_dict[k]
         plot_contrasts_mjup(curves, nsig, wfe_list, obs=obs, age=age, sat_rad=sat_rad, 
-                            ax=ax, colors=c2, xr=xr)
+                            ax=ax, colors=c2, xr=xr, linder_models=linder_models)
 
-    ax.set_title('Mass Sensitivities -- COND Models')
+    mod_str = 'BEX' if linder_models else 'COND'
+    ax.set_title('Mass Sensitivities -- {} Models'.format(mod_str))
 
-    # Update fancing y-axis scaling on right plot
+    # Update fancy y-axis scaling on right plot
     ax = axes2_all[0]
     update_yscale(ax, yscale2, ylim=yr2)
     yr_temp = np.array(ax.get_ylim()) * 318.0
@@ -1213,7 +1227,7 @@ def do_plot_contrasts2(key1, key2, curves_all, nsig, obs_dict, wfe_list, age, sa
     h3 = handles[2*nwfe:]
     h1_t = [mpatches.Patch(color='none', label=label1)]
     h2_t = [mpatches.Patch(color='none', label=label2)]
-    h3_t = [mpatches.Patch(color='none', label='SB12 Models')]
+    h3_t = [mpatches.Patch(color='none', label='Models')]
     if key2 is not None:
         handles_new = h1_t + h1 + h2_t + h2 + h3_t + h3
         ncol = 3
