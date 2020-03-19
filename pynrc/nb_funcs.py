@@ -181,11 +181,11 @@ def obs_wfe(wfe_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None,
             hdu_disk = None
         elif 'auto' in args_disk:
             # Convert to photons/sec in specified filter
-            args_disk = model_info(sp_sci.name, filt, dist)
-            hdu_disk = model_to_hdulist(args_disk, sp_sci, filt, pupil=pupil, mask=mask)
+            args_disk_temp = model_info(sp_sci.name, filt, dist)
+            hdu_disk = model_to_hdulist(args_disk_temp, sp_sci, filt, pupil=pupil, mask=mask)
         else:
             hdu_disk = model_to_hdulist(args_disk, sp_sci, filt, pupil=pupil, mask=mask)
-            
+                        
         fov_pix_orig = fov_pix
         # Define the subarray readout size
         if 'FULL' in wind_mode: # Full frame

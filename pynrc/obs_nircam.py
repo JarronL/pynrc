@@ -510,9 +510,11 @@ class obs_hci(nrc_hci):
 
             # Get rid of the central star flux
             # and anything interior to a few pixels
-            #image = disk_hdul[0].data
-            #image_rho = dist_image(image)
-            #image[image_rho < 4] = 0
+            image = disk_hdul[0].data
+            image_rho = dist_image(image)
+            ind_max = image == image.max()
+            if (image[image_rho<3].max() == image.max()) and (image.max()>1000*image[~ind_max].max()):
+                image[image_rho < 3] = 0
 
             # Resample disk to detector pixel scale
             # args_in  = (input pixelscale,  input distance)
