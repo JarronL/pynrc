@@ -54,7 +54,7 @@ def jl_poly(xvals, coeff, dim_reorder=False, use_legendre=False):
     if use_legendre:
         # Use Identity matrix to evaluate each polynomial component
         lx = 2*xvals/xvals[-1] - 1
-        xfan = legendre.legval(lx, np.identity(deg+1))
+        xfan = legendre.legval(lx, np.identity(dim[0]))
     else:
         # Create an array of exponent values
         parr = np.arange(dim[0], dtype='float')
