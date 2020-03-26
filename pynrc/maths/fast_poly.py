@@ -51,7 +51,7 @@ def jl_poly(xvals, coeff, dim_reorder=False, use_legendre=False):
         raise ValueError('coefficient can only have 1, 2, or 3 dimensions. \
                           Found {} dimensions.'.format(ndim))
 
-   if use_legendre:
+    if use_legendre:
         # Use Identity matrix to evaluate each polynomial component
         lx = 2*xvals/xvals[-1] - 1
         xfan = legendre.legval(lx, np.identity(deg+1))
