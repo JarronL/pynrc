@@ -1,10 +1,12 @@
 from __future__ import absolute_import, division, print_function, unicode_literals
 
 import numpy as np
+from numpy.polynomial import legendre
+
 #import logging
 #_log = logging.getLogger('pynrc')
 
-def jl_poly(xvals, coeff, dim_reorder=False):
+def jl_poly(xvals, coeff, dim_reorder=False, use_legendre=False):
     """Evaluate polynomial
     
     Replacement for `np.polynomial.polynomial.polyval(wgood, coeff)`
@@ -49,10 +51,15 @@ def jl_poly(xvals, coeff, dim_reorder=False):
         raise ValueError('coefficient can only have 1, 2, or 3 dimensions. \
                           Found {} dimensions.'.format(ndim))
 
-    # Create an array of exponent values
-    parr = np.arange(dim[0], dtype='float')
-    # If 3D, this reshapes xfan to 2D
-    xfan = xvals**parr.reshape((-1,1)) # Array broadcasting
+   if use_legendre:
+        # Use Identity matrix to evaluate each polynomial component
+        lx = 2*xvals/xvals[-1] - 1
+        xfan = legendre.legval(lx, np.identity(deg+1))
+    else:
+        # Create an array of exponent values
+        parr = np.arange(dim[0], dtype='float')
+        # If 3D, this reshapes xfan to 2D
+        xfan = xvals**parr.reshape((-1,1)) # Array broadcasting
 
     # Reshape coeffs to 2D array
     cf = coeff.reshape(dim[0],-1)
@@ -77,7 +84,7 @@ def jl_poly(xvals, coeff, dim_reorder=False):
     return yfit
 
 
-def jl_poly_fit(x, yvals, deg=1, QR=True, robust_fit=False, niter=25):
+def jl_poly_fit(x, yvals, deg=1, QR=True, robust_fit=False, niter=25, use_legendre=False):
     """Fast polynomial fitting
     
     Fit a polynomial to a function using linear least-squares.
@@ -161,7 +168,13 @@ def jl_poly_fit(x, yvals, deg=1, QR=True, robust_fit=False, niter=25):
     else:
         assert len(x)==orig_shape[0], 'X and Y.shape[0] must have the same length'
 
-    a = np.array([x**num for num in range(deg+1)], dtype='float')
+    # Get different components to fit
+    if use_legendre:
+        # Use Identity matrix to evaluate each polynomial component
+        lx = 2*x/x[-1] - 1
+        a = legendre.legval(lx, np.identity(deg+1))
+    else:
+        a = np.array([x**num for num in range(deg+1)], dtype='float')
     b = yvals.reshape([orig_shape[0],-1])
 
     # Fast method, but numerically unstable for overdetermined systems
@@ -174,9 +187,9 @@ def jl_poly_fit(x, yvals, deg=1, QR=True, robust_fit=False, niter=25):
         # computing Q^T*b (project b onto the range of A)
         qTb = np.dot(q.T, b)
         # solving R*x = Q^T*b
-        coeff_all = np.linalg.lstsq(r, qTb)[0]
+        coeff_all = np.linalg.lstsq(r, qTb, rcond=None)[0]
     else:
-        coeff_all = np.linalg.lstsq(a.T, b)[0]
+        coeff_all = np.linalg.lstsq(a.T, b, rcond=None)[0]
         
     if robust_fit:
         # Normally, we would weight both the x and y (ie., a and b) values
@@ -193,7 +206,7 @@ def jl_poly_fit(x, yvals, deg=1, QR=True, robust_fit=False, niter=25):
         err = 0
         for i in range(niter):
             # compute absolute value of residuals (fit minus data)
-            yvals_mod = jl_poly(x, coeff_all)
+            yvals_mod = jl_poly(x, coeff_all, use_legendre=use_legendre)
             abs_resid = np.abs(yvals_mod - b)
 
             # compute the scaling factor for the standardization of residuals
@@ -217,9 +230,9 @@ def jl_poly_fit(x, yvals, deg=1, QR=True, robust_fit=False, niter=25):
             if ind_fit[ind_fit].size == 0: break
             if QR:
                 qTb = np.dot(q.T, yvals_fix[:,ind_fit])
-                coeff_all[:,ind_fit] = np.linalg.lstsq(r, qTb)[0]
+                coeff_all[:,ind_fit] = np.linalg.lstsq(r, qTb, rcond=None)[0]
             else:
-                coeff_all[:,ind_fit] = np.linalg.lstsq(a.T, yvals_fix[:,ind_fit])[0]
+                coeff_all[:,ind_fit] = np.linalg.lstsq(a.T, yvals_fix[:,ind_fit], rcond=None)[0]
 
             prev_err = medabsdev(abs_resid, axis=0) if i==0 else err
             err = medabsdev(abs_resid, axis=0)
