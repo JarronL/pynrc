@@ -6,7 +6,7 @@ from numpy.polynomial import legendre
 #import logging
 #_log = logging.getLogger('pynrc')
 
-def jl_poly(xvals, coeff, dim_reorder=False, use_legendre=False):
+def jl_poly(xvals, coeff, dim_reorder=False, use_legendre=False, lxmap=None):
     """Evaluate polynomial
     
     Replacement for `np.polynomial.polynomial.polyval(wgood, coeff)`
@@ -24,9 +24,19 @@ def jl_poly(xvals, coeff, dim_reorder=False, use_legendre=False):
         The first dimension should have a number of elements equal
         to the polynomial degree + 1. Order such that lower degrees
         are first, and higher degrees are last.
+
+    Keyword Args
+    ------------
     dim_reorder : bool
         If true, then result to be ordered (nx,ny,nz), otherwise we
         use the Python preferred ordering (nz,ny,nx)
+    use_legendre : bool
+        Fit with Legendre polynomial, an orthonormal basis set.
+    lx_map : ndarray or None
+        Legendre polynomials are normaly mapped to xvals of [-1,+1].
+        `lx_map` gives the option to supply the values for xval that
+        should get mapped to [-1,+1]. If set to None, then assumes 
+        [xvals.min(),xvals.max()].
                        
     Returns
     -------
@@ -52,9 +62,16 @@ def jl_poly(xvals, coeff, dim_reorder=False, use_legendre=False):
                           Found {} dimensions.'.format(ndim))
 
     if use_legendre:
+        # Values to map to [-1,+1]
+        if lxmap is None:
+            lxmap = [np.min(xvals), np.max(xvals)]
+
+        # Remap xvals -> lxvals
+        dx = lxmap[1] - lxmap[0]
+        lxvals = 2 * (xvals - (lxmap[0] + dx/2)) / dx
+
         # Use Identity matrix to evaluate each polynomial component
-        lx = 2*xvals/xvals[-1] - 1
-        xfan = legendre.legval(lx, np.identity(dim[0]))
+        xfan = legendre.legval(lxvals, np.identity(dim[0]))
     else:
         # Create an array of exponent values
         parr = np.arange(dim[0], dtype='float')
@@ -84,7 +101,7 @@ def jl_poly(xvals, coeff, dim_reorder=False, use_legendre=False):
     return yfit
 
 
-def jl_poly_fit(x, yvals, deg=1, QR=True, robust_fit=False, niter=25, use_legendre=False):
+def jl_poly_fit(x, yvals, deg=1, QR=True, robust_fit=False, niter=25, use_legendre=False, lxmap=None):
     """Fast polynomial fitting
     
     Fit a polynomial to a function using linear least-squares.
@@ -108,6 +125,9 @@ def jl_poly_fit(x, yvals, deg=1, QR=True, robust_fit=False, niter=25, use_legend
         must have equal length of x. For instance, if x is
         a time series of a data cube with size NZ, then the 
         data cube must follow the Python convention (NZ,NY,NZ).
+
+    Keyword Args
+    ------------
     deg : int
         Degree of polynomial to fit to the data.
     QR : bool
@@ -118,6 +138,13 @@ def jl_poly_fit(x, yvals, deg=1, QR=True, robust_fit=False, niter=25, use_legend
     niter : int
         Maximum number of iterations for robust fitting.
         If convergence is attained first, iterations will stop.
+    use_legendre : bool
+        Fit with Legendre polynomial, an orthonormal basis set.
+    lx_map : ndarray or None
+        Legendre polynomials are normaly mapped to xvals of [-1,+1].
+        `lx_map` gives the option to supply the values for xval that
+        should get mapped to [-1,+1]. If set to None, then assumes 
+        [xvals.min(),xvals.max()].
     
     Example
     -------
@@ -170,8 +197,15 @@ def jl_poly_fit(x, yvals, deg=1, QR=True, robust_fit=False, niter=25, use_legend
 
     # Get different components to fit
     if use_legendre:
+        # Values to map to [-1,+1]
+        if lxmap is None:
+            lxmap = [np.min(x), np.max(x)]
+
+        # Remap xvals -> lxvals
+        dx = lxmap[1] - lxmap[0]
+        lx = 2 * (x - (lxmap[0] + dx/2)) / dx
+
         # Use Identity matrix to evaluate each polynomial component
-        lx = 2*x/x[-1] - 1
         a = legendre.legval(lx, np.identity(deg+1))
     else:
         a = np.array([x**num for num in range(deg+1)], dtype='float')
