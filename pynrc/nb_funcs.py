@@ -869,6 +869,11 @@ def plot_planet_patches(ax, obs, age=10, entropy=13, mass_list=[10,5,2,1], av_va
 
     import matplotlib.patches as mpatches
 
+    # Don't plot anything if 
+    if mass_list is None:
+        _log.info("mass_list=None; Not plotting planet patch locations.")
+        return
+
     xlim = ax.get_xlim()
 
 
@@ -1177,8 +1182,6 @@ def do_plot_contrasts2(key1, key2, curves_all, nsig, obs_dict, wfe_list, age, sa
     ax, ax2, ax3 = plot_contrasts(curves, nsig, wfe_list, obs=obs, sat_rad=sat_rad,
                                   ax=ax, colors=c1, xr=xr, yr=yr, return_axes=True)
     axes1_all = [ax, ax2, ax3]
-    # Planet mass locations
-    plot_planet_patches(ax, obs, age=age, update_title=True, av_vals=av_vals, linder=linder_models, **kwargs)
 
     if key2 is not None:
         k = key2
@@ -1187,6 +1190,9 @@ def do_plot_contrasts2(key1, key2, curves_all, nsig, obs_dict, wfe_list, age, sa
         sat_rad = None if sat_dict is None else sat_dict[k]
         plot_contrasts(curves, nsig, wfe_list, obs=obs, sat_rad=sat_rad, 
                        ax=ax, xr=xr, yr=yr, colors=c2)
+
+    # Planet mass locations
+    plot_planet_patches(ax, obs, age=age, update_title=True, av_vals=av_vals, linder=linder_models, **kwargs)
 
 
 
