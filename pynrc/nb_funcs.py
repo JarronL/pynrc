@@ -1192,7 +1192,8 @@ def do_plot_contrasts2(key1, key2, curves_all, nsig, obs_dict, wfe_list, age, sa
                        ax=ax, xr=xr, yr=yr, colors=c2)
 
     # Planet mass locations
-    plot_planet_patches(ax, obs, age=age, update_title=True, av_vals=av_vals, linder=linder_models, **kwargs)
+    plot_planet_patches(ax, obs_dict[key1], age=age, update_title=True, av_vals=av_vals, 
+                        linder=linder_models, **kwargs)
 
 
 
