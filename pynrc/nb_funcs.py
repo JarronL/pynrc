@@ -750,7 +750,7 @@ def plot_contrasts(curves, nsig, wfe_list, obs=None, sat_rad=None, ax=None,
         lin_vals = np.linspace(0.3,0.8,len(wfe_list))
         colors = plt.cm.Blues_r(lin_vals)
         
-    for j, wfe_ref_drift in enumerate(wfe_list):
+    for j in range(len(wfe_list)): #for j, wfe_ref_drift in enumerate(wfe_list):
         rr, contrast, mag_sens = curves[j]
         xvals = rr[rr>sat_rad]
         yvals = mag_sens[rr>sat_rad]
@@ -902,7 +902,7 @@ def plot_planet_patches(ax, obs, age=10, entropy=13, mass_list=[10,5,2,1], av_va
 
     entropy_switch = {13:'Hot', 8:'Cold'}
     entropy_string = entropy_switch.get(entropy, "Warm")
-    ent_str = entropy_string + ' Start'
+    ent_str = 'BEX Models' if linder else '{} Start'.format(entropy_string)
 
     if av_vals is None:
         av_str = ''
