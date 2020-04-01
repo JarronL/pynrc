@@ -864,7 +864,7 @@ def planet_mags(obs, age=10, entropy=13, mass_list=[10,5,2,1], av_vals=[0,25], a
 
 
 def plot_planet_patches(ax, obs, age=10, entropy=13, mass_list=[10,5,2,1], av_vals=[0,25],
-    cols=None, update_title=False, **kwargs):
+    cols=None, update_title=False, linder=False, **kwargs):
     """Plot exoplanet magnitudes in region corresponding to extinction values."""
 
     import matplotlib.patches as mpatches
@@ -882,7 +882,7 @@ def plot_planet_patches(ax, obs, age=10, entropy=13, mass_list=[10,5,2,1], av_va
     if entropy<8: entropy=8
     if entropy>13: entropy=13
 
-    pmag = planet_mags(obs, age, entropy, mass_list, av_vals, **kwargs)
+    pmag = planet_mags(obs, age, entropy, mass_list, av_vals, linder=linder, **kwargs)
     for i,m in enumerate(mass_list):
         label = 'Mass = {} '.format(m) + '$M_{\mathrm{Jup}}$'
         if av_vals is None:
@@ -1178,7 +1178,7 @@ def do_plot_contrasts2(key1, key2, curves_all, nsig, obs_dict, wfe_list, age, sa
                                   ax=ax, colors=c1, xr=xr, yr=yr, return_axes=True)
     axes1_all = [ax, ax2, ax3]
     # Planet mass locations
-    plot_planet_patches(ax, obs, age=age, update_title=True, av_vals=av_vals, **kwargs)
+    plot_planet_patches(ax, obs, age=age, update_title=True, av_vals=av_vals, linder=linder_models, **kwargs)
 
     if key2 is not None:
         k = key2
