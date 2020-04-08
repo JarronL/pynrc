@@ -184,7 +184,7 @@ def Tel2Sci_info(channel, coords, output="Sci"):
     try:
         detector_position = ap.convert(V2, V3, frame_from='Tel', frame_to=output)
     except TypeError:
-        detector_position = ap.convert(V2, V3, 'Tel', output)
+        detector_position = ap.convert(V2, V3, 'tel', output.lower())
 
     
     return detector, detector_position

@@ -1711,7 +1711,7 @@ def field_coeff(filter, coeff0, force=False, save=True, save_name=None, **kwargs
     for (v2, v3) in values:
         # Get the detector and pixel position
         coords = (v2*60, v3*60) # in arcsec
-        det, det_pos = Tel2Sci_info(channel, coords, output="Sci")
+        det, det_pos = Tel2Sci_info(channel, coords, output="sci")
 
         _log.debug('V2/V3 Coordinates and det pixel (sci): ({}), ({})'.format((v2, v3), det_pos))
 
