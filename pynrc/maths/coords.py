@@ -178,7 +178,7 @@ def Tel2Sci_info(channel, coords, output="Sci"):
     ind = np.where(dist==dist.min())[0][0]
     
     # Find detector "science" coordinates
-    detector = detnames[ind]
+    detector = 'NRC'+detnames[ind]
     apname = apnames[ind]
     ap = mysiaf[apname]
     try:
