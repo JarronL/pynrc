@@ -374,8 +374,10 @@ class NIRCam(object):
     Keyword Args
     ------------
     fov_pix : int
-        Size of the FoV in pixels (real SW or LW pixels).
+        Size of the PSF FoV in pixels (real SW or LW pixels).
         The defaults depend on the type of observation.
+        Odd number place the PSF on the center of the pixel,
+        whereas an even number centers it on the "crosshairs."
     oversample : int
         Factor to oversample during WebbPSF calculations.
         Default 2 for coronagraphy and 4 otherwise.
@@ -823,7 +825,7 @@ class NIRCam(object):
         self._ND_acq = ND_acq
 
         # Filter stuff
-        fsw_def, flw_def = ('F210M', 'F430M')
+        fsw_def, flw_def = ('F210M', 'F430M') # Defaults
         if filter is not None: self._filter = filter
         try:
             if self._filter is None:
@@ -1165,7 +1167,7 @@ class NIRCam(object):
         Parameters
         ----------
         fov_pix : int
-            Size of the FoV in pixels (real SW or LW pixels).
+            Size of the PSF FoV in pixels (real SW or LW pixels).
             The defaults depend on the type of observation.
             Odd number place the PSF on the center of the pixel,
             whereas an even number centers it on the "crosshairs."

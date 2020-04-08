@@ -166,7 +166,11 @@ def Tel2Sci_info(channel, coords, output="Sci"):
     cens = []
     for apname in apnames:
         ap = mysiaf[apname]
-        cens.append(ap.Tel2Sci(V2, V3))
+        try:
+            vals = ap.Tel2Sci(V2, V3)
+        except AttributeError:
+            vals = ap.tel_to_sci(V2, V3)
+        cens.append(vals)
     cens = np.array(cens)
 
     # Select that with the closest position

@@ -1641,7 +1641,7 @@ def field_coeff(filter, coeff0, force=False, save=True, save_name=None, **kwargs
     >>> from pynrc import nrc_utils
     >>> fpix, osamp = (128, 4)
     >>> coeff    = nrc_utils.psf_coeff('F210M', fov_pix=fpix, oversample=osamp)
-    >>> cf_resid = nrc_utils.field_coeff('F210M', fov_pix=fpix, oversample=osamp)
+    >>> cf_resid = nrc_utils.field_coeff('F210M', coeff, fov_pix=fpix, oversample=osamp)
 
     >>> # Some (V2,V3) location (arcmin)
     >>> v2, v3 = (1.2, -7)
@@ -1709,11 +1709,11 @@ def field_coeff(filter, coeff0, force=False, save=True, save_name=None, **kwargs
 
     cf_fields = []
     for (v2, v3) in values:
-        _log.debug('Field Coordinates: {}'.format((v2, v3)))
-
         # Get the detector and pixel position
         coords = (v2*60, v3*60) # in arcsec
         det, det_pos = Tel2Sci_info(channel, coords, output="Sci")
+
+        _log.debug('V2/V3 Coordinates and det pixel (sci): ({}), ({})'.format((v2, v3), det_pos))
 
         kwargs['detector'] = det
         kwargs['detector_position'] = det_pos
