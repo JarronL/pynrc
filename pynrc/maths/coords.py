@@ -133,6 +133,8 @@ def Tel2Sci_info(channel, coords, output="Sci"):
     """Telescope coords converted to Science coords
     
     Returns the detector name and position associated with input coordinates.
+    This is alway relative to a full frame detector aperture. The detector
+    that is chosen is the one whose center is closest to the input coords.
 
     Parameters
     ----------

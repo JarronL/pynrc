@@ -800,13 +800,24 @@ class webbpsf_NIRCam_mod(webbpsf_NIRCam):
         self._detector = value.upper()
 
         # Detector aperture name
-        # Need to account for coronagraphic masks
-        image_mask = self._image_mask
-        if (image_mask is not None) and (image_mask in self._image_mask_apertures):
-            apname =  self._image_mask_apertures[image_mask]
+        # Need to send correct aperture name for coronagraphic masks due to detector shift
+        if (self._image_mask is not None) and (self._image_mask in self._image_mask_apertures):
+            apname = self._image_mask_apertures[self._image_mask]
         else:
             apname = self._detectors[self._detector]
         self._detector_geom_info = DetectorGeometry_mod(self.name, apname)
+
+    def _get_fits_header(self, hdulist, options):
+        """ Format NIRCam-like FITS headers, based on JWST DMS SRD 1 FITS keyword info """
+        super(NIRCam, self)._get_fits_header(hdulist, options)
+
+        hdulist[0].header['MODULE'] = (self.module, 'NIRCam module: A or B')
+        hdulist[0].header['CHANNEL'] = ('Short' if self.channel == 'short' else 'Long', 'NIRCam channel: long or short')
+        # filter, pupil added by calc_psf header code
+        hdulist[0].header['PILIN'] = ('False', 'Pupil imaging lens in optical path: T/F')
+        # Update APERNAME if coronagraphy
+        if (self._image_mask is not None) and (self._image_mask in self._image_mask_apertures):
+            result[0].header["APERNAME"] = (self._image_mask_apertures[self._image_mask], "SIAF aperture name")
 
 
 class DetectorGeometry_mod(DetectorGeometry):
@@ -1401,19 +1412,20 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
             im_scale = frebin(im, scale=scale)
             images[i] = pad_or_cut_to_size(im_scale, im.shape)
 
-    # LW coronagraphy has slight PSF dispersion
-    if coron_obs and ('LW' in chan_str):
-        w0 = 3.23 # Relative to TA filter wavelength
-        pix_size = 18.0 # Pixels are 18 microns in size
+    # # LW coronagraphy has slight PSF dispersion
+    # # Added to WebbPSF coronagraphic WFE
+    # if coron_obs and ('LW' in chan_str):
+    #     w0 = 3.23 # Relative to TA filter wavelength
+    #     pix_size = 18.0 # Pixels are 18 microns in size
 
-        dy0 = (-4.855 * w0**3) + (69.754 * w0**2) - (312.370 * w0)
-        # Shift in microns of each wavelength
-        dy_all = (-4.855 * waves**3) + (69.754 * waves**2) - (312.370 * waves) - dy0
+    #     dy0 = (-4.855 * w0**3) + (69.754 * w0**2) - (312.370 * w0)
+    #     # Shift in microns of each wavelength
+    #     dy_all = (-4.855 * waves**3) + (69.754 * waves**2) - (312.370 * waves) - dy0
         
-        dely_pix_os = oversample * (dy_all / pix_size)
+    #     dely_pix_os = oversample * (dy_all / pix_size)
         
-        for i,im in enumerate(images):
-            images[i] = fshift(im, dely=dely_pix_os[i], pad=True)
+    #     for i,im in enumerate(images):
+    #         images[i] = fshift(im, dely=dely_pix_os[i], pad=True)
 
     # Turn results into an numpy array (npsf,ny,nx)
     images = np.array(images)
@@ -1432,14 +1444,6 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         hdu = fits.PrimaryHDU(coeff_all)
         hdr = hdu.header
         head_temp = hdu_arr[0].header
-
-#         setup_logging('WARN', verbose=False)
-#         hdu_temp = inst.calc_psf(outfile=None, save_intermediates=False, \
-#                                  oversample=oversample, fov_pixels=fov_pix, \
-#                                  monochromatic=bp.avgwave()*1e-10, \
-#                                  add_distortion=False, crop_psf=False)
-#         setup_logging(log_prev, verbose=False)
-#         head_temp = hdu_temp[0].header
 
         hdr['DESCR']    = ('PSF Coeffecients', 'File Description')
         hdr['NWAVES']   = (npsf, 'Number of wavelengths used in calculation')
@@ -1511,6 +1515,180 @@ def psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         hdu.writeto(save_name, overwrite=True)
 
     return coeff_all
+
+def gen_webbpsf_psf(filter_or_bp, pupil=None, mask=None, module='A', pynrc_mod=False, 
+                    fov_pix=11, oversample=None, tel_pupil=None, opd=None,
+                    offset_r=None, offset_theta=None, jitter=None, jitter_sigma=0.007,
+                    include_si_wfe=True, detector=None, detector_position=None,
+                    add_distortion=False, crop_psf=True, **kwargs):
+
+    """Create WebbPSF PSF
+
+    Kind of clunky way of generating a single PSF directly from WebbPSF
+    by passing all the different options through keyword arguments.
+    """
+    
+    import webbpsf, pysiaf, six
+    from astropy.io import fits
+    
+    if detector is not None:
+        module = 'A' if 'A' in detector else 'B'
+
+    # Get filter throughput and create bandpass
+    if isinstance(filter_or_bp, six.string_types):
+        filter = filter_or_bp
+        bp = read_filter(filter, pupil=pupil, mask=mask, module=module, **kwargs)
+    else:
+        bp = filter_or_bp
+        filter = bp.name
+    
+    chan_str = 'SW' if bp.avgwave() < 24000 else 'LW'
+    
+    # Change log levels to WARNING for pyNRC, WebbPSF, and POPPY
+    log_prev = conf.logging_level
+    setup_logging('WARN', verbose=False)
+    
+    inst = webbpsf_NIRCam_mod() if pynrc_mod else webbpsf.NIRCam()
+    
+    # Instrument filter and pupil
+    inst.filter = filter
+    # Check if mask and pupil names exist in WebbPSF lists.
+    # We don't want to pass values that WebbPSF does not recognize
+    # but are otherwise completely valid in the pynrc framework.
+    if mask in list(inst.image_mask_list): inst.image_mask = mask
+    if pupil in list(inst.pupil_mask_list): inst.pupil_mask = pupil
+        
+    # Should we include field-dependent aberrations?
+    inst.include_si_wfe = include_si_wfe
+
+    # Detector position
+    # define defaults
+    det_switch = {'SWA': 'A1', 'SWB':'B1', 'LWA':'A5', 'LWB':'B5'}
+    detpos_switch = {'SW':(1024,1024), 'LW':(1024,1024)}
+    if (detector is None) and (detector_position is None):
+        inst.detector = 'NRC' + det_switch.get(chan_str+module)
+        inst.detector_position = detpos_switch.get(chan_str)
+    elif detector is None:
+        inst.detector = 'NRC' + det_switch.get(chan_str+module)
+        inst.detector_position = detector_position
+    elif detector_position is None:
+        inst.detector_position = detpos_switch.get(chan_str)
+        inst.detector = detector
+    else:
+        inst.detector = detector
+        inst.detector_position = detector_position
+        
+    # Telescope Pupil
+    if tel_pupil is not None:
+        inst.pupil = tel_pupil
+    
+    mtemp = 'NONE' if mask is None else mask
+    ptemp = 'CLEAR' if pupil is None else pupil
+    # Get source offset positions
+    # 1. Round masks - Always assume theta=0 due to symmetry.
+    # 2. Bar Masks - PSF positioning is different depending on r and theta.
+    # 3. All other imaging - Just perform nominal r=theta=0.
+    #    Any PSF movement is more quickly applied with sub-pixel shifting routines.
+    # NB: Implementation of field-dependent OPD maps may change these settings.
+    if offset_r is None: offset_r = 0
+    if offset_theta is None: offset_theta = 0
+    rtemp, ttemp = (offset_r, offset_theta)
+    inst.options['source_offset_r']     = rtemp
+    inst.options['source_offset_theta'] = ttemp
+
+    # Bar offsets (auto_offset not supported)
+    # If observing with bar mask, default to 0 offset
+    if 'B' in mtemp:
+        bar_offset = 0 if bar_offset is None else bar_offset
+    else:
+        # Set to None if not observing with bar mask
+        bar_offset = None
+    bar_str = '' if bar_offset is None else '_bar{:.1f}'.format(bar_offset)
+    inst.options['bar_offset'] = bar_offset
+    
+    jitter_sigma = 0 if jitter is None else jitter_sigma
+    inst.options['jitter'] = jitter
+    inst.options['jitter_sigma'] = jitter_sigma
+
+    setup_logging(log_prev, verbose=False)
+    
+    if opd is None:  # Default OPD
+        opd = opd_default
+    elif isinstance(opd, six.string_types):
+        opd = (opd, 0)
+    
+    # Deal with OPD file name
+    if isinstance(opd, tuple):
+        if not len(opd)==2:
+            raise ValueError("opd passed as tuple must have length of 2.")
+        # Filename info
+        opd_name = opd[0] # OPD file name
+        opd_num  = opd[1] # OPD slice
+        rev = [s for s in opd_name.split('_') if "Rev" in s]
+        rev = '' if len(rev)==0 else rev[0]
+        otemp = '{}slice{:.0f}'.format(rev,opd_num)
+        opd = OPDFile_to_HDUList(opd_name, opd_num)
+    elif isinstance(opd, fits.HDUList):
+        # A custom OPD is passed. Consider using force=True.
+        otemp = 'OPDcustom'
+        opd_name = 'OPD from supplied FITS HDUlist object'
+        opd_num = 0
+    else:
+        raise ValueError("OPD must be a string, tuple, or HDUList.")
+    inst.pupilopd = opd
+    
+    inst.SHORT_WAVELENGTH_MIN = inst.LONG_WAVELENGTH_MIN = 1e-7
+    inst.SHORT_WAVELENGTH_MAX = inst.LONG_WAVELENGTH_MAX = 10e-6
+
+    setup_logging('WARN', verbose=False)
+    t0 = time.time()
+    hdu_list = inst.calc_psf(fov_pixels=fov_pix, oversample=oversample, 
+                                 add_distortion=add_distortion, crop_psf=crop_psf)
+    t1 = time.time()
+    setup_logging(log_prev, verbose=False)
+    time_string = 'Took {:.2f} seconds to generate WebbPSF images'.format(t1-t0)
+    _log.info(time_string)
+    
+    return hdu_list
+
+def gen_webbpsf_siwfe(filter_or_bp, coords, pynrc_mod=True, **kwargs):
+    """ Generate Location-specific PSF from WebbPSF
+
+    Parameters
+    ----------
+    filter_or_bp : str, :mod:`pysynphot.obsbandpass`
+        Either the name of a filter or a Pysynphot bandpass.
+    coords : tuple
+        (V2,V3) coordinates in (arcmin)
+
+    Keyword Args
+    ------------
+    pynrc_mod : bool
+        Use `webbpsf_NIRCam_mod` instead of `webbpsf.NIRCam`.
+        This is a slightly modified version of NIRCam to fix
+        minor coordinate issues.
+    """
+    
+    # Get filter throughput and create bandpass
+    if isinstance(filter_or_bp, six.string_types):
+        filter = filter_or_bp
+        bp = read_filter(filter, **kwargs)
+    else:
+        bp = filter_or_bp
+        filter = bp.name
+
+    chan_str = 'SW' if bp.avgwave() < 24000 else 'LW'
+
+    detector, detector_position = Tel2Sci_info(chan_str, coords, output='sci')
+    print(detector, detector_position)
+    
+    module = 'A' if 'A' in detector else 'B'
+    
+    return gen_webbpsf_psf(filter, module=module, pynrc_mod=pynrc_mod, include_si_wfe=True, 
+                           detector=detector, detector_position=detector_position,
+                           add_distortion=False, crop_psf=True, **kwargs)
+
+
 
 def wfed_coeff(filter, force=False, save=True, save_name=None, **kwargs):
     """PSF Coefficient Mod for WFE Drift
@@ -1955,15 +2133,15 @@ def gen_image_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     # For generating the PSF, let's save some time and memory by not using
     # ever single wavelength in the bandpass.
     # Do NOT do this for dispersed modes.
-    binsize = 1
-    if coeff.shape[-1]>2000:
-        binsize = 7
-    elif coeff.shape[-1]>1000:
-        binsize = 5
-    elif coeff.shape[-1]>700:
-        binsize = 3
+    if not (is_grism or is_dhs):
+        binsize = 1
+        if coeff.shape[-1]>2000:
+            binsize = 7
+        elif coeff.shape[-1]>1000:
+            binsize = 5
+        elif coeff.shape[-1]>700:
+            binsize = 3
 
-    if (not is_grism) and (not is_dhs):
         if binsize>1:
             excess = waveset.size % binsize
             waveset = waveset[:waveset.size-excess]
