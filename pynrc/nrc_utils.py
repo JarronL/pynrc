@@ -809,7 +809,7 @@ class webbpsf_NIRCam_mod(webbpsf_NIRCam):
 
     def _get_fits_header(self, hdulist, options):
         """ Format NIRCam-like FITS headers, based on JWST DMS SRD 1 FITS keyword info """
-        super(NIRCam, self)._get_fits_header(hdulist, options)
+        super(webbpsf_NIRCam, self)._get_fits_header(hdulist, options)
 
         hdulist[0].header['MODULE'] = (self.module, 'NIRCam module: A or B')
         hdulist[0].header['CHANNEL'] = ('Short' if self.channel == 'short' else 'Long', 'NIRCam channel: long or short')
