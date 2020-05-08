@@ -463,8 +463,9 @@ class NIRCam(object):
         self._ote_scale = kwargs['ote_scale'] if 'ote_scale' in kwargs.keys() else None
         self._nc_scale = kwargs['nc_scale'] if 'nc_scale' in kwargs.keys() else None
 
-        # WFE Drift
-        self._wfe_drift = False  # Don't calculate coefficients by default
+        # WFE Drift, Don't calculate coefficients by default
+        wfe_drift = kwargs.get('wfe_drift', False)
+        self._wfe_drift = wfe_drift
         # Field-dependent WFE
         self._wfe_field = False  # Don't calculate coefficients by default
 
@@ -1959,7 +1960,7 @@ class NIRCam(object):
             if use_bg_psf:
                 cf_fit = self._psf_coeff_bg_mod['si_field'] 
                 v2grid  = self._psf_coeff_bg_mod['si_field_v2grid'] 
-                v3grid  = self._psf_coeff_bg_mod['si_field_v3grid']                 
+                v3grid  = self._psf_coeff_bg_mod['si_field_v3grid']
             else:
                 cf_fit = self._psf_coeff_mod['si_field'] 
                 v2grid  = self._psf_coeff_mod['si_field_v2grid'] 

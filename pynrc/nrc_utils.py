@@ -1622,23 +1622,31 @@ def field_coeff_resid(filter_or_bp, coeff0, force=False, save=True, save_name=No
     v2grid = np.linspace(v2_min, v2_max, num=nv23)
     v3grid = np.linspace(v3_min, v3_max, num=nv23)
 
-    v2_new, v3_new = np.meshgrid(v2grid,v3grid)
-
-    sh = cf_fields.shape
-    cf_fields_grid = np.zeros([nv23,nv23,sh[1],sh[2],sh[3]])
-    _log.warn("Interpolating coefficient residuals onto regular grid...")
-    # Cycle through each coefficient to interpolate onto V2/V3 grid
-    for i in range(sh[1]):
-        cf_fields_grid[:,:,i,:,:] = griddata((v2_all, v3_all), cf_fields[:,i,:,:], (v2_new, v3_new), method='cubic')
-
-    del cf_fields
-
-    res = (cf_fields_grid, v2grid, v3grid)
+    # Interpolate onto an evenly space grid
+    res = make_coeff_resid_grid(v2_all, v3_all, cf_fields, v2grid, v3grid)
     if save: 
         np.savez(save_name, *res)
 
     _log.warn('Done.')
     return res
+
+def make_coeff_resid_grid(xin, yin, cf_resid, xgrid, ygrid):
+
+    # Create 2D grid arrays of coordinates
+    xnew, ynew = np.meshgrid(xgrid,ygrid)
+    nx, ny = len(xgrid), len(ygrid)
+
+    _log.warn("Interpolating coefficient residuals onto regular grid...")
+
+    sh = cf_resid.shape
+    cf_resid_grid = np.zeros([ny,nx,sh[1],sh[2],sh[3]])
+
+    # Cycle through each coefficient to interpolate onto V2/V3 grid
+    for i in range(sh[1]):
+        cf_resid_grid[:,:,i,:,:] = griddata((xin, yin), cf_resid[:,i,:,:], (xnew, ynew), method='cubic')
+
+    return (cf_resid_grid, xgrid, ygrid)
+
 
 
 def field_coeff_func(v2grid, v3grid, cf_fields, v2_new, v3_new):
@@ -1779,11 +1787,29 @@ def wedge_coeff(filter, pupil, mask, force=False, save=True, save_name=None, **k
     return cf_fit
 
 
+def gen_image_from_coeff(coeff, ceoff_hdr, sp_norm=None, return_oversample=False,
+    nwaves=None, use_sp_waveset=False, **kwargs):
+    """Generate PSF from coefficient
+
+    Wrapper for :func:`gen_image_coeff` that uses information in the header to
+    populate certain input parameters (filter, mask, pupil, fov_pix, oversample)
+    so as to avoid any confusion.
+    """
+
+    kwargs['pupil']      = None if 'NONE' in coeff_hdr['PUPIL'] else coeff_hdr['PUPIL']
+    kwargs['mask']       = coeff_hdr['MASK']
+    kwargs['module']     = coeff_hdr['MODULE']
+    kwargs['fov_pix']    = coeff_hdr['FOVPIX']
+    kwargs['oversample'] = coeff_hdr['OSAMP']
+
+    return gen_image_coeff(coeff_hdr['FILTER'], **kwargs)
+
+
 
 def gen_image_coeff(filter_or_bp, pupil=None, mask=None, module='A',
-    sp_norm=None, coeff=None, coeff_hdr=None, 
+    coeff=None, coeff_hdr=None, sp_norm=None, nwaves=None,
     fov_pix=11, oversample=4, return_oversample=False, **kwargs):
-    """Generate PSF from coefficient
+    """Generate PSF
 
     Create an image (direct, coronagraphic, grism, or DHS) based on a set of
     instrument parameters and PSF coefficients. The image is noiseless and
@@ -1810,10 +1836,21 @@ def gen_image_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         The default is normalized to produce 1 count/sec within that bandpass,
         assuming the telescope collecting area. Coronagraphic PSFs will further
         decrease this flux.
-    coeff : numpy array
+    coeff : ndarray
         A cube of polynomial coefficients for generating PSFs. This is
         generally oversampled with a shape (fov_pix*oversamp, fov_pix*oversamp, deg).
         If not set, this will be calculated using the :func:`gen_psf_coeff` function.
+    coeff_hdr : FITS header
+        Header information saved while generating coefficients.
+    nwaves : int
+        Option to specify the number of evenly spaced wavelength bins to
+        generate and sum over to make final PSF. Useful for wide band filters
+        with large PSFs over continuum sorurce.
+    use_sp_waveset : bool
+        Set this option to use `sp_norm` waveset instead of bandpass waveset.
+        Useful if user inputs a high-resolution spectrum with line emissions,
+        so may wants to keep a grism PSF (for instance) at native resolution
+        rather than blurred with the bandpass waveset. TODO: Test.  
     fov_pix : int
         Number of detector pixels in the image coefficient and PSF.
     oversample : int
@@ -1842,6 +1879,7 @@ def gen_image_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     if is_dhs:
         raise NotImplementedError('DHS has yet to be fully included')
 
+    t0 = time.time()
     # Get filter throughput and create bandpass
     if isinstance(filter_or_bp, six.string_types):
         filter = filter_or_bp
@@ -1850,15 +1888,27 @@ def gen_image_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         bp = filter_or_bp
         filter = bp.name
 
-    if (coeff is None) or (coeff_hdr is None):
+    if (coeff is not None) and (coeff_hdr is not None):
+        fov_pix = coeff_hdr['FOVPIX']
+        oversample = coeff_hdr['OSAMP']
+        module = coeff_hdr['MODULE']
+    elif (coeff is None) and (coeff_hdr is not None):
+        raise AttributeError("`coeff_hdr` parameter set, but `coeff` is None")
+    elif ((coeff is not None) and (coeff_hdr is None)):
+        raise AttributeError("`coeff` parameter set, but `coeff_hdr` is None")
+    else:
         coeff, coeff_hdr = gen_psf_coeff(bp, pupil=pupil, mask=mask, module=module, 
             fov_pix=fov_pix, oversample=oversample, **kwargs)
 
+    t1 = time.time()
     waveset = np.copy(bp.wave)
-    # For generating the PSF, let's save some time and memory by not using
-    # ever single wavelength in the bandpass.
-    # Do NOT do this for dispersed modes.
-    if not (is_grism or is_dhs):
+    if nwaves is not None:
+        # Evenly spaced waves 
+        waveset = np.linspace(waveset.min(), waveset.max(), nwaves)
+    elif not (is_grism or is_dhs):
+        # For generating the PSF, let's save some time and memory by not using
+        # ever single wavelength in the bandpass.
+        # Do NOT do this for dispersed modes.
         binsize = 1
         if coeff.shape[-1]>2000:
             binsize = 7
@@ -1878,7 +1928,9 @@ def gen_image_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     w1 = wgood.min()
     w2 = wgood.max()
     wrange = w2 - w1
+    # print('nwaves: {}'.format(len(wgood)))
 
+    t2 = time.time()
     # Flat spectrum with equal photon flux in each spectal bin
     if sp_norm is None:
         sp_flat = S.ArraySpectrum(waveset, 0*waveset + 10.)
@@ -1893,29 +1945,56 @@ def gen_image_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         sp_norm = [sp_norm]
     nspec = len(sp_norm)
 
+    t3 = time.time()
     # Set up an observation of the spectrum using the specified bandpass
-    # Use the bandpass wavelength set to bin the fluxes
-    obs_list = [S.Observation(sp, bp, binset=waveset) for sp in sp_norm]
+    if use_sp_waveset:
+        if nspec>1:
+            raise AttributeError("Only 1 spectrum allowed when use_sp_waveset=True.")
+        # Modify waveset if use_sp_waveset=True
+        obs_list = []
+        for sp in sp_norm:
+            # Select only wavelengths within bandpass
+            waveset = sp.wave
+            waveset = waveset[(waveset>=w1*1e4) and (waveset=<w2*1e4)]
+            obs_list.append(S.Observation(sp, bp, binset=waveset))
+        # Update wgood
+        wgood = waveset / 1e4
+        w1 = wgood.min()
+        w2 = wgood.max()
+        wrange = w2 - w1
+    else:
+        # Use the bandpass wavelength set to bin the fluxes
+        obs_list = [S.Observation(sp, bp, binset=waveset) for sp in sp_norm]
+
+    # Convert to count rate
     for obs in obs_list: 
         obs.convert('counts')
 
+    t4 = time.time()
     # Create a PSF for each wgood wavelength
     use_legendre = True if coeff_hdr['LEGNDR'] else False
     lxmap = [coeff_hdr['WAVE1'], coeff_hdr['WAVE2']]
     psf_fit = jl_poly(wgood, coeff, dim_reorder=True, use_legendre=use_legendre, lxmap=lxmap)
     # Just in case weird coeff gives negative values
-    psf_fit[psf_fit<=0] = np.min(psf_fit[psf_fit>0]) / 10
+    # psf_fit[psf_fit<=0] = np.min(psf_fit[psf_fit>0]) / 10
 
+    t5 = time.time()
     # Multiply each monochromatic PSFs by the binned e/sec at each wavelength
-    # Array broadcasting: [nx,ny,nwave] x [0,0,nwave]
+    # Array broadcasting: [nx,ny,nwave] x [1,1,nwave]
     # Do this for each spectrum/observation
-    psf_list = [psf_fit*obs.binflux for obs in obs_list]
+    if nspec==1:
+        psf_fit *= obs_list[0].binflux
+        psf_list = [psf_fit]
+    else:
+        psf_list = [psf_fit*obs.binflux for obs in obs_list]
+        del psf_fit
 
     # The number of pixels to span spatially
     fov_pix = int(fov_pix)
     oversample = int(oversample)
     fov_pix_over = int(fov_pix * oversample)
 
+    t6 = time.time()
     # Grism spectroscopy
     if is_grism:
         # spectral resolution in um/pixel
@@ -1976,6 +2055,9 @@ def gen_image_coeff(filter_or_bp, pupil=None, mask=None, module='A',
             spec_list_over = spec_list_over[0]
         # Return list of wavelengths for each horizontal pixel
         # as well as spectral image
+
+        t7 = time.time()
+        print('jl_poly: {:.2f} sec; binflux: {:.2f} sec; disperse: {:.2f} sec'.format(t5-t4, t6-t5, t7-t6))
         if return_oversample:
             return (wspec, spec_list), (wspec_over, spec_list_over)
         else:
@@ -1992,19 +2074,74 @@ def gen_image_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         data_list_over = []
         for psf_fit in psf_list:
             data_over = psf_fit.sum(axis=2)
-            data_over[data_over<__epsilon] = 0
+            data_over[data_over<=__epsilon] = data_over[data_over>__epsilon].min() / 10
             data_list_over.append(data_over)
             data_list.append(poppy.utils.krebin(data_over, (fov_pix,fov_pix)))
 
         if nspec == 1: 
             data_list = data_list[0]
             data_list_over = data_list_over[0]
+
+        t7 = time.time()
+        _log.debug('jl_poly: {:.2f} sec; binflux: {:.2f} sec; PSF sum: {:.2f} sec'.format(t5-t4, t6-t5, t7-t6))
         if return_oversample:
             return data_list, data_list_over
         else:
             return data_list
 
+def radial_std(im_diff, pixscale=None, oversample=None, supersample=False, func=np.std):
+    """Generate contrast curve of PSF difference
 
+    Find the standard deviation within fixed radial bins of a differenced image.
+    Returns two arrays representing the 1-sigma contrast curve at given distances.
+
+    Parameters
+    ==========
+    im_diff : ndarray
+        Differenced image of two PSFs, for instance.
+
+    Keywords
+    ========
+    pixscale : float  
+        Pixel scale of the input image
+    oversample : int
+        Is the input image oversampled compared to detector? If set, then
+        the binsize will be pixscale*oversample (if supersample=False).
+    supersample : bool
+        If set, then oversampled data will have a binsize of pixscale,
+        otherwise the binsize is pixscale*oversample.
+    func_std : func
+        The function to use for calculating the radial standard deviation.
+
+    """
+
+    from astropy.convolution import convolve, Gaussian1DKernel
+
+    # Set oversample to 1 if supersample keyword is set
+    oversample = 1 if supersample or (oversample is None) else oversample
+
+    # Rebin data
+    data_rebin = frebin(im_diff, scale=1/oversample)
+
+    # Determine pixel scale of rebinned data
+    pixscale = 1 if pixscale is None else oversample*pixscale
+
+    # Pixel distances
+    rho = dist_image(data_rebin, pixscale=pixscale)
+
+    # Get radial profiles
+    binsize = pixscale
+    bins = np.arange(rho.min(), rho.max() + binsize, binsize)
+    nan_mask = np.isnan(data_rebin)
+    igroups, _, rr = hist_indices(rho[~nan_mask], bins, True)
+    stds = binned_statistic(igroups, data_rebin[~nan_mask], func=func)
+    stds = convolve(stds, Gaussian1DKernel(1))
+
+    # Ignore corner regions
+    arr_size = np.min(data_rebin.shape) * pixscale
+    mask = rr < (arr_size/2)
+
+    return rr[mask], stds[mask]
 
 ###########################################################################
 #
@@ -2241,6 +2378,7 @@ def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=No
     # Generate the PSF image for analysis.
     # This process can take a while if being done over and over again.
     # Let's provide the option to skip this with a pre-generated image.
+    # Skip image generation if `image` keyword is not None.
     # Remember, this is for a very specific NORMALIZED spectrum
     t0 = time.time()
     if image is None:
