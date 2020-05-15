@@ -747,6 +747,9 @@ class NIRCam(object):
     def siaf_ap(self):
         """Science Instrument aperture info class"""
         return self._siaf_ap
+    @siaf_ap.setter
+    def siaf_ap(self, apname):
+        self.update_from_SIAF(apname)
         
     @property
     def siaf_ap_names(self):
@@ -1995,7 +1998,7 @@ class NIRCam(object):
 
                 # PSF Modifications
                 if (v2 is not None):
-                    print(v2,v3)
+                    # print(v2,v3)
                     nfield = np.size(v2)
                     cf_mod = field_coeff_func(v2grid, v3grid, cf_fit, v2, v3)
                     psf_coeff_mod += cf_mod

@@ -1141,9 +1141,9 @@ def gen_psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         # Account for the circular pupil that does not allow all grism grooves to have their
         # full length illuminated (Erickson & Rabanus 2000), effectively broadening the FWHM.
         # It's actually a hexagonal pupil, so the factor is 1.07, not 1.15.
-        wfact = 1.07
         # We want to stretch the PSF in the dispersion direction
         if grism_obs:
+            wfact = 1.07
             scale = (1,wfact) if 'GRISM0' in pupil else (wfact,1)
             for hdu in hdu_list:
                 im_scale = frebin(hdu.data, scale=scale)
@@ -1198,9 +1198,9 @@ def gen_psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     # Account for the circular pupil that does not allow all grism grooves to have their
     # full length illuminated (Erickson & Rabanus 2000), effectively broadening the FWHM.
     # It's actually a hexagonal pupil, so the factor is 1.07, not 1.15.
-    wfact = 1.07
     # We want to stretch the PSF in the dispersion direction
     if grism_obs:
+        wfact = 1.07
         scale = (1,wfact) if 'GRISM0' in pupil else (wfact,1)
         for i,im in enumerate(images):
             im_scale = frebin(im, scale=scale)
@@ -1225,7 +1225,7 @@ def gen_psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     images = np.array(images)
 
     # Simultaneous polynomial fits to all pixels using linear least squares
-    coeff_all = jl_poly_fit(waves, images, deg=ndeg, use_legendre=use_legendre)
+    coeff_all = jl_poly_fit(waves, images, deg=ndeg, use_legendre=use_legendre, lxmap=[w1,w2])
 
     hdu = fits.PrimaryHDU(coeff_all)
     hdr = hdu.header
@@ -1602,7 +1602,8 @@ def field_coeff_resid(filter_or_bp, coeff0, force=False, save=True, save_name=No
         coords = (v2*60, v3*60) # in arcsec
         det, det_pos, apname = Tel2Sci_info(channel, coords, pupil=pupil, output="sci", return_apname=True)
 
-        _log.info('V2/V3 Coordinates and det pixel (sci) on {}/{}: {}, {}'.format(det, apname, (v2, v3), det_pos))
+        print('V2/V3 Coordinates and det pixel (sci) on {}/{}: ({:.2f}, {:.2f}), ({:.1f}, {:.1f})'
+            .format(det, apname, v2, v3, det_pos[0], det_pos[1]))
 
         kwargs['apname'] = apname
         kwargs['detector'] = det
@@ -1665,9 +1666,9 @@ def field_coeff_func(v2grid, v3grid, cf_fields, v2_new, v3_new):
         Coefficient residuals at different field points
         Shape is (nV3, nV2, ncoeff, ypix, xpix)
     v2_new : ndarray
-        New V2 point(s) to interpolate on.
+        New V2 point(s) to interpolate on. Same units as v2grid.
     v3_new : ndarray
-        New V3 point(s) to interpolate on.
+        New V3 point(s) to interpolate on. Same units as v3grid.
     """
 
     func = RegularGridInterpolator((v3grid, v2grid), cf_fields, method='linear', 
@@ -1808,7 +1809,8 @@ def gen_image_from_coeff(coeff, ceoff_hdr, sp_norm=None, return_oversample=False
 
 def gen_image_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     coeff=None, coeff_hdr=None, sp_norm=None, nwaves=None,
-    fov_pix=11, oversample=4, return_oversample=False, **kwargs):
+    fov_pix=11, oversample=4, return_oversample=False, use_sp_waveset=False,
+    **kwargs):
     """Generate PSF
 
     Create an image (direct, coronagraphic, grism, or DHS) based on a set of
@@ -1955,7 +1957,7 @@ def gen_image_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         for sp in sp_norm:
             # Select only wavelengths within bandpass
             waveset = sp.wave
-            waveset = waveset[(waveset>=w1*1e4) and (waveset=<w2*1e4)]
+            waveset = waveset[(waveset>=w1*1e4) and (waveset<=w2*1e4)]
             obs_list.append(S.Observation(sp, bp, binset=waveset))
         # Update wgood
         wgood = waveset / 1e4
