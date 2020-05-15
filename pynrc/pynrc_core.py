@@ -310,6 +310,12 @@ class NIRCam(object):
         Specify which coronagraphic occulter (default: None).
     module : str
         NIRCam Module 'A' or 'B' (default: 'A').
+    wfe_drift : bool
+        Option to calculate and use WFE drift PSF modifications.
+        Can be turned on later with the :attr:`wfe_drift` attribute.
+    wfe_field : bool
+        Option to use measured field-dependent SI WFE.
+        Can be turned on later with the :attr:`wfe_field` attribute.
     apname : str
         Use SIAF aperture name insted of pupil, mask, module, etc.
     ND_acq : bool
@@ -367,7 +373,7 @@ class NIRCam(object):
     **PSF Settings**
 
     The following keyword arguments will be passed to the PSF generation function
-    :func:`~pynrc.nrc_utils.psf_coeff` which calls :mod:`webbpsf`.  These can be set directly 
+    :func:`~pynrc.nrc_utils.gen_psf_coeff` which calls :mod:`webbpsf`.  These can be set directly 
     upon initialization of the of the NIRCam instances or updated later using the 
     :meth:`update_psf_coeff` method. 
 
@@ -385,18 +391,11 @@ class NIRCam(object):
         Radial offset from the center in arcsec.
     offset_theta :float
         Position angle for radial offset, in degrees CCW.
-    bar_offset : float or None
-        For bar masks, the position along the bar to place the PSF (arcsec).
-        Use :func:`~pynrc.nrc_utils.offset_bar` for filter-dependent locations.
-        If not set, default is to decide location based on selected filter.
-        Updates :attr:`bar_offset` attribute.
-    wfe_drift : float
-        Wavefront error drift amplitude in nm.
-        Updates :attr:`wfe_drift` attribute.
     opd : tuple or HDUList
         Tuple (file, slice) or filename or HDUList specifying OPD.
     include_si_wfe : bool
-        Include SI WFE measurements? Default=False.
+        Include SI WFE measurements? Default=True.
+        if :attr:`wfe_field` is `True`, then ``include_si_wfe=True``.
     tel_pupil : str
         File name or HDUList specifying telescope entrance pupil.
     jitter : str or None
@@ -408,9 +407,10 @@ class NIRCam(object):
     force : bool
         Forces a recalcuation of PSF even if saved PSF exists. (default: False)
     quick : bool
-        Only perform a fit over the filter bandpass with a smaller default
-        polynomial degree fit. Not compatible with save.
-        
+        Only perform a fit over the filter bandpass with a lower default polynomial degree fit.
+    use_legendre : bool
+        Fit with Legendre polynomials, an orthonormal basis set.
+    
     Examples
     --------
     Basic example of generating a full frame NIRCam observation:
@@ -463,18 +463,36 @@ class NIRCam(object):
         self._ote_scale = kwargs['ote_scale'] if 'ote_scale' in kwargs.keys() else None
         self._nc_scale = kwargs['nc_scale'] if 'nc_scale' in kwargs.keys() else None
 
+        # WFE Drift, Don't calculate coefficients by default
+        wfe_drift = kwargs.get('wfe_drift', False)
+        self._wfe_drift = wfe_drift
+        # Field-dependent WFE
+        self._wfe_field = False  # Don't calculate coefficients by default
+
+        self._psf_coeff_mod = {
+            'wfe_drift': None, 'wfe_drift_lxmap': None,
+            'si_field': None, 'si_field_v2grid': None, 'si_field_v3grid': None,
+            'wedge': None, #'wedge_lxmap': None
+        } 
+        self._psf_coeff_bg_mod = {
+            'wfe_drift': None, 'wfe_drift_lxmap': None,
+            'si_field': None, 'si_field_v2grid': None, 'si_field_v3grid': None
+        } 
+
+        # Bar wedge coefficient init
+        self._psf_coeff_mod_wedge = None
+
+        # self._bar_wfe_val holds bar offset value for drifted PSF to be used for
+        # generating a series of offset values such as in nrc_hci class.
+        # TODO: Is this needed??
+        self._bar_wfe_val = None
+        # Background fov pix is only for coronagraphic masks 
+        self._fov_pix_bg = 33
+
         # Let's figure out what keywords the user has set and try to 
         # interpret what he/she actually wants. If certain values have
         # been set to None or don't exist, then populate with defaults
         # and continue onward.
-
-        self._wfe_drift = 0
-        self._bar_offset  = None
-        # self._bar_wfe_val holds bar offset value for drifted PSF to be used for
-        # generating a series of offset values such as in nrc_hci class.
-        self._bar_wfe_val = None 
-        self._fov_pix_bg = 33
-
         
         # Check Weak Lens alternate inputs
         if pupil is not None:
@@ -729,11 +747,143 @@ class NIRCam(object):
     def siaf_ap(self):
         """Science Instrument aperture info class"""
         return self._siaf_ap
+    @siaf_ap.setter
+    def siaf_ap(self, apname):
+        self.update_from_SIAF(apname)
         
     @property
     def siaf_ap_names(self):
         """Give all possible SIAF aperture names"""
         return list(self.siaf_nrc.apernames)
+
+    def get_siaf_apname(self):
+        """Get SIAF aperture based on instrument settings"""
+
+        detid = self.Detectors[0].detid
+        wind_mode = self.Detectors[0].wind_mode
+
+        is_lyot = (self.pupil is not None) and ('LYOT' in self.pupil)
+        is_coron = is_lyot and ((self.mask is not None) and ('MASK' in self.mask))
+        
+        is_grism = (self.pupil is not None) and ('GRISM' in self.pupil)
+
+        # Time series filters
+        ts_filters = ['F277W','F356W','F444W','F322W2']
+        # Coronagraphic bar filters
+        swb_filters = ['F182M','F187N','F210M','F212N','F200W']
+        lwb_filters = ['F250M','F300M','F277W','F335M','F360M','F356W','F410M','F430M','F460M','F480M','F444W']
+        # Time series filter
+        ts_filter = ['F277W','F356W','F444W','F322W2']
+
+        # Coronagraphy
+        if is_coron:
+            wstr = 'FULL_' if wind_mode=='FULL' else ''
+            key = 'NRC{}_{}{}'.format(detid,wstr,self.mask)
+            if ('WB' in self.mask) and (self.module=='A') and (self.filter in swb_filters+lwb_filters):
+                key = key + '_{}'.format(self.filter)
+            if wind_mode=='STRIPE':
+                key = None
+        # Just Lyot stop without masks, assuming TA aperture
+        elif is_lyot and self.ND_acq:
+            tastr = 'TA' if self.ND_acq else 'FSTA'
+            key = 'NRC{}_{}'.format(detid,tastr)
+            if ('CIRC' in self._pupil) and ('SW' in self.channel):
+                key = key + 'MASK210R'
+            elif ('CIRC' in self._pupil) and ('LW' in self.channel):
+                key = key + 'MASK430R'
+            elif ('WEDGE' in self._pupil) and ('SW' in self.channel):
+                key = key + 'MASKSWB'
+            elif ('WEDGE' in self._pupil) and ('LW' in self.channel):
+                key = key + 'MASKLWB'
+        # Time series grisms
+        elif is_grism and ('GRISM0' in self.pupil) and (self.filter in ts_filters):
+            if wind_mode=='FULL':
+                key = 'NRC{}_GRISM_{}'.format(detid, self.filter)
+            elif wind_mode=='STRIPE':
+                key = 'NRC{}_GRISM{:.0f}_{}'.format(detid,self.det_info['ypix'],self.filter)
+            else:
+                key = None
+        # SW Time Series with LW grism
+        elif wind_mode=='STRIPE':
+            key = 'NRC{}_GRISMTS{:.0f}'.format(detid,self.det_info['ypix'])
+        # WFSS
+        elif is_grism and (wind_mode=='FULL'):
+            gstr = 'GRISMR' if self.pupil=='GRISM0' else 'GRISMC'
+            key = 'NRC{}_FULL_{}_WFSS'.format(detid, gstr)
+        # Subarrays
+        elif wind_mode=='WINDOW':
+            key = 'NRC{}_SUB{}P'.format(detid,self.det_info['xpix'])
+            if key not in self.siaf_ap_names:
+                key = 'NRC{}_TAPSIMG{}'.format(detid,self.det_info['xpix'])
+            if key not in self.siaf_ap_names:
+                key = 'NRC{}_TAGRISMTS{}'.format(detid,self.det_info['xpix'])
+            if key not in self.siaf_ap_names:
+                key = 'NRC{}_TAGRISMTS_SCI_{}'.format(detid,self.filter)
+            if key not in self.siaf_ap_names:
+                key = 'NRC{}_SUB{}'.format(detid,self.det_info['xpix'])
+        # Full frame generic
+        elif wind_mode=='FULL':
+            key = 'NRC{}_FULL'.format(self.Detectors[0].detid)
+        else:
+            key = None
+
+
+        # # If full frame
+        # if (wind_mode == 'FULL'):
+        #     # Time series (A5 row grism with certain filters)
+        #     if is_grism and ('GRISM0' in self.pupil) and (self.filter in ts_filters):
+        #         key = 'NRC{}_GRISM_{}'.format(detid, self.filter)
+        #     # WFSS
+        #     elif is_grism:
+        #         gstr = 'GRISMR' if self.pupil=='GRISM0' else 'GRISMC'
+        #         key = 'NRC{}_FULL_{}_WFSS'.format(detid, gstr)
+        #     # Coronagraphy
+        #     elif if_coron:
+        #         if ('SWB' in self.mask) and (self.filter in swb_filters):
+        #             key = 'NRC{}_FULL_MASKSWB_{}'.format(detid,self.filter)
+        #         elif ('LWB' in self.mask) and (self.filter in lwb_filters):
+        #             key = 'NRC{}_FULL_MASKLWB_{}'.format(detid,self.filter)
+        #         else:
+        #             key = 'NRC{}_FULL_{}'.format(detid,self.mask)
+        #     # Full frame, generic SIAF
+        #     else:
+        #         key = 'NRC{}_FULL'.format(self.Detectors[0].detid)
+
+        # # Stripe mode settings
+        # # Time series grism and simultaneous SW 
+        # elif (wind_mode == 'STRIPE'):
+        #     if is_grism and (GRISM0 in self.pupil) and (self.filter in ts_filter):
+        #         key = 'NRC{}_GRISM{:.0f}_{}'.format(detid,self.det_info['ypix'],self.filter)
+        #     else:
+        #         key = 'NRC{}_GRISMTS{:.0f}'.format(detid,self.det_info['ypix'])
+
+        # # Subarray window
+        # else:
+        #     if is_coron:
+        #         if ('SWB' in self.mask) and (self.filter in swb_filters) and (detid=='A4'):
+        #             key = 'NRCA4_MASKSWB_{}'.format(self.filter)
+        #         elif ('LWB' in self.mask) and (self.filter in lwb_filters) and (detid=='A5'):
+        #             key = 'NRCA5_MASKLWB_{}'.format(self.filter)
+        #     else:
+        #         key = 'NRC{}_SUB{}P'.format(detid,self.det_info['xpix'])
+        #         if key not in self.siaf_ap_names:
+        #             key = 'NRC{}_TAPSIMG{}'.format(detid,self.det_info['xpix'])
+        #         if key not in self.siaf_ap_names:
+        #             key = 'NRC{}_TAGRISMTS{}'.format(detid,self.det_info['xpix'])
+        #         if key not in self.siaf_ap_names:
+        #             key = 'NRC{}_TAGRISMTS_SCI_{}'.format(detid,self.filter)
+        #         if key not in self.siaf_ap_names:
+        #             key = 'NRC{}_SUB{}'.format(detid,self.det_info['xpix'])
+
+
+        # Check if key exists
+        if key in self.siaf_ap_names:
+            _log.info('Suggested SIAF aperture name: {}'.format(key))
+            return key
+        else:
+            _log.warning("Suggested SIAF aperture name '{}' is not defined".format(key))
+            return None
+
         
     def update_from_SIAF(self, apname, pupil=None, **kwargs):
         """Update detector properties based on SIAF aperture"""
@@ -1108,45 +1258,60 @@ class NIRCam(object):
 
     @property
     def wfe_drift(self):
-        """WFE drift relative to nominal PSF (nm)"""
+        """Enable/Disable WFE Drift calculation"""
         return self._wfe_drift
     @wfe_drift.setter
     def wfe_drift(self, value):
-        """Set the WFE drift value and update coefficients"""
-        # Only update if the value changes
-        vold = self._wfe_drift; self._wfe_drift = value
-        if vold != self._wfe_drift: 
-            self.update_psf_coeff(wfe_drift=self._wfe_drift)
+        """Enable/Disable WFE Drift calculation"""
+        # Only update if the value is boolean and it changes
+        if isinstance(value, (bool)):
+            vold = self._wfe_drift; self._wfe_drift = value
+            if vold != self._wfe_drift: 
+                self.update_psf_coeff()
 
     @property
-    def bar_offset(self):
-        """Offset position along bar mask (arcsec)."""
-        return self._bar_offset
-    @bar_offset.setter
-    def bar_offset(self, value):
-        """Set the bar offset position and update coefficients"""
-        # Only update if the value changes
-        if self.mask is None:
-            self._bar_offset = 0 #None
-        elif self.mask[-2:]=='WB':
-            vold = self._bar_offset
-            # Value limits between -10 and 10
-            if np.abs(value)>10:
-                value = 10 if value>0 else -10
-                msg1 = 'bar_offset value must be between -10 and 10.'
-                msg2 = 'Setting to {}.'.format(value)
-                _log.warning('{} {}'.format(msg1,msg2))
+    def wfe_field(self):
+        """Enable/Disable Field-depdendent calculation"""
+        return self._wfe_field
+    @wfe_field.setter
+    def wfe_field(self, value):
+        """Enable/Disable Field-depdendent calculation"""
+        # Only update if the value is boolean and it changes
+        if isinstance(value, (bool)):
+            vold = self._wfe_field; self._wfe_field = value
+            if vold != self._wfe_field: 
+                self.update_psf_coeff(include_si_wfe=True)
+
+    # @property
+    # def bar_offset(self):
+    #     """Offset position along bar mask (arcsec)."""
+    #     return self._bar_offset
+    # @bar_offset.setter
+    # def bar_offset(self, value):
+    #     """Set the bar offset position and update coefficients"""
+    #     # Only update if the value changes
+    #     if self.mask is None:
+    #         self._bar_offset = 0 #None
+    #     elif self.mask[-2:]=='WB':
+    #         vold = self._bar_offset
+    #         # Value limits between -10 and 10
+    #         if np.abs(value)>10:
+    #             value = 10 if value>0 else -10
+    #             msg1 = 'bar_offset value must be between -10 and 10.'
+    #             msg2 = 'Setting to {}.'.format(value)
+    #             _log.warning('{} {}'.format(msg1,msg2))
             
-            self._bar_offset = value
-            if vold != self._bar_offset: 
-                self.update_psf_coeff(bar_offset=self._bar_offset)
-        else:
-            self._bar_offset = 0
+    #         self._bar_offset = value
+    #         if vold != self._bar_offset: 
+    #             self.update_psf_coeff(bar_offset=self._bar_offset)
+    #     else:
+    #         self._bar_offset = 0
                         
     def update_psf_coeff(self, fov_pix=None, oversample=None, 
         offset_r=None, offset_theta=None, tel_pupil=None, opd=None,
-        wfe_drift=None, include_si_wfe=None, jitter='gaussian', jitter_sigma=0.007,
-        bar_offset=None, save=None, force=False, **kwargs):
+        include_si_wfe=None, jitter=None, jitter_sigma=None,
+        bar_offset=None, save=None, force=False, use_legendre=None,
+        quick=None, **kwargs):
         """Create new PSF coefficients.
         
         Generates a set of PSF coefficients from a sequence of WebbPSF images.
@@ -1178,20 +1343,10 @@ class NIRCam(object):
             Radial offset from the center in arcsec.
         offset_theta : float
             Position angle for radial offset, in degrees CCW.
-        bar_offset : float or None
-            For bar masks, the position along the bar to place the PSF (arcsec).
-            Use :func:`~pynrc.nrc_utils.offset_bar` for filter-dependent locations.
-            If both :attr:`bar_offset` attribute and `bar_offset` keyword are None,
-            then decide location based on selected filter. A positive value will
-            move the source to the right when viewing V2 to the left and V3 up.
-            Updates :attr:`bar_offset` attribute and coefficients appropriately.
-        wfe_drift : float
-            Wavefront error drift amplitude in nm.
-            Updates :attr:`wfe_drift` attribute and coefficients appropriately.
         opd : tuple, str, or HDUList
             Tuple (file, slice) or filename or HDUList specifying OPD.
         include_si_wfe : bool
-            Include SI WFE measurements? Default=False.
+            Include SI WFE measurements? Default=True.
         tel_pupil : str or HDUList
             File name or HDUList specifying telescope entrance pupil.
         jitter : str
@@ -1202,7 +1357,11 @@ class NIRCam(object):
             Save the resulting PSF coefficients to a file? (default: True)
         force : bool
             Forces a recalcuation of PSF even if saved PSF exists. (default: False)
-
+        quick : bool
+            Only perform a fit over the filter bandpass with a lower default 
+            polynomial degree fit. Default is True for narroband, False otherwise.
+        use_legendre : bool
+            Fit with Legendre polynomials, an orthonormal basis set.
         """
 
         if oversample is None: 
@@ -1258,7 +1417,10 @@ class NIRCam(object):
             except (AttributeError, KeyError): tel_pupil = None
         if include_si_wfe is None:
             try: include_si_wfe = self._psf_info['include_si_wfe']
-            except (AttributeError, KeyError): include_si_wfe = False
+            except (AttributeError, KeyError): include_si_wfe = True
+        if use_legendre is None:
+            try: use_legendre = self._psf_info['use_legendre']
+            except (AttributeError, KeyError): use_legendre = True
         if jitter is None:
             try: jitter = self._psf_info['jitter']
             except (AttributeError, KeyError): jitter = 'gaussian'
@@ -1271,103 +1433,123 @@ class NIRCam(object):
         if save is None:
             try: save = self._psf_info['save']
             except (AttributeError, KeyError): save = True
+        if quick is None:
+            try: quick = self._psf_info['quick']
+            except (AttributeError, KeyError): 
+                # Turn on `quick` narrowband filter
+                quick = True if 'N' in self.filter else False        
             
         if jitter=='none':
             jitter = None
 
         #print(opd)
-        self._psf_info={'fov_pix':fov_pix, 'oversample':oversample, 
+        self._psf_info={'fov_pix':fov_pix, 'oversample':oversample, 'quick':quick,
             'offset_r':offset_r, 'offset_theta':offset_theta, 
-            'tel_pupil':tel_pupil, 'save':save, 'force':force,
+            'tel_pupil':tel_pupil, 'save':save, 'force':force, 'use_legendre':use_legendre,
             'include_si_wfe':include_si_wfe, 'opd':opd, 'jitter':jitter, 'jitter_sigma':jitter_sigma}
-        self._psf_coeff = psf_coeff(self.bandpass, self.pupil, self.mask, self.module, 
+        self._psf_coeff, self._psf_coeff_hdr = gen_psf_coeff(self.bandpass, self.pupil, self.mask, self.module, 
             **self._psf_info)
 
         # WFE Drift is handled differently than the rest of the parameters
         # This is because we use wfed_coeff() to determine the resid values
-        # for the PSF coefficients to generate a drifted PSF.
-        if wfe_drift is not None:
-            self._wfe_drift = wfe_drift
-            
-        wfe_drift = self._wfe_drift
-        if wfe_drift>0:
-            _log.info('Updating WFE drift ({}nm) for fov_pix={} and oversample={}'.\
-                      format(wfe_drift,fov_pix,oversample))
+        # for the PSF coefficients to generate a drifted PSF in gen_psf().
+        if self._wfe_drift:
+            _log.info('Calculating WFE Drift for fov_pix={} and oversample={}'.\
+                      format(fov_pix,oversample))
             wfe_kwargs = dict(self._psf_info)
             wfe_kwargs['pupil']  = self._pupil
             wfe_kwargs['mask']   = self._mask
             wfe_kwargs['module'] = self.module
-#             if self._bar_wfe_val is None:
-#                 wfe_kwargs['bar_offset'] = self.bar_offset
-#             else:
-#                 wfe_kwargs['bar_offset'] = self._bar_wfe_val
             wfe_kwargs['bar_offset'] = 0
-            #del wfe_kwargs['save'], wfe_kwargs['force']
-
-            wfe_cf = wfed_coeff(self.bandpass, **wfe_kwargs)
-            cf_fit = wfe_cf.reshape([wfe_cf.shape[0], -1])
-            cf_mod = jl_poly(np.array([wfe_drift]), cf_fit)
-            cf_mod = cf_mod.reshape(self._psf_coeff.shape)
-            self._psf_coeff += cf_mod
             
+            res1, res2 = wfed_coeff(self.bandpass, **wfe_kwargs)
+            self._psf_coeff_mod['wfe_drift'] = res1
+            self._psf_coeff_mod['wfe_drift_lxmap'] = res2
+        else:
+            self._psf_coeff_mod['wfe_drift'] = None
+            self._psf_coeff_mod['wfe_drift_lxmap'] = None
+
+        # Field dependent coefficient modifications
+        # Don't do this for masked PSFs
+        if (self._mask is None) and self._wfe_field:
+            _log.info('Calculating SI WFE Field for fov_pix={} and oversample={}'.\
+                      format(fov_pix,oversample))
+            field_kwargs = dict(self._psf_info)
+            field_kwargs['pupil']  = self._pupil
+            field_kwargs['mask']   = self._mask
+            field_kwargs['module'] = self.module
+
+            res, v2grid, v3grid = field_coeff_resid(self.bandpass, self._psf_coeff, **field_kwargs)
+            self._psf_coeff_mod['si_field'] = res
+            self._psf_coeff_mod['si_field_v2grid'] = v2grid
+            self._psf_coeff_mod['si_field_v3grid'] = v3grid
+        else:
+            self._psf_coeff_mod['si_field'] = None
+            self._psf_coeff_mod['si_field_v2grid'] = None 
+            self._psf_coeff_mod['si_field_v3grid'] = None 
+
         # Bar masks can have offsets
-        if (self.mask is not None) and ('WB' in self.mask):
-            r_bar, th_bar = self.offset_bar(self._filter, self.mask)
-            # Want th_bar to be -90 so that r_bar matches webbpsf
-            if th_bar>0: 
-                r_bar  = -1 * r_bar
-                th_bar = -1 * th_bar
-
-            # Specifying bar_offset keyword overrides everything
-            if bar_offset is not None:
-                self._bar_offset = bar_offset
-            # If _bar_offset attribute unspecified, then based on filter
-            if self._bar_offset is None:
-                self._bar_offset = r_bar
-
-            bar_offset = self._bar_offset
-            
+        if (self.mask is not None) and ('WB' in self.mask):            
             wedge_kwargs = dict(self._psf_info)
             wedge_kwargs['module'] = self.module
-            
-            wedge_cf = wedge_coeff(self._filter, self._pupil, self._mask, **wedge_kwargs)
-            cf_fit = wedge_cf.reshape([wedge_cf.shape[0], -1])
-            cf_mod = jl_poly(np.array([bar_offset]), cf_fit)
-            cf_mod = cf_mod.reshape(self._psf_coeff.shape)
-            self._psf_coeff += cf_mod
+            self._psf_coeff_mod_wedge = wedge_coeff(self._filter, self._pupil, self._mask, **wedge_kwargs)
+
         else:
-            self._bar_offset = 0
+            self._psf_coeff_mod_wedge = None
 
 
         # If there is a coronagraphic spot or bar, then we may need to
         # generate another background PSF for sensitivity information.
         # It's easiest just to ALWAYS do a small footprint without the
         # coronagraphic mask and save the PSF coefficients. 
-        if self.mask is not None:
+        # WARNING: This assumes throughput of the coronagraphic substrate
+        if self._mask is not None:
             self._psf_info_bg = {'fov_pix':self._fov_pix_bg, 'oversample':oversample, 
-                'offset_r':0, 'offset_theta':0, 'tel_pupil':tel_pupil, 
-                'opd':opd, 'jitter':jitter, 'jitter_sigma':jitter_sigma, 
-                'include_si_wfe':include_si_wfe, 'save':save, 'force':force}#'save':True, 'force':False}
-            self._psf_coeff_bg = psf_coeff(self.bandpass, self.pupil, None, self.module, 
+                'offset_r':0, 'offset_theta':0, 'bar_offset': 0, 'tel_pupil':tel_pupil, 
+                'opd':opd, 'jitter':jitter, 'jitter_sigma':jitter_sigma, 'use_legendre':use_legendre, 
+                'include_si_wfe':include_si_wfe, 'save':save, 'force':force}
+            self._psf_coeff_bg, self._psf_coeff_bg_hdr = gen_psf_coeff(self.bandpass, self.pupil, None, self.module, 
                 **self._psf_info_bg)
 
             # Update off-axis WFE drift
-            if wfe_drift>0:
+            if self._wfe_drift:
+                _log.info('Calculating WFE Drift for fov_pix={} and oversample={}'.\
+                        format(_fov_pix_bg,oversample))
                 wfe_kwargs = dict(self._psf_info_bg)
-                wfe_kwargs['pupil']  = self.pupil
+                wfe_kwargs['pupil']  = self._pupil
                 wfe_kwargs['mask']   = None
                 wfe_kwargs['module'] = self.module
-                #del wfe_kwargs['save'], wfe_kwargs['force']
 
-                wfe_cf = wfed_coeff(self.bandpass, **wfe_kwargs)
-                cf_fit = wfe_cf.reshape([wfe_cf.shape[0], -1])
-                cf_mod = jl_poly(np.array([wfe_drift]), cf_fit)
-                cf_mod = cf_mod.reshape(self._psf_coeff_bg.shape)
-                self._psf_coeff_bg += cf_mod
+                res1, res2 = wfed_coeff(self.bandpass, **wfe_kwargs)
+                self._psf_coeff_bg_mod['wfe_drift'] = res1
+                self._psf_coeff_bg_mod['wfe_drift_lxmap'] = res2
+            else:
+                self._psf_coeff_bg_mod['wfe_drift'] = None
+                self._psf_coeff_bg_mod['wfe_drift_lxmap'] = None
+
+            if self._wfe_field:
+                _log.info('Calculating SI WFE Field for fov_pix={} and oversample={}'.\
+                        format(_fov_pix_bg,oversample))
+                field_kwargs = dict(self._psf_info)
+                field_kwargs['pupil']  = self._pupil
+                field_kwargs['mask']   = None
+                field_kwargs['module'] = self.module
+
+                res, v2grid, v3grid = field_coeff_resid(self.bandpass, self._psf_coeff, **field_kwargs)
+                self._psf_coeff_bg_mod['si_field'] = res
+                self._psf_coeff_bg_mod['si_field_v2grid'] = v2grid 
+                self._psf_coeff_bg_mod['si_field_v3grid'] = v3grid 
+            else:
+                self._psf_coeff_bg_mod['si_field'] = None
+                self._psf_coeff_bg_mod['si_field_v2grid'] = None 
+                self._psf_coeff_bg_mod['si_field_v3grid'] = None 
 
         else:
+            # Background info is the same as main foreground PSF
             self._psf_info_bg  = self._psf_info
             self._psf_coeff_bg = self._psf_coeff
+            self._psf_coeff_bg_hdr = self._psf_coeff_hdr
+            self._psf_coeff_bg_mod = self._psf_coeff_mod
 
 
     def sat_limits(self, sp=None, bp_lim=None, units='vegamag', well_frac=0.8,
@@ -1442,13 +1624,14 @@ class NIRCam(object):
         # 2. Find x,y position of max PSF
         # 3. Cut out postage stamp region around that PSF coeff
         psf_coeff = self._psf_coeff
+        psf_coeff_hdr = self._psf_coeff_hdr
         if (trim_psf is not None) and (trim_psf < kwargs['fov_pix']):
             
             # Quickly create a temporary PSF to find max value location
             wtemp = np.array([bp_lim.wave[0], bp_lim.avgwave(), bp_lim.wave[-1]])
             ttemp = np.array([bp_lim.sample(w) for w in wtemp])
             bptemp = S.ArrayBandpass(wave=wtemp, throughput=ttemp)
-            psf_temp, psf_temp_over = gen_image_coeff(bptemp, coeff=psf_coeff, \
+            psf_temp, psf_temp_over = gen_image_coeff(bptemp, coeff=psf_coeff, coeff_hdr=psf_coeff_hdr, \
                 fov_pix=kwargs['fov_pix'], oversample=kwargs['oversample'], \
                 return_oversample=True)
 
@@ -1470,7 +1653,7 @@ class NIRCam(object):
         satlim = sat_limit_webbpsf(self.bandpass, pupil=self.pupil, mask=self.mask,
             module=self.module, full_well=well_level, well_frac=well_frac,
             sp=sp, bp_lim=bp_lim, int_time=t_sat, quiet=quiet, units=units, 
-            pix_scale=self.pix_scale, coeff=psf_coeff, **kwargs)
+            pix_scale=self.pix_scale, coeff=psf_coeff, coeff_hdr=psf_coeff_hdr, **kwargs)
 
         return satlim
 
@@ -1534,6 +1717,7 @@ class NIRCam(object):
             
         # Always use the bg coeff
         psf_coeff = self._psf_coeff_bg
+        psf_coeff_hdr = self._psf_coeff_bg_hdr
         # We don't necessarily need the entire image, so cut down to size
         if not ('WEAK LENS' in self.pupil):
             fov_pix = 33
@@ -1546,7 +1730,7 @@ class NIRCam(object):
 
         bglim = bg_sensitivity(self.bandpass, self.pupil, self.mask, self.module,
             pix_scale=pix_scale, sp=sp, units=units, nsig=nsig, tf=tf, quiet=quiet, 
-            coeff=psf_coeff, **kwargs)
+            coeff=psf_coeff, coeff_hdr=psf_coeff_hdr, **kwargs)
     
         return bglim
 
@@ -1687,8 +1871,10 @@ class NIRCam(object):
         
 
 
-    def gen_psf(self, sp=None, return_oversample=False, use_bg_psf=False, **kwargs):
-        """PSF image.
+    def gen_psf(self, sp=None, return_oversample=False, use_bg_psf=False, 
+                wfe_drift=None, coord_vals=None, coord_frame='tel', 
+                bar_offset=None, return_hdul=False, **kwargs):
+        """PSF image
         
         Create a PSF image from instrument settings. The image is noiseless and
         doesn't take into account any non-linearity or saturation effects, but is
@@ -1713,21 +1899,151 @@ class NIRCam(object):
             If True, then also returns the oversampled version of the PSF
         use_bg_psf : bool
             If a coronagraphic observation, off-center PSF is different.
+        wfe_drift : float or None
+            Wavefront error drift amplitude in nm.
+            The attribute :attr:`wfe_drift` needs to be set to True.
+        V2V3 : tuple or None
+            V2V3 coordinates (in arcmin) to calculate field-dependent PSF.
+            The attribute :attr:`wfe_field` must be True.
+        coord_frame : str
+            Type of desired output coordinates. 
 
+                * 'tel': arcsecs V2,V3
+                * 'sci': pixels, in conventional DMS axes orientation
+                * 'det': pixels, in raw detector read out axes orientation
+                * 'idl': arcsecs relative to aperture reference location.
+
+        bar_offset : float or None
+            For bar masks, the position along the bar to place the PSF (arcsec).
+            Use :func:`~pynrc.nrc_utils.offset_bar` for filter-dependent locations.
+            If both set to None, then decide location based on selected filter. 
+            A positive value will move the source to the right when viewing 
+            V2 to the left and V3 up.
+        return_hdul : bool
+            TODO: Return PSFs in an HDUList rather than set of arrays
         """
 
         if use_bg_psf:
-            psf_coeff = self._psf_coeff_bg
-            psf_info  = self._psf_info_bg
+            psf_coeff_hdr = self._psf_coeff_bg_hdr
+            psf_coeff     = self._psf_coeff_bg
+            psf_info      = self._psf_info_bg
         else:
-            psf_coeff = self._psf_coeff
-            psf_info  = self._psf_info
+            psf_coeff_hdr = self._psf_coeff_hdr
+            psf_coeff     = self._psf_coeff
+            psf_info      = self._psf_info
 
-        return gen_image_coeff(self.bandpass, sp_norm=sp, 
-            pupil=self.pupil, mask=self.mask, module=self.module, 
-            coeff=psf_coeff, fov_pix=psf_info['fov_pix'], 
-            oversample=psf_info['oversample'], 
-            return_oversample=return_oversample, **kwargs)
+        # Coeff modification variable
+        psf_coeff_mod = 0 
+
+        # Modify PSF coefficients based on WFE drift
+        if wfe_drift is None: 
+            wfe_drift = 0
+        if (wfe_drift>0) and (self.wfe_drift==False):
+            _log.warning("`wfe_drift` keyword is set, but `self.wfe_drift` is False. Toggle `self.wfe_drift=True` to use this feature.")
+            _log.warning("`gen_psf` will continue with `wfe_drift=0`.")
+        elif (wfe_drift>0) and self.wfe_drift:
+            if use_bg_psf:
+                cf_fit = self._psf_coeff_bg_mod['wfe_drift'] 
+                lxmap  = self._psf_coeff_bg_mod['wfe_drift_lxmap'] 
+            else:
+                cf_fit = self._psf_coeff_mod['wfe_drift'] 
+                lxmap  = self._psf_coeff_mod['wfe_drift_lxmap'] 
+
+            cf_fit = cf_fit.reshape([cf_fit.shape[0], -1])
+            cf_mod = jl_poly(np.array([wfe_drift]), cf_fit, use_legendre=True, lxmap=lxmap)
+            cf_mod = cf_mod.reshape(psf_coeff.shape)
+            psf_coeff_mod += cf_mod
+
+        # Modify PSF coefficients based on field-dependent
+        nfield = 1
+        if (coord_vals is not None) and (self.wfe_field==False):
+            _log.warning("coord_vals keyword is set, but `self.wfe_field` is False. Toggle `self.wfe_field=True` to use this feature.")
+            _log.warning("`gen_psf` will continue with default PSF.")
+        elif (coord_vals is not None) and self.wfe_field:
+            if use_bg_psf:
+                cf_fit = self._psf_coeff_bg_mod['si_field'] 
+                v2grid  = self._psf_coeff_bg_mod['si_field_v2grid'] 
+                v3grid  = self._psf_coeff_bg_mod['si_field_v3grid']
+            else:
+                cf_fit = self._psf_coeff_mod['si_field'] 
+                v2grid  = self._psf_coeff_mod['si_field_v2grid'] 
+                v3grid  = self._psf_coeff_mod['si_field_v3grid'] 
+
+            if cf_fit is None:
+                _log.warning('No field dependence for this PSF; on-axis coronagraphy???')
+            else:
+                # Determine V2/V3 coordinates
+                v2 = v3 = None
+                cframe = coord_frame.lower()
+                if cframe=='tel':
+                    v2, v3 = coord_vals
+                elif cframe in ['det', 'sci', 'idl']:
+                    x, y = coord_vals[0], coord_vals[1]
+                    try:
+                        v2, v3 = self.siaf_ap.convert(x,y, cframe, 'tel')
+                        v2, v3 = (v2/60., v3/60.)
+                    except: 
+                        apname = self.get_siaf_apname()
+                        if apname is None:
+                            _log.warning('No suitable aperture name defined to determine V2/V3 coordiantes')
+                        else:
+                            _log.warning('self.siaf_ap not defined; assuming {}'.format(apname))
+                            ap = self.siaf_nrc[apname]
+                            v2, v3 = ap.convert(x,y,cframe, 'tel')
+                            v2, v3 = (v2/60., v3/60.)
+                        _log.warning('Update self.siaf_ap for more specific conversions to V2/V3.')
+                else:
+                    _log.warning("coord_frame setting '{}' not recognized.".format(coord_frame))
+                    _log.warning("`gen_psf` will continue with default PSF.")
+
+                # PSF Modifications
+                if (v2 is not None):
+                    # print(v2,v3)
+                    nfield = np.size(v2)
+                    cf_mod = field_coeff_func(v2grid, v3grid, cf_fit, v2, v3)
+                    psf_coeff_mod += cf_mod
+
+        # Add PSF coefficient modifications due to wedge/bar offset
+        if (use_bg_psf==False) and (self.mask is not None) and ('WB' in self.mask):
+            # Automatically determine offset position based on filter
+            if bar_offset is None:
+                r_bar, th_bar = self.offset_bar(self._filter, self.mask)
+                # Want th_bar to be -90 so that r_bar matches webbpsf
+                if th_bar>0: 
+                    r_bar  = -1 * r_bar
+                    th_bar = -1 * th_bar
+                bar_offset = r_bar
+
+            # Interpolate coefficient offset if not 0
+            if bar_offset != 0:
+                cf_fit = self._psf_coeff_mod_wedge
+                cf_fit = cf_fit.reshape([cf_fit.shape[0], -1])
+                cf_mod = jl_poly(np.array([bar_offset]), cf_fit)
+                cf_mod = cf_mod.reshape(psf_coeff.shape)
+                psf_coeff_mod += cf_mod
+                
+        psf_coeff = psf_coeff + psf_coeff_mod
+        del psf_coeff_mod
+
+        # if multiple field points were present, we want to 
+        if nfield>1:
+            psf_all = []
+            for ii in range(nfield):
+                coeff = psf_coeff[ii]
+                psf = gen_image_coeff(self.bandpass, sp_norm=sp,
+                                    pupil=self.pupil, mask=self.mask, module=self.module,
+                                    coeff=coeff, coeff_hdr=psf_coeff_hdr, 
+                                    fov_pix=psf_info['fov_pix'], oversample=psf_info['oversample'],
+                                    return_oversample=return_oversample, **kwargs)
+                psf_all.append(psf)
+            return psf_all
+        else:
+            psf = gen_image_coeff(self.bandpass, sp_norm=sp,
+                                pupil=self.pupil, mask=self.mask, module=self.module,
+                                coeff=psf_coeff, coeff_hdr=psf_coeff_hdr, 
+                                fov_pix=psf_info['fov_pix'], oversample=psf_info['oversample'],
+                                return_oversample=return_oversample, **kwargs)
+            return psf
     
 
     def gen_exposures(self, sp=None, im_slope=None, file_out=None, return_results=None,

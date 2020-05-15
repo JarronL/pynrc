@@ -37,13 +37,13 @@ class nrc_hci(NIRCam):
 
     """
 
-    def __init__(self, wind_mode='WINDOW', xpix=320, ypix=320, verbose=False, **kwargs):
+    def __init__(self, wind_mode='WINDOW', xpix=320, ypix=320, wfe_drift=True, verbose=False, **kwargs):
 
         if 'FULL'   in wind_mode: xpix = ypix = 2048
         if 'STRIPE' in wind_mode: xpix = 2048
 
         #super(NIRCam,self).__init__(**kwargs)
-        NIRCam.__init__(self, wind_mode=wind_mode, xpix=xpix, ypix=ypix, **kwargs)
+        NIRCam.__init__(self, wind_mode=wind_mode, xpix=xpix, ypix=ypix, wfe_drift=wfe_drift, **kwargs)
 
         # Background/off-axis PSF coeff updates
         # -------------------------------------
@@ -61,7 +61,7 @@ class nrc_hci(NIRCam):
         # -----------
         # Generate cached PSFs for quick retrieval.
         # A PSF centered on the mask and one fully off-axis.
-        if verbose: print("Generating oversampled PSFs...")
+        if verbose: print("Generating cached PSFs...")
         self._gen_cached_psfs()
 
         # Set locations based on detector
@@ -70,18 +70,18 @@ class nrc_hci(NIRCam):
         self._gen_cmask()
 
 
-    @property
-    def wfe_drift(self):
-        """WFE drift relative to nominal PSF (nm)"""
-        return self._wfe_drift
-    @wfe_drift.setter
-    def wfe_drift(self, value):
-        """Set the WFE drift value and update coefficients"""
-        # Only update if the value changes
-        vold = self._wfe_drift; self._wfe_drift = value
-        if vold != self._wfe_drift: 
-            self.update_psf_coeff(wfe_drift=self._wfe_drift)
-            self._gen_cached_psfs()
+    # @property
+    # def wfe_drift(self):
+    #     """WFE drift relative to nominal PSF (nm)"""
+    #     return self._wfe_drift
+    # @wfe_drift.setter
+    # def wfe_drift(self, value):
+    #     """Set the WFE drift value and update coefficients"""
+    #     # Only update if the value changes
+    #     vold = self._wfe_drift; self._wfe_drift = value
+    #     if vold != self._wfe_drift: 
+    #         self.update_psf_coeff(wfe_drift=self._wfe_drift)
+    #         self._gen_cached_psfs()
 
     def _gen_cached_psfs(self):
         """Generate a set of cached PSF for quick retrieval."""
@@ -286,13 +286,15 @@ class nrc_hci(NIRCam):
         self.psf_center_offsets = offset_vals
         self.psf_center_over = psf_list
 
-    def _set_xypos(self):
+    def _set_xypos(self, xy=None):
         """
         Set x0 and y0 subarray positions.
         """
 
         wind_mode = self.det_info['wind_mode']
-        if self.mask is not None:
+        if xy is not None:
+            self.update_detectors(x0=xy[0], y0=xy[1])
+        elif self.mask is not None:
             full = True if 'FULL' in wind_mode else False
             cdict = coron_ap_locs(self.module, self.channel, self.mask, full=full)
             xcen, ycen = cdict['cen']
@@ -308,7 +310,7 @@ class nrc_hci(NIRCam):
                 y0 = 2048 - ypix
             if (x0 + xpix) > 2048: 
                 x0 = 2048 - xpix
-
+                
             self.update_detectors(x0=x0, y0=y0)
             
     def get_psf_cen(self):
@@ -1475,28 +1477,16 @@ class obs_hci(nrc_hci):
                                            exclude_planets=exclude_planets,
                                            no_ref=no_ref, **kwargs)
 
-        # Radial noise
         data = hdu_diff[0].data
         header = hdu_diff[0].header
 
         data_rebin = frebin(data, scale=1/header['OVERSAMP'])
-        pixscale = self.pixelscale
-        rho = dist_image(data_rebin, pixscale=pixscale)
-
-        # Get radial profiles
-        binsize = pixscale
-        bins = np.arange(rho.min(), rho.max() + binsize, binsize)
-        nan_mask = np.isnan(data_rebin)
-        igroups, _, rr = hist_indices(rho[~nan_mask], bins, True)
-        stds = binned_statistic(igroups, data_rebin[~nan_mask], func=func_std)
-        stds = convolve(stds, Gaussian1DKernel(1))
-
-        # Ignore corner regions
         xpix, ypix = (self.det_info['xpix'], self.det_info['ypix'])
-        arr_size = np.min(data_rebin.shape) * pixscale
-        mask = rr < (arr_size/2)
-        rr = rr[mask]
-        stds = stds[mask]
+        pixscale = self.pixelscale
+
+        # Radial noise
+        rr, stds = radial_std(data, pixscale=pixscale, oversamp=header['OVERSAMP'], 
+                              supersample=False, func=func_std)
 
         # Normalize by psf max value
         if no_ref:

@@ -6,7 +6,7 @@ from numpy.polynomial import legendre
 #import logging
 #_log = logging.getLogger('pynrc')
 
-def jl_poly(xvals, coeff, dim_reorder=False, use_legendre=False, lxmap=None):
+def jl_poly(xvals, coeff, dim_reorder=False, use_legendre=False, lxmap=None, **kwargs):
     """Evaluate polynomial
     
     Replacement for `np.polynomial.polynomial.polyval(wgood, coeff)`
@@ -32,9 +32,9 @@ def jl_poly(xvals, coeff, dim_reorder=False, use_legendre=False, lxmap=None):
         use the Python preferred ordering (nz,ny,nx)
     use_legendre : bool
         Fit with Legendre polynomial, an orthonormal basis set.
-    lx_map : ndarray or None
+    lxmap : ndarray or None
         Legendre polynomials are normaly mapped to xvals of [-1,+1].
-        `lx_map` gives the option to supply the values for xval that
+        `lxmap` gives the option to supply the values for xval that
         should get mapped to [-1,+1]. If set to None, then assumes 
         [xvals.min(),xvals.max()].
                        
@@ -101,7 +101,7 @@ def jl_poly(xvals, coeff, dim_reorder=False, use_legendre=False, lxmap=None):
     return yfit
 
 
-def jl_poly_fit(x, yvals, deg=1, QR=True, robust_fit=False, niter=25, use_legendre=False, lxmap=None):
+def jl_poly_fit(x, yvals, deg=1, QR=True, robust_fit=False, niter=25, use_legendre=False, lxmap=None, **kwargs):
     """Fast polynomial fitting
     
     Fit a polynomial to a function using linear least-squares.
@@ -139,10 +139,10 @@ def jl_poly_fit(x, yvals, deg=1, QR=True, robust_fit=False, niter=25, use_legend
         Maximum number of iterations for robust fitting.
         If convergence is attained first, iterations will stop.
     use_legendre : bool
-        Fit with Legendre polynomial, an orthonormal basis set.
-    lx_map : ndarray or None
+        Fit with Legendre polynomials, an orthonormal basis set.
+    lxmap : ndarray or None
         Legendre polynomials are normaly mapped to xvals of [-1,+1].
-        `lx_map` gives the option to supply the values for xval that
+        `lxmap` gives the option to supply the values for xval that
         should get mapped to [-1,+1]. If set to None, then assumes 
         [xvals.min(),xvals.max()].
     

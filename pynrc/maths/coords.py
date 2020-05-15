@@ -129,7 +129,7 @@ def xy_rot(x, y, ang):
 #
 ###########################################################################
 
-def Tel2Sci_info(channel, coords, output="Sci"):
+def Tel2Sci_info(channel, coords, pupil=None, output='sci', return_apname=False, **kwargs):
     """Telescope coords converted to Science coords
     
     Returns the detector name and position associated with input coordinates.
@@ -145,25 +145,34 @@ def Tel2Sci_info(channel, coords, output="Sci"):
     output : str
         Type of desired output coordinates. 
 
-            * Det: pixels, in raw detector read out axes orientation
-            * Sci: pixels, in conventional DMS axes orientation
-            * Idl: arcsecs relative to aperture reference location.
-            * Tel: arcsecs V2,V3
+            * det: pixels, in raw detector read out axes orientation
+            * sci: pixels, in conventional DMS axes orientation
+            * idl: arcsecs relative to aperture reference location.
+            * tel: arcsecs V2,V3
     """
     
+    # Figure out the detector and pixel position for some (V2,V3) coord
     V2, V3 = coords
     
-    # Figure out the detector and pixel position for some (V2,V3) coord
-#    mysiaf = webbpsf.webbpsf_core.SIAF('NIRCam')
+    if (pupil is not None) and ("LYOT" in pupil):
+        # There are no full frame SIAF aperture for ModB coron
+        if 'SW' in channel:
+            detnames = ['A2', 'A4']
+            apnames = ['NRCA2_FULL_MASK210R', 'NRCA4_FULL_MASKSWB']
+        else:
+            detnames = ['A5']
+            apnames = ['NRCA5_FULL_MASK335R']
+    else:
+        swa = ['A1', 'A2', 'A3', 'A4']
+        swb = ['B1', 'B2', 'B3', 'B4']
+        lwa = ['A5']
+        lwb = ['B5']
+
+        detnames = swa + swb if 'SW' in channel else lwa + lwb
+        apnames = ['NRC'+det+'_FULL' for det in detnames]
+
     mysiaf = pysiaf.Siaf('NIRCam')
-    swa = ['A1', 'A2', 'A3', 'A4']
-    swb = ['B1', 'B2', 'B3', 'B4']
-    lwa = ['A5']
-    lwb = ['B5']
-    
-    detnames = swa + swb if 'SW' in channel else lwa + lwb
-    apnames = ['NRC'+det+'_FULL' for det in detnames]
-    
+
     # Find center positions for each apname
     cens = []
     for apname in apnames:
@@ -188,8 +197,10 @@ def Tel2Sci_info(channel, coords, output="Sci"):
     except TypeError:
         detector_position = ap.convert(V2, V3, 'tel', output.lower())
 
-    
-    return detector, detector_position
+    if return_apname:
+        return detector, detector_position, apname
+    else:
+        return detector, detector_position
     
 
 def ap_radec(ap_obs, ap_ref, coord_ref, pa_ref, base_off=(0,0), dith_off=(0,0),
@@ -345,6 +356,94 @@ def v2v3_to_pixel(ap_obs, v2_obj, v3_obj, frame='det'):
         raise ValueError("Do not recognize frame keyword value: {}".format(frame))
         
     return (xpix, ypix)
+
+
+def get_v2v3_limits(pupil=None, border=10, return_corners=False, **kwargs):
+    """
+    V2/V3 Limits for a given module stored within an dictionary
+
+    border : float
+        Extend a border by some number of arcsec.
+    return_corners : bool
+        Return the actualy aperture corners.
+        Otherwise, values are chosen to be a square in V2/V3.
+    """
+    
+    siaf = pysiaf.Siaf('NIRCam')
+    siaf.generate_toc()
+
+    names_dict = {
+        'SW' : 'NRCALL_FULL',
+        'LW' : 'NRCALL_FULL',
+        'SWA': 'NRCAS_FULL', 
+        'SWB': 'NRCBS_FULL',
+        'LWA': 'NRCA5_FULL',
+        'LWB': 'NRCB5_FULL',
+    }
+
+    v2v3_limits = {}
+    for name in names_dict.keys():
+       
+        apname = names_dict[name]
+
+        # Do all four apertures for each SWA & SWB
+        ap = siaf[apname]
+        if ('S_' in apname) or ('ALL_' in apname):
+            v2_ref, v3_ref = ap.corners('tel', False)
+        else:
+            xsci, ysci = ap.corners('sci', False)
+            v2_ref, v3_ref = ap.sci_to_tel(xsci, ysci)
+
+        # Offset by 50" if coronagraphy
+        if (pupil is not None) and ('LYOT' in pupil):
+            v2_ref -= 2.1
+            v3_ref += 47.7
+
+        # Add border margin
+        v2_avg = np.mean(v2_ref)
+        v2_ref[v2_ref<v2_avg] -= border
+        v2_ref[v2_ref>v2_avg] += border
+        v3_avg = np.mean(v3_ref)
+        v3_ref[v3_ref<v3_avg] -= border
+        v3_ref[v3_ref>v3_avg] += border
+
+        if return_corners:
+
+            v2v3_limits[name] = {'V2': v2_ref / 60.,
+                                 'V3': v3_ref / 60.}
+        else:
+            v2_minmax = np.array([v2_ref.min(), v2_ref.max()])
+            v3_minmax = np.array([v3_ref.min(), v3_ref.max()])
+            v2v3_limits[name] = {'V2': v2_minmax / 60.,
+                                 'V3': v3_minmax / 60.}
+        
+    return v2v3_limits
+
+def NIRCam_V2V3_limits(module, channel='LW', pupil=None, rederive=False, return_corners=False, **kwargs):
+    """
+    NIRCam V2/V3 bounds +10" border encompassing detector.
+    """
+
+    # Grab coordinate from pySIAF
+    if rederive:
+        v2v3_limits = get_v2v3_limits(pupil=pupil, return_corners=return_corners, **kwargs)
+
+        name = channel + module
+        if return_corners:
+            return v2v3_limits[name]['V2'], v2v3_limits[name]['V3']
+        else:
+            v2_min, v2_max = v2v3_limits[name]['V2']
+            v3_min, v3_max = v2v3_limits[name]['V3']
+    else: # Or use preset coordinates
+        if module=='A':
+            v2_min, v2_max, v3_min, v3_max = (0.2, 2.7, -9.5, -7.0)
+        else:
+            v2_min, v2_max, v3_min, v3_max = (-2.7, -0.2, -9.5, -7.0)
+
+        if return_corners:
+            return np.array([v2_min, v2_min, v2_max, v2_max]), np.array([v3_min, v3_max, v3_min, v3_max])
+
+    return v2_min, v2_max, v3_min, v3_max 
 
 
 
