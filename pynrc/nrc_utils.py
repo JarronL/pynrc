@@ -1357,6 +1357,15 @@ def gen_webbpsf_siwfe(filter_or_bp, coords, pynrc_mod=True, **kwargs):
     return gen_webbpsf_psf(filter, pynrc_mod=pynrc_mod, **kwargs)
 
 
+def _wrap_wfed_coeff_for_mp(arg):
+    args, kwargs = arg
+
+    wfe = kwargs['wfe_drift']
+    _log.info('WFE Drift: {} nm'.format(wfe))
+
+    cf, _ = gen_psf_coeff(*args, **kwargs)
+    return cf
+
 def wfed_coeff(filter_or_bp, force=False, save=True, save_name=None, nsplit=None, **kwargs):
     """PSF Coefficient Mod for WFE Drift
 
@@ -1402,15 +1411,6 @@ def wfed_coeff(filter_or_bp, force=False, save=True, save_name=None, nsplit=None
     >>> cf_new = coeff + cf_mod
     >>> psf5nm = nrc_utils.gen_image_coeff('F210M', coeff=cf_new, fov_pix=fpix, oversample=osamp)
     """
-
-    def _wrap_wfed_coeff_for_mp(arg):
-        args, kwargs = arg
-
-        wfe = kwargs['wfe_drift']
-        _log.info('WFE Drift: {} nm'.format(wfe))
-
-        cf, _ = gen_psf_coeff(*args, **kwargs)
-        return cf
 
     kwargs['force']     = True
     kwargs['save']      = False
@@ -1508,6 +1508,19 @@ def wfed_coeff(filter_or_bp, force=False, save=True, save_name=None, nsplit=None
 
     return cf_fit, lxmap
 
+def _wrap_field_coeff_for_mp(arg):
+    args, kwargs = arg
+
+    apname = kwargs['apname']
+    det = kwargs['detector']
+    det_pos = kwargs['detector_position']
+    v2, v3 = kw['coords']
+
+    print('V2/V3 Coordinates and det pixel (sci) on {}/{}: ({:.2f}, {:.2f}), ({:.1f}, {:.1f})'
+        .format(det, apname, v2/60, v3/60, det_pos[0], det_pos[1]))
+
+    cf, _ = gen_psf_coeff(*args, **kwargs)
+    return cf
 
 def field_coeff_resid(filter_or_bp, coeff0, force=False, save=True, save_name=None, 
     return_raw=False, nsplit=None, **kwargs):
@@ -1551,22 +1564,6 @@ def field_coeff_resid(filter_or_bp, coeff0, force=False, save=True, save_name=No
     """
 
     from astropy.table import Table
-
-    def _wrap_field_coeff_for_mp(arg):
-        args, kwargs = arg
-
-        apname = kwargs['apname']
-        det = kwargs['detector']
-        det_pos = kwargs['detector_position']
-        v2, v3 = kw['coords']
-
-        print('V2/V3 Coordinates and det pixel (sci) on {}/{}: ({:.2f}, {:.2f}), ({:.1f}, {:.1f})'
-            .format(det, apname, v2/60, v3/60, det_pos[0], det_pos[1]))
-
-        cf, _ = gen_psf_coeff(*args, **kwargs)
-        return cf
-
-
 
     kwargs['force']     = True
     kwargs['save']      = False
