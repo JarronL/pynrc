@@ -32,8 +32,7 @@ import sys, platform
 import multiprocessing as mp
 import traceback
 
-from astropy.io import fits
-from astropy.io import ascii
+from astropy.io import fits, ascii
 from astropy.table import Table
 from astropy.time import Time
 from astropy import units
@@ -72,14 +71,17 @@ except ImportError:
     raise ImportError('WebbPSF is not installed. pyNRC depends on its inclusion.')
 # Check that minimum required version meets requirements
 if not on_rtd:
-    _webbpsf_version_min = (0,7,0)
+    _webbpsf_version_min = (0,9,0)
     _ = webbpsf.utils.get_webbpsf_data_path(_webbpsf_version_min)
 
 # Link to WebbPSF's instance of poppy
 from webbpsf.webbpsf_core import poppy
 
 # Set up some poppy and webbpsf defaults
-poppy.conf.use_multiprocessing = True # Assume multiprocessing
+# Turn off multiprocessing, which is faster now due to improved
+# underlying vectorization of poppy and numpy. Swapping large
+# amount of data between processes is now the bottleneck for mp (5/18/2020).
+poppy.conf.use_multiprocessing = False 
 # Only use this if you have the FFTW C library installed
 # In general, numpy fft is actually pretty fast now, so default use_fftw=False
 # It also doesn't play well with multiprocessing
@@ -1121,9 +1123,6 @@ def gen_psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     npsf = ndeg+1 if npsf<=ndeg else int(npsf)
     waves = np.linspace(w1, w2, npsf)
 
-    # How many processors to split into?
-    nproc = nproc_use(fov_pix, oversample, npsf) if poppy.conf.use_multiprocessing else 1
-    _log.debug('nprocessors: {}; npsf: {}'.format(nproc, npsf))
     # Change log levels to WARNING for pyNRC, WebbPSF, and POPPY
     setup_logging('WARN', verbose=False)
 
@@ -1151,6 +1150,10 @@ def gen_psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
 
         return hdu_list
 
+
+    # How many processors to split into?
+    nproc = nproc_use(fov_pix, oversample, npsf) #if poppy.conf.use_multiprocessing else 1
+    _log.debug('nprocessors: {}; npsf: {}'.format(nproc, npsf))
 
     t0 = time.time()
     # Setup the multiprocessing pool and arguments to pass to each pool
