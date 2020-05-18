@@ -97,7 +97,7 @@ if (sys.version_info < (3,4,0)) and (platform.system()=='Darwin') and accel_bool
 if mp.cpu_count()<3:
     poppy.conf.use_multiprocessing = False
 # n_processes will be considered the max number of processors we use for multiprocessing
-poppy.conf.n_processes = int(0.75 * mp.cpu_count()) if poppy.conf.use_multiprocessing else 1
+poppy.conf.n_processes = int(0.75 * mp.cpu_count()) #if poppy.conf.use_multiprocessing else 1
 
 webbpsf.conf.default_output_mode = u'detector'
 
