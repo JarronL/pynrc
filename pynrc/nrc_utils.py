@@ -1124,15 +1124,14 @@ def gen_psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     waves = np.linspace(w1, w2, npsf)
 
     # Change log levels to WARNING for pyNRC, WebbPSF, and POPPY
-    setup_logging('WARN', verbose=False)
-
     if return_webbpsf:
+        setup_logging('WARN', verbose=False)
         t0 = time.time()
         hdu_list = inst.calc_psf(fov_pixels=fov_pix, oversample=oversample, 
                                     add_distortion=add_distortion, crop_psf=crop_psf)
         t1 = time.time()
-
         setup_logging(log_prev, verbose=False)
+
         time_string = 'Took {:.2f} seconds to generate WebbPSF images'.format(t1-t0)
         _log.info(time_string)
 
@@ -1155,6 +1154,7 @@ def gen_psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     nproc = nproc_use(fov_pix, oversample, npsf) #if poppy.conf.use_multiprocessing else 1
     _log.debug('nprocessors: {}; npsf: {}'.format(nproc, npsf))
 
+    setup_logging('WARN', verbose=False)
     t0 = time.time()
     # Setup the multiprocessing pool and arguments to pass to each pool
     worker_arguments = [(inst, wlen, fov_pix, oversample) for wlen in waves]
@@ -1183,7 +1183,7 @@ def gen_psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         for wa in worker_arguments:
             hdu = _wrap_coeff_for_mp(wa)
             if hdu is None:
-                raise RuntimeError('Returned None values. Issue with multiprocess or WebbPSF??')
+                raise RuntimeError('Returned None values. Issue with WebbPSF??')
             hdu_arr.append(hdu)
     t1 = time.time()
 
@@ -1208,21 +1208,6 @@ def gen_psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         for i,im in enumerate(images):
             im_scale = frebin(im, scale=scale)
             images[i] = pad_or_cut_to_size(im_scale, im.shape)
-
-    # # LW coronagraphy has slight PSF dispersion
-    # # Added to WebbPSF coronagraphic WFE
-    # if coron_obs and ('LW' in chan_str):
-    #     w0 = 3.23 # Relative to TA filter wavelength
-    #     pix_size = 18.0 # Pixels are 18 microns in size
-
-    #     dy0 = (-4.855 * w0**3) + (69.754 * w0**2) - (312.370 * w0)
-    #     # Shift in microns of each wavelength
-    #     dy_all = (-4.855 * waves**3) + (69.754 * waves**2) - (312.370 * waves) - dy0
-        
-    #     dely_pix_os = oversample * (dy_all / pix_size)
-        
-    #     for i,im in enumerate(images):
-    #         images[i] = fshift(im, dely=dely_pix_os[i], pad=True)
 
     # Turn results into an numpy array (npsf,ny,nx)
     images = np.array(images)
@@ -1372,8 +1357,7 @@ def gen_webbpsf_siwfe(filter_or_bp, coords, pynrc_mod=True, **kwargs):
     return gen_webbpsf_psf(filter, pynrc_mod=pynrc_mod, **kwargs)
 
 
-
-def wfed_coeff(filter_or_bp, force=False, save=True, save_name=None, **kwargs):
+def wfed_coeff(filter_or_bp, force=False, save=True, save_name=None, nsplit=None, **kwargs):
     """PSF Coefficient Mod for WFE Drift
 
     This function finds a relationship between PSF coefficients
@@ -1419,6 +1403,15 @@ def wfed_coeff(filter_or_bp, force=False, save=True, save_name=None, **kwargs):
     >>> psf5nm = nrc_utils.gen_image_coeff('F210M', coeff=cf_new, fov_pix=fpix, oversample=osamp)
     """
 
+    def _wrap_wfed_coeff_for_mp(arg):
+        args, kwargs = arg
+
+        wfe = kwargs['wfe_drift']
+        _log.info('WFE Drift: {} nm'.format(wfe))
+
+        cf, _ = gen_psf_coeff(*args, **kwargs)
+        return cf
+
     kwargs['force']     = True
     kwargs['save']      = False
     kwargs['save_name'] = None
@@ -1453,26 +1446,61 @@ def wfed_coeff(filter_or_bp, force=False, save=True, save_name=None, **kwargs):
     # _log.warn('{}'.format(save_name))
 
     # Cycle through WFE drifts for fitting
-    wfe_list = np.array([0,1,2,5,10,20,40])
+    wfe_list = np.array([0,1,2,5,10,20,30,40])
     nwfe = len(wfe_list)
 
-    cf_wfe = []
-    for wfe in wfe_list:
-        _log.info('WFE Drift: {} nm'.format(wfe))
-        kwargs['wfe_drift'] = wfe
-        cf, _ = gen_psf_coeff(bp, **kwargs)
-        cf_wfe.append(cf)
+    # Split over multiple processors?
+    try:
+        pupil = kwargs['pupil']
+        coron_obs = (pupil is not None) and ('LYOT' in pupil)
+    except:
+        coron_obs = False
+    nproc_cf = nproc_use(kwargs['fov_pix'], kwargs['oversample'], 50, coron=coron_obs)
+    nsplit = 2 if nsplit is None else nsplit
+    nproc_cf = int(nproc_cf/nsplit)
 
-    cf_wfe = np.array(cf_wfe)
+    # Create worker arguments with kwargs as an argument input
+    worker_args = []
+    args = [bp]
+    for wfe in wfe_list:
+        kw = kwargs.copy()
+        kw['wfe_drift'] = wfe
+        worker_args.append((args, kw))
+
+    if (nproc_cf >= 2) and (nsplit >= 2):
+        poppy_nproc_prev = poppy.conf.n_processes
+        poppy.conf.n_processes = nproc_cf
+
+        pool = mp.Pool(nsplit)
+        try:
+            cf_wfe = pool.map(_wrap_wfed_coeff_for_mp, worker_args)
+            if cf_wfe[0] is None:
+                raise RuntimeError('Returned None values. Issue with multiprocess or WebbPSF??')
+        except Exception as e:
+            _log.error('Caught an exception during multiprocess.')
+            _log.error('Closing multiprocess pool.')
+            pool.terminate()
+            pool.close()
+            poppy.conf.n_processes = poppy_nproc_prev
+            raise e
+        else:
+            _log.debug('Closing multiprocess pool.')
+            pool.close()
+
+        poppy.conf.n_processes = poppy_nproc_prev
+    else:
+        # No multiprocessor
+        cf_wfe = [_wrap_wfed_coeff_for_mp(wa) for wa in worker_args]
 
     # Get residuals
-    cf_wfe = cf_wfe - cf_wfe[0]
+    cf_wfe = np.array(cf_wfe) - cf_wfe[0]
 
     # Fit each pixel with a polynomial and save the coefficient
+    cf_shape = cf_wfe.shape[1:]
     cf_wfe = cf_wfe.reshape([nwfe, -1])
     lxmap = np.array([np.min(wfe_list), np.max(wfe_list)])
     cf_fit = jl_poly_fit(wfe_list, cf_wfe, deg=4, use_legendre=True, lxmap=lxmap)
-    cf_fit = cf_fit.reshape([-1, cf.shape[0], cf.shape[1], cf.shape[2]])
+    cf_fit = cf_fit.reshape([-1, cf_shape[0], cf_shape[1], cf_shape[2]])
 
     if save:
         np.savez(save_name, cf_fit, lxmap)
@@ -1482,7 +1510,7 @@ def wfed_coeff(filter_or_bp, force=False, save=True, save_name=None, **kwargs):
 
 
 def field_coeff_resid(filter_or_bp, coeff0, force=False, save=True, save_name=None, 
-    return_raw=False, **kwargs):
+    return_raw=False, nsplit=None, **kwargs):
     """PSF Coefficient Residuals w.r.t. Field Position
 
     Keyword Arguments match those in :func:`gen_psf_coeff`.
@@ -1523,6 +1551,22 @@ def field_coeff_resid(filter_or_bp, coeff0, force=False, save=True, save_name=No
     """
 
     from astropy.table import Table
+
+    def _wrap_field_coeff_for_mp(arg):
+        args, kwargs = arg
+
+        apname = kwargs['apname']
+        det = kwargs['detector']
+        det_pos = kwargs['detector_position']
+        v2, v3 = kw['coords']
+
+        print('V2/V3 Coordinates and det pixel (sci) on {}/{}: ({:.2f}, {:.2f}), ({:.1f}, {:.1f})'
+            .format(det, apname, v2/60, v3/60, det_pos[0], det_pos[1]))
+
+        cf, _ = gen_psf_coeff(*args, **kwargs)
+        return cf
+
+
 
     kwargs['force']     = True
     kwargs['save']      = False
@@ -1599,24 +1643,59 @@ def field_coeff_resid(filter_or_bp, coeff0, force=False, save=True, save_name=No
     #cf0 = gen_psf_coeff(filter, **kwargs)
     kwargs['include_si_wfe'] = True
 
-    cf_fields = []
+
+    # Split over multiple processors?
+    try:
+        pupil = kwargs['pupil']
+        coron_obs = (pupil is not None) and ('LYOT' in pupil)
+    except:
+        coron_obs = False
+    nproc_cf = nproc_use(kwargs['fov_pix'], kwargs['oversample'], 50, coron=coron_obs)
+    nsplit = 2 if nsplit is None else nsplit
+    nproc_cf = int(nproc_cf/nsplit)
+
+    # Create worker arguments with kwargs as an input dict
+    worker_args = []
+    args = [filter]
     for (v2, v3) in zip(v2_all, v3_all):
         # Get the detector and pixel position
         coords = (v2*60, v3*60) # in arcsec
         det, det_pos, apname = Tel2Sci_info(channel, coords, pupil=pupil, output="sci", return_apname=True)
 
-        print('V2/V3 Coordinates and det pixel (sci) on {}/{}: ({:.2f}, {:.2f}), ({:.1f}, {:.1f})'
-            .format(det, apname, v2, v3, det_pos[0], det_pos[1]))
+        kw = kwargs.copy()
+        kw['apname'] = apname
+        kw['detector'] = det
+        kw['detector_position'] = det_pos
+        kw['coords'] = coords
+        worker_args.append((args, kw))
 
-        kwargs['apname'] = apname
-        kwargs['detector'] = det
-        kwargs['detector_position'] = det_pos
+    # Multiprocessing?
+    if (nproc_cf >= 2) and (nsplit >= 2):
+        poppy_nproc_prev = poppy.conf.n_processes
+        poppy.conf.n_processes = nproc_cf
 
-        cf, _ = gen_psf_coeff(filter, **kwargs)
-        cf_fields.append(cf)
+        pool = mp.Pool(nsplit)
+        try:
+            cf_fields = pool.map(_wrap_field_coeff_for_mp, worker_args)
+            if cf_fields[0] is None:
+                raise RuntimeError('Returned None values. Issue with multiprocess or WebbPSF??')
+        except Exception as e:
+            _log.error('Caught an exception during multiprocess.')
+            _log.error('Closing multiprocess pool.')
+            pool.terminate()
+            pool.close()
+            poppy.conf.n_processes = poppy_nproc_prev
+            raise e
+        else:
+            _log.debug('Closing multiprocess pool.')
+            pool.close()
 
-    cf_fields = np.array(cf_fields)
-    cf_fields -= coeff0
+        poppy.conf.n_processes = poppy_nproc_prev
+    else:  # No multiprocessor
+        cf_fields = [_wrap_field_coeff_for_mp(wa) for wa in worker_args]
+
+    # Get residuals
+    cf_fields = np.array(cf_fields) - coeff0
 
     if return_raw:
         return cf_fields, v2_all, v3_all
