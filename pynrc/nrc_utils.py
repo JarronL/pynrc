@@ -1455,9 +1455,8 @@ def wfed_coeff(filter_or_bp, force=False, save=True, save_name=None, nsplit=None
         coron_obs = (pupil is not None) and ('LYOT' in pupil)
     except:
         coron_obs = False
-    nproc_cf = nproc_use(kwargs['fov_pix'], kwargs['oversample'], 50, coron=coron_obs)
-    nsplit = 2 if nsplit is None else nsplit
-    nproc_cf = int(nproc_cf/nsplit)
+    if nsplit is None:
+        nsplit = nproc_use(kwargs['fov_pix'], kwargs['oversample'], 50, coron=coron_obs)
 
     # Create worker arguments with kwargs as an argument input
     worker_args = []
@@ -1467,9 +1466,9 @@ def wfed_coeff(filter_or_bp, force=False, save=True, save_name=None, nsplit=None
         kw['wfe_drift'] = wfe
         worker_args.append((args, kw))
 
-    if (nproc_cf >= 2) and (nsplit >= 2):
+    if nsplit>1:
         poppy_nproc_prev = poppy.conf.n_processes
-        poppy.conf.n_processes = nproc_cf
+        poppy.conf.n_processes = 1
 
         pool = mp.Pool(nsplit)
         try:
@@ -1647,9 +1646,8 @@ def field_coeff_resid(filter_or_bp, coeff0, force=False, save=True, save_name=No
         coron_obs = (pupil is not None) and ('LYOT' in pupil)
     except:
         coron_obs = False
-    nproc_cf = nproc_use(kwargs['fov_pix'], kwargs['oversample'], 50, coron=coron_obs)
-    nsplit = 2 if nsplit is None else nsplit
-    nproc_cf = int(nproc_cf/nsplit)
+    if nsplit is None:
+        nsplit = nproc_use(kwargs['fov_pix'], kwargs['oversample'], 50, coron=coron_obs)
 
     # Create worker arguments with kwargs as an input dict
     worker_args = []
@@ -1667,9 +1665,9 @@ def field_coeff_resid(filter_or_bp, coeff0, force=False, save=True, save_name=No
         worker_args.append((args, kw))
 
     # Multiprocessing?
-    if (nproc_cf >= 2) and (nsplit >= 2):
+    if nsplit > 1:
         poppy_nproc_prev = poppy.conf.n_processes
-        poppy.conf.n_processes = nproc_cf
+        poppy.conf.n_processes = 1
 
         pool = mp.Pool(nsplit)
         try:
