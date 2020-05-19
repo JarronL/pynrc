@@ -1510,10 +1510,10 @@ def wfed_coeff(filter_or_bp, force=False, save=True, save_name=None, nsplit=None
 def _wrap_field_coeff_for_mp(arg):
     args, kwargs = arg
 
-    apname = kwargs['apname']
-    det = kwargs['detector']
+    apname  = kwargs['apname']
+    det     = kwargs['detector']
     det_pos = kwargs['detector_position']
-    v2, v3 = kw['coords']
+    v2, v3  = kwargs['coords']
 
     print('V2/V3 Coordinates and det pixel (sci) on {}/{}: ({:.2f}, {:.2f}), ({:.1f}, {:.1f})'
         .format(det, apname, v2/60, v3/60, det_pos[0], det_pos[1]))
