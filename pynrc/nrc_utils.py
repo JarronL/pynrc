@@ -1594,6 +1594,20 @@ def field_coeff_resid(filter_or_bp, coeff0, force=False, save=True, save_name=No
         filter = bp.name
     channel = 'SW' if bp.avgwave() < 24000 else 'LW'
 
+    # fov_pix should not be more than 128/129, otherwise memory issues
+    fov_pix = kwargs['fov_pix'] if 'fov_pix' in list(kwargs.keys()) else 33
+    oversample = kwargs['oversample'] if 'oversample' in list(kwargs.keys()) else 4
+
+    fov_max = 128 if oversample<=4 else 64
+    if fov_pix>fov_max:
+        fov_pix = fov_max if (fov_pix % 2 == 0) else fov_max + 1
+        # Trim input coeff0
+        new_shape = fov_pix*oversample
+        cf0_new = np.array([pad_or_cut_to_size(im, new_shape) for im in coeff0])
+        coeff0 = cf0_new
+    kwargs['fov_pix'] = fov_pix
+    kwargs['oversample'] = oversample
+
     # Final filename to save coeff
     if save_name is None:
         # Name to save array of oversampled coefficients
@@ -1654,8 +1668,6 @@ def field_coeff_resid(filter_or_bp, coeff0, force=False, save=True, save_name=No
 
     # Split over multiple processors?
     if nsplit is None:
-        fov_pix = kwargs['fov_pix'] if 'fov_pix' in list(kwargs.keys()) else 33
-        oversample = kwargs['oversample'] if 'oversample' in list(kwargs.keys()) else 4
         pupil = kwargs['pupil'] if 'pupil' in list(kwargs.keys()) else None
         coron_obs = (pupil is not None) and ('LYOT' in pupil)
         nsplit = nproc_use(fov_pix, oversample, npos, coron=coron_obs)

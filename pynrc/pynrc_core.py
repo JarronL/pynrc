@@ -2001,7 +2001,11 @@ class NIRCam(object):
                     # print(v2,v3)
                     nfield = np.size(v2)
                     cf_mod = field_coeff_func(v2grid, v3grid, cf_fit, v2, v3)
-                    psf_coeff_mod += cf_mod
+                    if not np.allclose(psf_coeff.shape, cf_mod.shape):
+                        new_shape = psf_coeff.shape[1:]
+                        cf_mod_resize = np.array([pad_or_cut_to_size(im, new_shape) for im in cf_mod])
+                        cf_mod = cf_mod_resize
+                    psf_coeff_mod += cf_mod 
 
         # Add PSF coefficient modifications due to wedge/bar offset
         if (use_bg_psf==False) and (self.mask is not None) and ('WB' in self.mask):
