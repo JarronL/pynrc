@@ -1151,7 +1151,7 @@ def gen_psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
 
 
     # How many processors to split into?
-    nproc = nproc_use(fov_pix, oversample, npsf) #if poppy.conf.use_multiprocessing else 1
+    nproc = nproc_use(fov_pix, oversample, npsf, coron=coron_obs) #if poppy.conf.use_multiprocessing else 1
     _log.debug('nprocessors: {}; npsf: {}'.format(nproc, npsf))
 
     setup_logging('WARN', verbose=False)
@@ -1446,17 +1446,29 @@ def wfed_coeff(filter_or_bp, force=False, save=True, save_name=None, nsplit=None
     # _log.warn('{}'.format(save_name))
 
     # Cycle through WFE drifts for fitting
-    wfe_list = np.array([0,1,2,5,10,20,30,40])
+    wfe_list = np.array([0,1,2,5,10,20,40])
     nwfe = len(wfe_list)
 
     # Split over multiple processors?
-    try:
-        pupil = kwargs['pupil']
-        coron_obs = (pupil is not None) and ('LYOT' in pupil)
-    except:
-        coron_obs = False
     if nsplit is None:
-        nsplit = nproc_use(kwargs['fov_pix'], kwargs['oversample'], nwfe, coron=coron_obs)
+        fov_pix = kwargs['fov_pix'] if 'fov_pix' in list(kwargs.keys()) else 33
+        oversample = kwargs['oversample'] if 'oversample' in list(kwargs.keys()) else 4
+        pupil = kwargs['pupil'] if 'pupil' in list(kwargs.keys()) else None
+        coron_obs = (pupil is not None) and ('LYOT' in pupil)
+        nsplit = nproc_use(fov_pix, oversample, nwfe, coron=coron_obs)
+
+        # Compare to number of PSFs
+        if ('quick' in list(kwargs.keys())) and (kwargs['quick']==True):
+            w1 = bp.wave.min() / 1e4
+            w2 = bp.wave.max() / 1e4
+            dw = w2 - w1
+        else:
+            dw = 2.5
+        npsf = np.ceil(20 * dw)
+        npsf = 5 if npsf<5 else int(npsf)
+        nsplit_psf = nproc_use(fov_pix, oversample, npsf, coron=coron_obs)
+        if nsplit_psf > nsplit:
+            nsplit = 1
 
     # Create worker arguments with kwargs as an argument input
     worker_args = []
@@ -1641,13 +1653,25 @@ def field_coeff_resid(filter_or_bp, coeff0, force=False, save=True, save_name=No
     kwargs['include_si_wfe'] = True
 
     # Split over multiple processors?
-    try:
-        pupil = kwargs['pupil']
-        coron_obs = (pupil is not None) and ('LYOT' in pupil)
-    except:
-        coron_obs = False
     if nsplit is None:
-        nsplit = nproc_use(kwargs['fov_pix'], kwargs['oversample'], npos, coron=coron_obs)
+        fov_pix = kwargs['fov_pix'] if 'fov_pix' in list(kwargs.keys()) else 33
+        oversample = kwargs['oversample'] if 'oversample' in list(kwargs.keys()) else 4
+        pupil = kwargs['pupil'] if 'pupil' in list(kwargs.keys()) else None
+        coron_obs = (pupil is not None) and ('LYOT' in pupil)
+        nsplit = nproc_use(fov_pix, oversample, npos, coron=coron_obs)
+
+        # Compare to number of PSFs
+        if ('quick' in list(kwargs.keys())) and (kwargs['quick']==True):
+            w1 = bp.wave.min() / 1e4
+            w2 = bp.wave.max() / 1e4
+            dw = w2 - w1
+        else:
+            dw = 2.5
+        npsf = np.ceil(20 * dw)
+        npsf = 5 if npsf<5 else int(npsf)
+        nsplit_psf = nproc_use(fov_pix, oversample, npsf, coron=coron_obs)
+        if nsplit_psf > nsplit:
+            nsplit = 1
 
     # Create worker arguments with kwargs as an input dict
     worker_args = []
