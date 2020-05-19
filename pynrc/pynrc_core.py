@@ -1868,7 +1868,75 @@ class NIRCam(object):
             else:
                 return sat_level
                 
+    def gen_webbpsf(self, sp=None, return_oversample=False, use_bg_psf=False, 
+                    wfe_drift=None, coord_vals=None, coord_frame='tel', 
+                    bar_offset=None, return_hdul=False, **kwargs):
+
+        """
+        Anything in psf_info can be overridden by directly setting a keyword
+        in this function.
+        """
+
+        if use_bg_psf:
+            psf_info = self._psf_info_bg.copy()
+        else:
+            psf_info = self._psf_info.copy()
+
+        psf_info['pupil'] = self.pupil
+        psf_info['mask'] = self.mask
+        psf_info['module'] = self.module
+
+        psf_info['wfe_drift'] = wfe_drift
+        psf_info['bar_offset'] = bar_offset
+
+        psf_info['sp_norm'] = sp
+
+        # Determine V2/V3 coordinates
+        detector = detector_position = apname = None
+        if coord_vals is not None:
+            v2 = v3 = None
+            cframe = coord_frame.lower()
+            if cframe=='tel':
+                v2, v3 = coord_vals
+            elif cframe in ['det', 'sci', 'idl']:
+                x, y = coord_vals[0], coord_vals[1]
+                try:
+                    v2, v3 = self.siaf_ap.convert(x,y, cframe, 'tel')
+                except: 
+                    apname = self.get_siaf_apname()
+                    if apname is None:
+                        _log.warning('No suitable aperture name defined to determine V2/V3 coordiantes')
+                    else:
+                        _log.warning('`self.siaf_ap` not defined; assuming {}'.format(apname))
+                        ap = self.siaf_nrc[apname]
+                        v2, v3 = ap.convert(x,y,cframe, 'tel')
+                    _log.warning('Update `self.siaf_ap` using for more specific conversions to V2/V3.')
+            else:
+                _log.warning("coord_frame setting '{}' not recognized.".format(coord_frame))
+                _log.warning("`gen_webbpsf` will continue with default PSF.")
+
+            # Update detector, pixel position, and apname to pass to 
+            if v2 is not None:
+                detector, detector_position, apname = Tel2Sci_info(self.channel, (v2, v3), output='sci', return_apname=True, **kwargs)
+
+        psf_info['detector'] = detector
+        psf_info['detector_position'] = detector_position
+        psf_info['apname'] = apname
+
+        # Merge kwargs into psf_info
+        for k in list(kwargs.keys()):
+            psf_info[k] = kwargs[k]
         
+        hdul = gen_webbpsf_psf(self.bandpass, **psf_info)
+
+        psf, psf_over = (hdul[1].data, hdul[0].data)
+ 
+        if return_hdul: # Return HDUList
+            return hdul
+        elif return_oversample: # Return just PSF (detector and oversampled versions)
+            return psf, psf_over
+        else: # Return just detector sampled version
+            return psf
 
 
     def gen_psf(self, sp=None, return_oversample=False, use_bg_psf=False, 
@@ -1902,8 +1970,8 @@ class NIRCam(object):
         wfe_drift : float or None
             Wavefront error drift amplitude in nm.
             The attribute :attr:`wfe_drift` needs to be set to True.
-        V2V3 : tuple or None
-            V2V3 coordinates (in arcmin) to calculate field-dependent PSF.
+        coord_vals : tuple or None
+            Coordinates (in arcsec or pixels) to calculate field-dependent PSF.
             The attribute :attr:`wfe_field` must be True.
         coord_frame : str
             Type of desired output coordinates. 
@@ -1977,11 +2045,12 @@ class NIRCam(object):
                 cframe = coord_frame.lower()
                 if cframe=='tel':
                     v2, v3 = coord_vals
+                    v2, v3 = (v2/60., v3/60.) # convert to arcmin
                 elif cframe in ['det', 'sci', 'idl']:
                     x, y = coord_vals[0], coord_vals[1]
                     try:
                         v2, v3 = self.siaf_ap.convert(x,y, cframe, 'tel')
-                        v2, v3 = (v2/60., v3/60.)
+                        v2, v3 = (v2/60., v3/60.) # convert to arcmin
                     except: 
                         apname = self.get_siaf_apname()
                         if apname is None:

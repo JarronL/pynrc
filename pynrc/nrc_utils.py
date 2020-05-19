@@ -1126,9 +1126,21 @@ def gen_psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     # Change log levels to WARNING for pyNRC, WebbPSF, and POPPY
     if return_webbpsf:
         setup_logging('WARN', verbose=False)
+
+        if 'sp_norm' in list(kwargs.keys()):
+            sp_norm = kwargs['sp_norm']
+        else:
+            waveset = waves * 1e4
+            sp_flat = S.ArraySpectrum(waveset, 0*waveset + 10.)
+            sp_flat.name = 'Flat spectrum in flam'
+
+            # Bandpass unit response is the flux (in flam) of a star that
+            # produces a response of one count per second in that bandpass
+            sp_norm = sp_flat.renorm(bp.unit_response(), 'flam', bp)
+
         t0 = time.time()
-        hdu_list = inst.calc_psf(fov_pixels=fov_pix, oversample=oversample, 
-                                    add_distortion=add_distortion, crop_psf=crop_psf)
+        hdu_list = inst.calc_psf(source=sp_norm, fov_pixels=fov_pix, oversample=oversample, 
+                                 add_distortion=add_distortion, crop_psf=crop_psf)
         t1 = time.time()
         setup_logging(log_prev, verbose=False)
 
@@ -1594,11 +1606,12 @@ def field_coeff_resid(filter_or_bp, coeff0, force=False, save=True, save_name=No
         filter = bp.name
     channel = 'SW' if bp.avgwave() < 24000 else 'LW'
 
-    # fov_pix should not be more than 128/129, otherwise memory issues
+    # fov_pix should not be more than some size, otherwise memory issues
     fov_pix = kwargs['fov_pix'] if 'fov_pix' in list(kwargs.keys()) else 33
     oversample = kwargs['oversample'] if 'oversample' in list(kwargs.keys()) else 4
 
-    fov_max = 128 if oversample<=4 else 64
+    fov_max = 128
+    if oversample>4: fov_max /= 2
     if fov_pix>fov_max:
         fov_pix = fov_max if (fov_pix % 2 == 0) else fov_max + 1
         # Trim input coeff0
@@ -2049,7 +2062,7 @@ def gen_image_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     # Flat spectrum with equal photon flux in each spectal bin
     if sp_norm is None:
         sp_flat = S.ArraySpectrum(waveset, 0*waveset + 10.)
-        sp_flat.name = 'Flat spectrum in photlam'
+        sp_flat.name = 'Flat spectrum in flam'
 
         # Bandpass unit response is the flux (in flam) of a star that
         # produces a response of one count per second in that bandpass
