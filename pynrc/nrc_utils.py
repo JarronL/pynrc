@@ -1456,7 +1456,7 @@ def wfed_coeff(filter_or_bp, force=False, save=True, save_name=None, nsplit=None
     except:
         coron_obs = False
     if nsplit is None:
-        nsplit = nproc_use(kwargs['fov_pix'], kwargs['oversample'], 50, coron=coron_obs)
+        nsplit = nproc_use(kwargs['fov_pix'], kwargs['oversample'], nwfe, coron=coron_obs)
 
     # Create worker arguments with kwargs as an argument input
     worker_args = []
@@ -1631,6 +1631,7 @@ def field_coeff_resid(filter_or_bp, coeff0, force=False, save=True, save_name=No
     igood = v3_all > v3_min
     v2_all = np.append(v2_all[igood], [v2_min, v2_max, v2_min, v2_max])
     v3_all = np.append(v3_all[igood], [v3_min, v3_min, v3_max, v3_max])
+    npos = len(v2_all)
 
     # First is default value
     #kwargs['detector'] = None
@@ -1639,7 +1640,6 @@ def field_coeff_resid(filter_or_bp, coeff0, force=False, save=True, save_name=No
     #cf0 = gen_psf_coeff(filter, **kwargs)
     kwargs['include_si_wfe'] = True
 
-
     # Split over multiple processors?
     try:
         pupil = kwargs['pupil']
@@ -1647,7 +1647,7 @@ def field_coeff_resid(filter_or_bp, coeff0, force=False, save=True, save_name=No
     except:
         coron_obs = False
     if nsplit is None:
-        nsplit = nproc_use(kwargs['fov_pix'], kwargs['oversample'], 50, coron=coron_obs)
+        nsplit = nproc_use(kwargs['fov_pix'], kwargs['oversample'], npos, coron=coron_obs)
 
     # Create worker arguments with kwargs as an input dict
     worker_args = []
