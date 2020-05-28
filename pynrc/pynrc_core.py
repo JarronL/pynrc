@@ -2052,7 +2052,7 @@ class NIRCam(object):
 
             cf_fit = cf_fit.reshape([cf_fit.shape[0], -1])
             cf_mod = jl_poly(np.array([wfe_drift]), cf_fit, use_legendre=True, lxmap=lxmap)
-            cf_mod = cf_mod.reshape(psf_coeff.shape)
+            cf_mod = cf_mod.reshape(cf_fit[1:])
             # Pad cf_mod array with 0s if undersized
             if not np.allclose(psf_coeff.shape, cf_mod.shape):
                 new_shape = psf_coeff.shape[1:]
