@@ -1491,7 +1491,6 @@ def wfed_coeff(filter_or_bp, force=False, save=True, save_name=None, nsplit=None
 
     # Double check we're not requesting too many processors
     nsplit = nsplit_max if nsplit > nsplit_max else nsplit
-    nsplit = npos
 
     # Create worker arguments with kwargs as an argument input
     worker_args = []
@@ -1700,7 +1699,7 @@ def field_coeff_resid(filter_or_bp, coeff0, force=False, save=True, save_name=No
             dw = 2.5
         npsf = np.ceil(20 * dw)
         npsf = 5 if npsf<5 else int(npsf)
-        nsplit_psf = nproc_use(fov_pix, oversample, npsf, coron=coron_obs)
+        nsplit_psf = nproc_use(fov_pix, oversample, npsf)#, coron=coron_obs)
         if nsplit_psf > nsplit:
             nsplit = 1
 
