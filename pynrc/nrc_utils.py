@@ -1491,7 +1491,7 @@ def wfed_coeff(filter_or_bp, force=False, save=True, save_name=None, nsplit=None
 
     # Double check we're not requesting too many processors
     nsplit = nsplit_max if nsplit > nsplit_max else nsplit
-    # nsplit = npos
+    nsplit = npos
 
     # Create worker arguments with kwargs as an argument input
     worker_args = []
@@ -1502,6 +1502,7 @@ def wfed_coeff(filter_or_bp, force=False, save=True, save_name=None, nsplit=None
         worker_args.append((args, kw))
 
     if nsplit>1:
+        # If splitting, then cannot split in subprocess for each PSF (ie., across wavelengths)
         poppy_nproc_prev = poppy.conf.n_processes
         poppy.conf.n_processes = 1
 
@@ -1723,6 +1724,7 @@ def field_coeff_resid(filter_or_bp, coeff0, force=False, save=True, save_name=No
 
     # Multiprocessing?
     if nsplit > 1:
+        # If splitting, then cannot split in subprocess for each PSF (ie., across wavelengths)
         poppy_nproc_prev = poppy.conf.n_processes
         poppy.conf.n_processes = 1
 
