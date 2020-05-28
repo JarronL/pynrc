@@ -2050,9 +2050,10 @@ class NIRCam(object):
                 cf_fit = self._psf_coeff_mod['wfe_drift'] 
                 lxmap  = self._psf_coeff_mod['wfe_drift_lxmap'] 
 
+            cf_fit_shape = cf_fit.shape
             cf_fit = cf_fit.reshape([cf_fit.shape[0], -1])
             cf_mod = jl_poly(np.array([wfe_drift]), cf_fit, use_legendre=True, lxmap=lxmap)
-            cf_mod = cf_mod.reshape(cf_fit[1:])
+            cf_mod = cf_mod.reshape(cf_fit_shape[1:])
             # Pad cf_mod array with 0s if undersized
             if not np.allclose(psf_coeff.shape, cf_mod.shape):
                 new_shape = psf_coeff.shape[1:]
