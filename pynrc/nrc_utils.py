@@ -1700,8 +1700,8 @@ def field_coeff_resid(filter_or_bp, coeff0, force=False, save=True, save_name=No
         npsf = np.ceil(20 * dw)
         npsf = 5 if npsf<5 else int(npsf)
         nsplit_psf = nproc_use(fov_pix, oversample, npsf)#, coron=coron_obs)
-        if nsplit_psf > nsplit:
-            nsplit = 1
+        # if nsplit_psf > nsplit:
+        #     nsplit = 1
 
     # Double check we're not requesting too many processors
     nsplit = nsplit_max if nsplit > nsplit_max else nsplit
