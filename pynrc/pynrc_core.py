@@ -468,6 +468,10 @@ class NIRCam(object):
         self._wfe_drift = wfe_drift
         # Field-dependent WFE
         self._wfe_field = False  # Don't calculate coefficients by default
+        # Max FoVs for calculationg drift and field dependnet coefficient residuals
+        # Any pixels beyond this size will be considered to have 0 residual difference
+        self._fovmax_wfedrift = 256
+        self._fovmax_wfefield = 128
 
         self._psf_coeff_mod = {
             'wfe_drift': None, 'wfe_drift_lxmap': None,
@@ -1442,7 +1446,6 @@ class NIRCam(object):
         if jitter=='none':
             jitter = None
 
-        #print(opd)
         self._psf_info={'fov_pix':fov_pix, 'oversample':oversample, 'quick':quick,
             'offset_r':offset_r, 'offset_theta':offset_theta, 
             'tel_pupil':tel_pupil, 'save':save, 'force':force, 'use_legendre':use_legendre,
@@ -1461,6 +1464,11 @@ class NIRCam(object):
             wfe_kwargs['mask']   = self._mask
             wfe_kwargs['module'] = self.module
             wfe_kwargs['bar_offset'] = 0
+
+            # fov_pix should not be more than some size, otherwise memory issues
+            fov_max = self._fovmax_wfedrift if wfe_kwargs['oversample']<=4 else self._fovmax_wfedrift / 2 
+            if wfe_kwargs['fov_pix']>fov_max:
+                wfe_kwargs['fov_pix'] = fov_max if (wfe_kwargs['fov_pix'] % 2 == 0) else fov_max + 1
             
             res1, res2 = wfed_coeff(self.bandpass, **wfe_kwargs)
             self._psf_coeff_mod['wfe_drift'] = res1
@@ -1479,7 +1487,17 @@ class NIRCam(object):
             field_kwargs['mask']   = self._mask
             field_kwargs['module'] = self.module
 
-            res, v2grid, v3grid = field_coeff_resid(self.bandpass, self._psf_coeff, **field_kwargs)
+            # fov_pix should not be more than some size, otherwise memory issues
+            fov_max = self._fovmax_wfefield if field_kwargs['oversample']<=4 else self._fovmax_wfefield / 2
+            if field_kwargs['fov_pix']>fov_max:
+                field_kwargs['fov_pix'] = fov_max if (field_kwargs['fov_pix'] % 2 == 0) else fov_max + 1
+                
+                new_shape = field_kwargs['fov_pix']*field_kwargs['oversample']
+                coeff0 = np.array([pad_or_cut_to_size(im, new_shape) for im in self._psf_coeff])
+            else:
+                coeff0 = self._psf_coeff
+
+            res, v2grid, v3grid = field_coeff_resid(self.bandpass, coeff0, **field_kwargs)
             self._psf_coeff_mod['si_field'] = res
             self._psf_coeff_mod['si_field_v2grid'] = v2grid
             self._psf_coeff_mod['si_field_v3grid'] = v3grid
@@ -1520,6 +1538,11 @@ class NIRCam(object):
                 wfe_kwargs['mask']   = None
                 wfe_kwargs['module'] = self.module
 
+                # fov_pix should not be more than some size, otherwise memory issues
+                fov_max = self._fovmax_wfedrift if wfe_kwargs['oversample']>4 else self._fovmax_wfedrift / 2 
+                if wfe_kwargs['fov_pix']>fov_max:
+                    wfe_kwargs['fov_pix'] = fov_max if (wfe_kwargs['fov_pix'] % 2 == 0) else fov_max + 1
+
                 res1, res2 = wfed_coeff(self.bandpass, **wfe_kwargs)
                 self._psf_coeff_bg_mod['wfe_drift'] = res1
                 self._psf_coeff_bg_mod['wfe_drift_lxmap'] = res2
@@ -1535,7 +1558,17 @@ class NIRCam(object):
                 field_kwargs['mask']   = None
                 field_kwargs['module'] = self.module
 
-                res, v2grid, v3grid = field_coeff_resid(self.bandpass, self._psf_coeff, **field_kwargs)
+                # fov_pix should not be more than some size, otherwise memory issues
+                fov_max = self._fovmax_wfefield if field_kwargs['oversample']>4 else self._fovmax_wfefield / 2
+                if field_kwargs['fov_pix']>fov_max:
+                    field_kwargs['fov_pix'] = fov_max if (field_kwargs['fov_pix'] % 2 == 0) else fov_max + 1
+                    
+                    new_shape = field_kwargs['fov_pix']*field_kwargs['oversample']
+                    coeff0 = np.array([pad_or_cut_to_size(im, new_shape) for im in self._psf_coeff])
+                else:
+                    coeff0 = self._psf_coeff
+
+                res, v2grid, v3grid = field_coeff_resid(self.bandpass, coeff0, **field_kwargs)
                 self._psf_coeff_bg_mod['si_field'] = res
                 self._psf_coeff_bg_mod['si_field_v2grid'] = v2grid 
                 self._psf_coeff_bg_mod['si_field_v3grid'] = v3grid 
@@ -2020,6 +2053,11 @@ class NIRCam(object):
             cf_fit = cf_fit.reshape([cf_fit.shape[0], -1])
             cf_mod = jl_poly(np.array([wfe_drift]), cf_fit, use_legendre=True, lxmap=lxmap)
             cf_mod = cf_mod.reshape(psf_coeff.shape)
+            # Pad cf_mod array with 0s if undersized
+            if not np.allclose(psf_coeff.shape, cf_mod.shape):
+                new_shape = psf_coeff.shape[1:]
+                cf_mod_resize = np.array([pad_or_cut_to_size(im, new_shape) for im in cf_mod])
+                cf_mod = cf_mod_resize
             psf_coeff_mod += cf_mod
 
         # Modify PSF coefficients based on field-dependent
@@ -2070,6 +2108,7 @@ class NIRCam(object):
                     # print(v2,v3)
                     nfield = np.size(v2)
                     cf_mod = field_coeff_func(v2grid, v3grid, cf_fit, v2, v3)
+                    # Pad cf_mod array with 0s if undersized
                     if not np.allclose(psf_coeff.shape, cf_mod.shape):
                         new_shape = psf_coeff.shape[1:]
                         cf_mod_resize = np.array([pad_or_cut_to_size(im, new_shape) for im in cf_mod])

@@ -1163,7 +1163,7 @@ def gen_psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
 
 
     # How many processors to split into?
-    nproc = nproc_use(fov_pix, oversample, npsf, coron=coron_obs) #if poppy.conf.use_multiprocessing else 1
+    nproc = nproc_use(fov_pix, oversample, npsf)#, coron=coron_obs) #if poppy.conf.use_multiprocessing else 1
     _log.debug('nprocessors: {}; npsf: {}'.format(nproc, npsf))
 
     setup_logging('WARN', verbose=False)
@@ -1404,6 +1404,10 @@ def wfed_coeff(filter_or_bp, force=False, save=True, save_name=None, nsplit=None
         Full path name of save file (.npy) to save/load.
         If None, then a name is automatically generated,
         matching the :func:`gen_psf_coeff` function.
+    nsplit : int
+        Number of processors to split over. There are checks to 
+        make sure you're not requesting more processors than the 
+        current machine has available.
 
     Example
     -------
@@ -1437,6 +1441,10 @@ def wfed_coeff(filter_or_bp, force=False, save=True, save_name=None, nsplit=None
         bp = filter_or_bp
         filter = bp.name
 
+    # defaults
+    fov_pix = kwargs['fov_pix'] if 'fov_pix' in list(kwargs.keys()) else 33
+    oversample = kwargs['oversample'] if 'oversample' in list(kwargs.keys()) else 4
+
     # Final filename to save coeff
     if save_name is None:
         # Name to save array of oversampled coefficients
@@ -1459,15 +1467,14 @@ def wfed_coeff(filter_or_bp, force=False, save=True, save_name=None, nsplit=None
 
     # Cycle through WFE drifts for fitting
     wfe_list = np.array([0,1,2,5,10,20,40])
-    nwfe = len(wfe_list)
+    npos = len(wfe_list)
 
     # Split over multiple processors?
+    nsplit_max = nproc_use(fov_pix, oversample, npos)#, coron=coron_obs)
     if nsplit is None:
-        fov_pix = kwargs['fov_pix'] if 'fov_pix' in list(kwargs.keys()) else 33
-        oversample = kwargs['oversample'] if 'oversample' in list(kwargs.keys()) else 4
         pupil = kwargs['pupil'] if 'pupil' in list(kwargs.keys()) else None
         coron_obs = (pupil is not None) and ('LYOT' in pupil)
-        nsplit = nproc_use(fov_pix, oversample, nwfe, coron=coron_obs)
+        nsplit = nproc_use(fov_pix, oversample, npos)#, coron=coron_obs)
 
         # Compare to number of PSFs
         if ('quick' in list(kwargs.keys())) and (kwargs['quick']==True):
@@ -1478,9 +1485,13 @@ def wfed_coeff(filter_or_bp, force=False, save=True, save_name=None, nsplit=None
             dw = 2.5
         npsf = np.ceil(20 * dw)
         npsf = 5 if npsf<5 else int(npsf)
-        nsplit_psf = nproc_use(fov_pix, oversample, npsf, coron=coron_obs)
+        nsplit_psf = nproc_use(fov_pix, oversample, npsf)#, coron=coron_obs)
         if nsplit_psf > nsplit:
             nsplit = 1
+
+    # Double check we're not requesting too many processors
+    nsplit = nsplit_max if nsplit > nsplit_max else nsplit
+    # nsplit = npos
 
     # Create worker arguments with kwargs as an argument input
     worker_args = []
@@ -1520,7 +1531,7 @@ def wfed_coeff(filter_or_bp, force=False, save=True, save_name=None, nsplit=None
 
     # Fit each pixel with a polynomial and save the coefficient
     cf_shape = cf_wfe.shape[1:]
-    cf_wfe = cf_wfe.reshape([nwfe, -1])
+    cf_wfe = cf_wfe.reshape([npos, -1])
     lxmap = np.array([np.min(wfe_list), np.max(wfe_list)])
     cf_fit = jl_poly_fit(wfe_list, cf_wfe, deg=4, use_legendre=True, lxmap=lxmap)
     cf_fit = cf_fit.reshape([-1, cf_shape[0], cf_shape[1], cf_shape[2]])
@@ -1567,6 +1578,10 @@ def field_coeff_resid(filter_or_bp, coeff0, force=False, save=True, save_name=No
         Full path name of save file (.npy) to save/load.
         If None, then a name is automatically generated,
         matching the :func:`gen_psf_coeff` function.
+    nsplit : int
+        Number of processors to split over. There are checks to 
+        make sure you're not requesting more processors than the 
+        current machine has available.
 
 
     Example
@@ -1609,17 +1624,6 @@ def field_coeff_resid(filter_or_bp, coeff0, force=False, save=True, save_name=No
     # fov_pix should not be more than some size, otherwise memory issues
     fov_pix = kwargs['fov_pix'] if 'fov_pix' in list(kwargs.keys()) else 33
     oversample = kwargs['oversample'] if 'oversample' in list(kwargs.keys()) else 4
-
-    fov_max = 128
-    if oversample>4: fov_max /= 2
-    if fov_pix>fov_max:
-        fov_pix = fov_max if (fov_pix % 2 == 0) else fov_max + 1
-        # Trim input coeff0
-        new_shape = fov_pix*oversample
-        cf0_new = np.array([pad_or_cut_to_size(im, new_shape) for im in coeff0])
-        coeff0 = cf0_new
-    kwargs['fov_pix'] = fov_pix
-    kwargs['oversample'] = oversample
 
     # Final filename to save coeff
     if save_name is None:
@@ -1680,10 +1684,11 @@ def field_coeff_resid(filter_or_bp, coeff0, force=False, save=True, save_name=No
     kwargs['include_si_wfe'] = True
 
     # Split over multiple processors?
+    nsplit_max = nproc_use(fov_pix, oversample, npos)#, coron=coron_obs)
     if nsplit is None:
         pupil = kwargs['pupil'] if 'pupil' in list(kwargs.keys()) else None
         coron_obs = (pupil is not None) and ('LYOT' in pupil)
-        nsplit = nproc_use(fov_pix, oversample, npos, coron=coron_obs)
+        nsplit = nproc_use(fov_pix, oversample, npos)#, coron=coron_obs)
 
         # Compare to number of PSFs
         if ('quick' in list(kwargs.keys())) and (kwargs['quick']==True):
@@ -1697,6 +1702,9 @@ def field_coeff_resid(filter_or_bp, coeff0, force=False, save=True, save_name=No
         nsplit_psf = nproc_use(fov_pix, oversample, npsf, coron=coron_obs)
         if nsplit_psf > nsplit:
             nsplit = 1
+
+    # Double check we're not requesting too many processors
+    nsplit = nsplit_max if nsplit > nsplit_max else nsplit
 
     # Create worker arguments with kwargs as an input dict
     worker_args = []
