@@ -2758,44 +2758,6 @@ def table_filter(t, topn=None, **kwargs):
     return tnew
 
 
-
-# def _check_list(value, temp_list, var_name=None):
-#     """
-#     Helper function to test if a value exists within a list. 
-#     If not, then raise ValueError exception.
-#     This is mainly used for limiting the allowed values of some variable.
-#     """
-#     if value not in temp_list:
-#         # Replace None value with string for printing
-#         if None in temp_list: temp_list[temp_list.index(None)] = 'None'
-#         var_name = '' if var_name is None else var_name + ' '
-#         err_str = "Invalid {}setting: {} \n\tValid values are: {}" \
-#                          .format(var_name, value, ', '.join(temp_list))
-#         raise ValueError(err_str)
-# 
-# def tuples_to_dict(pairs, verbose=False):
-#     """
-#     Take a list of paired tuples and convert to a dictionary
-#     where the first element of each tuple is the key and the 
-#     second element is the value.
-#     
-#     Args
-#     ----
-#     pairs : list
-#         List of tuples - [(a1,a2), (b1,b2), (c1,c2), ...]
-#     
-#     Returns
-#     -------
-#     dict
-#     """
-#     d={}
-#     for (k, v) in pairs:
-#         d[k] = v
-#         if verbose:
-#             if isinstance(v,float): print("{:<10} {:>10.4f}".format(k, v))
-#             else: print("{:<10} {:>10}".format(k, v))
-#     return d
-
 def merge_dicts(*dict_args):
     """
     Given any number of dicts, shallow copy and merge into a new dict.

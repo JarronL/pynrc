@@ -71,12 +71,14 @@ conf = Conf()
 from .logging_utils import setup_logging#, restart_logging
 setup_logging(conf.default_logging_level, verbose=False)
 
-from .nrc_utils import (read_filter, pix_noise, nrc_header, bp_2mass, bp_wise, \
-                        stellar_spectrum, source_spectrum)
+from .nrc_utils import (read_filter, pix_noise, bp_2mass, bp_wise, \
+                        stellar_spectrum, source_spectrum, planets_sb12)
 
-from .pynrc_core import (multiaccum, DetectorOps, NIRCam, planets_sb12)
+from .pynrc_core import (DetectorOps, NIRCam)
 
 from .obs_nircam import (obs_hci, nrc_hci)
+
+from .detops import (multiaccum, det_timing, nrc_header)
 
 #from .ngNRC import slope_to_ramp, nproc_use_ng
 
