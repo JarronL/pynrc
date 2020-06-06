@@ -108,10 +108,10 @@ from poppy import radial_profile, measure_fwhm
 #        specFromSpectralType, fwcentroid)
 
 # Detector geometry stuff
-import pysiaf
-siaf = pysiaf.Siaf('NIRCam')
-siaf.generate_toc()
-from webbpsf.webbpsf_core import DetectorGeometry
+# import pysiaf
+# siaf = pysiaf.Siaf('NIRCam')
+# siaf.generate_toc()
+# from webbpsf.webbpsf_core import DetectorGeometry
 
 import pysynphot as S
 # Extend default wavelength range to 5.6 um
@@ -126,7 +126,11 @@ opd_default = ('OPD_RevW_ote_for_NIRCam_requirements.fits', 0)
 # The following won't work on readthedocs compilation
 if not on_rtd:
     # Grab WebbPSF assumed pixel scales
+    log_prev = conf.logging_level
+    setup_logging('WARN', verbose=False)
     nc_temp = webbpsf.NIRCam()
+    setup_logging(log_prev, verbose=False)
+
     pixscale_SW = nc_temp._pixelscale_short
     pixscale_LW = nc_temp._pixelscale_long
     del nc_temp
@@ -5423,8 +5427,6 @@ def build_mask_detid(detid, oversample=1, ref_mask=None, pupil=None):
         Which Lyot pupil stop is being used?
         If None, then defaults based on ref_mask.
     """
-
-    # from jwxml import siaf
 
     names = ['A1', 'A2', 'A3', 'A4', 'A5',
              'B1', 'B2', 'B3', 'B4', 'B5']

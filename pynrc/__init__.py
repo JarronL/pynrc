@@ -88,6 +88,8 @@ from .simul import ngNRC
 
 from .reduce import ref_pixels
 
+from .testing import perform_benchmarks
+
 
 def _reload(name="pynrc"):
     """

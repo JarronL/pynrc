@@ -12,6 +12,8 @@ from .nrc_utils import *
 from .detops import *
 from .detops import _check_list # hidden function
 
+import pysiaf
+
 import logging
 _log = logging.getLogger('pynrc')
 
