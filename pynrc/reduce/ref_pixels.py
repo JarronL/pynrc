@@ -305,7 +305,7 @@ class NRC_refs(object):
         if supermean: self.data += smean
         
     
-    def calc_avg_cols(self, left_ref=True, right_ref=True, avg_type='frame'):
+    def calc_avg_cols(self, left_ref=True, right_ref=True, avg_type='frame', **kwargs):
         """Calculate average of column references
         
         Create a copy of the left and right reference pixels, removing the 
@@ -322,6 +322,8 @@ class NRC_refs(object):
         avg_type : str
             Type of ref col averaging to perform. Allowed values are
             'pixel', 'frame', or 'int'.
+        mean_func : func
+            Function to use to calculate averages of reference columns
         """
         
         if self.nref_l==0: left_ref = False
@@ -334,7 +336,7 @@ class NRC_refs(object):
 
         rl = self.refs_left  if left_ref  else None
         rr = self.refs_right if right_ref else None
-        self.refs_side_avg = calc_avg_cols(rl, rr, avg_type)
+        self.refs_side_avg = calc_avg_cols(rl, rr, avg_type, **kwargs)
                     
 
     def calc_col_smooth(self, perint=False, edge_wrap=False, savgol=False, **kwargs):
@@ -611,6 +613,8 @@ def ref_filter(cube, nchans=4, in_place=True, avg_type='frame', perint=False,
         Size of the window filter.
     order : int
         Order of the polynomial used to fit the samples.
+    mean_func : func
+        Function to use to calculate averages of reference columns.
     """               
            
     if not in_place:
@@ -643,7 +647,7 @@ def ref_filter(cube, nchans=4, in_place=True, avg_type='frame', perint=False,
     # Slice out reference pixel columns
     refs_left  = cube[:,:,:nl]  if nl>0 else None
     refs_right = cube[:,:,-nr:] if nr>0 else None
-    refvals = calc_avg_cols(refs_left, refs_right, avg_type)
+    refvals = calc_avg_cols(refs_left, refs_right, avg_type, **kwargs)
 
     # The delta time does't seem to make any difference in the final data product
     # Just for vizualization purposes...
@@ -722,7 +726,8 @@ def calc_avg_amps(refs_all, data_shape, nchans=4, altcol=True):
         return np.array(refs_amps_avg)
         
         
-def calc_avg_cols(refs_left=None, refs_right=None, avg_type='frame'):
+def calc_avg_cols(refs_left=None, refs_right=None, avg_type='frame',
+    mean_func=np.median, **kwargs):
     """Calculate average of column references
     
     Determine the average values for the column references, which
@@ -740,12 +745,13 @@ def calc_avg_cols(refs_left=None, refs_right=None, avg_type='frame'):
         'pixel' : For each ref pixel, subtract its avg value from all frames.
         'frame' : For each frame, get avg ref pixel values and subtract framewise.
         'int'   : Calculate avg of all ref pixels within the ramp and subtract.
-
+    mean_func : func
+        Function to use to calculate averages of reference columns
     """
     
     # Which function to use for calculating averages?
-    #mean_func = robust.mean
-    mean_func = np.median
+    # mean_func = robust.mean
+    # mean_func = np.median
 
     # In this context, nl and nr are either 0 (False) or 1 (True)
     nl = 0 if refs_left is None else 1

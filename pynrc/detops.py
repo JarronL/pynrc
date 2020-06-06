@@ -196,7 +196,7 @@ class multiaccum(object):
             _log.warning('Using explicit settings: ngroup={}, nf={}, nd1={}, nd2={}, nd3={}'\
                          .format(self.ngroup, self.nf, self.nd1, self.nd2, self.nd3))
         elif self.read_mode == 'CUSTOM':
-            _log.info('{} readout mode selected.'.format(read_mode))
+            _log.info('{} readout mode selected.'.format(self.read_mode))
             _log.info('Using explicit settings: ngroup={}, nf={}, nd1={}, nd2={}, nd3={}'\
                       .format(self.ngroup, self.nf, self.nd1, self.nd2, self.nd3))
         else:
@@ -830,4 +830,465 @@ def tuples_to_dict(pairs, verbose=False):
             if isinstance(v,float): print("{:<10} {:>10.4f}".format(k, v))
             else: print("{:<10} {:>10}".format(k, v))
     return d
+
+
+def nrc_header(det_class, filter=None, pupil=None, obs_time=None, header=None,
+               DMS=True, targ_name=None):
+    """Simulated header
+
+    Create a generic NIRCam FITS header from a detector_ops class.
+
+    Parameters
+    ----------
+    filter : str
+        Name of filter element.
+    pupil : str
+        Name of pupil element.
+    DMS : bool
+        Make the header in a format used by Data Management Systems.
+    obs_time : datetime
+        Specifies when the observation was considered to be executed.
+        If not specified, then it will choose the current time.
+        This must be a datetime object:
+
+            >>> datetime.datetime(2016, 5, 9, 11, 57, 5, 796686)
+
+    header : obj
+        Can pass an existing header that will be updated.
+        This has not been fully tested.
+    targ_name : str
+        Standard astronomical catalog name for a target.
+        Otherwise, it will be UNKNOWN.
+    """
+
+    from .version import __version__
+
+    filter = 'UNKNOWN' if filter is None else filter
+    pupil  = 'UNKNOWN' if pupil  is None else pupil
+    targ_name = 'UNKNOWN' if targ_name is None else targ_name
+
+    d = det_class
+    # MULTIACCUM ramp information
+    ma = d.multiaccum
+
+    # How many axes?
+    naxis = 2 if ma.ngroup == 1 else 3
+    if naxis == 3:
+        naxis3 = ma.ngroup
+    naxis1 = d.xpix
+    naxis2 = d.ypix
+
+    # Select Detector ID based on SCA ID
+    detector = d.detname
+
+    # Are we in subarray?
+    sub_bool = True if d.wind_mode != 'FULL' else False
+    # Horizontal window mode?
+    hwinmode = 'ENABLE' if d.wind_mode=='WINDOW' else 'DISABLE'
+
+    # Window indices (0-indexed)
+    x1 = d.x0; x2 = x1 + d.xpix
+    y1 = d.y0; y2 = y1 + d.ypix
+
+    # Ref pixel info
+    ref_all = d.ref_info
+
+    # Dates and times
+    obs_time = datetime.datetime.utcnow() if obs_time is None else obs_time
+    # Total time to complete obs = (ramp_time+reset_time)*nramps
+    # ramp_time does not include reset frames!!
+    tdel = ma.nint * (d.time_int + d.time_frame) + d._exp_delay
+    dtstart = obs_time.isoformat()
+    aTstart = Time(dtstart)
+    dtend = (obs_time + datetime.timedelta(seconds=tdel)).isoformat()
+    aTend = Time(dtend)
+    dstart = dtstart[:10]; dend = dtend[:10]
+    tstart = dtstart[11:-3]; tend = dtend[11:-3]
+    tsample = 1e6/d._pixel_rate
+
+    ################################################################
+    # Create blank header
+    hdr_update = False  if header is None else True
+    hdr = fits.Header() if header is None else header
+
+    # Add in basic header info
+    hdr['SIMPLE']  = (True,   'conforms to FITS standard')
+    hdr['BITPIX']  = (16,     'array data type')
+    if DMS == True:
+        hdr['SUBSTRT1'] = (x1+1, 'Starting pixel in axis 1 direction')
+        hdr['SUBSTRT2'] = (y1+1, 'Starting pixel in axis 2 direction')
+        hdr['SUBSIZE1'] = naxis1
+        hdr['SUBSIZE2'] = naxis2
+        hdr['NAXIS'] = (naxis,  'number of array dimensions')
+    else:
+        hdr['NAXIS']   = (naxis,  'number of array dimensions')
+        hdr['NAXIS1']  = naxis1
+        hdr['NAXIS2']  = naxis2
+
+        if hdr_update: hdr.pop('NAXIS3', None)
+        if naxis == 3: hdr['NAXIS3']  = (naxis3, 'length of third data axis')
+    hdr['EXTEND']  = True
+
+    hdr['DATE']    = ('',   'date file created (yyyy-mm-ddThh:mm:ss,UTC)')
+    hdr['BSCALE']  = (1,     'scale factor for array value to physical value')
+    hdr['BZERO']   = (32768, 'physical value for an array value of zero')
+    hdr['UNITS']   = ('',  'Units for the data type (ADU, e-, etc.)')
+    hdr['ORIGIN']  = ('UAz',  'institution responsible for creating FITS file')
+    hdr['FILENAME']= ('',   'name of file')
+    hdr['FILETYPE']= ('raw', 'type of data found in data file')
+
+    # Observation Description
+    hdr['TELESCOP']= ('JWST',    'telescope used to acquire data')
+    hdr['INSTRUME']= ('NIRCAM',  'instrument identifier used to acquire data')
+    hdr['OBSERVER']= ('UNKNOWN', 'person responsible for acquiring data')
+    hdr['DATE-OBS']= (dstart, 'UT date of observation (yyyy-mm-dd)')
+    hdr['TIME-OBS']= (tstart, 'Approximate UT time of start of observation (hh:mm:ss.sss)')
+    if DMS == True:
+        if 'GRISM' in pupil:
+            exp_type = 'NRC_GRISM'
+        elif pupil == None:
+            exp_type = 'UNKNOWN'
+        else:
+            exp_type = 'NRC_IMAGE'
+        hdr['EXP_TYPE'] = (exp_type,'Type of data in the exposure')
+    hdr['DATE-END']= (dend,   'UT date of end of observation(yyyy-mm-dd)')
+    hdr['TIME-END']= (tend,   'UT time of end of observation (hh:mm:ss.sss)')
+    hdr['SCA_ID']  = (d.scaid,   'Unique SCA identification in ISIM')
+    hdr['DETECTOR']= (d.detname, 'ASCII Mnemonic corresponding to the SCA_ID')
+    hdr['PIXELSCL']= (d.pixelscale, 'Detector Pixel Scale (arcsec/pixel)')
+
+    nx_noref = naxis1 - ref_all[2] - ref_all[3]
+    ny_noref = naxis2 - ref_all[0] - ref_all[1]
+    fovx = nx_noref * d.pixelscale
+    fovy = ny_noref * d.pixelscale
+    hdr['FOV']     = ('{:.2f}x{:.2f}'.format(fovx,fovy), 'Field of view in arcsec')
+
+    if DMS == True:
+        hdr['TARG_RA']=  (0.0, 'Target RA at mid time of exposure') #arbitrary position
+        hdr['TARG_DEC']= (0.0, 'Target Dec at mid time of exposure') #arbitrary position
+
+        hdr['PROGRAM'] = ('12345', 'Program number')
+        hdr['OBSERVTN']= ('001',   'Observation number')
+        hdr['VISIT']   = ('001',   'Visit Number')
+        hdr['VISITGRP']= ('01',  'Visit Group Identifier')
+
+        hdr['SEQ_ID']  = ('1', 'Parallel sequence identifier')
+        hdr['ACT_ID']  = ('1', 'Activity identifier')
+        hdr['EXPOSURE']= ('1', 'Exposure request number')
+        hdr['OBSLABEL']= ('Target 1 NIRCam Observation 1', 'Proposer label for the observation')
+        hdr['EXPSTART']= (aTstart.mjd, 'UTC exposure start time')
+        hdr['EXPEND']  = (aTend.mjd, 'UTC exposure end time')
+        hdr['EFFEXPTM']= (d.time_int_eff*d.time_int, 'Effective exposure time (sec)')
+        hdr['NUMDTHPT']= ('1','Total number of points in pattern')
+        hdr['PATT_NUM']= (1,'Position number in primary pattern')
+
+    hdr['TARGNAME'] = (targ_name, 'Standard astronomical catalog name for target')
+    hdr['OBSMODE'] = ('UNKNOWN', 'Observation mode')
+
+    if DMS == True:
+        if d.channel == 'LW':
+            headerChannel = 'LONG'
+        elif d.channel == 'SW':
+            headerChannel = 'SHORT'
+        else:
+            headerChannel = 'UNKNOWN'
+        hdr['CHANNEL'] = headerChannel
+
+        hdr['GRATING'] = ('N/A - NIRCam', 'Name of the grating element used')
+        hdr['BAND']    = ('N/A - NIRCam', 'MRS wavelength band')
+        hdr['LAMP']    = ('N/A - NIRCam', 'Internal lamp state')
+        hdr['GWA_XTIL']= ('N/A - NIRCam', 'Grating X tilt angle relative to mirror')
+        hdr['GWA_YTIL']= ('N/A - NIRCam', 'Grating Y tilt angle relative to mirror')
+        hdr['GWA_TILT']= ('N/A - NIRCam', 'GWA TILT (avg/calib) temperature (K)')
+        hdr['MSAMETFL']= ('N/A - NIRCam', 'MSA metadata file name')
+        hdr['MSAMETID']= ('N/A - NIRCam', 'MSA metadata ID')
+
+    # Positions of optical elements
+    hdr['FILTER']  = (filter, 'Module ' + d.module + ' ' + d.channel + ' FW element')
+    hdr['PUPIL']   = (pupil, 'Module ' + d.module + ' ' + d.channel + ' PW element')
+    hdr['PILSTATE']= ('RETRACTED', 'Module ' + d.module + ' PIL deploy state')
+
+    # Readout Mode
+    hdr['NSAMPLE'] = (1,            'A/D samples per read of a pixel')
+    if DMS == True:
+        frmName = 'NFRAMES'
+        grpName = 'NGROUPS'
+        intName = 'NINTS'
+    else:
+        frmName = 'NFRAME'
+        grpName = 'NGROUP'
+        intName = 'NINT'
+    hdr[frmName]   = (ma.nf,         'Number of frames in group')
+    hdr[grpName]   = (ma.ngroup,     'Number groups in an integration')
+    hdr[intName]   = (ma.nint,     'Number of integrations in an exposure')
+
+    # Timing information
+    hdr['TSAMPLE'] = (tsample,        'Delta time between samples in microsec')
+    hdr['TFRAME']  = (d.time_frame,   'Time in seconds between frames')
+    hdr['TGROUP']  = (d.time_group,   'Delta time between groups')
+    hdr['DRPFRMS1']= (ma.nd1, 'Number of frame skipped prior to first integration')
+    hdr['GROUPGAP']= (ma.nd2, 'Number of frames skipped')
+    hdr['DRPFRMS3']= (ma.nd3, 'Number of frames skipped between integrations')
+    hdr['FRMDIVSR']= (ma.nf,  'Divisor applied to each group image')
+    hdr['INTAVG']  = (1, 'Number of integrations averaged in one image')
+    hdr['NRESETS1']= (ma.nr1, 'Number of reset frames prior to first integration')
+    hdr['NRESETS2']= (ma.nr2, 'Number of reset frames between each integration')
+    hdr['INTTIME'] = (d.time_int, 'Total integration time for one MULTIACCUM')
+    hdr['EXPTIME'] = (d.time_exp, 'Exposure duration (seconds) calculated')
+    
+    # Subarray names
+    if DMS == True:
+        if (d.xpix == 2048) & (d.ypix == 2048):
+            subName = 'FULL'
+        elif (d.xpix == 640) & (d.ypix == 640):
+            subName = 'SUB640'
+        elif (d.xpix == 320) & (d.ypix == 320):
+            subName = 'SUB320'
+        elif (d.xpix == 400) & (d.ypix == 400):
+            subName = 'SUB400P'
+        elif (d.xpix == 64) & (d.ypix == 64):
+            subName = 'SUB64P'
+        elif (d.xpix == 2048) & (d.ypix == 256):
+            subName = 'SUBGRISM256'
+        elif (d.xpix == 2048) & (d.ypix == 128):
+            subName = 'SUBGRISM128'
+        elif (d.xpix == 2048) & (d.ypix == 64):
+            subName = 'SUBGRISM64'
+        else:
+            subName = 'UNKNOWN'
+        hdr['SUBARRAY']= (subName, 'Detector subarray string')
+    else:
+        hdr['SUBARRAY']= (sub_bool, 'T if subarray used, F if not')
+        hdr['HWINMODE']= (hwinmode, 'If enabled, single output mode used')
+
+    # Readout Patterns
+    if DMS == True:
+        hdr['READPATT']= (ma.read_mode, 'Readout pattern name')
+        hdr['ZROFRAME']= (True,       'T if zeroth frame present, F if not')
+    else:
+        hdr['READOUT'] = (ma.read_mode, 'Readout pattern name')
+        hdr['ZROFRAME']= (False,       'T if zeroth frame present, F if not')
+
+    #Reference Data
+    hdr['TREFROW'] = (ref_all[1], 'top reference pixel rows')
+    hdr['BREFROW'] = (ref_all[0], 'bottom reference pixel rows')
+    hdr['LREFCOL'] = (ref_all[2], 'left col reference pixels')
+    hdr['RREFCOL'] = (ref_all[3], 'right col reference pixels')
+    hdr['NREFIMG'] = (0, 'number of reference rows added to end')
+    hdr['NXREFIMG']= (0, 'reference image columns')
+    hdr['NYREFIMG']= (0, 'reference image rows')
+    hdr['COLCORNR']= (x1+1, 'The Starting Column for ' + detector)
+    hdr['ROWCORNR']= (y1+1, 'The Starting Row for ' + detector)
+
+    hdr.insert('EXTEND', '', after=True)
+    hdr.insert('EXTEND', '', after=True)
+    hdr.insert('EXTEND', '', after=True)
+
+    hdr.insert('FILETYPE', '', after=True)
+    hdr.insert('FILETYPE', ('','Observation Description'), after=True)
+    hdr.insert('FILETYPE', '', after=True)
+
+    hdr.insert('OBSMODE', '', after=True)
+    hdr.insert('OBSMODE', ('','Optical Mechanisms'), after=True)
+    hdr.insert('OBSMODE', '', after=True)
+
+    hdr.insert('PILSTATE', '', after=True)
+    hdr.insert('PILSTATE', ('','Readout Mode'), after=True)
+    hdr.insert('PILSTATE', '', after=True)
+
+    hdr.insert('ZROFRAME', '', after=True)
+    hdr.insert('ZROFRAME', ('','Reference Data'), after=True)
+    hdr.insert('ZROFRAME', '', after=True)
+
+    hdr.insert('ROWCORNR', '', after=True)
+    hdr.insert('ROWCORNR', '', after=True)
+
+    hdr['comment'] = 'Simulated data generated by {} v{}'\
+                      .format(__package__,__version__)
+
+    return hdr
+
+def config2(input, intype='int'):
+    """NIRCam CONFIG2 (0x4011) Register
+
+    Return a dictionary of configuration parameters depending on the
+    value of CONFIG2 register (4011).
+
+    Parameters
+    ----------
+    input : int, str
+        Value of CONFIG2, nominally as an int. Binary and Hex values
+        can also be passed as strings.
+    intype: str
+        Input type (int, hex, or bin) for integer, hex, string,
+        or binary string.
+
+    """
+    if 'hex' in intype:
+        if '0x' in input:
+            input = int(input, 0)
+        else:
+            input = int(input, 16)
+    if 'bin' in intype:
+        if '0b' in input:
+            input = int(input, 0)
+        else:
+            input = int(input, 2)
+
+    # Convert to 16-bit binary string
+    input = "{0:016b}".format(input)
+
+    # Config2 Bits (Right to Left)
+    # ----------------------------
+    # 0 : Vertical Enable
+    # 1 : Horizontal Enable
+    # 2 : Global reset per integration
+    # 3 : Enable Fast row-by-row reset (only in window/stripe)
+    # 6-4 : Number of fast row resets per int
+    # 7 : Window mode in Idle when window enabled?
+    # 8 : 0 = Preamp reset per frame; 1 = reset per row
+    # 9 : Permanent Reset
+    # 10 : Single step mode
+    # 11 : Test pattern
+    # 12 : FGS window mode
+    # 13 : Power down preamp, adc, and ap during Idle
+    # 14 : Power down preamp, adc, and ap during Drop
+    # 15 : 0 = Preamp reset per frame; 1 = reset per integration
+
+    # NFF Rows Reset
+    # --------------
+    # 000 = 1
+    # 001 = 4
+    # 010 = 16
+    # 011 = 64
+    # 100 = 256
+    # 101 = 512
+    # 110 = 1024
+    # 111 = 2048
+
+    nff_dict = {'000':   1, '001':   4, '010':  16, '011':  64,
+                '100': 256, '101': 512, '110':1024, '111':2048}
+
+    # Reverse for easier indexing of single values
+    input2 = input[::-1]
+
+    d = {}
+    d['00_window_vert']  = True if bool(int(input2[0])) else False
+    d['01_window_horz']  = True if bool(int(input2[1])) else False
+    d['02_global_reset'] = True if bool(int(input2[2])) else False
+    d['03_rows_reset']   = True if bool(int(input2[3])) else False
+    d['04_rows_nff']     = nff_dict.get(input2[4:7][::-1])
+    d['07_idle_window']  = True if bool(int(input2[7])) else False
+    d['08_pa_reset']     = 'row' if bool(int(input2[8])) else 'frame'
+    d['09_perm_reset']   = True if bool(int(input2[9])) else False
+    d['10_single_step']  = True if bool(int(input2[10])) else False
+    d['11_test_patt']    = True if bool(int(input2[11])) else False
+    d['12_fgs_wind']     = True if bool(int(input2[12])) else False
+    d['13_power_idl']    = True if bool(int(input2[13])) else False
+    d['14_power_drop']   = True if bool(int(input2[14])) else False
+    d['15_pa_reset']     = 'int' if bool(int(input2[15])) else 'frame'
+
+    return d
+
+def create_detops(header, DMS=False, read_mode=None, nint=None, ngroup=None,
+    detector=None, wind_mode=None, xpix=None, ypix=None, x0=None, y0=None,
+    nff=None):
+    """NIRCam Detector class from header
+
+    Create a detector class based on header settings.
+    Can override settings with a variety of keyword arguments.
+
+    Parameters
+    ----------
+    header : obj
+        Header from NIRCam FITS file
+    DMS : bool
+        Is header format from Data Management Systems? Otherwises, ISIM-like.
+
+    Keyword Args
+    ------------
+    read_mode : str
+        NIRCam Ramp Readout mode such as 'RAPID', 'BRIGHT1', etc.
+    nint : int
+        Number of integrations (ramps).
+    ngroup : int
+        Number of groups in a integration.
+    detector : int, str
+        NIRCam detector ID (481-490) or SCA ID (A1-B5).
+    wind_mode : str
+        Window mode type 'FULL', 'STRIPE', 'WINDOW'.
+    xpix : int
+        Size of window in x-pixels for frame time calculation.
+    ypix : int
+        Size of window in y-pixels for frame time calculation.
+    x0 : int
+        Lower-left x-coord position of detector window.
+    y0 : int
+        Lower-left y-coord position of detector window.
+    nff : int
+        Number of fast row resets.
+
+    """
+    # Create detector class
+    from pynrc.pynrc_core import DetectorOps
+
+    # Detector ID
+    detector = header['SCA_ID'] if detector is None else detector
+
+    # Detector size
+    xpix = header['SUBSIZE1'] if DMS else header['NAXIS1'] if xpix is None else xpix
+    ypix = header['SUBSIZE2'] if DMS else header['NAXIS2'] if ypix is None else ypix
+
+    # Subarray position
+    # Headers are 1-indexed, while detector class is 0-indexed
+    if x0 is None:
+        x1 = header['SUBSTRT1'] if DMS else header['COLCORNR']
+        x0 = x1 - 1
+    if y0 is None:
+        y1 = header['SUBSTRT2'] if DMS else header['ROWCORNR']
+        y0 = y1 - 1
+
+    # Subarray setting, Full, Stripe, or Window
+    # if wind_mode is None:
+    #     if DMS:
+    #         if 'FULL' in header['SUBARRAY']:
+    #             wind_mode = 'FULL'
+    #         elif 'GRISM' in header['SUBARRAY']:
+    #             wind_mode = 'STRIPE'
+    #         else:
+    #             wind_mode = 'WINDOW'
+    #     else:
+    #         if not header['SUBARRAY']:
+    #             wind_mode = 'FULL'
+    #         elif 'DISABLE' in header['HWINMODE']:
+    #             wind_mode = 'STRIPE'
+    #         else:
+    #             wind_mode = 'WINDOW'
+
+    # Subarray setting: Full, Stripe, or Window
+    if wind_mode is None:
+        if DMS and ('FULL' in header['SUBARRAY']):
+            wind_mode = 'FULL'
+        elif (not DMS) and (not header['SUBARRAY']):
+            wind_mode = 'FULL'
+        else:
+            # Test if STRIPE or WINDOW
+            det_stripe = DetectorOps(detector, 'STRIPE', xpix, ypix, x0, y0)
+            det_window = DetectorOps(detector, 'WINDOW', xpix, ypix, x0, y0)
+            dt_stripe = np.abs(header['TFRAME'] - det_stripe.time_frame)
+            dt_window = np.abs(header['TFRAME'] - det_window.time_frame)
+            wind_mode = 'STRIPE' if dt_stripe<dt_window else 'WINDOW'
+
+
+    # Add MultiAccum info
+    if DMS: hnames = ['READPATT', 'NINTS', 'NGROUPS']
+    else:   hnames = ['READOUT',  'NINT',  'NGROUP']
+
+    read_mode = header[hnames[0]] if read_mode is None else read_mode
+    nint      = header[hnames[1]] if nint      is None else nint
+    ngroup    = header[hnames[2]] if ngroup    is None else ngroup
+
+    ma_args = {'read_mode':read_mode, 'nint':nint, 'ngroup':ngroup}
+
+    return DetectorOps(detector, wind_mode, xpix, ypix, x0, y0, nff, **ma_args)
 

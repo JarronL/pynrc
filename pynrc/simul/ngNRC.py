@@ -27,12 +27,12 @@ from astropy.table import Table
 
 # HxRG Noise Generator
 from . import nghxrg as ng
-from pynrc.nrc_utils import nrc_header, pad_or_cut_to_size
+from pynrc.nrc_utils import pad_or_cut_to_size
 
 #import pdb
 from copy import deepcopy
 
-from pynrc import DetectorOps
+from pynrc import DetectorOps, nrc_header
 from pynrc import conf
 
 # # Set log output levels
@@ -635,7 +635,8 @@ def ipc_deconvolve(im, kernel, kfft=None):
     deconvolved image.
     
     If performing PPC deconvolution, make sure to perform channel-by-channel
-    with the kernel in the appropriate scan direction.
+    with the kernel in the appropriate scan direction. IPC is usually symmetric,
+    so this restriction may not apply.
  
     Parameters
     ==========
@@ -666,6 +667,69 @@ def ipc_deconvolve(im, kernel, kfft=None):
 
     return im_final
 
+def ppc_deconvolve(im, kernel, kfft=None, nchans=4, 
+    same_scan_direction=False, reverse_scan_direction=False):
+    """PPC image deconvolution
+    
+    Given an image (or image cube), apply PPC deconvolution kernel
+    to obtain the intrinsic flux distribution. 
+    
+    If performing PPC deconvolution, make sure to perform channel-by-channel
+    with the kernel in the appropriate scan direction. IPC is usually symmetric,
+    so this restriction may not apply.
+ 
+    Parameters
+    ==========
+    im : ndarray
+        Image or array of images. 
+    kernel : ndarry
+        Deconvolution kernel.
+    kfft : Complex ndarray
+        Option to directy supply the kernel's FFT rather than
+        calculating it within the function. The supplied ndarray
+        should have shape (ny,nx) equal to the input `im`. Useful
+        if calling ``ipc_deconvolve`` multiple times.
+    """
+
+
+    # Image cube shape
+    sh = im.shape
+    ndim = len(sh)
+    if ndim==2:
+        ny, nx = sh
+        nz = 1
+    else:
+        nz, ny, nx = sh
+    chsize = int(nx / nchans)
+    im = im.reshape([nz,ny,nchans,-1])
+
+    # FFT of kernel
+    if kfft is None:
+        k_big = pad_or_cut_to_size(kernel, (ny,chsize))
+        kfft = np.fft.fft2(k_big)
+
+    # Channel-by-channel deconvolution
+    for ch in np.arange(nchans):
+        sub = im[:,:,ch,:]
+        if same_scan_direction:
+            flip = True if reverse_scan_direction else False
+        elif np.mod(ch,2)==0:
+            flip = True if reverse_scan_direction else False
+        else:
+            flip = False if reverse_scan_direction else True
+
+        if flip: 
+            sub = sub[:,:,:,::-1]
+
+        sub = ipc_deconvolve(sub, kernel, kfft=kfft)
+        if flip: 
+            sub = sub[:,:,:,::-1]
+        im[:,:,ch,:] = sub
+
+    im = im.reshape(sh)
+
+    return im
+
 
 def get_ipc_kernel(imdark, tint, boxsize=5, nchans=4, bg_remove=True,
                    hotcut=[5000,50000], calc_ppc=False,
@@ -683,11 +747,13 @@ def get_ipc_kernel(imdark, tint, boxsize=5, nchans=4, bg_remove=True,
     ==================
     boxsize : int
         Size of the box. Should be odd, but if even, then adds +1.
-    hotcut : array-like
-        Min and max values of hot pixels (above bg and bias) to cosider.
     bg_remove : bool
         Remove the average dark current values for each hot pixel cut-out.
         Only works if boxsize>3.
+    hotcut : array-like
+        Min and max values of hot pixels (above bg and bias) to cosider.
+    calc_ppc : bool
+        Calculate and return post-pixel coupling?
     same_scan_direction : bool
         Are all the output channels read in the same direction?
         By default fast-scan readout direction is ``[-->,<--,-->,<--]``
