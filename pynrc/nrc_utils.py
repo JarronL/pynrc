@@ -916,8 +916,8 @@ def gen_psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
 
     # Set the SIAF apertur name
     if apname is not None:
-        inst.auto_apname = False
-        inst.apname = apname
+        inst.auto_aperturename = False
+        inst.aperturename = apname
 
     # Detector position
     # define defaults
@@ -937,7 +937,7 @@ def gen_psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         inst.detector_position = detector_position
 
     # Print aperture and detector info
-    _log.debug(inst.apname, inst.detector, inst.detector_position)
+    _log.debug(inst.aperturename, inst.detector, inst.detector_position)
 
     # Telescope Pupil
     if tel_pupil is not None:
