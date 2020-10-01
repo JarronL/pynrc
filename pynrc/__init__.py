@@ -88,6 +88,8 @@ from .simul import ngNRC
 
 from .reduce import ref_pixels
 
+from .reduce.calib import nircam_dark
+
 from .testing import perform_benchmarks
 
 
