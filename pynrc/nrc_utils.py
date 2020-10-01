@@ -35,7 +35,7 @@ import traceback
 from astropy.io import fits, ascii
 from astropy.table import Table
 from astropy.time import Time
-from astropy import units
+# from astropy import units
 
 #from scipy.optimize import least_squares#, leastsq
 #from scipy.ndimage import fourier_shift
@@ -76,6 +76,7 @@ if not on_rtd:
 
 # Link to WebbPSF's instance of poppy
 from webbpsf.webbpsf_core import poppy
+from webbpsf.opds import OTE_Linear_Model_WSS
 
 # Set up some poppy and webbpsf defaults
 # Turn off multiprocessing, which is faster now due to improved
@@ -255,10 +256,10 @@ def read_filter(filter, pupil=None, mask=None, module=None, ND_acq=False,
     if module is None: module = 'A'
 
     # Select filter file and read
-    f = filter.lower(); m = module.lower()
-    #filt_dir = __location__ + 'throughputs_stsci/'
+    filter = filter.upper()
+    mod = module.lower()
     filt_dir = conf.PYNRC_PATH + 'throughputs/'
-    filt_file = filter + '_nircam_plus_ote_throughput_mod' + m + '_sorted.txt'
+    filt_file = filter + '_nircam_plus_ote_throughput_mod' + mod + '_sorted.txt'
     bp = S.FileBandpass(filt_dir+filt_file)
     bp_name = filter
 
@@ -721,7 +722,7 @@ def _wrap_coeff_for_mp(args):
     poppy.conf.use_multiprocessing = False
 
     inst,w,fov_pix,oversample = args
-    fov_pix_orig = fov_pix # Does calc_psf change fov_pix??
+    # fov_pix_orig = fov_pix # Does calc_psf change fov_pix??
     try:
         hdu_list = inst.calc_psf(fov_pixels=fov_pix, oversample=oversample, monochromatic=w*1e-6,
                                  add_distortion=False, crop_psf=True)
@@ -748,7 +749,7 @@ def _wrap_coeff_for_mp(args):
 def gen_psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     fov_pix=11, oversample=None, npsf=None, ndeg=None, tel_pupil=None,
     offset_r=None, offset_theta=None, jitter=None, jitter_sigma=0.007,
-    opd=None, wfe_drift=None, drift_file=None, include_si_wfe=False,
+    opd=None, wfe_drift=None, include_si_wfe=False,
     detector=None, detector_position=None, apname=None, bar_offset=None, 
     force=False, save=True, save_name=None, return_save_name=False, 
     quick=False, return_webbpsf=False, add_distortion=False, crop_psf=True, 
@@ -817,8 +818,6 @@ def gen_psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         where the OPD data is stored at HDUList[0].data.
     wfe_drift : float
         Wavefront error drift amplitude in nm.
-    drift_file : str, None
-        Delta OPD file to use for WFE drift.
     include_si_wfe : bool
         Include SI WFE measurements? Default=False.
     detector : str, None
@@ -988,8 +987,12 @@ def gen_psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
     elif isinstance(opd, fits.HDUList):
         # A custom OPD is passed. Consider using force=True.
         otemp = 'OPDcustom'
-        opd_name = 'OPD from supplied FITS HDUlist object'
+        opd_name = 'OPD from FITS HDUlist'
         opd_num = 0
+    elif isinstance(opd, poppy.OpticalElement):
+        # OTE Linear Model
+        # No need to do anything
+        pass
     else:
         raise ValueError("OPD must be a string, tuple, or HDUList.")
 
@@ -1045,53 +1048,60 @@ def gen_psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         temp_str = 'and saving' if save else 'but not saving'
         _log.info('Generating {} new PSF coefficient'.format(temp_str))
 
-    # Only drift OPD if PSF is in nominal position (rtemp=0).
-    # Anything that is in an offset position is currently considered
-    # to be a faint companion source that we're trying to detect, so
-    # the PSF WFE difference has negligible bearing on the outcome.
-    if (wfe_drift > 0): # and (rtemp == 0):
-
-        from . import speckle_noise as sn
+    # If there is wfe_drift, create a OTE Linear Model
+    if (wfe_drift > 0):
         _log.debug('Performing WFE drift of {}nm'.format(wfe_drift))
 
+        # OPD should already be an HDUList or OTE LM by now
+        # If we want more realistic time evolution, then need to use
+        # procedure in dev_utils/WebbPSF_OTE_LM.ipynb to create a time
+        # series of OPDs then pass those OPDs directly to create unique PSFs
         if isinstance(opd, fits.HDUList):
-            _log.debug('OPD is HDUList.')
-            opd_im = opd[0].data
-            header = opd[0].header.copy()
-        else: # Read in a specified OPD file and slice
-            _log.debug('OPD is tuple {}.'.format(opd))
-            opd_im, header = sn.read_opd_slice(opd, header=True)
+            hdul = opd
 
-        # Read in delta OPD file
-        opd_dir = os.path.join(conf.PYNRC_PATH, 'opd_mod/')
-        if drift_file is None:
-            drift_file = 'wfedrift_case1_var2.fits'
-        delta_hdul = fits.open(opd_dir + drift_file)
+            header = hdul[0].header
 
-        delta_rms = delta_hdul[0].header['RMS_WFE']
-        scale_val = wfe_drift / delta_rms
+            header['ORIGINAL'] = (opd_name,   "Original OPD source")
+            header['SLICE']    = (opd_num,    "Slice index of original OPD")
+            header['WFEDRIFT'] = (wfe_drift, "WFE drift amount [nm]")
 
-        delta_data = delta_hdul[0].data * scale_val
-        delta_hdul.close()
+            name = 'Modified from ' + opd_name
+            opd = OTE_Linear_Model_WSS(name=name, opd=hdul, opd_index=opd_num, transmission=inst.pupil)
 
-        opd_im += delta_data
-        hdu = fits.PrimaryHDU(opd_im)
-        hdu.header = header
+        # Apply WFE drift to OTE Linear Model (Amplitude of frill drift)
+        inst.pupilopd = opd
+        inst.pupil = opd
 
-        hdu.header.add_history("Modified OPD by adding delta")
-        hdu.header.add_history(" from " + drift_file)
-        hdu.header.add_history(" scaled by {}".format(scale_val))
+        # Split WFE drift amplitude between three processes
+        # 1) IEC Heaters; 2) Frill tensioning; 3) OTE Thermal perturbations
+        # Give IEC heaters 1 nm 
+        wfe_iec = 1 if np.abs(wfe_drift) > 2 else 0
 
-        hdu.header['ORIGINAL'] = (opd_name,   "Original OPD source")
-        hdu.header['SLICE']    = (opd_num,    "Slice index of original OPD")
-        hdu.header['DFILE']    = (drift_file, "Source file for OPD drift")
-        hdu.header['OCASE']    = (delta_hdul[0].header['CASE'], "Oscillation model case")
-        hdu.header['OVARIANT'] = (delta_hdul[0].header['VARIANT'], "Oscillation model variant")
-        hdu.header['OAMP']     = (scale_val, "Amplitude scale factor")
-        hdu.header['WFEDRIFT'] = (wfe_drift, "WFE drift amount [nm]")
+        # Split remainder evenly between frill and OTE thermal slew
+        wfe_remain_var = wfe_drift**2 - wfe_iec**2
+        wfe_frill = np.sqrt(0.8*wfe_remain_var)
+        wfe_therm = np.sqrt(0.2*wfe_remain_var)
+        # wfe_th_frill = np.sqrt((wfe_drift**2 - wfe_iec**2) / 2)
 
-        opd_hdulist = fits.HDUList([hdu])
-        inst.pupilopd = opd_hdulist
+        # Negate amplitude if supplying negative wfe_drift
+        if wfe_drift < 0:
+            wfe_frill *= -1
+            wfe_therm *= -1
+            wfe_iec *= -1
+
+        # Apply IEC
+        opd.apply_iec_drift(wfe_iec, delay_update=True)
+        # Apply frill
+        opd.apply_frill_drift(wfe_frill, delay_update=True)
+
+        # Apply OTE thermal slew amplitude
+        # This is slightly different due to how thermal slews are specified
+        import astropy.units as u
+        delta_time = 14*24*60 * u.min
+        wfe_scale = (wfe_therm / 24)
+        if wfe_scale == 0:
+            delta_time = 0
+        opd.thermal_slew(delta_time, case='BOL', scaling=wfe_scale)
     else:
         inst.pupilopd = opd
 
@@ -1284,12 +1294,10 @@ def gen_psf_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         hdr['OPD'] = ('HDUList', 'Telescope OPD')
     elif isinstance(opd, six.string_types):
         hdr['OPD'] = (opd, 'Telescope OPD')
+    elif isinstance(opd, poppy.OpticalElement):
+        hdr['OPD'] = ('OTE Linear Model', 'Telescope OPD')
     else:
         hdr['OPD'] = ('UNKNOWN', 'Telescope OPD')
-    if drift_file is None:
-        hdr['DFILE'] = ('None', "Source file for OPD drift")
-    else:
-        hdr['DFILE'] = (drift_file, "Source file for OPD drift")
     hdr['WFEDRIFT'] = (wfe_drift, "WFE drift amount [nm]")
     hdr['SIWFE']    = (include_si_wfe, "Was SI WFE included?")
     hdr['FORCE']    = (force, "Forced calculations?")
@@ -1927,7 +1935,7 @@ def wedge_coeff(filter, pupil, mask, force=False, save=True, save_name=None, **k
     return cf_fit
 
 
-def gen_image_from_coeff(coeff, ceoff_hdr, sp_norm=None, return_oversample=False,
+def gen_image_from_coeff(coeff, coeff_hdr, sp_norm=None, return_oversample=False,
     nwaves=None, use_sp_waveset=False, **kwargs):
     """Generate PSF from coefficient
 
@@ -3079,7 +3087,7 @@ def pix_noise(ngroup=2, nf=1, nd2=0, tf=10.737, rn=15.0, ktc=29.0, p_excess=(0,0
         Any additional background (telescope emission or scattered light?)
     ideal_Poisson : bool
         If set to True, use total signal for noise estimate,
-        otherwise MULTIACCUM equation is used?
+        otherwise MULTIACCUM equation is used.
     ff_noise : bool
         Include flat field errors in calculation? From JWST-CALC-003894.
         Default=False.
