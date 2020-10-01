@@ -1534,7 +1534,7 @@ class NIRCam(object):
             # Update off-axis WFE drift
             if self._wfe_drift:
                 _log.info('Calculating WFE Drift for fov_pix={} and oversample={}'.\
-                        format(_fov_pix_bg,oversample))
+                        format(self._fov_pix_bg, oversample))
                 wfe_kwargs = dict(self._psf_info_bg)
                 wfe_kwargs['pupil']  = self._pupil
                 wfe_kwargs['mask']   = None
@@ -1554,7 +1554,7 @@ class NIRCam(object):
 
             if self._wfe_field:
                 _log.info('Calculating SI WFE Field for fov_pix={} and oversample={}'.\
-                        format(_fov_pix_bg,oversample))
+                        format(self._fov_pix_bg, oversample))
                 field_kwargs = dict(self._psf_info)
                 field_kwargs['pupil']  = self._pupil
                 field_kwargs['mask']   = None
@@ -2248,7 +2248,8 @@ class NIRCam(object):
         """
 
         if det_name is not None:
-            ind = np.where(arr == det_name)[0]
+            arr = np.array([det.detname for det in self.Detectors])
+            ind = np.where(arr == det_name)[0][0]
             if ind.size==1:
                 det = self.Detectors[ind]
             else:
