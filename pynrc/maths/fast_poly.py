@@ -50,7 +50,17 @@ def jl_poly(xvals, coeff, dim_reorder=False, use_legendre=False, lxmap=None, **k
 
     # How many xvals?
     n = np.size(xvals)
-    xdim = len(xvals.shape)
+    try:
+        xdim = len(xvals.shape)
+    except AttributeError:
+        # Handle list
+        xvals = np.array(xvals)
+        xdim = len(xvals.shape)
+        # Handle single value
+        if xdim == 0:
+            xvals = np.array([xvals])
+            xdim = len(xvals.shape)
+
     if xdim>1:
         raise ValueError('xvals can only have 1 dimension. Found {} dimensions.'.format(xdim))
 
