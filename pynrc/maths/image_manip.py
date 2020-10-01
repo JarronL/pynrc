@@ -31,7 +31,7 @@ def pad_or_cut_to_size(array, new_shape, fill_val=0.0):
     ----------
     array : ndarray
         A 1D or 2D array representing some image
-    padded_shape :  tuple of 2 elements
+    new_shape :  tuple of 2 elements
         Desired size for the output array. For 2D case, if a single value, 
         then will create a 2-element tuple of the same value.
     fill_val : scalar, optional
@@ -50,11 +50,11 @@ def pad_or_cut_to_size(array, new_shape, fill_val=0.0):
 
     ndim = len(array.shape)
     if ndim == 1:
-        is_1d = True
+        # is_1d = True
         # Reshape array to a 2D array with nx=1
         array = array.reshape((-1,1))
         ny, nx = array.shape
-        if isinstance(new_shape, float) or isinstance(new_shape, int):
+        if isinstance(new_shape, (float,int,np.int,np.int64)):
             ny_new = int(new_shape+0.5)
             nx_new = 1
             new_shape = (ny_new, nx_new)
@@ -66,9 +66,9 @@ def pad_or_cut_to_size(array, new_shape, fill_val=0.0):
             nx_new = new_shape[1]
         output = np.zeros(shape=new_shape, dtype=array.dtype)
     elif ndim == 2:	
-        is_1d = False
+        # is_1d = False
         ny, nx = array.shape
-        if isinstance(new_shape, float) or isinstance(new_shape, int):
+        if isinstance(new_shape, (float,int,np.int,np.int64)):
             ny_new = nx_new = int(new_shape+0.5)
             new_shape = (ny_new, nx_new)
         elif len(new_shape) < 2:
@@ -82,8 +82,9 @@ def pad_or_cut_to_size(array, new_shape, fill_val=0.0):
         raise ValueError('Input image can only have 1 or 2 dimensions. \
                           Found {} dimensions.'.format(ndim))
                       
-    # Input the fill values    
-    output += fill_val
+    # Input the fill values
+    if fill_val != 0:
+        output += fill_val
 
     if nx_new>nx:
         n0 = (nx_new - nx) / 2
@@ -382,7 +383,7 @@ def align_LSQ(reference, target, mask=None, pad=False,
     #out,_ = leastsq(shift_subtract, init_pars, 
     #                args=(reference,target,mask,pad,shift_function))
 
-    results = [out[0],out[1],out[2]] #x,y,beta
+    #results = [out[0],out[1],out[2]] #x,y,beta
     return res.x
 
 
