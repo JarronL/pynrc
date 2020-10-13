@@ -78,6 +78,7 @@ class nircam_dark(object):
         self._ktc_noise = None
         self._cds_act_dict = None
         self._cds_ref_dict = None
+        self._eff_noise_dict = None
         self._pow_spec_dict = None
 
         # Reference pixel properties
@@ -203,6 +204,9 @@ class nircam_dark(object):
     def cds_ref_dict(self):
         return self._cds_ref_dict
     @property
+    def eff_noise_dict(self):
+        return self._eff_noise_dict
+    @property
     def pow_spec_dict(self):
         return self._pow_spec_dict
 
@@ -236,21 +240,24 @@ class nircam_dark(object):
             'allfiles' : allfiles,
             'outdir'   : outdir,
             'figdir'   : figdir,
-            'super_bias_dir'     : super_bias_dir,
-            'super_dark_dir'     : super_dark_dir,
-            'super_bias_init'    : super_bias_dir + f'SUPER_BIAS_INIT_{scaid}.FITS',
-            'super_bias'         : super_bias_dir + f'SUPER_BIAS_{scaid}.FITS',
-            'super_dark_ramp'    : super_dark_dir + f'SUPER_DARK_RAMP_{scaid}.FITS',
-            'super_dark'         : super_dark_dir + f'SUPER_DARK_{scaid}.FITS',
-            'pixel_masks'        : super_dark_dir + f'PIXEL_MASKS_{scaid}.FITS.gz',
-            'column_variations'  : super_dark_dir + f'SUPER_DARK_COLVAR_{scaid}.FITS',
-            'ref_pix_variations' : super_bias_dir + f'BIAS_BEHAVIOR_{scaid}.JSON',
-            'cds_act_dict'       : super_dark_dir + f'CDS_NOISE_ACTIVE_{scaid}.JSON',
-            'cds_ref_dict'       : super_dark_dir + f'CDS_NOISE_REF_{scaid}.JSON',
-            'power_spec_cds'     : power_spec_dir + f'POWER_SPEC_CDS_{scaid}.npy',
-            'power_spec_full'    : power_spec_dir + f'POWER_SPEC_FULL_{scaid}.npy',
-            'power_spec_cds_oh'  : power_spec_dir + f'POWER_SPEC_CDS_OH_{scaid}.npy',
-            'power_spec_full_oh' : power_spec_dir + f'POWER_SPEC_FULL_OH_{scaid}.npy',
+            'super_bias_dir'      : super_bias_dir,
+            'super_dark_dir'      : super_dark_dir,
+            'super_bias_init'     : super_bias_dir + f'SUPER_BIAS_INIT_{scaid}.FITS',
+            'super_bias'          : super_bias_dir + f'SUPER_BIAS_{scaid}.FITS',
+            'super_dark_ramp'     : super_dark_dir + f'SUPER_DARK_RAMP_{scaid}.FITS',
+            'super_dark'          : super_dark_dir + f'SUPER_DARK_{scaid}.FITS',
+            'kernel_ipc'          : super_dark_dir + f'KERNEL_IPC_{scaid}.FITS',
+            'kernel_ppc'          : super_dark_dir + f'KERNEL_PPC_{scaid}.FITS',
+            'pixel_masks'         : super_dark_dir + f'PIXEL_MASKS_{scaid}.FITS.gz',
+            'column_variations'   : super_dark_dir + f'SUPER_DARK_COLVAR_{scaid}.FITS',
+            'ref_pix_variations'  : super_bias_dir + f'BIAS_BEHAVIOR_{scaid}.JSON',
+            'cds_act_dict'        : super_dark_dir + f'CDS_NOISE_ACTIVE_{scaid}.JSON',
+            'cds_ref_dict'        : super_dark_dir + f'CDS_NOISE_REF_{scaid}.JSON',
+            'eff_noise_dict'      : super_dark_dir + f'EFF_NOISE_{scaid}.JSON',
+            'power_spec_cds'      : power_spec_dir + f'POWER_SPEC_CDS_{scaid}.npy',
+            'power_spec_full'     : power_spec_dir + f'POWER_SPEC_FULL_{scaid}.npy',
+            'power_spec_cds_oh'   : power_spec_dir + f'POWER_SPEC_CDS_OH_{scaid}.npy',
+            'power_spec_full_oh'  : power_spec_dir + f'POWER_SPEC_FULL_OH_{scaid}.npy',
             'power_spec_cds_pix'  : power_spec_dir + f'POWER_SPEC_CDS_PIX_{scaid}.npy',
             'power_spec_full_pix' : power_spec_dir + f'POWER_SPEC_FULL_PIX_{scaid}.npy',
         }
@@ -314,7 +321,7 @@ class nircam_dark(object):
 
     def get_super_bias_init(self, deg=1, nsplit=2, force=False, **kwargs):
 
-        _log.info("Generating inital super bias")
+        _log.info("Generating initial super bias")
 
         allfiles = self.allfiles
 
@@ -345,12 +352,28 @@ class nircam_dark(object):
         self._super_bias = super_bias
         self._super_bias_sig = super_bias_sig
 
+    def get_super_bias_update(self, force=False, **kwargs):
+        # Make sure initial super bias exists
+        if (self._super_bias is None) or (self._super_bias_sig is None):
+            self.get_super_bias_init(**kwargs)
+
+        # File names
+        fname = self.paths_dict['super_bias']
+        file_exists = os.path.isfile(fname)
+        if file_exists and (not force):
+            # Grab updated Super Bias
+            _log.info("Opening updated super bias")
+            self._super_bias = get_fits_data(fname)
+        else:
+            # Generate Super Bias along with dark ramp and pixel masks
+            self.get_super_dark_ramp(force=force, **kwargs)
+
     def get_super_dark_ramp(self, force=False, **kwargs):
         """Create or read super dark ramp"""
 
         # Make sure initial super bias exists
         if (self._super_bias is None) or (self._super_bias_sig is None):
-            self.get_super_bias_init()
+            self.get_super_bias_init(**kwargs)
 
         _log.info("Creating super dark ramp cube, updated super bias, and pixel mask info")
 
@@ -422,9 +445,6 @@ class nircam_dark(object):
     def get_dark_slope_image(self, deg=1, force=False):
         """ Calculate dark slope image"""
 
-        if self._super_dark_ramp is None:
-            self.get_super_dark_ramp()
-
         _log.info('Calculating dark slope image...')
         fname = self.paths_dict['super_dark']
 
@@ -433,6 +453,8 @@ class nircam_dark(object):
             # Grab Super Dark
             super_dark = get_fits_data(fname)
         else:
+            if self._super_dark_ramp is None:
+                self.get_super_dark_ramp()
             # Get dark slope image
             cf = jl_poly_fit(self.time_arr, self.super_dark_ramp, deg=deg)
             super_dark = cf[1]
@@ -447,7 +469,9 @@ class nircam_dark(object):
         """Get average pixel ramp"""
 
         if self._super_dark_ramp is None:
-            self.get_super_dark_ramp()
+            _log.error("`super_dark_ramp` is not defined. Please run get_super_dark_ramp().")
+            return
+            # self.get_super_dark_ramp()
 
         _log.info('Calculating average pixel ramps...')
 
@@ -479,54 +503,92 @@ class nircam_dark(object):
         else:
             _log.info("Calculating IPC kernels...")
 
-        dark_ramp = self.super_dark_ramp[1:] - self.super_dark_ramp[0]
+        fname_ipc = self.paths_dict['kernel_ipc']
+        fname_ppc = self.paths_dict['kernel_ppc']
 
-        # Subtract away averaged spatial background from each frame
-        dark_med = ndimage.median_filter(self.super_dark, 7)
-        tarr = self.time_arr[1:] - self.time_arr[0]
-        for i, im in enumerate(dark_ramp):
-            im -= dark_med*tarr[i]
-            
-        nchan = self.nchan
-        chsize = self.chsize
+        gen_vals = False
+        if os.path.isfile(fname_ipc):
+            k_ipc, k_ipc_sig = get_fits_data(fname_ipc)
+        else:
+            gen_vals = True
 
-        ssd = self.det.same_scan_direction
-        rsd = self.det.reverse_scan_direction
+        if calc_ppc:
+            if os.path.isfile(fname_ppc):
+                k_ppc, k_ppc_sig = get_fits_data(fname_ppc)
+            else:
+                gen_vals = True
+        
+        # Do we need to generate IPC/PPC values?
+        if gen_vals:
+            if self.super_dark_ramp is None:
+                _log.error("`super_dark_ramp` is not defined. Please run get_super_dark_ramp().")
+                return
 
-        # Set the average of each channel in each image to 0
-        for ch in np.arange(nchan):
-            x1 = int(ch*chsize)
-            x2 = int(x1 + chsize)
+            dark_ramp = self.super_dark_ramp[1:] - self.super_dark_ramp[0]
 
-            dark_ramp_ch = dark_ramp[:,:,x1:x2]
-            dark_ramp_ch = dark_ramp_ch.reshape([dark_ramp.shape[0],-1])
-            chmed_arr = np.median(dark_ramp_ch, axis=1)
-            dark_ramp[:,:,x1:x2] -= chmed_arr.reshape([-1,1,1])
+            # Subtract away averaged spatial background from each frame
+            dark_med = ndimage.median_filter(self.super_dark, 7)
+            tarr = self.time_arr[1:] - self.time_arr[0]
+            for i, im in enumerate(dark_ramp):
+                im -= dark_med*tarr[i]
+                
+            nchan = self.nchan
+            chsize = self.chsize
 
-        k_ipc_arr = []
-        k_ppc_arr = []
-        for im in dark_ramp[::4]:
-            diff = dark_ramp[-1] - im
-            res = get_ipc_kernel(diff, bg_remove=False, boxsize=5, calc_ppc=calc_ppc,
-                                 same_scan_direction=ssd, reverse_scan_direction=rsd,
-                                 suppress_error_msg=True)
-            if res is not None:
-                if calc_ppc:
-                    k_ipc, k_ppc = res
-                    k_ppc_arr.append(k_ppc)
-                else:
-                    k_ipc = res
-                k_ipc_arr.append(k_ipc)
-            
-        # Average IPC values
-        k_ipc_arr = np.array(k_ipc_arr)
-        k_ipc = robust.mean(k_ipc_arr, axis=0)
-        k_ipc_sig = robust.std(k_ipc_arr, axis=0)
-            
-        # Ensure kernels are normalized to 1
-        ipc_norm = k_ipc.sum()
-        k_ipc /= ipc_norm
-        k_ipc_sig /= ipc_norm
+            ssd = self.det.same_scan_direction
+            rsd = self.det.reverse_scan_direction
+
+            # Set the average of each channel in each image to 0
+            for ch in np.arange(nchan):
+                x1 = int(ch*chsize)
+                x2 = int(x1 + chsize)
+
+                dark_ramp_ch = dark_ramp[:,:,x1:x2]
+                dark_ramp_ch = dark_ramp_ch.reshape([dark_ramp.shape[0],-1])
+                chmed_arr = np.median(dark_ramp_ch, axis=1)
+                dark_ramp[:,:,x1:x2] -= chmed_arr.reshape([-1,1,1])
+
+            k_ipc_arr = []
+            k_ppc_arr = []
+            for im in dark_ramp[::4]:
+                diff = dark_ramp[-1] - im
+                res = get_ipc_kernel(diff, bg_remove=False, boxsize=5, calc_ppc=calc_ppc,
+                                    same_scan_direction=ssd, reverse_scan_direction=rsd,
+                                    suppress_error_msg=True)
+                if res is not None:
+                    if calc_ppc:
+                        k_ipc, k_ppc = res
+                        k_ppc_arr.append(k_ppc)
+                    else:
+                        k_ipc = res
+                    k_ipc_arr.append(k_ipc)
+                
+            # Average IPC values
+            k_ipc_arr = np.array(k_ipc_arr)
+            k_ipc = robust.mean(k_ipc_arr, axis=0)
+            k_ipc_sig = robust.std(k_ipc_arr, axis=0)
+                
+            # Ensure kernels are normalized to 1
+            ipc_norm = k_ipc.sum()
+            k_ipc /= ipc_norm
+            k_ipc_sig /= ipc_norm
+
+            # Save IPC kernel to file
+            hdu = fits.PrimaryHDU(np.array([k_ipc, k_ipc_sig]))
+            hdu.writeto(fname_ipc, overwrite=True)
+
+            # PPC values
+            if calc_ppc:
+                k_ppc_arr = np.array(k_ppc_arr)
+                k_ppc = robust.mean(k_ppc_arr, axis=0)
+                k_ppc_sig = np.std(k_ppc_arr, axis=0)
+                ppc_norm = k_ppc.sum()
+                k_ppc /= ppc_norm
+                k_ppc_sig /= ppc_norm
+
+                # Save IPC kernel to file
+                hdu = fits.PrimaryHDU(np.array([k_ppc, k_ppc_sig]))
+                hdu.writeto(fname_ppc, overwrite=True)
 
         # Store kernel information
         self._kernel_ipc = k_ipc
@@ -534,23 +596,15 @@ class nircam_dark(object):
         
         alpha = k_ipc[1,2]
         alpha_sig = k_ipc_sig[1,2]
-        
         _log.info('  IPC = {:.3f}% +/- {:.3f}%'.format(alpha*100, alpha_sig*100))
 
         # PPC values
         if calc_ppc:
-            k_ppc_arr = np.array(k_ppc_arr)
-            k_ppc = robust.mean(k_ppc_arr, axis=0)
-            k_ppc_sig = np.std(k_ppc_arr, axis=0)
-            ppc_norm = k_ppc.sum()
-            k_ppc /= ppc_norm
-            k_ppc_sig /= ppc_norm
-            ppc = k_ppc[1,2]
-            ppc_sig = k_ppc_sig[1,2]
-            
             self._kernel_ppc = k_ppc
             self._kernel_ppc_sig = k_ppc_sig
-        
+
+            ppc = k_ppc[1,2]
+            ppc_sig = k_ppc_sig[1,2]
             _log.info('  PPC = {:.3f}% +/- {:.3f}%'.format(ppc*100, ppc_sig*100))
 
     def get_ktc_noise(self, **kwargs):
@@ -569,8 +623,9 @@ class nircam_dark(object):
         """
 
         if self._super_bias_sig is None:
-            _log.error('Sigma image for super bias does not exist.')
-            return
+            # Make sure super bias sigma exists
+            _log.info('Obtaining sigma image for super bias...')
+            self.get_super_bias_init()
 
         _log.info("Calculating kTC Noise for active and reference pixels...")
 
@@ -642,13 +697,127 @@ class nircam_dark(object):
         self._cds_act_dict = cds_act_dict
         self._cds_ref_dict = cds_ref_dict
 
+    def get_effective_noise(self, ideal_Poisson=False, force=False):
+        "Calculate effective noise curves for each readout pattern"
+        
+        outname = self.paths_dict['eff_noise_dict']
+
+        allfiles = self.allfiles
+        superbias = self.super_bias
+
+        det = self.det
+
+        nchan = det.nout
+        gain = det.gain
+
+        patterns = list(det.multiaccum._pattern_settings.keys())
+
+        if os.path.exists(outname) and (not force):
+            # Load from JSON files
+            with open(outname, 'r') as fp:
+                dtemp = json.load(fp)
+
+            # Convert to arrays
+            for k in dtemp.keys():
+                d2 = dtemp[k]
+                out_list = [np.array(d2[patt]) for patt in patterns]
+                dtemp[k] = out_list
+
+            ng_all_list  = dtemp['ng_all_list']
+            en_spat_list = dtemp['en_spat_list']
+
+        else:
+            ng_all_list = []
+            en_spat_list = []
+            #en_temp_list = []
+            for patt in tqdm(patterns, leave=False):
+                res = calc_eff_noise(allfiles, superbias=superbias, read_pattern=patt, temporal=False)
+                # ng_all, eff_noise_temp, eff_noise_spa = res
+                ng_all, eff_noise_spat = res
+                
+                # List of ngroups arrays
+                ng_all_list.append(ng_all)
+                en_spat_list.append(eff_noise_spat)
+                #en_temp_list.append(eff_noise_temp)
+
+            # Place variables into dictionary for saving to disk
+            dtemp = {'ng_all_list' : ng_all_list, 'en_spat_list' : en_spat_list}
+
+            # Make sure everything are in list format
+            for k in dtemp.keys():
+                arr = dtemp[k]
+                d2 = {}
+                for i, patt in enumerate(patterns):
+                    d2[patt] = arr[i].tolist()
+                dtemp[k] = d2
+
+            # Save to a JSON file
+            with open(outname, 'w') as fp:
+                json.dump(dtemp, fp, sort_keys=False, indent=4)
+            
+        # tvals_all = []
+        tarr_all = []
+        for i, patt in enumerate(patterns):
+            det_new = deepcopy(det)
+            ma_new = det_new.multiaccum
+            ma_new.read_mode = patt
+            # ma_new.ngroup = int((det.multiaccum.ngroup - ma_new.nd1 + ma_new.nd2) / (ma_new.nf + ma_new.nd2))
+            # tvals_all.append(det_new.times_group_avg)
+            # Times associated with each calcualted group
+            ng_all = ng_all_list[i]
+            tarr_all.append((ng_all-1)*det_new.time_group)
+
+        # Determine excess variance parameters
+        from scipy.optimize import least_squares#, leastsq
+
+        en_dn_list = []
+        for i in range(len(patterns)):
+            # Average spatial and temporal values
+        #     var_avg_ch = (en_spat_list[i]**2 + en_temp_list[i]**2) / 2
+        #     var_avg_ch = en_temp_list[i]**2
+            var_avg_ch = en_spat_list[i]**2
+            en_dn_list.append(np.sqrt(var_avg_ch[0:nchan].mean(axis=0)))
+
+        # Average dark current (e-/sec)
+        if self.dark_ramp_dict is None:
+            idark_avg = det.dark_current
+        else:
+            idark = []
+            tarr = self.time_arr
+            for ch in np.arange(nchan):
+                y = self.dark_ramp_dict['ramp_avg_ch'][ch]
+                cf = jl_poly_fit(tarr, y, deg=1)
+                idark.append(cf[1])
+            idark = np.array(idark) * gain
+            idark_avg = np.mean(idark)
+            
+        # Average read noise per frame (e-)
+        cds_var = (en_dn_list[0][0] * det.time_group * gain)**2 - (idark_avg * det.time_group)
+        read_noise = np.sqrt(cds_var / 2)
+
+        p0 = [1.5,10]
+        args=(det, patterns, ng_all_list, en_dn_list)
+        kwargs = {'idark':idark_avg, 'read_noise':read_noise, 'ideal_Poisson':ideal_Poisson}
+        res_lsq = least_squares(fit_func_var_ex, p0, args=args, kwargs=kwargs)
+        p_excess = res_lsq.x
+        _log.info("  Best fit excess variance model parameters: {}".format(p_excess))
+
+        self._eff_noise_dict = {
+            'patterns'      : patterns,     # Readout patterns
+            'ng_all_list'   : ng_all_list,  # List of groups fit
+            'tarr_all_list' : tarr_all,     # Associated time values
+            'en_spat_list'  : en_spat_list, # Effective noise per channel (spatial)
+            'p_excess'      : p_excess      # Excess variance model parameters (best fit)
+        }
+
+
     def calc_cds_noise(self, cds_type='spatial', temperature=None, temp_key='T_FPA1'):
         """ Return CDS Noise components for each channel
         
         Parameters
         ----------
         cds_type : str
-            Return 'spatial', 'temporal', or 'average noise values?
+            Return 'spatial', 'temporal', or 'average' noise values?
         temperature : float or None
             Option to supply temperature at which to interpolate. If None is
             provided, then returns the median of all noise values.
@@ -690,7 +859,7 @@ class nircam_dark(object):
         else:
             cds_type_list = ['spat', 'temp']
 
-        cds_tot = cds_det = 0
+        cds_tot = cds_white = 0
         cds_pink_uncorr = cds_pink_corr = 0
         ref_ratio_all = 0
         for ct in cds_type_list:
@@ -702,12 +871,12 @@ class nircam_dark(object):
             else:
                 cds_tot += cds_fit(temperature, temp_arr, d_act[cds_key])
 
-            # Detector noise per channel
-            cds_key = f'{ct}_det'
+            # White noise per channel
+            cds_key = f'{ct}_white'
             if temperature is None:
-                cds_det += np.median(d_act[cds_key], axis=0)
+                cds_white += np.median(d_act[cds_key], axis=0)
             else:
-                cds_det += cds_fit(temperature, temp_arr, d_act[cds_key])
+                cds_white += cds_fit(temperature, temp_arr, d_act[cds_key])
 
             # 1/f noise per channel
             cds_key = f'{ct}_pink_uncorr'
@@ -717,7 +886,7 @@ class nircam_dark(object):
             cds_pink_corr += np.median(d_act[cds_key])
 
             # Reference pixel noise ratio
-            cds_key = f'{ct}_det' # or f'{cds_type}_tot'?
+            cds_key = f'{ct}_white' # or f'{cds_type}_tot'?
             ref_ratio_all += (d_ref[cds_key] / d_act[cds_key])
 
         ref_ratio = np.mean(ref_ratio_all)
@@ -725,8 +894,8 @@ class nircam_dark(object):
         # Scale by number of modes included
         ntype = len(cds_type_list)
         cds_dict = {
-            'tot' : cds_tot / ntype,
-            'det' : cds_det / ntype,
+            'tot'   : cds_tot / ntype,
+            'white' : cds_white / ntype,
             'pink_uncorr' : cds_pink_uncorr / ntype,
             'pink_corr'   : cds_pink_corr / ntype,
             'ref_ratio'   : ref_ratio / ntype
@@ -903,17 +1072,20 @@ class nircam_dark(object):
 
             self._pow_spec_dict['ps_corr_scale'] = scales
 
-
-
     def deconvolve_supers(self):
         """
         Deconvolve the super dark and super bias images
         """
 
+        k_ppc = self.kernel_ppc
+        k_ipc = self.kernel_ipc
+        if (k_ppc is None) and (k_ipc is None):
+            _log.error("Neither IPC or PPC kernels are defined")
+            return
+
         _log.info("Deconvolving super dark and super bias images...")
 
         # PPC Deconvolution
-        k_ppc = self.kernel_ppc
         if k_ppc is not None:
             ssd = self.det.same_scan_direction
             rsd = self.det.reverse_scan_direction
@@ -925,9 +1097,9 @@ class nircam_dark(object):
                                                reverse_scan_direction=rsd)
 
         # IPC Deconvolution
-        k_ipc = self.kernel_ipc
-        super_dark_deconv = ipc_deconvolve(super_dark_deconv, k_ipc)
-        super_bias_deconv = ipc_deconvolve(super_bias_deconv, k_ipc)
+        if k_ipc is not None:
+            super_dark_deconv = ipc_deconvolve(super_dark_deconv, k_ipc)
+            super_bias_deconv = ipc_deconvolve(super_bias_deconv, k_ipc)
 
         self._super_dark_deconv = super_dark_deconv
         self._super_bias_deconv = super_bias_deconv
@@ -1417,7 +1589,7 @@ class nircam_dark(object):
             title_str = f"{type_str} Total Noise"
             ax.set_title(title_str)
         
-        # 2. Detector Noise
+        # 2. White Noise
         k1, k2 = ('spat_det', 'temp_det')
         cmap = plt.get_cmap('tab20')
         tplot = np.array([temp_arr.min(), temp_arr.max()])
@@ -1435,7 +1607,7 @@ class nircam_dark(object):
                     ax.plot(tplot, jl_poly(tplot, cf), lw=1, ls='--', color=cmap(ch*2+j))
                         
             type_str = "Spatial" if 'spat' in k else "Temporal"
-            title_str = f"{type_str} Detector Noise"
+            title_str = f"{type_str} White Noise"
             ax.set_title(title_str)
     
         # 3. Pink Noise
@@ -1478,6 +1650,186 @@ class nircam_dark(object):
 
         if return_figax:
             return fig, axes
+
+    def plot_eff_noise(self, ideal_Poisson=False, save=False, return_figax=False):
+        """Plot effective noise of slope fits"""
+
+        det = self.det
+        gain = det.gain
+        nchan = det.nout
+
+        # Average dark current (e-/sec)
+        if self.dark_ramp_dict is None:
+            idark = np.ones(nchan) * det.dark_current   # e-/sec
+        else:
+            idark = []
+            tarr = self.time_arr
+            for ch in np.arange(nchan):
+                y = self.dark_ramp_dict['ramp_avg_ch'][ch]
+                cf = jl_poly_fit(tarr, y, deg=1)
+                idark.append(cf[1])
+            idark = np.array(idark) * gain   # e-/sec
+
+        eff_noise_dnsec = self.eff_noise_dict['en_spat_list'][0]
+        # Average read noise per frame (e-)
+        cds_var = (eff_noise_dnsec[0:nchan,0] * det.time_group * gain)**2 - (idark * det.time_group)
+        read_noise = np.sqrt(cds_var / 2) # e-
+        read_noise_ref = eff_noise_dnsec[-1,0] * det.time_group * gain / np.sqrt(2)
+
+        ng_all = self.eff_noise_dict['ng_all_list'][0]
+        tvals = self.eff_noise_dict['tarr_all_list'][0]
+        p_excess = self.eff_noise_dict['p_excess']
+
+        colarr = ['C0', 'C1', 'C2', 'C3', 'C4']
+        fig, axes = plt.subplots(1,2, figsize=(14,4.5))
+
+        ax = axes[0]
+
+        # Measured Values
+        xvals = tvals
+        yvals = eff_noise_dnsec
+        for ch in range(nchan):
+            axes[0].plot(xvals, yvals[ch]*tvals, marker='o', label=f'Ch{ch} - Meas', color=colarr[ch])
+            axes[1].semilogy(xvals, yvals[ch], marker='o', label=f'Ch{ch} - Meas', color=colarr[ch])
+        ch = -1
+        axes[0].plot(xvals, yvals[ch]*tvals, marker='o', label='Ref - Meas', color=colarr[ch])
+        axes[1].plot(xvals, yvals[ch], marker='o', label='Ref - Meas', color=colarr[ch])
+
+        # Theoretical Values
+        xvals = tvals
+        for ch in range(nchan):
+            thr_e = det.pixel_noise(ng=ng_all, rn=read_noise[ch], idark=idark[ch], 
+                                        ideal_Poisson=ideal_Poisson, p_excess=p_excess)
+            yvals2 = (thr_e * tvals) / gain
+            axes[0].plot(xvals, yvals2,  color=colarr[ch], lw=10, alpha=0.3, label=f'Ch{ch} - Theory')
+            axes[1].plot(xvals, yvals2/tvals,  color=colarr[ch], lw=10, alpha=0.3, label=f'Ch{ch} - Theory')
+        ch = -1
+        thr_e = det.pixel_noise(ng=ng_all, rn=read_noise_ref, idark=0, p_excess=[0,0])
+        yvals2 = (thr_e * tvals) / gain
+        axes[0].plot(xvals, yvals2,  color=colarr[ch], lw=10, alpha=0.3, label=f'Ref - Theory')
+        axes[1].plot(xvals, yvals2/tvals,  color=colarr[ch], lw=10, alpha=0.3, label=f'Ref - Theory')
+
+        ax = axes[0]
+        ax.set_ylim([0,ax.get_ylim()[1]])
+        axes[0].set_ylabel('Effective Noise (DN)')
+        axes[1].set_ylabel('Slope Noise (DN/sec)')
+        for ax in axes:
+            ax.set_xlabel('Time (sec)')
+        #ax.set_title(f'Effective Noise (SCA {self.scaid})')
+
+        axes[0].legend(ncol=2)
+
+        fig.suptitle(f"Noise of Slope Fits (SCA {self.scaid})", fontsize=16)
+
+        fig.tight_layout()
+        fig.subplots_adjust(top=0.9)
+
+        if save:
+            fname = f'{self.scaid}_eff_noise.pdf'
+            save_name = os.path.join(self.paths_dict['figdir'], fname)
+            _log.info(f"Saving to {save_name}")
+            fig.savefig(save_name)
+
+        if return_figax:
+            return fig, axes
+
+
+    def plot_eff_noise_patterns(self, ideal_Poisson=False, save=False, return_figax=False):
+        """Plot effective noise of slope fits for variety of read patterns"""
+
+        det = self.det
+        gain = det.gain
+        nchan = det.nout
+        patterns = list(det.multiaccum._pattern_settings.keys())
+
+        en_spat_list = self.eff_noise_dict['en_spat_list']
+        en_dn_list = []
+        for i in range(len(patterns)):
+            # Average spatial and temporal values
+            var_avg_ch = en_spat_list[i]**2
+            en_dn_list.append(np.sqrt(var_avg_ch[0:nchan].mean(axis=0)))
+
+        tarr_all = self.eff_noise_dict['tarr_all_list']
+        ng_all_list = self.eff_noise_dict['ng_all_list']
+        p_excess = self.eff_noise_dict['p_excess']
+
+        # Average dark current (e-/sec)
+        if self.dark_ramp_dict is None:
+            idark_avg = det.dark_current
+        else:
+            idark = []
+            tarr = self.time_arr
+            for ch in np.arange(nchan):
+                y = self.dark_ramp_dict['ramp_avg_ch'][ch]
+                cf = jl_poly_fit(tarr, y, deg=1)
+                idark.append(cf[1])
+            idark = np.array(idark) * gain
+            idark_avg = np.mean(idark)
+
+        # Average read noise per frame (e-)
+        cds_var = (en_dn_list[0][0] * det.time_group * gain)**2 - (idark_avg * det.time_group)
+        read_noise = np.sqrt(cds_var / 2)
+
+        fig, axes = plt.subplots(3,3, figsize=(14,9), sharey=True)
+        axes = axes.flatten()
+
+        for i, ax in enumerate(axes):
+            tvals = tarr_all[i]
+            yvals = (en_dn_list[i] * tvals)
+
+            xvals = tvals
+            ax.plot(xvals, yvals, marker='o', label='Measured')
+            
+            det_new = deepcopy(det)
+            ma_new = det_new.multiaccum
+            ma_new.read_mode = patterns[i]
+
+            ng_all = ng_all_list[i]
+            thr_e = det_new.pixel_noise(ng=ng_all, rn=read_noise, idark=idark_avg, 
+                                        ideal_Poisson=ideal_Poisson, p_excess=[0,0])
+            
+            yvals = (thr_e * tvals) / gain
+            ax.plot(xvals, yvals, color='C1', label='Theory')
+
+            tvals = tarr_all[i]
+            ng_all = ng_all_list[i]
+            thr_e = det_new.pixel_noise(ng=ng_all, rn=read_noise, idark=idark_avg, 
+                                        ideal_Poisson=ideal_Poisson, p_excess=p_excess)
+            
+            yvals = (thr_e * tvals) / gain
+            ax.plot(xvals, yvals, marker='.', color='C1', ls='--', label='Theory + Excess')
+
+        for i, ax in enumerate(axes):
+            if i==0:
+                xr = [ax.get_xlim()[0],1200]
+                ymax = 5*(int(ax.get_ylim()[1] / 5) + 1)
+                yr = [0,ymax]
+                
+            ax.set_xlim(xr)
+            ax.set_ylim(yr)
+            ax.set_title(patterns[i])
+            
+            if i>5:
+                ax.set_xlabel('Time (sec)')
+            if np.mod(i,3) == 0:
+                ax.set_ylabel('Noise (DN)')
+            
+        # Legend on first plot
+        axes[0].legend()
+
+        fig.suptitle(f'Noise of Slope Fits (SCA {self.scaid})', fontsize=16)
+        fig.tight_layout()
+        fig.subplots_adjust(top=0.9, wspace=0.03)
+
+        if save:
+            fname = f'{self.scaid}_eff_noise_patterns.pdf'
+            save_name = os.path.join(self.paths_dict['figdir'], fname)
+            _log.info(f"Saving to {save_name}")
+            fig.savefig(save_name)
+
+        if return_figax:
+            return fig, axes
+
 
     def plot_power_spectrum(self, save=False, cds=True, return_figax=False):
 
@@ -2683,20 +3035,20 @@ def ramp_resample(data, det_new, return_zero_frame=False):
     nd1     = ma.nd1
     nd2     = ma.nd2
     nf      = ma.nf
-    ngroup  = ma.ngroup
+    ngroup  = ma.ngroup        
 
     # Number of total frames up the ramp (including drops)
     # Keep last nd2 for reshaping
     nread_tot = nd1 + ngroup*nf + (ngroup-1)*nd2
     
-    assert nread_tot <= nz, f"Output ramp has more total read frames ({nread_tot}) than output ({nz})."
+    assert nread_tot <= nz, f"Output ramp has more total read frames ({nread_tot}) than input ({nz})."
 
     # Crop dataset
     data_out = data[0:nread_tot, y1:y2, x1:x2]
 
     # Save the first frame (so-called ZERO frame) for the zero frame extension
     if return_zero_frame:
-        zeroData = deepcopy(data_out[0,:,:])
+        zeroData = deepcopy(data_out[0])
         
     # Remove drops and average grouped data
     if nf>1 or nd2>0:
@@ -2763,7 +3115,10 @@ def calc_eff_noise(allfiles, superbias=None, temporal=True, spatial=True,
         Reformulate data as if it were acquired using a read pattern
         other than RAPID.
     """
-    
+
+    log_prev = pynrc.conf.logging_level
+    pynrc.setup_logging('WARNING', verbose=False)
+
     hdr = fits.getheader(allfiles[0])
     det = create_detops(hdr, DMS=DMS)
     
@@ -2783,10 +3138,15 @@ def calc_eff_noise(allfiles, superbias=None, temporal=True, spatial=True,
         
     if 'RAPID' not in read_pattern:
         det_new = deepcopy(det)
-        det_new.multiaccum.read_mode = read_pattern
-        nz = det_new.multiaccum.ngroup
+        ma_new = det_new.multiaccum
+        # Change read mode and determine max number of allowed groups
+        ma_new.read_mode = read_pattern
+        ma_new.ngroup = int((det.multiaccum.ngroup - ma_new.nd1 + ma_new.nd2) / (ma_new.nf + ma_new.nd2))
+
+        nz = ma_new.ngroup
         # Group time
-        tarr = np.arange(1, nz+1) * det_new.time_group
+        # tarr = np.arange(1, nz+1) * det_new.time_group + (ma_new.nd1 - ma_new.nd2 - ma_new.nf/2)*det_new.time_frame
+        tarr = det_new.times_group_avg
         # Select number of groups to perform linear fits
         if ng_all is None:
             if nz<20:
@@ -2804,10 +3164,11 @@ def calc_eff_noise(allfiles, superbias=None, temporal=True, spatial=True,
     # Make sure ng_all is unique
     ng_all = np.unique(ng_all)
 
+    # Do not remove 1/f noise via ref column
     if kw_ref is None:
         kw_ref = {
             'nchans': nchan, 'altcol': True, 'in_place': True,    
-            'fixcol': True, 'avg_type': 'pixel', 'savgol': True, 'perint': False    
+            'fixcol': False, 'avg_type': 'pixel', 'savgol': True, 'perint': False    
         }
         
     # IPC and PPC kernels
@@ -2829,7 +3190,7 @@ def calc_eff_noise(allfiles, superbias=None, temporal=True, spatial=True,
 
         eff_noise_temp = []
         # Work with one channel at a time for better memory management
-        for ch in trange(nchan, desc="Channels"):
+        for ch in trange(nchan, desc="Temporal", leave=False):
             ind_ch = act_mask & (ch_mask==ch)
 
             slope_chan_allfiles = []
@@ -2889,7 +3250,7 @@ def calc_eff_noise(allfiles, superbias=None, temporal=True, spatial=True,
     # Calculate effective noise spatially
     if spatial:
         eff_noise_all = []
-        for f in tqdm(allfiles, desc="Spatial"):
+        for f in tqdm(allfiles, desc="Spatial", leave=False):
             # If DMS, then might be multiple integrations per FITS file
             nint = fits.getheader(fname)['NINTS'] if DMS else 1
             for i in trange(nint, leave=False, desc='Ramps'):
@@ -2929,6 +3290,8 @@ def calc_eff_noise(allfiles, superbias=None, temporal=True, spatial=True,
 
         eff_noise_all = np.array(eff_noise_all)
         eff_noise_spat = np.median(eff_noise_all, axis=0)
+
+    pynrc.setup_logging(log_prev, verbose=False)
         
     if temporal and spatial:
         res = ng_all, eff_noise_temp, eff_noise_spat
@@ -2939,6 +3302,41 @@ def calc_eff_noise(allfiles, superbias=None, temporal=True, spatial=True,
     
     return res
 
+from pynrc.nrc_utils import var_ex_model
+def fit_func_var_ex(params, det, patterns, ng_all_list, en_dn_list, 
+    read_noise=None, idark=None, ideal_Poisson=False):
+    """Function for lsq fit to get excess variance"""
+    
+    gain = det.gain
+    if idark is None:
+        idark = det.dark_current
+    
+    # Read noise per frame
+    if read_noise is None:
+        cds_var = (en_dn_list[0][0] * det.time_group * gain)**2 - (idark * det.time_frame)
+        read_noise = np.sqrt(cds_var / 2)
+    
+    diff_all = []
+    for i, patt in enumerate(patterns):
+
+        det_new = deepcopy(det)
+        ma_new = det_new.multiaccum
+        ma_new.read_mode = patt
+        ma_new.ngroup = int((det.multiaccum.ngroup - ma_new.nd1 + ma_new.nd2) / (ma_new.nf + ma_new.nd2))
+
+        ng_all = ng_all_list[i]
+        thr_e = det_new.pixel_noise(ng=ng_all, rn=read_noise, idark=idark, 
+                                    ideal_Poisson=ideal_Poisson, p_excess=[0,0])
+        
+        tvals = (ng_all - 1) * det_new.time_group
+        var_ex_obs = (en_dn_list[i] * gain * tvals)**2 - (thr_e * tvals)**2
+
+        nf = ma_new.nf
+        var_ex_fit = var_ex_model(ng_all, nf, params)
+
+        diff_all.append(var_ex_obs - var_ex_fit)
+        
+    return np.concatenate(diff_all)
 
 def ipc_deconvolve(im, kernel, kfft=None):
     """Simple IPC image deconvolution

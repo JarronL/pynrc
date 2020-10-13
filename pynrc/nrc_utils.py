@@ -3050,7 +3050,7 @@ def sat_limit_webbpsf(filter_or_bp, pupil=None, mask=None, module='A', pix_scale
 #             'bp_lim':bp_lim.name}
 
 
-def pix_noise(ngroup=2, nf=1, nd2=0, tf=10.737, rn=15.0, ktc=29.0, p_excess=(0,0),
+def pix_noise(ngroup=2, nf=1, nd2=0, tf=10.73677, rn=15.0, ktc=29.0, p_excess=(0,0),
     fsrc=0.0, idark=0.003, fzodi=0, fbg=0, ideal_Poisson=False,
     ff_noise=False, **kwargs):
     """Noise per pixel
@@ -3067,7 +3067,7 @@ def pix_noise(ngroup=2, nf=1, nd2=0, tf=10.737, rn=15.0, ktc=29.0, p_excess=(0,0
     s : int
         Number of dropped frames in each groupl
     tf : float
-        Frame timel
+        Frame time
     rn : float
         Read Noise per pixel (e-).
     ktc : float
@@ -3166,7 +3166,8 @@ def pix_noise(ngroup=2, nf=1, nd2=0, tf=10.737, rn=15.0, ktc=29.0, p_excess=(0,0
 
     # Functional form for excess variance above theoretical
     # Empirically measured formulation
-    var_ex = 12. * (n - 1.)/(n + 1.) * p_excess[0]**2 - p_excess[1] / m**0.5
+    # var_ex = 12. * (n - 1.)/(n + 1.) * p_excess[0]**2 - p_excess[1] / m**0.5
+    var_ex = var_ex_model(n, m, p_excess)
 
     # Variance of total signal
     var_poisson = (ftot * tint) if ideal_Poisson else (var_gp - var_fm)
@@ -3191,6 +3192,8 @@ def pix_noise(ngroup=2, nf=1, nd2=0, tf=10.737, rn=15.0, ktc=29.0, p_excess=(0,0
 
     return noise
 
+def var_ex_model(ng, nf, params):
+    return 12. * (ng - 1.)/(ng + 1.) * params[0]**2 - params[1] / nf**0.5
 
 
 ###########################################################################

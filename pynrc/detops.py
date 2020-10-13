@@ -163,6 +163,7 @@ class multiaccum(object):
         ngroup = self.ngroup
 
         nframes = nd1 + ngroup*nf + (ngroup-1)*nd2 + nd3
+        return nframes
 
     @property
     def read_mode(self):
@@ -531,9 +532,9 @@ class det_timing(object):
     def time_frame(self):
         """Determine frame times based on xpix, ypix, and wind_mode."""
 
-        chsize = self.chsize                        # Number of x-pixels within a channel
-        xticks = self.chsize + self._line_overhead  # Clock ticks per line
-        flines = self.ypix + self._extra_lines      # Lines per frame
+        chsize = self.chsize                   # Number of x-pixels within a channel
+        xticks = chsize + self._line_overhead  # Clock ticks per line
+        flines = self.ypix + self._extra_lines # Lines per frame
 
         # Add a single pix offset for full frame and stripe.
         pix_offset = self._frame_overhead_pix
@@ -641,11 +642,18 @@ class det_timing(object):
     @property
     def time_total(self):
         """Total exposure acquisition time"""
-#         exp1 = 0 if self.multiaccum.nint == 0 else self.time_total_int1
-#         exp2 = 0 if self.multiaccum.nint <= 1 else self.time_total_int2 * (self.multiaccum.nint-1)
+        # exp1 = 0 if self.multiaccum.nint == 0 else self.time_total_int1
+        # exp2 = 0 if self.multiaccum.nint <= 1 else self.time_total_int2 * (self.multiaccum.nint-1)
         exp1 = self.time_total_int1
         exp2 = self.time_total_int2 * (self.multiaccum.nint-1)
         return exp1 + exp2 + self._exp_delay
+
+    @property
+    def times_group_avg(self):
+        """Times at each averaged group"""
+        ma = self.multiaccum
+        nf_avg = np.arange(ma.nf+1).sum() / ma.nf
+        return np.arange(ma.ngroup) * self.time_group + (ma.nd1 + nf_avg) * self.time_frame
 
     def to_dict(self, verbose=False):
         """Export detector settings to a dictionary."""
@@ -685,7 +693,6 @@ class det_timing(object):
             bit-shifter. Setting ``avg_groups=True`` also averages the
             pixel times in a similar manner. Default is True.
         return_flat : bool
-            
         
         Keyword Args
         ------------
@@ -1329,8 +1336,7 @@ def create_detops(header, DMS=False, read_mode=None, nint=None, ngroup=None,
 
 
     # Add MultiAccum info
-    if DMS: hnames = ['READPATT', 'NINTS', 'NGROUPS']
-    else:   hnames = ['READOUT',  'NINT',  'NGROUP']
+    hnames = ['READPATT', 'NINTS', 'NGROUPS'] if DMS else ['READOUT',  'NINT',  'NGROUP']
 
     read_mode = header[hnames[0]] if read_mode is None else read_mode
     nint      = header[hnames[1]] if nint      is None else nint
