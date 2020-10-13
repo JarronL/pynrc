@@ -25,9 +25,13 @@ import datetime, os
 from astropy.io import fits
 from astropy.table import Table
 
+# Program bar
+from tqdm.auto import trange, tqdm
+
 # HxRG Noise Generator
 from . import nghxrg as ng
 from pynrc.nrc_utils import pad_or_cut_to_size, jl_poly
+from pynrc.reduce.calib import ramp_resample
 
 #import pdb
 from copy import deepcopy
@@ -273,171 +277,254 @@ def SCAnoise(det=None, scaid=None, params=None, caldir=None, file_out=None,
 
     return hdu
 
-def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None, 
-                  filter=None, pupil=None, obs_time=None, targ_name=None,
-                  DMS=True, dark=True, bias=True, det_noise=True,
-                  return_results=True):
-    """Convert slope image to simulated ramp
+# def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None, 
+#                   filter=None, pupil=None, obs_time=None, targ_name=None,
+#                   DMS=True, dark=True, bias=True, det_noise=True,
+#                   return_results=True):
+#     """Convert slope image to simulated ramp
     
-    For a given detector operations class and slope image, create a
-    ramp integration using Poisson noise and detector noise. 
+#     For a given detector operations class and slope image, create a
+#     ramp integration using Poisson noise and detector noise. 
 
-    Currently, this image simulator does NOT take into account:
+#     Currently, this image simulator does NOT take into account:
     
-        - QE variations across a pixel's surface
-        - Intrapixel Capacitance (IPC)
-        - Post-pixel Coupling (PPC) due to ADC "smearing"
-        - Pixel non-linearity
-        - Persistence/latent image
-        - Optical distortions
-        - Zodiacal background roll off for grism edges
-        - Telescope jitter
-        - Cosmic Rays
+#         - QE variations across a pixel's surface
+#         - Intrapixel Capacitance (IPC)
+#         - Post-pixel Coupling (PPC) due to ADC "smearing"
+#         - Pixel non-linearity
+#         - Persistence/latent image
+#         - Optical distortions
+#         - Zodiacal background roll off for grism edges
+#         - Telescope jitter
+#         - Cosmic Rays
 
-    Parameters
-    ----------
-    det : object
-        Detector operations object.
-    im_slope : ndarray
-        Idealized slope image.
+#     Parameters
+#     ----------
+#     det : object
+#         Detector operations object.
+#     im_slope : ndarray
+#         Idealized slope image.
 
-    out_ADU : bool
-        If true, divide by gain and convert to 16-bit UINT.
-    file_out : str
-        Name (including directory) to save FITS file
-    filter : str
-        Name of filter element for header
-    pupil : str
-        Name of pupil element for header
-    obs_time : datetime 
-        Specifies when the observation was considered to be executed.
-        If not specified, then it will choose the current time.
-        This must be a datetime object:
+#     out_ADU : bool
+#         If true, divide by gain and convert to 16-bit UINT.
+#     file_out : str
+#         Name (including directory) to save FITS file
+#     filter : str
+#         Name of filter element for header
+#     pupil : str
+#         Name of pupil element for header
+#     obs_time : datetime 
+#         Specifies when the observation was considered to be executed.
+#         If not specified, then it will choose the current time.
+#         This must be a datetime object:
             
-            >>> datetime.datetime(2016, 5, 9, 11, 57, 5, 796686)
+#             >>> datetime.datetime(2016, 5, 9, 11, 57, 5, 796686)
             
-        This information is added to the header.
-    targ_name : str
-        Target name (optional)
-    DMS : bool
-        Package the data in the format used by DMS?
-    dark : bool
-        Include the dark current?
-    bias : bool
-        Include the bias frame?
-    det_noise: bool
-        Include detector noise components? If set to False, then only 
-        perform Poisson noise. Darks and biases are also excluded.
-    """
+#         This information is added to the header.
+#     targ_name : str
+#         Target name (optional)
+#     DMS : bool
+#         Package the data in the format used by DMS?
+#     dark : bool
+#         Include the dark current?
+#     bias : bool
+#         Include the bias frame?
+#     det_noise: bool
+#         Include detector noise components? If set to False, then only 
+#         perform Poisson noise. Darks and biases are also excluded.
+#     """
     
-    if (det_noise==False) and (im_slope is None):
-        _log.warning('No input slope image and det_noise=False. Nothing to return.')
-        return
+#     if (det_noise==False) and (im_slope is None):
+#         _log.warning('No input slope image and det_noise=False. Nothing to return.')
+#         return
 
-    #import ngNRC
-    # MULTIACCUM ramp information
-    ma  = det.multiaccum
+#     #import ngNRC
+#     # MULTIACCUM ramp information
+#     ma  = det.multiaccum
 
-    xpix = det.xpix
-    ypix = det.ypix
+#     xpix = det.xpix
+#     ypix = det.ypix
 
-    nd1     = ma.nd1
-    nd2     = ma.nd2
-    nf      = ma.nf
-    ngroup  = ma.ngroup
-    t_frame = det.time_frame
+#     nd1     = ma.nd1
+#     nd2     = ma.nd2
+#     nf      = ma.nf
+#     ngroup  = ma.ngroup
+#     t_frame = det.time_frame
 
-    # Number of total frames up the ramp (including drops)
-    naxis3 = nd1 + ngroup*nf + (ngroup-1)*nd2
+#     # Number of total frames up the ramp (including drops)
+#     naxis3 = nd1 + ngroup*nf + (ngroup-1)*nd2
 
-    if im_slope is not None:
-        # Set reference pixels' slopes equal to 0
-        w = det.ref_info
-        if w[0] > 0: # lower
-            im_slope[:w[0],:] = 0
-        if w[1] > 0: # upper
-            im_slope[-w[1]:,:] = 0
-        if w[2] > 0: # left
-            im_slope[:,:w[2]] = 0
-        if w[3] > 0: # right
-            im_slope[:,-w[3]:] = 0
+#     if im_slope is not None:
+#         # Set reference pixels' slopes equal to 0
+#         w = det.ref_info
+#         if w[0] > 0: # lower
+#             im_slope[:w[0],:] = 0
+#         if w[1] > 0: # upper
+#             im_slope[-w[1]:,:] = 0
+#         if w[2] > 0: # left
+#             im_slope[:,:w[2]] = 0
+#         if w[3] > 0: # right
+#             im_slope[:,-w[3]:] = 0
 
-        # Count accumulation for a single frame
-        frame = im_slope * t_frame
-        # Add Poisson noise at each frame step
-        sh0, sh1 = im_slope.shape
-        new_shape = (naxis3, sh0, sh1)
-        ramp = np.random.poisson(lam=frame, size=new_shape)#.astype(np.float64)
-        # Perform cumulative sum in place
-        np.cumsum(ramp, axis=0, out=ramp)
+#         # Count accumulation for a single frame
+#         frame = im_slope * t_frame
+#         # Add Poisson noise at each frame step
+#         sh0, sh1 = im_slope.shape
+#         new_shape = (naxis3, sh0, sh1)
+#         ramp = np.random.poisson(lam=frame, size=new_shape)#.astype(np.float64)
+#         # Perform cumulative sum in place
+#         np.cumsum(ramp, axis=0, out=ramp)
         
-        # Truncate anything above well level
-        well_max = det.well_level
-        ramp[ramp>well_max] = well_max
-    else:
-        ramp = 0
+#         # Truncate anything above well level
+#         well_max = det.well_level
+#         ramp[ramp>well_max] = well_max
+#     else:
+#         ramp = 0
 
-    if det_noise==False:
-        hdu = fits.PrimaryHDU(ramp)
-    else:
-        # Create dark ramp with read noise and 1/f noise
-        hdu = SCAnoise(det=det, dark=dark, bias=bias)
-        # Add signal ramp to dark ramp
-        if im_slope is not None:
-            hdu.data += ramp.reshape(hdu.data.shape) 
-    # Update header information
-    hdu.header = det.make_header(filter, pupil, obs_time, targ_name=targ_name, DMS=DMS)
-    data = hdu.data
+#     if det_noise==False:
+#         hdu = fits.PrimaryHDU(ramp)
+#     else:
+#         # Create dark ramp with read noise and 1/f noise
+#         hdu = SCAnoise(det=det, dark=dark, bias=bias)
+#         # Add signal ramp to dark ramp
+#         if im_slope is not None:
+#             hdu.data += ramp.reshape(hdu.data.shape) 
+#     # Update header information
+#     hdu.header = det.make_header(filter, pupil, obs_time, targ_name=targ_name, DMS=DMS)
+#     data = hdu.data
 
-    #### Add in IPC (TBI) ####
+#     #### Add in IPC (TBI) ####
 
-    # Get rid of any drops at the beginning (nd1)
-    if nd1>0: data = data[nd1:,:,:]
+#     # Get rid of any drops at the beginning (nd1)
+#     if nd1>0: data = data[nd1:,:,:]
 
-    # Convert to ADU (16-bit UINT)
-    if out_ADU:
-        gain = det.gain
-        data = data / gain
-        data[data < 0] = 0
-        data[data >= 2**16] = 2**16 - 1
-        data = data.astype('uint16')
-        hdu.header['UNITS'] = 'ADU'
+#     # Convert to ADU (16-bit UINT)
+#     if out_ADU:
+#         gain = det.gain
+#         data = data / gain
+#         data[data < 0] = 0
+#         data[data >= 2**16] = 2**16 - 1
+#         data = data.astype('uint16')
+#         hdu.header['UNITS'] = 'ADU'
 
-    ## Save the first frame (so-called ZERO frame) for the zero frame extension
-    zeroData = deepcopy(data[0,:,:])
+#     ## Save the first frame (so-called ZERO frame) for the zero frame extension
+#     zeroData = deepcopy(data[0,:,:])
 
-    # Remove drops and average grouped data
-    if nf>1 or nd2>0:
-        # Trailing drop frames already excluded, so need to pull off last group of avg'ed frames
-        data_end = data[-nf:,:,:].mean(axis=0) if nf>1 else data[-1:,:,:]
-        data_end = data_end.reshape([1,ypix,xpix])
+#     # Remove drops and average grouped data
+#     if nf>1 or nd2>0:
+#         # Trailing drop frames already excluded, so need to pull off last group of avg'ed frames
+#         data_end = data[-nf:,:,:].mean(axis=0) if nf>1 else data[-1:,:,:]
+#         data_end = data_end.reshape([1,ypix,xpix])
 
-        # Only care about first (n-1) groups for now
-        # Last group is handled separately
-        data = data[:-nf,:,:]
+#         # Only care about first (n-1) groups for now
+#         # Last group is handled separately
+#         data = data[:-nf,:,:]
 
-        # Reshape for easy group manipulation
-        data = data.reshape([-1,nf+nd2,ypix,xpix])
+#         # Reshape for easy group manipulation
+#         data = data.reshape([-1,nf+nd2,ypix,xpix])
 
-        # Trim off the dropped frames (nd2)
-        if nd2>0: data = data[:,:nf,:,:]
+#         # Trim off the dropped frames (nd2)
+#         if nd2>0: data = data[:,:nf,:,:]
 
-        # Average the frames within groups
-        # In reality, the 16-bit data is bit-shifted
-        data = data.reshape([-1,ypix,xpix]) if nf==1 else data.mean(axis=1)
+#         # Average the frames within groups
+#         # In reality, the 16-bit data is bit-shifted
+#         data = data.reshape([-1,ypix,xpix]) if nf==1 else data.mean(axis=1)
 
-        # Add back the last group (already averaged)
-        data = np.append(data,data_end,axis=0)
+#         # Add back the last group (already averaged)
+#         data = np.append(data,data_end,axis=0)
 
-    hdu.data = data
+#     hdu.data = data
     
-    if file_out is not None:
-        hdu.header['FILENAME'] = os.path.split(file_out)[1]
+#     if file_out is not None:
+#         hdu.header['FILENAME'] = os.path.split(file_out)[1]
     
-    if DMS == True:
-        primHDU = fits.PrimaryHDU(header=hdu.header)
+#     if DMS == True:
+#         primHDU = fits.PrimaryHDU(header=hdu.header)
+#         primHDU.name = 'PRIMARY'
+#         sciHDU = fits.ImageHDU(data=hdu.data)
+#         sciHDU.name = 'SCI'
+#         sciHDU.header.comments['NAXIS1'] = 'length of first data axis (#columns)'
+#         sciHDU.header.comments['NAXIS2'] = 'length of second data axis (#rows)'
+#         if sciHDU.header['NAXIS'] > 2:
+#             sciHDU.header.comments['NAXIS3'] = 'length of third data axis (#groups/integration '
+#         if sciHDU.header['NAXIS'] > 3:
+#             sciHDU.header.comments['NAXIS4'] = 'length of fourth data axis (#integrations)  '
+#         sciHDU.header['BZERO'] = (32768, 'physical value for an array value of zero')
+#         sciHDU.header['BUNIT'] = ('DN', 'physical units of the data array values')
+        
+#         zerHDU = fits.ImageHDU(data=zeroData)
+#         zerHDU.name = 'ZEROFRAME'
+#         zerHDU.header.comments['NAXIS1'] = 'length of first data axis (#columns)'
+#         zerHDU.header.comments['NAXIS2'] = 'length of second data axis (#rows)'
+        
+#         outHDU = fits.HDUList([primHDU,sciHDU,zerHDU])
+#     else:
+#         outHDU = hdu
+    
+#     if file_out is not None:
+#         outHDU.writeto(file_out, overwrite='True')
+    
+#     # Only return outHDU if return_results=True
+#     if return_results: 
+#         return outHDU
+
+def slope_to_ramps(det, dark_cal_obj, im_slope=None, filter=None, pupil=None, 
+                   targ_name=None, obs_time=None, file_out=None, 
+                   out_ADU=True, DMS=True, return_results=True, **kwargs):
+    
+    """Simulate HDUList frome slope
+    
+    
+    Parameters
+    ==========
+    det : Detector Class
+        Desired detector class output
+    dark_cal_obj: nircam_dark class
+        NIRCam Dark class that holds the necessary calibration info to
+        simulate a dark ramp.
+    im_slope : ndarray
+        Input slope image of observed scene. Assumed to be in detector
+        coordinates.
+
+    """
+    import os
+    import datetime
+    
+    
+    # Pixel readout
+    nchan = det.nout
+    ny, nx = (det.ypix, det.xpix)
+    
+    # Number of saved frames in a ramp
+    ma   = det.multiaccum
+    nz   = ma.ngroup
+    nint = ma.nint
+        
+    if DMS:
+        # Save all ramps within an exposure
+        data_all = []
+        zframe_all = []
+        for i in trange(nint, desc='Ramps', leave=False):
+            data, zeroData = simulate_detector_ramp(det, dark_cal_obj, im_slope=im_slope, out_ADU=out_ADU, 
+                                                    return_zero_frame=True, **kwargs)
+            data_all.append(data)
+            zframe_all.append(zeroData)
+        
+        data_all = np.array(data_all)
+        zframe_all = np.array(zframe_all)
+
+        header = det.make_header(filter, pupil, obs_time, targ_name=targ_name, DMS=DMS)
+        if file_out is not None:
+            header['FILENAME'] = os.path.split(file_out)[1]
+            
+        # Primary exension just has most header information
+        # of telescope, instrument, target, visit, exposure, either, ephemeris,et
+        primHDU = fits.PrimaryHDU(header=header)
         primHDU.name = 'PRIMARY'
-        sciHDU = fits.ImageHDU(data=hdu.data)
+        
+        # Science extension includes exposure data
+        # Header has obs time, spacecraft pointing, WCS
+        sciHDU = fits.ImageHDU(data=data_all)
         sciHDU.name = 'SCI'
         sciHDU.header.comments['NAXIS1'] = 'length of first data axis (#columns)'
         sciHDU.header.comments['NAXIS2'] = 'length of second data axis (#rows)'
@@ -448,21 +535,33 @@ def slope_to_ramp(det, im_slope=None, out_ADU=False, file_out=None,
         sciHDU.header['BZERO'] = (32768, 'physical value for an array value of zero')
         sciHDU.header['BUNIT'] = ('DN', 'physical units of the data array values')
         
-        zerHDU = fits.ImageHDU(data=zeroData)
+        # Zeroframe extension
+        zerHDU = fits.ImageHDU(data=zframe_all)
         zerHDU.name = 'ZEROFRAME'
         zerHDU.header.comments['NAXIS1'] = 'length of first data axis (#columns)'
         zerHDU.header.comments['NAXIS2'] = 'length of second data axis (#rows)'
         
         outHDU = fits.HDUList([primHDU,sciHDU,zerHDU])
+            
+    # FITSWriter (ISIM format)
     else:
-        outHDU = hdu
-    
+        data = simulate_detector_ramp(det, dark_cal_obj, im_slope=im_slope, 
+                                      out_ADU=out_ADU,  return_zero_frame=False, **kwargs)
+        hdu = fits.PrimaryHDU(data)
+        hdu.header = det.make_header(filter, pupil, obs_time, targ_name=targ_name, DMS=DMS)
+
+        if file_out is not None:
+            hdu.header['FILENAME'] = os.path.split(file_out)[1]
+        outHDU = fits.HDUList([hdu])
+
+    # Write file to disk
     if file_out is not None:
         outHDU.writeto(file_out, overwrite='True')
-    
+        
     # Only return outHDU if return_results=True
     if return_results: 
         return outHDU
+
 
 
 def add_ipc(im, alpha_min=0.0065, alpha_max=None, kernel=None):
@@ -1425,6 +1524,285 @@ def sim_dark_ramp(det, super_dark, ramp_avg_ch=None, ramp_avg_tf=10.73677,
 def sim_image_ramp(det, im_slope, out_ADU=False):
 
     return sim_dark_ramp(det, im_slope, out_ADU=out_ADU, ramp_avg_ch=None)
+
+
+def simulate_detector_ramp(det, dark_cal_obj, im_slope=None, out_ADU=False,
+                           include_dark=True, include_bias=True, include_ktc=True, 
+                           include_rn=True, include_cpink=True, include_upink=True, 
+                           include_acn=True, apply_ipc=True, apply_ppc=True, 
+                           include_refinst=True, include_colnoise=True, col_noise=None,
+                           amp_crosstalk=True, add_crs=True, latents=None, linearity_map=None, 
+                           return_zero_frame=None, return_full_ramp=False):
+    
+    """ Return a single simulated ramp
+    
+    The output will be in raw detector coordiantes.
+    
+    Parameters
+    ==========
+    det : Detector Class
+        Desired detector class output
+    dark_cal_obj: nircam_dark class
+        NIRCam Dark class that holds the necessary calibration info to
+        simulate a dark ramp.
+    im_slope : ndarray
+        Input slope image of observed scene. Assumed to be in detector
+        coordinates.
+
+    Keyword Args
+    ============
+    return_zero_frame : bool or None
+        For DMS data, particularly readout patterns with averaged frames,
+        this returns the very first raw read in the ramp.
+    return_full_ramp : bool
+        By default, we average groups and drop frames as specified in the
+        `det` input. If this keyword is set to True, then return all raw
+        frames within the ramp. The last set of `nd2` frames will be omitted.
+    out_ADU : bool
+        If true, divide by gain and convert to 16-bit UINT.
+    include_dark : bool
+        Add dark current?
+    include_bias : bool
+        Add detector bias?
+    include_ktc : bool
+        Add kTC noise?
+    include_rn : bool
+        Add readout noise per frame?
+    include_cpink : bool
+        Add correlated 1/f noise to all amplifiers?
+    include_upink : bool
+        Add uncorrelated 1/f noise to each amplifier?
+    include_acn : bool
+        Add alternating column noise?
+    apply_ipc : bool
+        Include interpixel capacitance?
+    apply_ppc : bool
+        Apply post-pixel coupling to linear analog signal?
+    include_refinst : bool
+        Include reference/active pixel instabilities?
+    include_colnoise : bool
+        Add in column noise per integration?
+    col_noise : ndarray or None
+        Option to explicitly specifiy column noise distribution in
+        order to shift by one for subsequent integrations
+    amp_crosstalk : bool
+        Crosstalk between amplifiers?
+    add_crs : bool
+        Add cosmic ray events?
+    latents : None
+        Apply persistence.
+    linearity_map : ndarray
+        Add non-linearity.
+    """
+    
+    ################################
+    # Dark calibration properties
+    dco = dark_cal_obj
+
+    # Super bias and darks
+    super_bias = dco.super_bias_deconv # DN
+    super_dark = dco.super_dark_deconv # DN/sec
+
+    # IPC/PPC kernel information
+    k_ipc = dco.kernel_ipc
+    k_ppc = dco.kernel_ppc
+    
+    # Noise info
+    cds_dict = dco.cds_act_dict
+    keys = ['spat_det', 'spat_pink_corr', 'spat_pink_uncorr']
+    cds_vals = [np.sqrt(np.mean(cds_dict[k]**2, axis=0)) for k in keys]
+    # CDS Noise values
+    rd_noise_cds, c_pink_cds, u_pink_cds = cds_vals
+    # Noise per frame
+    rn, cp, up = cds_vals / np.sqrt(2)
+    acn = 1
+
+    # kTC Reset Noise
+    ktc_noise = dco.ktc_noise
+
+    # Power spectrum for correlated noise
+    # freq = dco.pow_spec_dict['freq']
+    scales = dco._pow_spec_dict['ps_corr_scale']
+    # pcorr_fit = broken_pink_powspec(freq, scales)
+
+    # Reference noise info
+    ref_ratio = np.mean(dco.cds_ref_dict['spat_det'] / dco.cds_act_dict['spat_det'])
+    
+    ################################
+    # Detector output configuration
+
+    # Detector Gain
+    gain = det.gain
+    
+    # Pixel readout
+    nchan = det.nout
+    ny, nx = (det.ypix, det.xpix)
+    x1, x2 = (det.x0, det.x0 + nx)
+    y1, y2 = (det.y0, det.y0 + ny)
+    
+    # Crop super bias and super dark for subarray observations
+    super_bias = super_bias[y1:y2,x1:x2]
+    super_dark = super_dark[y1:y2,x1:x2]
+    
+    # Number of total frames up the ramp (including drops)
+    ma     = det.multiaccum
+    nd1    = ma.nd1
+    nd2    = ma.nd2
+    nf     = ma.nf
+    ngroup = ma.ngroup
+    nz     = nd1 + ngroup*nf + (ngroup-1)*nd2
+
+    # Scan direction info
+    ssd = det.same_scan_direction
+    rsd = det.reverse_scan_direction
+
+    # Number of reference pixels (lower, upper, left, right)
+    ref_info = det.ref_info
+
+    
+    ################################
+    # Begin...
+    ################################
+    pbar = tqdm(total=13, leave=False)
+    data = np.zeros([nz,ny,nx])
+
+    ####################
+    # Create a super dark ramp (Units of e-)
+    # Average shape of ramp
+    pbar.set_description("Dark Current")
+    ramp_avg_ch = dco.dark_ramp_dict['ramp_avg_ch']
+    # Create dark (adds Poisson noise)
+    if include_dark:
+        data += sim_dark_ramp(det, super_dark, ramp_avg_ch=ramp_avg_ch, verbose=False)
+    pbar.update(1)
+
+    ####################
+    # Add on-sky source image
+    pbar.set_description("Sky Image")
+    if im_slope is not None:
+        data += sim_dark_ramp(det, im_slope)
+    pbar.update(1)
+
+    ####################
+    # TODO: Add cosmic rays
+    pbar.set_description("Cosmic Rays")
+    if add_crs:
+        pass
+    pbar.update(1)
+    
+    ####################
+    # TODO: Apply persistence/latent image
+    pbar.set_description("Persistence")
+    if latents is not None:
+        pass
+    pbar.update(1)
+    
+    ####################
+    # Apply IPC (before or after non-linearity??)
+    pbar.set_description("Include IPC")
+    if apply_ipc:
+        data = add_ipc(data, kernel=k_ipc)
+    pbar.update(1)
+
+    ####################
+    # TODO: Add non-linearity
+    pbar.set_description("Non-Linearity")
+    # Truncate anything above well level
+    # This wwill be part of non-linearity after full implementation
+    if linearity_map is not None:
+        pass
+    well_max = det.well_level
+    data[data>well_max] = well_max
+    pbar.update(1)
+    
+    ####################
+    # Add kTC noise:
+    pbar.set_description("kTC Noise")
+    if include_ktc:
+        ktc_offset = gain * np.random.normal(scale=ktc_noise, size=(ny,nx))
+        data += ktc_offset
+    pbar.update(1)
+        
+    ####################
+    # Add super bias
+    pbar.set_description("Super Bias")
+    if include_bias:
+        data += gain * super_bias
+    pbar.update(1)
+    
+    ####################
+    # Apply PPC (when should this occur?)
+    pbar.set_description("Include PPC")
+    if apply_ppc:
+        data = add_ppc(data, nchans=nchan, kernel=k_ppc, in_place=True,
+                       same_scan_direction=ssd, reverse_scan_direction=rsd)
+    pbar.update(1)
+    
+    ####################
+    # TODO: Add channel crosstalk
+    pbar.set_description("Amplifier Crosstalk")
+    if amp_crosstalk:
+        pass
+    pbar.update(1)
+
+    ####################
+    # Add read and 1/f noise
+    pbar.set_description("Detector and ASIC Noise")
+    if nchan==1:
+        rn, up = (rn[0], up[0])
+    rn  = None if (not include_rn)    else rn
+    up  = None if (not include_upink) else up
+    cp  = None if (not include_cpink) else cp*1.2
+    acn = None if (not include_acn)   else acn
+    data += gain * sim_noise_data(det, rd_noise=rn, u_pink=up, c_pink=cp,
+                                  acn=acn, corr_scales=scales, ref_ratio=ref_ratio,
+                                  same_scan_direction=ssd, reverse_scan_direction=rsd)
+    pbar.update(1)
+
+    ####################
+    # Add reference offsets
+    pbar.set_description("Ref Pixel Instability")
+    if include_refinst:
+        data += gain * gen_ramp_biases(dco.ref_pixel_dict, nchan=nchan, 
+                                       data_shape=data.shape, ref_border=det.ref_info)
+    pbar.update(1)
+
+    ####################
+    # Add column noise
+    pbar.set_description("Column Noise")
+    # Passing col_noise allows for shifting of noise 
+    # by one col ramp-to-ramp in higher level function
+    if include_colnoise and (col_noise is None):
+        col_noise = gain * gen_col_noise(dco.column_variations, 
+                                         dco.column_prob_bad, 
+                                         nz=nz, nx=nx)
+    elif (include_colnoise==False):
+        col_noise = 0
+    # Add to data
+    data += col_noise
+    pbar.update(1)
+
+    # Convert to DN (16-bit int)
+    if out_ADU:
+        data /= gain
+        data[data < 0] = 0
+        data[data >= 2**16] = 2**16 - 1
+        data = data.astype('uint16')
+
+    pbar.close()
+    
+    # return_zero_frame not set, the True if not RAPID (what about BRIGHT1??)
+    if return_zero_frame is None:
+        return_zero_frame = False if 'RAPID' in det.multiaccum.read_mode else True
+        
+    if return_full_ramp:
+        if return_zero_frame:
+            return data, data[0].copy()
+        else:
+            return data
+    else:
+        return ramp_resample(data, det, return_zero_frame=return_zero_frame)
+
 
 # npix = 20
 # arr = np.random.rand(npix) * 4000
