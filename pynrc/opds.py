@@ -27,7 +27,7 @@ if not on_rtd:
     if not os.path.exists(opd_fullpath):
         opd_file_alt = opd_file + '.gz'
         opd_path_alt = os.path.join(opd_dir, opd_file_alt)
-        if not os.path.exists(opd_file_alt):
+        if not os.path.exists(opd_path_alt):
             err_msg = f'Cannot find either {opd_file} or {opd_file_alt} in {opd_dir}'
             raise OSError(err_msg)
         else:
