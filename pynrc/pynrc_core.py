@@ -9,6 +9,8 @@ from __future__ import division, print_function#, unicode_literals
 # Import libraries
 from astropy.table import Table
 from .nrc_utils import *
+from .opds import *
+from .psfs import *
 from .detops import *
 from .detops import _check_list # hidden function
 
@@ -703,7 +705,7 @@ class NIRCam(object):
         bp = self.bandpass
         w = bp.wave / 1e4; f = bp.throughput
         ax.plot(w, f, color=color, label=bp.name+' Filter', **kwargs)
-        ax.set_xlabel('Wavelength ($\mu m$)')
+        ax.set_xlabel(r'Wavelength ($\mu m$)')
         ax.set_ylabel('Throughput')
 
         if title is None:
@@ -1317,7 +1319,7 @@ class NIRCam(object):
         offset_r=None, offset_theta=None, tel_pupil=None, opd=None,
         include_si_wfe=None, jitter=None, jitter_sigma=None,
         bar_offset=None, save=None, force=False, use_legendre=None,
-        quick=None, **kwargs):
+        quick=None, nproc=None, **kwargs):
         """Create new PSF coefficients.
         
         Generates a set of PSF coefficients from a sequence of WebbPSF images.
@@ -1439,6 +1441,9 @@ class NIRCam(object):
         if save is None:
             try: save = self._psf_info['save']
             except (AttributeError, KeyError): save = True
+        if nproc is None:
+            try: nproc = self._psf_info['nproc']
+            except (AttributeError, KeyError): nproc = None
         if quick is None:
             try: quick = self._psf_info['quick']
             except (AttributeError, KeyError): 
@@ -1448,7 +1453,7 @@ class NIRCam(object):
         if jitter=='none':
             jitter = None
 
-        self._psf_info={'fov_pix':fov_pix, 'oversample':oversample, 'quick':quick,
+        self._psf_info={'fov_pix':fov_pix, 'oversample':oversample, 'quick':quick, 'nproc':nproc,
             'offset_r':offset_r, 'offset_theta':offset_theta, 
             'tel_pupil':tel_pupil, 'save':save, 'force':force, 'use_legendre':use_legendre,
             'include_si_wfe':include_si_wfe, 'opd':opd, 'jitter':jitter, 'jitter_sigma':jitter_sigma}
@@ -1467,7 +1472,7 @@ class NIRCam(object):
             wfe_kwargs['module'] = self.module
             wfe_kwargs['bar_offset'] = 0
 
-            # fov_pix should not be more than some size, otherwise memory issues
+            # fov_pix should not be more than some size to preserve memory
             fov_max = self._fovmax_wfedrift if wfe_kwargs['oversample']<=4 else self._fovmax_wfedrift / 2 
             if wfe_kwargs['fov_pix']>fov_max:
                 wfe_kwargs['fov_pix'] = fov_max if (wfe_kwargs['fov_pix'] % 2 == 0) else fov_max + 1
@@ -1903,6 +1908,58 @@ class NIRCam(object):
             else:
                 return sat_level
                 
+    def _siafap_sci_coords(self, coord_vals=None, coord_frame='tel'):
+        """
+        Return the detector, sci position, and full frame aperture name
+        for a set of coordiante values.
+        """
+
+        # Get a refernece point if coord_vals not set
+        if coord_vals is None:
+            try:
+                coord_vals = self.siaf_ap.reference_point(coord_frame)
+            except:
+                _log.warning("`self.siaf_ap` may not be set")
+                apname = self.get_siaf_apname()
+                if apname is None:
+                    _log.warning('No suitable aperture name defined to determine ref coords')
+                    return None, None, None
+                else:
+                    _log.warning('`self.siaf_ap` not defined; assuming {}'.format(apname))
+                    ap = self.siaf_nrc[apname]
+                    coord_vals = ap.reference_point(coord_frame)
+
+
+        # Determine V2/V3 coordinates
+        detector = detector_position = apname = None
+        v2 = v3 = None
+        cframe = coord_frame.lower()
+        if cframe=='tel':
+            v2, v3 = coord_vals
+        elif cframe in ['det', 'sci', 'idl']:
+            x, y = coord_vals[0], coord_vals[1]
+            try:
+                v2, v3 = self.siaf_ap.convert(x,y, cframe, 'tel')
+            except: 
+                apname = self.get_siaf_apname()
+                if apname is None:
+                    _log.warning('No suitable aperture name defined to determine V2/V3 coordinates')
+                else:
+                    _log.warning('`self.siaf_ap` not defined; assuming {}'.format(apname))
+                    ap = self.siaf_nrc[apname]
+                    v2, v3 = ap.convert(x,y,cframe, 'tel')
+                _log.warning('Update `self.siaf_ap` for more specific conversions to V2/V3.')
+        else:
+            _log.warning("coord_frame setting '{}' not recognized.".format(coord_frame))
+
+        # Update detector, pixel position, and apname to pass to 
+        if v2 is not None:
+            res = Tel2Sci_info(self.channel, (v2, v3), output='sci', return_apname=True)
+            detector, detector_position, apname = res
+
+        return (detector, detector_position, apname)
+
+
     def gen_webbpsf(self, sp=None, return_oversample=False, use_bg_psf=False, 
                     wfe_drift=None, coord_vals=None, coord_frame='tel', 
                     bar_offset=None, return_hdul=False, **kwargs):
@@ -1927,32 +1984,13 @@ class NIRCam(object):
         psf_info['sp_norm'] = sp
 
         # Determine V2/V3 coordinates
-        detector = detector_position = apname = None
         if coord_vals is not None:
-            v2 = v3 = None
-            cframe = coord_frame.lower()
-            if cframe=='tel':
-                v2, v3 = coord_vals
-            elif cframe in ['det', 'sci', 'idl']:
-                x, y = coord_vals[0], coord_vals[1]
-                try:
-                    v2, v3 = self.siaf_ap.convert(x,y, cframe, 'tel')
-                except: 
-                    apname = self.get_siaf_apname()
-                    if apname is None:
-                        _log.warning('No suitable aperture name defined to determine V2/V3 coordiantes')
-                    else:
-                        _log.warning('`self.siaf_ap` not defined; assuming {}'.format(apname))
-                        ap = self.siaf_nrc[apname]
-                        v2, v3 = ap.convert(x,y,cframe, 'tel')
-                    _log.warning('Update `self.siaf_ap` using for more specific conversions to V2/V3.')
-            else:
-                _log.warning("coord_frame setting '{}' not recognized.".format(coord_frame))
-                _log.warning("`gen_webbpsf` will continue with default PSF.")
+            detector, detector_position, apname = self._siafap_sci_coords(coord_vals, coord_frame)
+        else:
+            detector = detector_position = apname = None
 
-            # Update detector, pixel position, and apname to pass to 
-            if v2 is not None:
-                detector, detector_position, apname = Tel2Sci_info(self.channel, (v2, v3), output='sci', return_apname=True, **kwargs)
+        if (coord_vals is not None) and (detector is None):
+            _log.warning("`gen_webbpsf` will continue with default PSF.")
 
         psf_info['detector'] = detector
         psf_info['detector_position'] = detector_position
