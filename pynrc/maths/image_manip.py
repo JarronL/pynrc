@@ -14,10 +14,7 @@ _log = logging.getLogger('pynrc')
 from poppy.utils import krebin
 
 from pynrc.maths.coords import dist_image
-
-from scipy.optimize import least_squares#, leastsq
 from scipy.ndimage import fourier_shift
-
 from astropy.io import fits
 
 
@@ -371,6 +368,7 @@ def align_LSQ(reference, target, mask=None, pad=False,
         is the fraction by which the target intensity must be
         reduced to match the intensity of the reference.
     """
+    from scipy.optimize import least_squares#, leastsq
 
     init_pars = [0.0, 0.0, 1.0]
 
@@ -861,13 +859,13 @@ def hist_indices(values, bins=10, return_more=False):
     
     values_flat = values.ravel()
 
-    v0 = values_flat.min()
-    v1 = values_flat.max()
+    vmin = values_flat.min()
+    vmax = values_flat.max()
     N  = len(values_flat)   
     
     try: # if bins is an integer
-        binsize = (v1 - v0) / bins
-        bins = np.arange(v0, v1 + binsize, binsize)
+        binsize = (vmax - vmin) / bins
+        bins = np.arange(vmin, vmax + binsize, binsize)
     except: # otherwise assume it's already an array
         binsize = bins[1] - bins[0]
     
@@ -877,7 +875,9 @@ def hist_indices(values, bins=10, return_more=False):
 
     # TODO: If input bins is an array that doesn't span the full set of input values,
     # then we need to set a warning.
-    digitized = ((nbins-1.0) / (v1-v0) * (values_flat-v0)).astype(np.int)
+    if (vmin<bins[0]) or (vmax>bins[-1]):
+        raise ValueError("Bins must encompass entire set of input values.")
+    digitized = ((nbins-1.0) / (vmax-vmin) * (values_flat-vmin)).astype(np.int)
     csr = csr_matrix((values_flat, [digitized, np.arange(N)]), shape=(nbins, N))
 
     # Split indices into their bin groups    
@@ -935,6 +935,10 @@ def binned_statistic(x, values, func=np.mean, bins=10):
             bins = np.array(bins)
             # Check if binsize is the same for all bins
             bsize = bins[1:] - bins[:-1]
+            # Make sure bins encompass full set of input values
+            ind_bin = (x>=bins.min()) & (x<=bins.max())
+            x = x[ind_bin]
+            values_flat = values_flat[ind_bin]
             if np.isclose(bsize.min(), bsize.max()):
                 igroups = hist_indices(x, bins=bins, return_more=False)
                 res = np.array([func(values_flat[ind]) for ind in igroups])
@@ -943,6 +947,7 @@ def binned_statistic(x, values, func=np.mean, bins=10):
                 from scipy import stats 
                 res, _, _ = stats.binned_statistic(x, values, func, bins)
     except:
+        # Assume that input is a list of indices
         igroups = x
         res = np.array([func(values_flat[ind]) for ind in igroups])
     
