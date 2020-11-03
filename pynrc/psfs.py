@@ -1702,6 +1702,8 @@ def gen_image_coeff(filter_or_bp, pupil=None, mask=None, module='A',
         w1_spec = w1 - dw_over*fov_pix_over/2
         wspec_over = np.arange(npix_spec_over)*dw_over + w1_spec
         wspec = wspec_over.reshape((npix_spec,-1)).mean(axis=1)
+        if ('GRISM0' in pupil) and (module=='B'): # Flip for sci coords
+            wspec = wspec[::-1]
 
         if nspec == 1: 
             spec_list = spec_list[0]

@@ -267,6 +267,23 @@ class DetectorOps(det_timing):
 
         return final
 
+    @property
+    def fastaxis(self):
+        """Fast readout direction in sci coords"""
+        # https://jwst-pipeline.readthedocs.io/en/latest/jwst/references_general/references_general.html#orientation-of-detector-image
+        # 481, 3, 5, 7, 9 have fastaxis equal -1
+        # Others have fastaxis equal +1
+        fastaxis = -1 if np.mod(self.scaid,2)==1 else +1
+        return fastaxis
+    @property
+    def slowaxis(self):
+        """Slow readout direction in sci coords"""
+        # https://jwst-pipeline.readthedocs.io/en/latest/jwst/references_general/references_general.html#orientation-of-detector-image
+        # 481, 3, 5, 7, 9 have fastaxis equal +2
+        # Others have fastaxis equal -2
+        slowaxis = +2 if np.mod(self.scaid,2)==1 else -2
+        return slowaxis
+
     def make_header(self, filter=None, pupil=None, obs_time=None, **kwargs):
         """
         Create a generic NIRCam FITS header.
@@ -764,134 +781,191 @@ class NIRCam(object):
         """Give all possible SIAF aperture names"""
         return list(self.siaf_nrc.apernames)
 
-    def get_siaf_apname(self):
+    def get_siaf_apname(self, override=False):
         """Get SIAF aperture based on instrument settings"""
+
+        # Return already defined ap name
+        if (self._siaf_ap is not None) and (not override):
+            return self.siaf_ap.AperName
+        else:
+            detid = self.Detectors[0].detid
+            wind_mode = self.Detectors[0].wind_mode
+
+            is_lyot = (self.pupil is not None) and ('LYOT' in self.pupil)
+            is_coron = is_lyot and ((self.mask is not None) and ('MASK' in self.mask))
+            
+            is_grism = (self.pupil is not None) and ('GRISM' in self.pupil)
+
+            # Time series filters
+            ts_filters = ['F277W','F356W','F444W','F322W2']
+            # Coronagraphic bar filters
+            swb_filters = ['F182M','F187N','F210M','F212N','F200W']
+            lwb_filters = ['F250M','F300M','F277W','F335M','F360M','F356W','F410M','F430M','F460M','F480M','F444W']
+            # Time series filter
+            ts_filter = ['F277W','F356W','F444W','F322W2']
+
+            # Coronagraphy
+            if is_coron:
+                wstr = 'FULL_' if wind_mode=='FULL' else ''
+                key = 'NRC{}_{}{}'.format(detid,wstr,self.mask)
+                if ('WB' in self.mask) and (self.module=='A') and (self.filter in swb_filters+lwb_filters):
+                    key = key + '_{}'.format(self.filter)
+                if wind_mode=='STRIPE':
+                    key = None
+            # Just Lyot stop without masks, assuming TA aperture
+            elif is_lyot: #and self.ND_acq:
+                tastr = 'TA' if self.ND_acq else 'FSTA'
+                key = 'NRC{}_{}'.format(detid,tastr)
+                if ('CIRC' in self._pupil) and ('SW' in self.channel):
+                    key = key + 'MASK210R'
+                elif ('CIRC' in self._pupil) and ('LW' in self.channel):
+                    key = key + 'MASK430R'
+                elif ('WEDGE' in self._pupil) and ('SW' in self.channel):
+                    key = key + 'MASKSWB'
+                elif ('WEDGE' in self._pupil) and ('LW' in self.channel):
+                    key = key + 'MASKLWB'
+            # Time series grisms
+            elif is_grism and ('GRISM0' in self.pupil) and (self.filter in ts_filters):
+                if wind_mode=='FULL':
+                    key = f'NRC{detid}_GRISM_{self.filter}'
+                elif wind_mode=='STRIPE':
+                    key = 'NRC{}_GRISM{}_{}'.format(detid,self.det_info['ypix'],self.filter)
+                else:
+                    key = None
+            # SW Time Series with LW grism
+            elif wind_mode=='STRIPE':
+                key = 'NRC{}_GRISMTS{:.0f}'.format(detid,self.det_info['ypix'])
+            # WFSS
+            elif is_grism and (wind_mode=='FULL'):
+                gstr = 'GRISMR' if self.pupil=='GRISM0' else 'GRISMC'
+                key = 'NRC{}_FULL_{}_WFSS'.format(detid, gstr)
+            # Subarrays
+            elif wind_mode=='WINDOW':
+                key = 'NRC{}_SUB{}P'.format(detid,self.det_info['xpix'])
+                if key not in self.siaf_ap_names:
+                    key = 'NRC{}_TAPSIMG{}'.format(detid,self.det_info['xpix'])
+                if key not in self.siaf_ap_names:
+                    key = 'NRC{}_TAGRISMTS{}'.format(detid,self.det_info['xpix'])
+                if key not in self.siaf_ap_names:
+                    key = 'NRC{}_TAGRISMTS_SCI_{}'.format(detid,self.filter)
+                if key not in self.siaf_ap_names:
+                    key = 'NRC{}_SUB{}'.format(detid,self.det_info['xpix'])
+            # Full frame generic
+            elif wind_mode=='FULL':
+                key = 'NRC{}_FULL'.format(self.Detectors[0].detid)
+            else:
+                key = None
+
+
+            # # If full frame
+            # if (wind_mode == 'FULL'):
+            #     # Time series (A5 row grism with certain filters)
+            #     if is_grism and ('GRISM0' in self.pupil) and (self.filter in ts_filters):
+            #         key = 'NRC{}_GRISM_{}'.format(detid, self.filter)
+            #     # WFSS
+            #     elif is_grism:
+            #         gstr = 'GRISMR' if self.pupil=='GRISM0' else 'GRISMC'
+            #         key = 'NRC{}_FULL_{}_WFSS'.format(detid, gstr)
+            #     # Coronagraphy
+            #     elif if_coron:
+            #         if ('SWB' in self.mask) and (self.filter in swb_filters):
+            #             key = 'NRC{}_FULL_MASKSWB_{}'.format(detid,self.filter)
+            #         elif ('LWB' in self.mask) and (self.filter in lwb_filters):
+            #             key = 'NRC{}_FULL_MASKLWB_{}'.format(detid,self.filter)
+            #         else:
+            #             key = 'NRC{}_FULL_{}'.format(detid,self.mask)
+            #     # Full frame, generic SIAF
+            #     else:
+            #         key = 'NRC{}_FULL'.format(self.Detectors[0].detid)
+
+            # # Stripe mode settings
+            # # Time series grism and simultaneous SW 
+            # elif (wind_mode == 'STRIPE'):
+            #     if is_grism and (GRISM0 in self.pupil) and (self.filter in ts_filter):
+            #         key = 'NRC{}_GRISM{:.0f}_{}'.format(detid,self.det_info['ypix'],self.filter)
+            #     else:
+            #         key = 'NRC{}_GRISMTS{:.0f}'.format(detid,self.det_info['ypix'])
+
+            # # Subarray window
+            # else:
+            #     if is_coron:
+            #         if ('SWB' in self.mask) and (self.filter in swb_filters) and (detid=='A4'):
+            #             key = 'NRCA4_MASKSWB_{}'.format(self.filter)
+            #         elif ('LWB' in self.mask) and (self.filter in lwb_filters) and (detid=='A5'):
+            #             key = 'NRCA5_MASKLWB_{}'.format(self.filter)
+            #     else:
+            #         key = 'NRC{}_SUB{}P'.format(detid,self.det_info['xpix'])
+            #         if key not in self.siaf_ap_names:
+            #             key = 'NRC{}_TAPSIMG{}'.format(detid,self.det_info['xpix'])
+            #         if key not in self.siaf_ap_names:
+            #             key = 'NRC{}_TAGRISMTS{}'.format(detid,self.det_info['xpix'])
+            #         if key not in self.siaf_ap_names:
+            #             key = 'NRC{}_TAGRISMTS_SCI_{}'.format(detid,self.filter)
+            #         if key not in self.siaf_ap_names:
+            #             key = 'NRC{}_SUB{}'.format(detid,self.det_info['xpix'])
+
+
+            # Check if key exists
+            if key in self.siaf_ap_names:
+                _log.info('Suggested SIAF aperture name: {}'.format(key))
+                return key
+            else:
+                _log.warning("Suggested SIAF aperture name '{}' is not defined".format(key))
+                return None
+
+    def get_subarray_name(self, apname=None):
+        """Get JWST NIRCam subarray name"""
+
+        if apname is None:
+            apname = self.get_siaf_apname()
+
+        pupil = self.pupil
+        mask = self.mask 
+        module = self.module
 
         detid = self.Detectors[0].detid
         wind_mode = self.Detectors[0].wind_mode
+        ypix = self.det_info['ypix']
 
-        is_lyot = (self.pupil is not None) and ('LYOT' in self.pupil)
-        is_coron = is_lyot and ((self.mask is not None) and ('MASK' in self.mask))
-        
-        is_grism = (self.pupil is not None) and ('GRISM' in self.pupil)
+        is_lyot = (pupil is not None) and ('LYOT' in pupil)
+        is_coron = is_lyot and ((mask is not None) and ('MASK' in mask))
+        is_ndacq = self.ND_acq
+        is_grism = (pupil is not None) and ('GRISM' in pupil)
 
-        # Time series filters
-        ts_filters = ['F277W','F356W','F444W','F322W2']
-        # Coronagraphic bar filters
-        swb_filters = ['F182M','F187N','F210M','F212N','F200W']
-        lwb_filters = ['F250M','F300M','F277W','F335M','F360M','F356W','F410M','F430M','F460M','F480M','F444W']
-        # Time series filter
-        ts_filter = ['F277W','F356W','F444W','F322W2']
-
-        # Coronagraphy
-        if is_coron:
-            wstr = 'FULL_' if wind_mode=='FULL' else ''
-            key = 'NRC{}_{}{}'.format(detid,wstr,self.mask)
-            if ('WB' in self.mask) and (self.module=='A') and (self.filter in swb_filters+lwb_filters):
-                key = key + '_{}'.format(self.filter)
-            if wind_mode=='STRIPE':
-                key = None
-        # Just Lyot stop without masks, assuming TA aperture
-        elif is_lyot and self.ND_acq:
-            tastr = 'TA' if self.ND_acq else 'FSTA'
-            key = 'NRC{}_{}'.format(detid,tastr)
-            if ('CIRC' in self._pupil) and ('SW' in self.channel):
-                key = key + 'MASK210R'
-            elif ('CIRC' in self._pupil) and ('LW' in self.channel):
-                key = key + 'MASK430R'
-            elif ('WEDGE' in self._pupil) and ('SW' in self.channel):
-                key = key + 'MASKSWB'
-            elif ('WEDGE' in self._pupil) and ('LW' in self.channel):
-                key = key + 'MASKLWB'
-        # Time series grisms
-        elif is_grism and ('GRISM0' in self.pupil) and (self.filter in ts_filters):
-            if wind_mode=='FULL':
-                key = 'NRC{}_GRISM_{}'.format(detid, self.filter)
-            elif wind_mode=='STRIPE':
-                key = 'NRC{}_GRISM{:.0f}_{}'.format(detid,self.det_info['ypix'],self.filter)
+        if 'FULL' in wind_mode:
+            subarray_name = 'FULLP' if apname[-1] == 'P' else 'FULL'
+        elif 'STRIPE' in wind_mode:
+            subarray_name = f'SUBGRISM{ypix}'
+        elif is_coron:
+            sub_str = f'SUB{ypix}'
+            mask_str = mask[4:]
+            if ('335R' in mask) and (module == 'A'):
+                subarray_name = sub_str + module
             else:
-                key = None
-        # SW Time Series with LW grism
-        elif wind_mode=='STRIPE':
-            key = 'NRC{}_GRISMTS{:.0f}'.format(detid,self.det_info['ypix'])
-        # WFSS
-        elif is_grism and (wind_mode=='FULL'):
-            gstr = 'GRISMR' if self.pupil=='GRISM0' else 'GRISMC'
-            key = 'NRC{}_FULL_{}_WFSS'.format(detid, gstr)
-        # Subarrays
-        elif wind_mode=='WINDOW':
-            key = 'NRC{}_SUB{}P'.format(detid,self.det_info['xpix'])
-            if key not in self.siaf_ap_names:
-                key = 'NRC{}_TAPSIMG{}'.format(detid,self.det_info['xpix'])
-            if key not in self.siaf_ap_names:
-                key = 'NRC{}_TAGRISMTS{}'.format(detid,self.det_info['xpix'])
-            if key not in self.siaf_ap_names:
-                key = 'NRC{}_TAGRISMTS_SCI_{}'.format(detid,self.filter)
-            if key not in self.siaf_ap_names:
-                key = 'NRC{}_SUB{}'.format(detid,self.det_info['xpix'])
-        # Full frame generic
-        elif wind_mode=='FULL':
-            key = 'NRC{}_FULL'.format(self.Detectors[0].detid)
+                subarray_name = sub_str + module + mask_str
+        # Just Lyot stop without masks, assuming TA aperture
+        elif is_lyot:
+            mask_str = mask[4:]
+            # Faint source TA
+            if not is_ndacq:
+                subarray_name = 'SUBFS' + module + mask_str
+            elif 'LWB' in mask: # ND TA
+                if 'LWBL' in apname:
+                    subarray_name = 'SUBND' + module + 'LWBL'
+                else:
+                    subarray_name = 'SUBND' + module + 'LWBS'
+            elif 'SWB' in mask: # ND TA
+                if 'SWBS' in apname:
+                    subarray_name = 'SUBND' + module + 'LWBS'
+                else:
+                    subarray_name = 'SUBND' + module + 'LWBL'
+            else:
+                subarray_name = 'SUBND' + module + mask_str
         else:
-            key = None
-
-
-        # # If full frame
-        # if (wind_mode == 'FULL'):
-        #     # Time series (A5 row grism with certain filters)
-        #     if is_grism and ('GRISM0' in self.pupil) and (self.filter in ts_filters):
-        #         key = 'NRC{}_GRISM_{}'.format(detid, self.filter)
-        #     # WFSS
-        #     elif is_grism:
-        #         gstr = 'GRISMR' if self.pupil=='GRISM0' else 'GRISMC'
-        #         key = 'NRC{}_FULL_{}_WFSS'.format(detid, gstr)
-        #     # Coronagraphy
-        #     elif if_coron:
-        #         if ('SWB' in self.mask) and (self.filter in swb_filters):
-        #             key = 'NRC{}_FULL_MASKSWB_{}'.format(detid,self.filter)
-        #         elif ('LWB' in self.mask) and (self.filter in lwb_filters):
-        #             key = 'NRC{}_FULL_MASKLWB_{}'.format(detid,self.filter)
-        #         else:
-        #             key = 'NRC{}_FULL_{}'.format(detid,self.mask)
-        #     # Full frame, generic SIAF
-        #     else:
-        #         key = 'NRC{}_FULL'.format(self.Detectors[0].detid)
-
-        # # Stripe mode settings
-        # # Time series grism and simultaneous SW 
-        # elif (wind_mode == 'STRIPE'):
-        #     if is_grism and (GRISM0 in self.pupil) and (self.filter in ts_filter):
-        #         key = 'NRC{}_GRISM{:.0f}_{}'.format(detid,self.det_info['ypix'],self.filter)
-        #     else:
-        #         key = 'NRC{}_GRISMTS{:.0f}'.format(detid,self.det_info['ypix'])
-
-        # # Subarray window
-        # else:
-        #     if is_coron:
-        #         if ('SWB' in self.mask) and (self.filter in swb_filters) and (detid=='A4'):
-        #             key = 'NRCA4_MASKSWB_{}'.format(self.filter)
-        #         elif ('LWB' in self.mask) and (self.filter in lwb_filters) and (detid=='A5'):
-        #             key = 'NRCA5_MASKLWB_{}'.format(self.filter)
-        #     else:
-        #         key = 'NRC{}_SUB{}P'.format(detid,self.det_info['xpix'])
-        #         if key not in self.siaf_ap_names:
-        #             key = 'NRC{}_TAPSIMG{}'.format(detid,self.det_info['xpix'])
-        #         if key not in self.siaf_ap_names:
-        #             key = 'NRC{}_TAGRISMTS{}'.format(detid,self.det_info['xpix'])
-        #         if key not in self.siaf_ap_names:
-        #             key = 'NRC{}_TAGRISMTS_SCI_{}'.format(detid,self.filter)
-        #         if key not in self.siaf_ap_names:
-        #             key = 'NRC{}_SUB{}'.format(detid,self.det_info['xpix'])
-
-
-        # Check if key exists
-        if key in self.siaf_ap_names:
-            _log.info('Suggested SIAF aperture name: {}'.format(key))
-            return key
-        else:
-            _log.warning("Suggested SIAF aperture name '{}' is not defined".format(key))
-            return None
-
+            subarray_name = f'SUB{ypix}P' if apname[-1] == 'P' else f'SUB{ypix}'
+        # TODO: Grism TS TA, Fine phasing (FP), and DHS
+        
+        return subarray_name
         
     def update_from_SIAF(self, apname, pupil=None, **kwargs):
         """Update detector properties based on SIAF aperture"""
@@ -1828,7 +1902,7 @@ class NIRCam(object):
             fzodi_pix_temp = obs_zodi_temp.countrate() * (self.pix_scale/206265.0)**2
             zf_rec = fzodi_pix / fzodi_pix_temp
             str1 = 'Using ra,dec,thisday keywords can be relatively slow. \n'
-            str2 = 'For your specified loc and date, we recommend using zfact={:.1f}'.format(zf_rec)
+            str2 = '\tFor your specified loc and date, we recommend using zfact={:.1f}'.format(zf_rec)
             _log.warning(str1 + str2)
 
         # Don't forget about Lyot mask attenuation (not in bandpass throughput)
@@ -1836,9 +1910,52 @@ class NIRCam(object):
             fzodi_pix *= 0.19
 
         return fzodi_pix
+
+    def bg_zodi_image(self, zfact=None, **kwargs):
+        """Zodiacal light image
+        
+        Returns an image of background Zodiacal light emission
+        in e-/sec/pix. 
+        """
+
+        x0, y0 = (self.det_info['x0'], self.det_info['y0'])
+        xpix, ypix = (self.det_info['xpix'], self.det_info['ypix'])
+        sp_zodi = zodi_spec(zfact, **kwargs)
+
+        detid = self.Detectors[0].detid
+
+        if ('GRISM' in self.pupil):
+            # sci coords
+            im_bg = grism_background_image(self.filter, self.pupil, self.module, sp_zodi, **kwargs)
+            # Convert to det coords and crop
+            im_bg = sci_to_det(im_bg, detid)
+            im_bg = im_bg[y0:y0+ypix, x0:x0+xpix]
+            # Back to sci coords
+            im_bg = det_to_sci(im_bg, detid)
+        elif (self.mask is not None) and ('LYOT' in self.pupil):
+            # Create full image, then crop based on detector configuration
+            im_bg = build_mask_detid(detid, oversample=1, ref_mask=self.mask, pupil=self.pupil)
+            if im_bg is None:
+                # In the event the specified detid has no coronagraphic mask
+                # This includes ['A1', 'A3', 'B2', 'B4']
+                im_bg = np.ones([ypix,xpix])
+            else:
+                # Convert to det coords and crop
+                im_bg = sci_to_det(im_bg, detid)
+                im_bg = im_bg[y0:y0+ypix, x0:x0+xpix]
+                # Back to sci coords and multiply by e-/sec/pix
+                im_bg = det_to_sci(im_bg, detid)
+
+            # Multiply by e-/sec/pix
+            im_bg *= self.bg_zodi(zfact, **kwargs)
+        else:
+            # No spatial structures for direct imaging an certain Lyot masks.
+            im_bg = np.ones([ypix,xpix]) * self.bg_zodi(zfact, **kwargs)
+
+        return im_bg
         
     def saturation_levels(self, sp, full_size=True, ngroup=2, image=None, **kwargs):
-        """Saturation levels.
+        """ Saturation levels
         
         Create image showing level of saturation for each pixel.
         Can either show the saturation after one frame (default)
@@ -2317,7 +2434,7 @@ class NIRCam(object):
     
             # Add in Zodi emission
             # Returns 0 if self.pupil='FLAT'
-            im_slope += self.bg_zodi(**kwargs)
+            im_slope += self.bg_zodi_image(**kwargs)
             
             targ_name = sp.name if targ_name is None else targ_name
             

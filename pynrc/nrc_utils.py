@@ -76,12 +76,6 @@ from poppy import (measure_sharpness, measure_centroid, measure_strehl)
 #        measure_EE, measure_radial, measure_fwhm, measure_sharpness, measure_centroid, measure_strehl,
 #        specFromSpectralType, fwcentroid)
 
-# Detector geometry stuff
-# import pysiaf
-# siaf = pysiaf.Siaf('NIRCam')
-# siaf.generate_toc()
-# from webbpsf.webbpsf_core import DetectorGeometry
-
 import pysynphot as S
 # Extend default wavelength range to 5.6 um
 S.refs.set_default_waveset(minwave=500, maxwave=56000, num=10000.0, delta=None, log=False)
@@ -192,8 +186,8 @@ def read_filter(filter, pupil=None, mask=None, module=None, ND_acq=False,
         wide field observation.
     coron_substrate : bool
         Explicit option to include coronagraphic substrate transmission
-        even if mask=None. Gives the option of using LYOT pupilt with
-        or without coron substrate.
+        even if mask=None. Gives the option of using LYOT or grism pupils 
+        with or without coron substrate.
 
     Returns
     -------
@@ -533,8 +527,31 @@ def channel_select(bp):
 
     return (pix_scale, idark, pex)
 
+def grism_wref(pupil='GRISM', module='A'):
+    """Grism undeviated wavelength"""
+
+    # Option for GRISMR/GRISMC
+    if 'GRISMR' in pupil:
+        pupil = 'GRISM0'
+    elif 'GRISMC' in pupil:
+        pupil = 'GRISM90'
+
+    # Mean spectral dispersion in number of pixels per um
+    if ('GRISM90' in pupil) and (module == 'A'):
+        wref = 3.978
+    elif ('GRISM0' in pupil)  and (module == 'A'):
+        wref = 3.937
+    elif ('GRISM90' in pupil) and (module == 'B'):
+        wref = 3.923
+    elif ('GRISM0' in pupil)  and (module == 'B'):
+        wref = 3.960
+    else:
+        wref = 3.95
+
+    return wref
+
 def grism_res(pupil='GRISM', module='A', m=1):
-    """Grism information
+    """Grism resolution
 
     Based on the pupil input and module, return the spectral
     dispersion and resolution as a tuple (res, dw).
@@ -542,22 +559,31 @@ def grism_res(pupil='GRISM', module='A', m=1):
     Parameters
     ----------
     pupil : str
-        'GRISM0' or 'GRISM90', otherwise assume res=1000 pix/um
+        'GRISM0' or 'GRISM90', otherwise assume res=1000 pix/um.
+        'GRISM0' is GRISMR; 'GRISM90' is GRISMC
     module : str
         'A' or 'B'
     m : int
         Spectral order (1 or 2).
     """
+
+    # Option for GRISMR/GRISMC
+    if 'GRISMR' in pupil:
+        pupil = 'GRISM0'
+    elif 'GRISMC' in pupil:
+        pupil = 'GRISM90'
+
     # Mean spectral dispersion in number of pixels per um
-    res = 1000.0
     if ('GRISM90' in pupil) and (module == 'A'):
         res = 1003.12
-    if ('GRISM0' in pupil)  and (module == 'A'):
+    elif ('GRISM0' in pupil)  and (module == 'A'):
         res = 996.48
-    if ('GRISM90' in pupil) and (module == 'B'):
+    elif ('GRISM90' in pupil) and (module == 'B'):
         res = 1008.64
-    if ('GRISM0' in pupil)  and (module == 'B'):
+    elif ('GRISM0' in pupil)  and (module == 'B'):
         res = 1009.13
+    else:
+        res = 1000.0
 
     if m==2:
         res *= 2
@@ -566,6 +592,73 @@ def grism_res(pupil='GRISM', module='A', m=1):
     dw = 1. / res
 
     return (res, dw)
+
+def place_grismr_tso(waves, imarr, siaf_ap, wref=None, im_coords='sci'):
+    """
+    Shift image such that undeviated wavelength sits at the
+    SIAF aperture reference location.
+    """
+    
+    from .maths.coords import det_to_sci
+
+    if len(imarr.shape) > 2:
+        nz, ny_in, nx_in = imarr.shape
+    else:
+        nz = 1
+        ny_in, nx_in = imarr.shape
+        imarr = imarr.reshape([nz,ny_in,nx_in])
+    
+    # Convert to sci coordinates
+    if im_coords=='det':
+        det_name = siaf_ap.AperName[3:5]
+        imarr = det_to_sci(imarr, det_name)
+
+    # Determine reference wavelength
+    if wref is None:
+        if 'GRISMC' in siaf_ap.AperName:
+            pupil = 'GRISMC'
+        elif 'GRISM' in siaf_ap.AperName:
+            pupil = 'GRISMR'
+        else: # generic grism
+            pupil = 'GRISM'
+        module = 'A' if 'NRCA' in siaf_ap.AperName else 'B'
+        wref = grism_wref(pupil, module)
+
+    # Get reference coordinates
+    yref, xref = (siaf_ap.YSciRef, siaf_ap.XSciRef)
+    
+    # Final image size
+    ny_out, nx_out = (siaf_ap.YSciSize, siaf_ap.XSciSize)
+    
+    # Empirically determine shift value in dispersion direction
+    wnew_temp = pad_or_cut_to_size(waves, nx_out)
+    
+    # Index of reference wavelength associated with ref pixel
+    ind = (wnew_temp>wref-0.01) & (wnew_temp<wref+0.01)
+    xnew_temp = np.interp(wref, wnew_temp[ind], np.arange(nx_out)[ind])
+    xoff = xref - xnew_temp
+    
+    # Move to correct position in y
+    yoff = yref - (int(ny_out/2) - 1)
+    # if np.mod(ny_in,2)==0: # If even, shift by half a pixel?
+    #     yoff = yoff + 0.5
+    
+    imarr = pad_or_cut_to_size(imarr, (ny_out,nx_out), offset_vals=(yoff,xoff), fill_val=np.nan)
+    waves = pad_or_cut_to_size(waves, nx_out, offset_vals=xoff, fill_val=np.nan)
+    
+    # Remove NaNs
+    ind_nan = np.isnan(imarr)
+    imarr[ind_nan] = np.min(imarr[~ind_nan])
+    # Remove NaNs
+    # Fill in with wavelength solution (linear extrapolation)
+    ind_nan = np.isnan(waves)
+    # waves[ind_nan] = 0
+    arr = np.arange(nx_out)
+    cf = jl_poly_fit(arr[~ind_nan], waves[~ind_nan])
+    waves[ind_nan] = jl_poly(arr[ind_nan], cf)
+
+    return waves, imarr
+
 
 
 def get_SNR(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=None,
@@ -1548,7 +1641,7 @@ def bp_wise(filter):
 def bin_spectrum(sp, wave, waveunits='um'):
     """Rebin spectrum
 
-    Rebin a :mod:`pysynphot.spectrum` to a lower wavelength grid.
+    Rebin a :mod:`pysynphot.spectrum` to a different wavelength grid.
     This function first converts the input spectrum to units
     of counts then combines the photon flux onto the
     specified wavelength grid.
@@ -1597,6 +1690,553 @@ def bin_spectrum(sp, wave, waveunits='um'):
 
     return sp2
 
+
+def zodi_spec(zfact=None, ra=None, dec=None, thisday=None, **kwargs):
+    """Zodiacal light spectrum.
+
+    New: Use `ra`, `dec`, and `thisday` keywords to call `jwst_backgrounds`
+    to obtain more accurate predictions of the background.
+
+    Creates a spectrum of the zodiacal light emission in order to estimate the
+    in-band sky background flux. This is primarily the addition of two blackbodies
+    at T=5300K (solar scattered light) and T=282K (thermal dust emission)
+    that have been scaled to match literature flux values. 
+
+    In reality, the intensity of the zodiacal dust emission varies as a
+    function of viewing position. In this case, we have added the option
+    to scale the zodiacal level (or each component individually) by some
+    user-defined factor 'zfact'. The user can set zfact as a scalar in order
+    to scale the entire spectrum. If defined as a list, tuple, or np array,
+    then the each component gets scaled where T=5300K corresponds to the first
+    elements and T=282K is the second element of the array. 
+
+    The `zfact` parameter has no effect if `jwst_backgrounds` is called.
+    Representative values for zfact:
+
+        * 0.0 - No zodiacal emission
+        * 1.0 - Minimum zodiacal emission from JWST-CALC-003894
+        * 1.2 - Required NIRCam performance
+        * 2.5 - Average (default)
+        * 5.0 - High
+        * 10.0 - Maximum
+
+
+    Parameters
+    ----------
+    zfact : float
+        Factor to scale Zodiacal spectrum (default 2.5).
+    ra : float
+        Right ascension in decimal degrees
+    dec : float
+        Declination in decimal degrees
+    thisday: int
+        Calendar day to use for background calculation.  If not given, will 
+        use the average of visible calendar days.
+
+    Returns
+    -------
+    :mod:`pysynphot.spectrum`
+        Output is a Pysynphot spectrum with default units of flam (erg/s/cm^2/A/sr).
+        Note: Pysynphot doesn't recognize that it's per steradian, but we must keep
+        that in mind when integrating the flux per pixel.
+
+    Notes
+    -----
+    Added the ability to query the Euclid background model using
+    :func:`zodi_euclid` for a specific location and observing time.
+    The two blackbodies will be scaled to the 1.0 and 5.5 um emission.
+    This functionality is deprecated in favor of jwst_backgrounds.
+
+    Keyword Args
+    ------------
+    locstr :
+        Object name or RA/DEC (decimal degrees or sexigesimal).
+        Queries the `IPAC Euclid Background Model
+        <http://irsa.ipac.caltech.edu/applications/BackgroundModel/>`_
+    year : int
+        Year of observation.
+    day : float
+        Day of observation.
+
+    """
+
+    
+    if (ra is not None) and (dec is not None):
+        if _jbt_exists == False:
+            _log.warning("`jwst_backgrounds` not installed. `ra`, `dec`, and `thisday` parameters will not work.")
+        else:
+            # Wavelength for "bathtub plot" (not used here)
+            wave_bath = 2.5
+            bkg = jbt.background(ra, dec, wave_bath)
+            # Get wavelength and flux values 
+            wvals = bkg.bkg_data['wave_array'] # Wavelength (um)
+            farr = bkg.bkg_data['total_bg'] # Total background (MJy/sr)
+
+            if thisday is None:
+                # Use average of visible calendar days
+                ftot = farr.mean(axis=0)
+            else:
+                calendar = bkg.bkg_data['calendar']
+                if thisday in calendar:
+                    ind = np.where(calendar==thisday)[0][0]
+                    ftot = farr[ind]
+                else:
+                    _log.warning("The input calendar day {}".format(thisday)+" is not available. \
+                                 Choosing closest visible day.")
+                    diff = np.abs(calendar-thisday)
+                    ind = np.argmin(diff)
+                    ftot = farr[ind]
+
+            sp = S.ArraySpectrum(wave=wvals*1e4, flux=ftot*1e6, fluxunits='Jy')
+            sp.convert('flam')
+            sp.name = 'Total Background'
+
+            return sp
+
+
+    if zfact is None: 
+        zfact = 2.5
+    #_log.debug('zfact:{0:.1f}'.format(zfact))
+
+    if isinstance(zfact, (list, tuple, np.ndarray)):
+        f1, f2 = zfact
+    else:
+        f1 = f2 = zfact
+    # These values have been scaled to match JWST-CALC-003894 values
+    # in order to work with Pysynphot's blackbody function.
+    # Pysynphot's BB function is normalized to 1Rsun at 1kpc by default.
+    f1 *= 4.0e7
+    f2 *= 2.0e13
+
+    bb1 = f1 * S.BlackBody(5300.0)
+    bb2 = f2 * S.BlackBody(282.0)
+
+
+    # Query Euclid Background Model
+    locstr = kwargs.get('locstr')
+    year  = kwargs.get('year')
+    day   = kwargs.get('day')
+    if (locstr is not None) and (year is not None) and (day is not None):
+
+        # Wavelengths in um and values in MJy
+        waves = np.array([1.0,5.5])
+        vals = zodi_euclid(locstr, year, day, waves, **kwargs)
+
+        bb1.convert('Jy')
+        bb2.convert('Jy')
+
+        # MJy at wavelength locations
+        f_bb1 = bb1.sample(waves*1e4) / 1e6
+        f_bb2 = bb2.sample(waves*1e4) / 1e6
+
+        bb1 *= (vals[0]-f_bb2[0])/f_bb1[0]
+        bb2 *= (vals[1]-f_bb1[1])/f_bb2[1]
+
+    sp_zodi = bb1 + bb2
+    sp_zodi.convert('flam')
+    sp_zodi.name = 'Zodiacal Light'
+
+
+    return sp_zodi
+
+
+def zodi_euclid(locstr, year, day, wavelengths=[1,5.5], ido_viewin=0, **kwargs):
+    """IPAC Euclid Background Model
+
+    Queries the `IPAC Euclid Background Model
+    <http://irsa.ipac.caltech.edu/applications/BackgroundModel/>`_
+    in order to get date and position-specific zodiacal dust emission.
+
+    The program relies on ``urllib3`` to download the page in XML format.
+    However, the website only allows single wavelength queries, so
+    this program implements a multithreaded procedure to query
+    multiple wavelengths simultaneously. However, due to the nature
+    of the library, only so many requests are allowed to go out at a time, 
+    so this process can take some time to complete.
+    Testing shows about 500 wavelengths in 10 seconds as a rough ballpark.
+
+    Recommended to grab only a few wavelengths for normalization purposes.
+
+    Parameters
+    ----------
+    locstr : str
+        This input field must contain either coordinates (as string), 
+        or an object name resolveable via NED or SIMBAD.
+    year: string
+        Year. Limited to 2018 to 2029 for L2 position.
+    day : string
+        Day of year (1-366). Limited to 2018 Day 274 to 2029 Day 120 
+        for L2 position and ido_viewin=0.
+    wavelength : array-like
+        Wavelength in microns (0.5-1000).
+    ido_viewin : 0 or 1 
+        If set to 0, returns zodiacal emission at specific location for input time.
+        If set to 1, then gives the median value for times of the year that the object 
+        is in a typical spacecraft viewing zone. Currently this is set to solar 
+        elongations between 85 and 120 degrees.
+
+    References
+    ----------
+    See the `Euclid Help Website
+    <http://irsa.ipac.caltech.edu/applications/BackgroundModel/docs/dustProgramInterface.html>`_
+    for more details.
+
+    """
+
+    # from urllib2 import urlopen
+    import urllib3
+    import xmltodict
+    from multiprocessing.pool import ThreadPool
+
+    def fetch_url(url):
+        """
+        TODO: Add error handling.
+        """
+        # response = urlopen(url)
+        # response = response.read()
+
+        http = urllib3.PoolManager()
+        response = http.request('GET', url)
+
+        d = xmltodict.parse(response.data, xml_attribs=True)
+        fl_str = d['results']['result']['statistics']['zody']
+        return float(fl_str.split(' ')[0])
+
+
+    #locstr="17:26:44 -73:19:56"
+    #locstr = locstr.replace(' ', '+')
+    #year=2019
+    #day=1
+    #obslocin=0
+    #ido_viewin=1
+    #wavelengths=None
+
+    req_list = []
+    for w in wavelengths:
+        url = 'http://irsa.ipac.caltech.edu/cgi-bin/BackgroundModel/nph-bgmodel?'
+        req = "{}&locstr={}&wavelength={:.2f}&year={}&day={}&obslocin=0&ido_viewin={}"\
+            .format(url, locstr, w, year, day, ido_viewin)
+        req_list.append(req)
+
+    nthread = np.min([50,len(wavelengths)])
+    pool = ThreadPool(nthread)
+    results = pool.imap(fetch_url, req_list)
+
+    res = []
+    for r in results: res.append(r)
+    pool.close()
+
+    return np.array(res)
+
+
+# def _zodi_spec_old(level=2):
+# 	"""
+# 	Create a spectrum of the zodiacal light emission in order to estimate the
+# 	in-band sky background flux. This is simply the addition of two blackbodies
+# 	at T=5800K (solar scattered light) and T=300K (thermal dust emission)
+# 	that have been scaled to match the literature flux values.
+#
+# 	In reality, the intensity of the zodiacal dust emission varies as a
+# 	function of viewing position. In this case, we have added different levels
+# 	intensity similiar to the results given by old NIRCam ETC. These have not
+# 	been validated in any way and should be used with caution, but at least
+# 	give an order of magnitude of the zodiacal light background flux.
+#
+# 	There are four different levels that can be passed through the level
+# 	parameter: 0=None, 1=Low, 2=Avg, 3=High
+#
+# 	For instance set sp_zodi = zodi_spec(3) for a highish sky flux.
+# 	Default is 2
+# 	"""
+#
+# 	bb1 = S.BlackBody(5800.); bb2 = S.BlackBody(300.)
+# 	sp_zodi = (1.7e7*bb1 + 2.3e13*bb2) * 3.73
+# 	sp_zodi.convert('flam')
+#
+# 	# This is how some case statements are done in Python
+# 	# Select the level of zodiacal light emission
+# 	# 0=None, 1=Low, 2=Avg, 3=High
+# 	switcher = {0:0.0, 1:0.5, 2:1.0, 3:1.8}
+# 	factor = switcher.get(level, None)
+#
+# 	if factor is None:
+# 		_log.warning('The input parameter level=%s is not valid. Setting zodiacal light to 0.' % level)
+# 		_log.warning('Valid values inlclude: %s' % switcher.keys())
+# 		factor = 0
+#
+# 	sp_zodi *= factor
+# 	sp_zodi.name = 'Zodiacal Light'
+#
+# 	return sp_zodi
+
+def grism_background_image(filter, pupil='GRISM0', module='A', sp_bg=None, 
+                           include_com=True, **kwargs):
+    """Create full grism background image"""
+
+    # Option for GRISMR/GRISMC
+    if 'GRISMR' in pupil:
+        pupil = 'GRISM0'
+    elif 'GRISMC' in pupil: 
+        pupil = 'GRISM90'
+
+    upper = 9.6 if include_com else 31.2
+    g_bg = grism_background(filter, pupil, module, sp_bg, upper=upper, **kwargs)
+
+    final_image = np.zeros([2048,2048])
+    if 'GRISM0' in pupil:
+        final_image = final_image + g_bg.reshape([1,-1])
+    else:
+        final_image = final_image + g_bg.reshape([-1,1])
+        # Add COM background
+        if include_com:
+            final_image += grism_background_com(filter, pupil, module, sp_bg, **kwargs)
+
+    return final_image
+    
+
+def grism_background(filter, pupil='GRISM0', module='A', sp_bg=None, 
+                     orders=[1,2], wref=None, upper=9.6, **kwargs):
+    """
+    
+    Returns a 1D array of grism Zodiacal/thermal background
+    emission model, including roll-off from pick-off mirror (POM)
+    edges. By default, this includes light dispersed by the
+    1st and 2nd grism orders (m=1 and m=2). 
+    
+    For column dipsersion, we ignore the upper region occupied by
+    the coronagraphic mask region by default. The preferred way to
+    include this region is to add the dispersed COM image from the
+    `grism_background_com` function to create the full 2048x2048
+    image. Or, more simply (but less accurate) is to set an `upper`
+    value of 31.2, which is the approximately distance (in arcsec)
+    from the top of the detector to the top of the coronagraphic
+    field of view.
+    
+    Parameters
+    ==========
+    filter : str
+        Name of filter (Long Wave only).
+    pupil : str
+        Either 'GRISM0' ('GRISMR') or 'GRISM90' ('GRISMC').
+    module : str
+        NIRCam 'A' or 'B' module.
+    sp_bg : :mod:`pysynphot.spectrum`
+        Spectrum of Zodiacal background emission, which gets
+        multiplied by bandpass throughput to determine final
+        wavelength-dependent flux that is then dispersed.
+    orders : array-like
+        What spectral orders to include? Valid orders are 1 and 2.
+    wref : float or None
+        Option to set the undeviated wavelength, otherwise this will
+        search a lookup table depending on the grism.
+    upper : float
+        Set the maximum bounds for out-of-field flux to be dispersed
+        onto the detector. By default, this value is 9.6", corresponding
+        to the bottom of the coronagraphic mask. Use `grism_background_com`
+        to then include image of dispersed COM mask. 
+        If you want something simpler, increase this value to 31.2" to 
+        assume the coronagraphic FoV is free of any holder blockages or 
+        substrate and occulting masks.
+        
+    Keyword Args
+    ============
+    zfact : float
+        Factor to scale Zodiacal spectrum (default 2.5).
+    ra : float
+        Right ascension in decimal degrees
+    dec : float
+        Declination in decimal degrees
+    thisday: int
+        Calendar day to use for background calculation.  If not given, will 
+        use the average of visible calendar days.
+    """
+    
+    # Option for GRISMR/GRISMC
+    if 'GRISMR' in pupil:
+        pupil = 'GRISM0'
+    elif 'GRISMC' in pupil:
+        pupil = 'GRISM90'
+        
+    # Pixel scale
+    pix_scale, _, _ = channel_select(read_filter(filter))
+
+    # Undeviated wavelength
+    if wref is None: 
+        wref = grism_wref(pupil, module) 
+    
+    # Background spectrum
+    if sp_bg is None:
+        sp_bg = zodi_spec(**kwargs)
+
+    # Total number of "virtual" pixels spanned by pick-off mirror
+    border = np.array([8.4, 8.0]) if ('GRISM0' in pupil) else np.array([12.6, upper])
+    extra_pix = (border / pix_scale + 0.5).astype('int')
+    extra_pix[extra_pix<=0] = 1 # Ensure there's at least 1 extra pixel
+    npix_tot = 2048 + extra_pix.sum()
+
+    flux_all = np.zeros(npix_tot)
+    for grism_order in orders:
+        # Get filter throughput and create bandpass
+        bp = read_filter(filter, pupil=pupil, module=module, 
+                         grism_order=grism_order, **kwargs)
+        
+        # Get wavelength dispersion solution
+        res, dw = grism_res(pupil, module, grism_order) # Resolution and dispersion
+        
+        # Observation spectrum converted to count rate
+        obs_bg = S.Observation(sp_bg, bp, bp.wave)
+        obs_bg.convert('counts')
+
+        # Total background flux per pixel (not dispersed)
+        area_scale = (pix_scale/206265.0)**2
+        fbg_tot = obs_bg.countrate() * area_scale
+        # Total counts/sec within each wavelength bin
+        binwave = obs_bg.binwave/1e4
+        binflux = obs_bg.binflux*area_scale
+            
+        # Interpolation function
+        fint = interp1d(binwave, binflux, kind='cubic')
+        # Wavelengths at each pixel to interpolate
+        wave_vals = np.arange(binwave.min(), binwave.max(), dw)
+        # Get flux values and preserve total flux
+        flux_vals = fint(wave_vals)
+        flux_vals = fbg_tot * flux_vals / flux_vals.sum()
+        
+        # # Wavelengths at each pixel to interpolate
+        # wave_vals = np.arange(bp.wave.min()/1e4, bp.wave.max()/1e4, dw)
+    
+        # # Rebin onto desired wavelength grid
+        # sp_new = bin_spectrum(sp_bg, wave_vals, waveunits='um')
+        # obs_bg = S.Observation(sp_new, bp, binset=sp_new.wave)
+        # # Get flux values per pixel
+        # obs_bg.convert('counts')
+        # flux_vals = obs_bg.binflux * (pix_scale/206265.0)**2
+    
+        # Index of reference wavelength
+        iref = int((wref - wave_vals[0]) / (wave_vals[1] - wave_vals[0]))
+
+        # Determine the array indices that contribute for each pixel
+        # Use indexing rather than array shifting for speed
+        # This depends on the size of the POM relative to detector
+        offset = -1*int(wref*res/2 + 0.5) if grism_order==2 else 0
+        i1_arr = np.arange(iref,iref-npix_tot,-1)[::-1] + offset
+        i2_arr = np.arange(iref,iref+npix_tot,+1) + offset
+        i1_arr[i1_arr<0] = 0
+        i1_arr[i1_arr>len(wave_vals)] = len(wave_vals)
+        i2_arr[i2_arr<0] = 0
+        i2_arr[i2_arr>len(wave_vals)] = len(wave_vals)
+
+        flux_all += np.array([flux_vals[i1:i2].sum() for i1,i2 in zip(i1_arr,i2_arr)])
+                
+    # Crop only detector pixels
+    flux_all = flux_all[extra_pix[0]:-extra_pix[1]]
+    
+    # Module B GRISM0/R disperses in opposite direction ('sci' coords)
+    if ('GRISM0' in pupil) and (module=='B'):
+        flux_all = flux_all[::-1]
+        
+    # Return single 
+    return flux_all
+
+def grism_background_com(filter, pupil='GRISM90', module='A', sp_bg=None, 
+                         wref=None, **kwargs):
+    
+    
+    # Option for GRISMR/GRISMC
+    if 'GRISMR' in pupil:
+        pupil = 'GRISM0'
+    elif 'GRISMC' in pupil:
+        pupil = 'GRISM90'
+        
+    if 'GRISM0' in pupil:
+        _log.info('COM feature not present for row grisms.')
+        return 0
+
+    # Only see COM for 1st order
+    # Minimum wavelength is 2.4um, which means 2nd order is 2400 pixels away.
+    grism_order = 1
+    # Get filter throughput and create bandpass
+    bp = read_filter(filter, pupil=pupil, module=module, grism_order=grism_order, 
+                     coron_substrate=True, **kwargs)
+
+    # Pixel scale
+    pix_scale, _, _ = channel_select(read_filter(filter))
+
+    # Get wavelength dispersion solution
+    res, dw = grism_res(pupil, module, grism_order)
+
+    # Undeviated wavelength
+    if wref is None: 
+        wref = grism_wref(pupil, module) 
+    
+    # Background spectrum
+    if sp_bg is None:
+        sp_bg = zodi_spec(**kwargs)
+
+    # Coronagraphic mask image
+    im_com = build_mask_detid(module+'5')
+    # Crop to mask holder
+    # Remove anything that is 0 or max
+    im_collapse = im_com.sum(axis=1)
+    ind_cut = (im_collapse == im_collapse.max()) | (im_collapse == 0)
+    im_com = im_com[~ind_cut]
+    ny_com, nx_com = im_com.shape
+
+    # Observation spectrum converted to count rate
+    obs_bg = S.Observation(sp_bg, bp, bp.wave)
+    obs_bg.convert('counts')
+
+    # Total background flux per pixel (not dispersed)
+    area_scale = (pix_scale/206265.0)**2
+    fbg_tot = obs_bg.countrate() * area_scale
+    # Total counts/sec within each wavelength bin
+    binwave = obs_bg.binwave/1e4
+    binflux = obs_bg.binflux*area_scale
+
+    # Interpolation function
+    fint = interp1d(binwave, binflux, kind='cubic')
+    # Wavelengths at each pixel to interpolate
+    wave_vals = np.arange(binwave.min(), binwave.max(), dw)
+    # Get flux values and preserve total flux
+    flux_vals = fint(wave_vals)
+    flux_vals = fbg_tot * flux_vals / flux_vals.sum()
+
+    # Index of reference wavelength in spectrum
+    iref = int((wref - wave_vals[0]) / (wave_vals[1] - wave_vals[0]))
+        
+    # Pixel position of COM image lower and upper bounds
+    upper = 9.6
+    ipix_ref = 2048 + int(upper/pix_scale + 0.5)
+    ipix_lower = ipix_ref - iref 
+    ipix_upper = ipix_lower + ny_com + len(flux_vals)
+    # print('COM', ipix_lower, ipix_upper)
+        
+    # Only include if pixel positions overlap detector frame
+    if (ipix_upper>0) and (ipix_lower<2048):
+        # Shift and add images
+        im_shift = np.zeros([ny_com+len(flux_vals), nx_com])
+        # print(len(flux_vals))
+        for i, f in enumerate(flux_vals):
+            im_shift[i:i+ny_com,:] += im_com*f
+            
+        # Position at appropriate location within detector frame
+        # First, either pad the lower, or crop to set bottom of detector
+        if ipix_lower>=0 and ipix_lower<2048:
+            im_shift = np.pad(im_shift, ((ipix_lower,0),(0,0)))
+        elif ipix_lower<0:
+            im_shift = im_shift[-ipix_lower:,:]
+            
+        # Expand or contract to final full detector size
+        if im_shift.shape[0]<2048:
+            im_shift = np.pad(im_shift, ((0,2048-im_shift.shape[0]),(0,0)))
+        else:
+            im_shift = im_shift[0:2048,:]
+
+        res = im_shift 
+    else:
+        res = 0
+
+    return res
 
 def BOSZ_spectrum(Teff, metallicity, log_g, res=2000, interpolate=True, **kwargs):
     """BOSZ stellar atmospheres (Bohlin et al 2017).
@@ -1959,285 +2599,6 @@ def stellar_spectrum(sptype, *renorm_args, **kwargs):
     return sp
 
 
-
-
-def zodi_spec(zfact=None, ra=None, dec=None, thisday=None, **kwargs):
-    """Zodiacal light spectrum.
-
-    New: Use `ra`, `dec`, and `thisday` keywords to call `jwst_backgrounds`
-    to obtain more accurate predictions of the background.
-
-    Creates a spectrum of the zodiacal light emission in order to estimate the
-    in-band sky background flux. This is primarily the addition of two blackbodies
-    at T=5300K (solar scattered light) and T=282K (thermal dust emission)
-    that have been scaled to match literature flux values. 
-
-    In reality, the intensity of the zodiacal dust emission varies as a
-    function of viewing position. In this case, we have added the option
-    to scale the zodiacal level (or each component individually) by some
-    user-defined factor 'zfact'. The user can set zfact as a scalar in order
-    to scale the entire spectrum. If defined as a list, tuple, or np array,
-    then the each component gets scaled where T=5300K corresponds to the first
-    elements and T=282K is the second element of the array. 
-
-    The `zfact` parameter has no effect if `jwst_backgrounds` is called.
-    Representative values for zfact:
-
-        * 0.0 - No zodiacal emission
-        * 1.0 - Minimum zodiacal emission from JWST-CALC-003894
-        * 1.2 - Required NIRCam performance
-        * 2.5 - Average (default)
-        * 5.0 - High
-        * 10.0 - Maximum
-
-
-    Parameters
-    ----------
-    zfact : float
-        Factor to scale Zodiacal spectrum (default 2.5).
-    ra : float
-        Right ascension in decimal degrees
-    dec : float
-        Declination in decimal degrees
-    thisday: int
-        Calendar day to use for background calculation.  If not given, will 
-        use the average of visible calendar days.
-
-    Returns
-    -------
-    :mod:`pysynphot.spectrum`
-        Output is a Pysynphot spectrum with default units of flam (erg/s/cm^2/A/sr).
-        Note: Pysynphot doesn't recognize that it's per steradian, but we must keep
-        that in mind when integrating the flux per pixel.
-
-    Notes
-    -----
-    Added the ability to query the Euclid background model using
-    :func:`zodi_euclid` for a specific location and observing time.
-    The two blackbodies will be scaled to the 1.0 and 5.5 um emission.
-    This functionality is deprecated in favor of jwst_backgrounds.
-
-    Keyword Args
-    ------------
-    locstr :
-        Object name or RA/DEC (decimal degrees or sexigesimal).
-        Queries the `IPAC Euclid Background Model
-        <http://irsa.ipac.caltech.edu/applications/BackgroundModel/>`_
-    year : int
-        Year of observation.
-    day : float
-        Day of observation.
-
-    """
-
-    
-    if (ra is not None) and (dec is not None):
-        if _jbt_exists == False:
-            _log.warning("`jwst_backgrounds` not installed. `ra`, `dec`, and `thisday` parameters will not work.")
-        else:
-            # Wavelength for "bathtub plot" (not used here)
-            wave_bath = 2.5
-            bkg = jbt.background(ra, dec, wave_bath)
-            # Get wavelength and flux values 
-            wvals = bkg.bkg_data['wave_array'] # Wavelength (um)
-            farr = bkg.bkg_data['total_bg'] # Total background (MJy/sr)
-
-            if thisday is None:
-                # Use average of visible calendar days
-                ftot = farr.mean(axis=0)
-            else:
-                calendar = bkg.bkg_data['calendar']
-                if thisday in calendar:
-                    ind = np.where(calendar==thisday)[0][0]
-                    ftot = farr[ind]
-                else:
-                    _log.warning("The input calendar day {}".format(thisday)+" is not available. \
-                                 Choosing closest visible day.")
-                    diff = np.abs(calendar-thisday)
-                    ind = np.argmin(diff)
-                    ftot = farr[ind]
-
-            sp = S.ArraySpectrum(wave=wvals*1e4, flux=ftot*1e6, fluxunits='Jy')
-            sp.convert('flam')
-            sp.name = 'Total Background'
-
-            return sp
-
-
-    if zfact is None: zfact = 2.5
-    #_log.debug('zfact:{0:.1f}'.format(zfact))
-
-    if isinstance(zfact, (list, tuple, np.ndarray)):
-        f1, f2 = zfact
-    else:
-        f1 = f2 = zfact
-    # These values have been scaled to match JWST-CALC-003894 values
-    # in order to work with Pysynphot's blackbody function.
-    # Pysynphot's BB function is normalized to 1Rsun at 1kpc by default.
-    f1 *= 4.0e7
-    f2 *= 2.0e13
-
-    bb1 = f1 * S.BlackBody(5300.0)
-    bb2 = f2 * S.BlackBody(282.0)
-
-
-    # Query Euclid Background Model
-    locstr = kwargs.get('locstr')
-    year  = kwargs.get('year')
-    day   = kwargs.get('day')
-    if (locstr is not None) and (year is not None) and (day is not None):
-
-        # Wavelengths in um and values in MJy
-        waves = np.array([1.0,5.5])
-        vals = zodi_euclid(locstr, year, day, waves, **kwargs)
-
-        bb1.convert('Jy')
-        bb2.convert('Jy')
-
-        # MJy at wavelength locations
-        f_bb1 = bb1.sample(waves*1e4) / 1e6
-        f_bb2 = bb2.sample(waves*1e4) / 1e6
-
-        bb1 *= (vals[0]-f_bb2[0])/f_bb1[0]
-        bb2 *= (vals[1]-f_bb1[1])/f_bb2[1]
-
-    sp_zodi = bb1 + bb2
-    sp_zodi.convert('flam')
-    sp_zodi.name = 'Zodiacal Light'
-
-
-    return sp_zodi
-
-
-def zodi_euclid(locstr, year, day, wavelengths=[1,5.5], ido_viewin=0, **kwargs):
-    """IPAC Euclid Background Model
-
-    Queries the `IPAC Euclid Background Model
-    <http://irsa.ipac.caltech.edu/applications/BackgroundModel/>`_
-    in order to get date and position-specific zodiacal dust emission.
-
-    The program relies on ``urllib3`` to download the page in XML format.
-    However, the website only allows single wavelength queries, so
-    this program implements a multithreaded procedure to query
-    multiple wavelengths simultaneously. However, due to the nature
-    of the library, only so many requests are allowed to go out at a time, 
-    so this process can take some time to complete.
-    Testing shows about 500 wavelengths in 10 seconds as a rough ballpark.
-
-    Recommended to grab only a few wavelengths for normalization purposes.
-
-    Parameters
-    ----------
-    locstr : str
-        This input field must contain either coordinates (as string), 
-        or an object name resolveable via NED or SIMBAD.
-    year: string
-        Year. Limited to 2018 to 2029 for L2 position.
-    day : string
-        Day of year (1-366). Limited to 2018 Day 274 to 2029 Day 120 
-        for L2 position and ido_viewin=0.
-    wavelength : array-like
-        Wavelength in microns (0.5-1000).
-    ido_viewin : 0 or 1 
-        If set to 0, returns zodiacal emission at specific location for input time.
-        If set to 1, then gives the median value for times of the year that the object 
-        is in a typical spacecraft viewing zone. Currently this is set to solar 
-        elongations between 85 and 120 degrees.
-
-    References
-    ----------
-    See the `Euclid Help Website
-    <http://irsa.ipac.caltech.edu/applications/BackgroundModel/docs/dustProgramInterface.html>`_
-    for more details.
-
-    """
-
-    # from urllib2 import urlopen
-    import urllib3
-    import xmltodict
-    from multiprocessing.pool import ThreadPool
-
-    def fetch_url(url):
-        """
-        TODO: Add error handling.
-        """
-        # response = urlopen(url)
-        # response = response.read()
-
-        http = urllib3.PoolManager()
-        response = http.request('GET', url)
-
-        d = xmltodict.parse(response.data, xml_attribs=True)
-        fl_str = d['results']['result']['statistics']['zody']
-        return float(fl_str.split(' ')[0])
-
-
-    #locstr="17:26:44 -73:19:56"
-    #locstr = locstr.replace(' ', '+')
-    #year=2019
-    #day=1
-    #obslocin=0
-    #ido_viewin=1
-    #wavelengths=None
-
-    req_list = []
-    for w in wavelengths:
-        url = 'http://irsa.ipac.caltech.edu/cgi-bin/BackgroundModel/nph-bgmodel?'
-        req = "{}&locstr={}&wavelength={:.2f}&year={}&day={}&obslocin=0&ido_viewin={}"\
-            .format(url, locstr, w, year, day, ido_viewin)
-        req_list.append(req)
-
-    nthread = np.min([50,len(wavelengths)])
-    pool = ThreadPool(nthread)
-    results = pool.imap(fetch_url, req_list)
-
-    res = []
-    for r in results: res.append(r)
-    pool.close()
-
-    return np.array(res)
-
-
-# def _zodi_spec_old(level=2):
-# 	"""
-# 	Create a spectrum of the zodiacal light emission in order to estimate the
-# 	in-band sky background flux. This is simply the addition of two blackbodies
-# 	at T=5800K (solar scattered light) and T=300K (thermal dust emission)
-# 	that have been scaled to match the literature flux values.
-#
-# 	In reality, the intensity of the zodiacal dust emission varies as a
-# 	function of viewing position. In this case, we have added different levels
-# 	intensity similiar to the results given by old NIRCam ETC. These have not
-# 	been validated in any way and should be used with caution, but at least
-# 	give an order of magnitude of the zodiacal light background flux.
-#
-# 	There are four different levels that can be passed through the level
-# 	parameter: 0=None, 1=Low, 2=Avg, 3=High
-#
-# 	For instance set sp_zodi = zodi_spec(3) for a highish sky flux.
-# 	Default is 2
-# 	"""
-#
-# 	bb1 = S.BlackBody(5800.); bb2 = S.BlackBody(300.)
-# 	sp_zodi = (1.7e7*bb1 + 2.3e13*bb2) * 3.73
-# 	sp_zodi.convert('flam')
-#
-# 	# This is how some case statements are done in Python
-# 	# Select the level of zodiacal light emission
-# 	# 0=None, 1=Low, 2=Avg, 3=High
-# 	switcher = {0:0.0, 1:0.5, 2:1.0, 3:1.8}
-# 	factor = switcher.get(level, None)
-#
-# 	if factor is None:
-# 		_log.warning('The input parameter level=%s is not valid. Setting zodiacal light to 0.' % level)
-# 		_log.warning('Valid values inlclude: %s' % switcher.keys())
-# 		factor = 0
-#
-# 	sp_zodi *= factor
-# 	sp_zodi.name = 'Zodiacal Light'
-#
-# 	return sp_zodi
-
 # Class for creating an input source spectrum
 class source_spectrum(object):
     """Model source spectrum
@@ -2515,7 +2876,7 @@ class source_spectrum(object):
         """Fit a model function to photometry
 
         Use :func:`scipy.optimize.least_squares` to find the best fit
-        model to the observed photometric data. If not parameters passed,
+        model to the observed photometric data. If no parameters passed,
         then defaults are set.
 
         Keyword Args
@@ -3061,15 +3422,14 @@ def linder_table(file=None, **kwargs):
         is used to generate dictionary. If set, chooses the closest age
         supplied in table.
     file : string
-        Location and name of COND file. See isochrones stored at
-        https://phoenix.ens-lyon.fr/Grids/.
-        Default is model.AMES-Cond-2000.M-0.0.JWST.Vega
+        Location and name of Linder et al file. 
+        Default is 'BEX_evol_mags_-3_MH_0.00.dat'
     """
 
     # Default file to read and load
     if file is None:
-        base_dir = conf.PYNRC_PATH + 'linder/isochrones/'
-        file = base_dir + 'BEX_evol_mags_-3_MH_0.00.dat'
+        indir = os.path.join(conf.PYNRC_PATH, 'linder/isochrones/')
+        file = indir + 'BEX_evol_mags_-3_MH_0.00.dat'
 
     with open(file) as f:
         content = f.readlines()
@@ -3093,7 +3453,7 @@ def linder_table(file=None, **kwargs):
     
     return tbl
     
-def linder_filter(table, filt, age, dist=None, 
+def linder_filter(table, filt, age, dist=10, 
     cond_interp=True, cond_file=None, **kwargs):
     """Linder Mags vs Mass Arrays
     
@@ -3110,11 +3470,13 @@ def linder_filter(table, filt, age, dist=None,
     Parameters
     ==========
     table : astropy table
-        Astropy table output from `linder_table`
+        Astropy table output from `linder_table`.
     filt : string
-        Name of NIRCam filter
+        Name of NIRCam filter.
     age : float
-        Age of planet mass
+        Age of planet mass.
+    dist : float
+        Distance in pc. Default is 10pc (abs mag).
     """    
     
     def _trim_nan_image(xgrid, ygrid, zgrid):
@@ -3588,7 +3950,7 @@ def coron_trans(name, module='A', pixscale=None, fov=20, nd_squares=True):
             polyfitcoeffs = np.array([2.01210737e-04, -7.18758337e-03, 1.12381516e-01,
                                       -1.00877701e+00, 5.72538509e+00, -2.12943497e+01,
                                       5.18745152e+01, -7.97815606e+01, 7.02728734e+01])
-            scalefact = scalefact[:, ::-1] # flip orientation left/right for SWB mask
+            # scalefact = scalefact[:, ::-1] # flip orientation left/right for SWB mask
         elif name == 'MASKLWB':
             polyfitcoeffs = np.array([9.16195583e-05, -3.27354831e-03, 5.11960734e-02,
                                       -4.59674047e-01, 2.60963397e+00, -9.70881273e+00,
@@ -3606,6 +3968,10 @@ def coron_trans(name, module='A', pixscale=None, fov=20, nd_squares=True):
 
     else: # Circular Masks
         r = poppy.accel_math._r(x, y)
+        sigmar = sigma * r
+
+        # clip sigma: The minimum is to avoid divide by zero
+        #             the maximum truncates after the first sidelobe to match the hardware
         bessel_j1_zero2 = scipy.special.jn_zeros(1, 2)[1]
         sigmar.clip(np.finfo(sigmar.dtype).tiny, bessel_j1_zero2, out=sigmar)  # avoid divide by zero -> NaNs
         if poppy.accel_math._USE_NUMEXPR:
@@ -3632,46 +3998,46 @@ def coron_trans(name, module='A', pixscale=None, fov=20, nd_squares=True):
         y *= -1
         #x = x[::-1, ::-1]
         #y = y[::-1, ::-1]
-        if ((module=='A' and name=='MASKLWB') or
-            (module=='B' and name=='MASK210R')):
+        if ((module == 'A' and name == 'MASKLWB') or
+                (module == 'B' and name == 'MASK210R')):
             wnd_5 = np.where(
-                ((y > 5)&(y<10)) &
+                ((y > 5) & (y < 10)) &
                 (
                     ((x < -5) & (x > -10)) |
                     ((x > 7.5) & (x < 12.5))
                 )
             )
             wnd_2 = np.where(
-                ((y > -10)&(y<-8)) &
+                ((y > -10) & (y < -8)) &
                 (
                     ((x < -8) & (x > -10)) |
                     ((x > 9) & (x < 11))
                 )
             )
-        elif ((module=='A' and name=='MASK210R') or
-              (module=='B' and name=='MASKSWB')):
+        elif ((module == 'A' and name == 'MASK210R') or
+              (module == 'B' and name == 'MASKSWB')):
             wnd_5 = np.where(
-                ((y > 5)&(y<10)) &
+                ((y > 5) & (y < 10)) &
                 (
                     ((x > -12.5) & (x < -7.5)) |
-                    ((x > 5) & (x <10))
+                    ((x > 5) & (x < 10))
                 )
             )
             wnd_2 = np.where(
-                ((y > -10)&(y<-8)) &
+                ((y > -10) & (y < -8)) &
                 (
                     ((x > -11) & (x < -9)) |
-                    ((x > 8) & (x<10))
+                    ((x > 8) & (x < 10))
                 )
             )
         else:
             wnd_5 = np.where(
-                ((y > 5)&(y<10)) &
+                ((y > 5) & (y < 10)) &
                 (np.abs(x) > 7.5) &
                 (np.abs(x) < 12.5)
             )
             wnd_2 = np.where(
-                ((y > -10)&(y<-8)) &
+                ((y > -10) & (y < -8)) &
                 (np.abs(x) > 9) &
                 (np.abs(x) < 11)
             )
@@ -3745,7 +4111,7 @@ def build_mask_detid(detid, oversample=1, ref_mask=None, pupil=None):
         Reference mask for placement of coronagraphic mask elements.
         If None, then defaults are chosen for each detector.
     pupil : str or None
-        Which Lyot pupil stop is being used?
+        Which Lyot pupil stop is being used? This affects holder placement.
         If None, then defaults based on ref_mask.
     """
 
