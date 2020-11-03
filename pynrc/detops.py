@@ -418,7 +418,6 @@ class det_timing(object):
     def nff(self, val):
         self._nff = val
 
-
     def _validate_pixel_settings(self):
         """ 
         Validation to make sure the defined pixel sizes are consistent with
@@ -464,6 +463,15 @@ class det_timing(object):
         # Update values if no errors were thrown
         self._xpix = xpix; self._x0 = x0
         self._ypix = ypix; self._y0 = y0
+
+    def _fix_precision(self, input):
+        """
+        Many timing calculations result from minor precision issues with very
+        small numbers (1e-16) added the real result. This function attempts
+        to truncate these small innaccuracies by dividing by the clock sample
+        time to get the total integer number of clock cycles.
+        """
+        return int(input * self._pixel_rate + 0.5) / self._pixel_rate
 
     @property
     def _extra_lines(self):
@@ -562,7 +570,7 @@ class det_timing(object):
         ngroup = ma.ngroup
 
         tint = (nd1 + ngroup*nf + (ngroup-1)*nd2) * self.time_frame
-        return tint
+        return self._fix_precision(tint)
 
     @property
     def time_int(self):
@@ -575,9 +583,11 @@ class det_timing(object):
         
         ma = self.multiaccum
         if ma.ngroup<=1:
-            return self.time_frame * (ma.nd1 + (ma.nf + 1) / 2)
+            res = self.time_frame * (ma.nd1 + (ma.nf + 1) / 2)
         else:
-            return self.time_group * (ma.ngroup - 1)
+            res = self.time_group * (ma.ngroup - 1)
+
+        return self._fix_precision(res)
 
     @property
     def time_int_eff(self):
@@ -587,7 +597,8 @@ class det_timing(object):
     @property
     def time_exp(self):
         """Total photon collection time for all ramps."""
-        return self.multiaccum.nint * self.time_ramp
+        res = self.multiaccum.nint * self.time_ramp
+        return self._fix_precision(res)
 
 #     @property
 #     def time_total_int(self):
@@ -617,7 +628,8 @@ class det_timing(object):
         nr = ma.nr1
 
         nframes = nr + nd1 + ngroup*nf + (ngroup-1)*nd2 + nd3        
-        return nframes * self.time_frame + self.time_row_reset
+        res = nframes * self.time_frame + self.time_row_reset
+        return self._fix_precision(res)
 
     @property
     def time_total_int2(self):
@@ -637,7 +649,8 @@ class det_timing(object):
             return 0.
         else:
             nframes = nr + nd1 + ngroup*nf + (ngroup-1)*nd2 + nd3        
-            return nframes * self.time_frame + self.time_row_reset
+            res = nframes * self.time_frame + self.time_row_reset
+            return self._fix_precision(res)
 
     @property
     def time_total(self):
@@ -646,7 +659,8 @@ class det_timing(object):
         # exp2 = 0 if self.multiaccum.nint <= 1 else self.time_total_int2 * (self.multiaccum.nint-1)
         exp1 = self.time_total_int1
         exp2 = self.time_total_int2 * (self.multiaccum.nint-1)
-        return exp1 + exp2 + self._exp_delay
+        res = exp1 + exp2 + self._exp_delay
+        return self._fix_precision(res)
 
     @property
     def times_group_avg(self):
@@ -671,6 +685,69 @@ class det_timing(object):
                  ('t_int_tot1', self.time_total_int1), 
                  ('t_int_tot2', self.time_total_int2)]
         return tuples_to_dict(times, verbose)
+
+    def int_times_table(self, date_start, time_start, offset_seconds=None):
+        """Create and populate the INT_TIMES table, which is saved as a
+        separate extension in the output data file.
+
+        Parameters
+        ----------
+        date_start : str
+            Date string of observation ('2020-02-28')
+        time_start : str
+            Time string of observation ('12:24:56')
+
+        Returns
+        -------
+        int_times_tab : astropy.table.Table
+            Table of starting, mid, and end times for each integration
+        """
+        
+        from astropy.table import Table
+        from astropy.time import Time, TimeDelta
+        from astropy import units as u
+
+        if offset_seconds is None:
+            offset_seconds = 0
+
+        integration_numbers = np.arange(self.multiaccum.nint)
+
+        start_time_string = date_start + 'T' + time_start
+        start_time = Time(start_time_string) + offset_seconds * u.second
+
+        integration_time = self.time_total_int2
+        integ_time_delta = TimeDelta(integration_time * u.second)
+        start_times = start_time + (integ_time_delta * integration_numbers)
+
+        reset_time = self.multiaccum.nr2 * self.time_frame
+        integration_time_exclude_reset = TimeDelta((integration_time - reset_time) * u.second)
+        end_times = start_times + integration_time_exclude_reset
+
+        mid_times = start_times + integration_time_exclude_reset / 2.
+
+        # For now, let's keep the BJD (Barycentric?) times identical
+        # to the MJD times.
+        start_times_bjd = start_times
+        mid_times_bjd = mid_times
+        end_times_bjd = end_times
+
+        # Create table
+        nrows = len(integration_numbers)
+        data_list = [(integration_numbers[i] + 1, 
+                      start_times.mjd[i], mid_times.mjd[i], end_times.mjd[i],
+                      start_times_bjd.mjd[i], mid_times_bjd.mjd[i], end_times_bjd.mjd[i]) 
+                     for i in range(nrows)]
+
+        int_times_tab = np.array(data_list,
+                                 dtype=[('integration_number','<i2'),
+                                        ('int_start_MJD_UTC','<f8'),
+                                        ('int_mid_MJD_UTC', '<f8'),
+                                        ('int_end_MJD_UTC','<f8'),
+                                        ('int_start_BJD_TDB','<f8'),
+                                        ('int_mid_BJD_TDB','<f8'),
+                                        ('int_end_BJD_TDB','<f8')])
+
+        return int_times_tab
         
     def pix_timing_map(self, same_scan_direction=None, reverse_scan_direction=None,
                        avg_groups=False, reset_zero=False, return_flat=False):
@@ -1090,6 +1167,8 @@ def nrc_header(det_class, filter=None, pupil=None, obs_time=None, header=None,
     hdr['NRESETS2']= (ma.nr2, 'Number of reset frames between each integration')
     hdr['INTTIME'] = (d.time_int, 'Total integration time for one MULTIACCUM')
     hdr['EXPTIME'] = (d.time_exp, 'Exposure duration (seconds) calculated')
+    hdr['FASTAXIS']= (d.fastaxis, 'Fast readout direction relative to image axes for Amp1')
+    hdr['SLOWAXIS']= (d.slowaxis, 'Slow readout direction relative to image axes')
     
     # Subarray names
     if DMS == True:
