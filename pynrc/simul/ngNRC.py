@@ -14,7 +14,9 @@ Modification History:
       so that any changes made in the pyNRC classes are accounted.
 21 Feb 2017
     - Add ngNRC to pyNRC code base
-    - 
+20 Oct 2020
+    - Restructure det noise and ramp creation
+    - DMS simulations using JWST pipeline data models
 """
 # Necessary for Python 2.6 and later
 #from __future__ import division, print_function
@@ -32,6 +34,7 @@ from tqdm.auto import trange, tqdm
 from . import nghxrg as ng
 from pynrc.nrc_utils import pad_or_cut_to_size, jl_poly
 from pynrc.reduce.calib import ramp_resample
+from pynrc.maths.coords import det_to_sci, sci_to_det
 
 #import pdb
 from copy import deepcopy
@@ -484,11 +487,13 @@ def slope_to_ramps(det, dark_cal_obj, im_slope=None, filter=None, pupil=None,
         simulate a dark ramp.
     im_slope : ndarray
         Input slope image of observed scene. Assumed to be in detector
-        coordinates.
+        coordinates. If an image cube, then number of images must match 
+        the number of integration (`nint`) in `det` class.
 
     """
     import os
     import datetime
+    import multiprocessing as mp
     
     
     # Pixel readout
@@ -501,14 +506,26 @@ def slope_to_ramps(det, dark_cal_obj, im_slope=None, filter=None, pupil=None,
     nint = ma.nint
         
     if DMS:
+        is_cube = True if (im_slope is not None) and (len(im_slope.shape)==3) else False
+        if is_cube:
+            assert im_slope.shape[0]==nint, "`im_slope` images must match nint"
+
         # Save all ramps within an exposure
         data_all = []
         zframe_all = []
-        for i in trange(nint, desc='Ramps', leave=False):
-            data, zeroData = simulate_detector_ramp(det, dark_cal_obj, im_slope=im_slope, out_ADU=out_ADU, 
-                                                    return_zero_frame=True, **kwargs)
+
+        for i in trange(nint, desc='Ramps', leave=True):
+            im_slope_i = im_slope[i] if is_cube else im_slope
+
+            res = simulate_detector_ramp(det, dark_cal_obj, im_slope=im_slope_i, 
+                                        out_ADU=out_ADU, return_zero_frame=True, **kwargs)
+
+            # Convert from det to sci coords
+            data   = det_to_sci(res[0], det.detid)
+            zframe = det_to_sci(res[1], det.detid)
+            # Append to full array
             data_all.append(data)
-            zframe_all.append(zeroData)
+            zframe_all.append(zframe)
         
         data_all = np.array(data_all)
         zframe_all = np.array(zframe_all)
@@ -545,6 +562,7 @@ def slope_to_ramps(det, dark_cal_obj, im_slope=None, filter=None, pupil=None,
             
     # FITSWriter (ISIM format)
     else:
+        assert len(im_slope.shape)==2, "`im_slope` should be a single image"
         data = simulate_detector_ramp(det, dark_cal_obj, im_slope=im_slope, 
                                       out_ADU=out_ADU,  return_zero_frame=False, **kwargs)
         hdu = fits.PrimaryHDU(data)
@@ -561,6 +579,10 @@ def slope_to_ramps(det, dark_cal_obj, im_slope=None, filter=None, pupil=None,
     # Only return outHDU if return_results=True
     if return_results: 
         return outHDU
+    else:
+        outHDU.close()
+
+
 
 
 
@@ -1436,19 +1458,38 @@ def gen_dark_ramp(dark, out_shape, tf=10.73677, gain=1, ref_info=None,
     return result 
 
 def sim_dark_ramp(det, super_dark, ramp_avg_ch=None, ramp_avg_tf=10.73677, 
-    out_ADU=False, verbose=False):
+    out_ADU=False, verbose=False, **kwargs):
     """
-    Simulate a dark current ramp with 
+    Simulate a dark current ramp based on input det class and
+    super dark image.
+
+    Parameters
+    ----------
+    det : Detector Class
+        Desired detector class output
+    super_dark : ndarray
+        Dark current input image
+    
+    Keyword Args
+    ------------
+    ramp_avg_ch : ndarray or None
+        Time-dependent flux of average dark ramp for each amplifier channel.
+    ramp_avg_tf : float
+        Delta time between between `ramp_avg_ch` points.
+    out_ADU : bool
+        Divide by gain to get value in ADU (float).
+    verbose : bool
+        Print some messages.
     """
     
     nchan = det.nout
-    nx = det.xpix
-    ny = det.ypix
+    nx, ny = (det.xpix, det.ypix)
     chsize = det.chsize
     tf = det.time_frame
     gain = det.gain
     ref_info = det.ref_info
 
+    # Do we need to crop out subarray?
     if super_dark.shape[0]==ny:
         y1, y2 = (0, ny)
     else: # Will crop a subarray out of super_dark image
@@ -1484,9 +1525,10 @@ def sim_dark_ramp(det, super_dark, ramp_avg_ch=None, ramp_avg_tf=10.73677,
                 ramp_avg_ch_new.append(avg_interp)
             ramp_avg_ch = np.array(ramp_avg_ch_new)
 
+    if verbose:
+        _log.info('Generating dark current ramp...')
 
     res = np.zeros([nz,ny,nx])
-    _log.info('Generating dark current ramp...')
     for ch in np.arange(nchan):
         if nchan==1: # Subarray window case
             if super_dark.shape[1]==nx:
@@ -1521,9 +1563,29 @@ def sim_dark_ramp(det, super_dark, ramp_avg_ch=None, ramp_avg_tf=10.73677,
         
     return res
 
-def sim_image_ramp(det, im_slope, out_ADU=False):
+def sim_image_ramp(det, im_slope, verbose=False, **kwargs):
+    """
+    Simulate an image ramp based on input det class and slope image.
+    Uses the `sim_dark_ramp` function.
 
-    return sim_dark_ramp(det, im_slope, out_ADU=out_ADU, ramp_avg_ch=None)
+    Parameters
+    ----------
+    det : Detector Class
+        Desired detector class output
+    im_slope : ndarray
+        Input slope image
+    
+    Keyword Args
+    ------------
+    out_ADU : bool
+        Divide by gain to get value in ADU (float).
+    verbose : bool
+        Print some messages.
+    """
+    if verbose:
+        _log.info('Generating image acquisition ramp...')
+
+    return sim_dark_ramp(det, im_slope, ramp_avg_ch=None, verbose=False, **kwargs)
 
 
 def simulate_detector_ramp(det, dark_cal_obj, im_slope=None, out_ADU=False,
@@ -1532,7 +1594,7 @@ def simulate_detector_ramp(det, dark_cal_obj, im_slope=None, out_ADU=False,
                            include_acn=True, apply_ipc=True, apply_ppc=True, 
                            include_refinst=True, include_colnoise=True, col_noise=None,
                            amp_crosstalk=True, add_crs=True, latents=None, linearity_map=None, 
-                           return_zero_frame=None, return_full_ramp=False):
+                           return_zero_frame=None, return_full_ramp=False, prog_bar=False):
     
     """ Return a single simulated ramp
     
@@ -1593,6 +1655,8 @@ def simulate_detector_ramp(det, dark_cal_obj, im_slope=None, out_ADU=False,
         Apply persistence.
     linearity_map : ndarray
         Add non-linearity.
+    prog_bar : bool
+        Show a progress bar for this ramp generation?
     """
     
     ################################
@@ -1663,91 +1727,91 @@ def simulate_detector_ramp(det, dark_cal_obj, im_slope=None, out_ADU=False,
     ################################
     # Begin...
     ################################
-    pbar = tqdm(total=13, leave=False)
+    if prog_bar: pbar = tqdm(total=13, leave=False)
     data = np.zeros([nz,ny,nx])
 
     ####################
     # Create a super dark ramp (Units of e-)
     # Average shape of ramp
-    pbar.set_description("Dark Current")
+    if prog_bar: pbar.set_description("Dark Current")
     ramp_avg_ch = dco.dark_ramp_dict['ramp_avg_ch']
     # Create dark (adds Poisson noise)
     if include_dark:
         data += sim_dark_ramp(det, super_dark, ramp_avg_ch=ramp_avg_ch, verbose=False)
-    pbar.update(1)
+    if prog_bar: pbar.update(1)
 
     ####################
     # Add on-sky source image
-    pbar.set_description("Sky Image")
+    if prog_bar: pbar.set_description("Sky Image")
     if im_slope is not None:
-        data += sim_dark_ramp(det, im_slope)
-    pbar.update(1)
+        data += sim_image_ramp(det, im_slope, verbose=False)
+    if prog_bar: pbar.update(1)
 
     ####################
     # TODO: Add cosmic rays
-    pbar.set_description("Cosmic Rays")
+    if prog_bar: pbar.set_description("Cosmic Rays")
     if add_crs:
         pass
-    pbar.update(1)
+    if prog_bar: pbar.update(1)
     
     ####################
     # TODO: Apply persistence/latent image
-    pbar.set_description("Persistence")
+    if prog_bar: pbar.set_description("Persistence")
     if latents is not None:
         pass
-    pbar.update(1)
+    if prog_bar: pbar.update(1)
     
     ####################
     # Apply IPC (before or after non-linearity??)
-    pbar.set_description("Include IPC")
+    if prog_bar: pbar.set_description("Include IPC")
     if apply_ipc:
         data = add_ipc(data, kernel=k_ipc)
-    pbar.update(1)
+    if prog_bar: pbar.update(1)
 
     ####################
     # TODO: Add non-linearity
-    pbar.set_description("Non-Linearity")
+    if prog_bar: pbar.set_description("Non-Linearity")
     # Truncate anything above well level
     # This wwill be part of non-linearity after full implementation
     if linearity_map is not None:
         pass
     well_max = det.well_level
     data[data>well_max] = well_max
-    pbar.update(1)
+    if prog_bar: pbar.update(1)
     
     ####################
     # Add kTC noise:
-    pbar.set_description("kTC Noise")
+    if prog_bar: pbar.set_description("kTC Noise")
     if include_ktc:
         ktc_offset = gain * np.random.normal(scale=ktc_noise, size=(ny,nx))
         data += ktc_offset
-    pbar.update(1)
+    if prog_bar: pbar.update(1)
         
     ####################
     # Add super bias
-    pbar.set_description("Super Bias")
+    if prog_bar: pbar.set_description("Super Bias")
     if include_bias:
         data += gain * super_bias
-    pbar.update(1)
+    if prog_bar: pbar.update(1)
     
     ####################
     # Apply PPC (when should this occur?)
-    pbar.set_description("Include PPC")
+    if prog_bar: pbar.set_description("Include PPC")
     if apply_ppc:
         data = add_ppc(data, nchans=nchan, kernel=k_ppc, in_place=True,
                        same_scan_direction=ssd, reverse_scan_direction=rsd)
-    pbar.update(1)
+    if prog_bar: pbar.update(1)
     
     ####################
     # TODO: Add channel crosstalk
-    pbar.set_description("Amplifier Crosstalk")
+    if prog_bar: pbar.set_description("Amplifier Crosstalk")
     if amp_crosstalk:
         pass
-    pbar.update(1)
+    if prog_bar: pbar.update(1)
 
     ####################
     # Add read and 1/f noise
-    pbar.set_description("Detector and ASIC Noise")
+    if prog_bar: pbar.set_description("Detector and ASIC Noise")
     if nchan==1:
         rn, up = (rn[0], up[0])
     rn  = None if (not include_rn)    else rn
@@ -1757,19 +1821,19 @@ def simulate_detector_ramp(det, dark_cal_obj, im_slope=None, out_ADU=False,
     data += gain * sim_noise_data(det, rd_noise=rn, u_pink=up, c_pink=cp,
                                   acn=acn, corr_scales=scales, ref_ratio=ref_ratio,
                                   same_scan_direction=ssd, reverse_scan_direction=rsd)
-    pbar.update(1)
+    if prog_bar: pbar.update(1)
 
     ####################
     # Add reference offsets
-    pbar.set_description("Ref Pixel Instability")
+    if prog_bar: pbar.set_description("Ref Pixel Offsets")
     if include_refinst:
         data += gain * gen_ramp_biases(dco.ref_pixel_dict, nchan=nchan, 
                                        data_shape=data.shape, ref_border=det.ref_info)
-    pbar.update(1)
+    if prog_bar: pbar.update(1)
 
     ####################
     # Add column noise
-    pbar.set_description("Column Noise")
+    if prog_bar: pbar.set_description("Column Noise")
     # Passing col_noise allows for shifting of noise 
     # by one col ramp-to-ramp in higher level function
     if include_colnoise and (col_noise is None):
@@ -1780,7 +1844,7 @@ def simulate_detector_ramp(det, dark_cal_obj, im_slope=None, out_ADU=False,
         col_noise = 0
     # Add to data
     data += col_noise
-    pbar.update(1)
+    if prog_bar: pbar.update(1)
 
     # Convert to DN (16-bit int)
     if out_ADU:
@@ -1789,7 +1853,7 @@ def simulate_detector_ramp(det, dark_cal_obj, im_slope=None, out_ADU=False,
         data[data >= 2**16] = 2**16 - 1
         data = data.astype('uint16')
 
-    pbar.close()
+    if prog_bar: pbar.close()
     
     # return_zero_frame not set, the True if not RAPID (what about BRIGHT1??)
     if return_zero_frame is None:

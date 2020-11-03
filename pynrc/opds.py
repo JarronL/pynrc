@@ -352,7 +352,8 @@ class OTE_WFE_Drift_Model(OTE_Linear_Model_WSS):
         return wfe_drift_rms
 
     
-    def gen_iec_series(self, delta_time, amplitude=3.5, period=5.0, interp_kind='linear'):
+    def gen_iec_series(self, delta_time, amplitude=3.5, period=5.0, 
+        interp_kind='linear'):
         """Create a series of IEC WFE scale factors
         
         Create a series of random IEC heater state changes based on 
