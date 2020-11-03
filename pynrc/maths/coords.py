@@ -474,14 +474,25 @@ def det_to_sci(image, detid):
     
     xflip = ['A1','A3','A5','B2','B4']
     yflip = ['A2','A4','B1','B3','B5']
+
+    # Handle multiple array of images
+    ndim = len(image.shape)
+    if ndim==2:
+        # Convert to image cube
+        ny, nx = image.shape
+        image = image.reshape([1,ny,nx])
     
     for s in xflip:
         if detname in s:
-            image = image[:,::-1] 
+            image = image[:,:,::-1] 
     for s in yflip:
         if detname in s:
-            image = image[::-1,:] 
+            image = image[:,::-1,:] 
     
+    # Convert back to 2D if input was 2D
+    if ndim==2:
+        image = image.reshape([ny,nx])
+
     return image
     
 def sci_to_det(image, detid):

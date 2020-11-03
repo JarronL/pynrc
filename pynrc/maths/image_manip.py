@@ -18,7 +18,166 @@ from scipy.ndimage import fourier_shift
 from astropy.io import fits
 
 
-def pad_or_cut_to_size(array, new_shape, fill_val=0.0):
+def pad_or_cut_to_size(array, new_shape, fill_val=0.0, offset_vals=None):
+    """
+    Resize an array to a new shape by either padding with zeros
+    or trimming off rows and/or columns. The ouput shape can
+    be of any arbitrary amount.
+
+    Parameters
+    ----------
+    array : ndarray
+        A 1D, 2D, or 3D array. If 3D, then taken to be a stack of images
+        that are cropped or expanded in the same fashion.
+    new_shape : tuple
+        Desired size for the output array. For 2D case, if a single value, 
+        then will create a 2-element tuple of the same value.
+    fill_val : scalar, optional
+        Value to pad borders. Default is 0.0
+    offset_vals : tuple
+        Option to perform image shift in the (xpix) direction for 1D, 
+        or (ypix,xpix) direction for 2D/3D.
+
+    Returns
+    -------
+    output : ndarray
+        An array of size new_shape that preserves the central information 
+        of the input array.
+    """
+    
+    # Return if no difference in shapes
+    if array.shape == new_shape:
+        return array
+
+    ndim = len(array.shape)
+    if ndim == 1:
+        # is_1d = True
+        # Reshape array to a 2D array with nx=1
+        array = array.reshape((1,1,-1))
+        nz, ny, nx = array.shape
+        if isinstance(new_shape, (float,int,np.int,np.int64)):
+            nx_new = int(new_shape+0.5)
+            ny_new = 1
+            new_shape = (ny_new, nx_new)
+        elif len(new_shape) < 2:
+            nx_new = new_shape[0]
+            ny_new = 1
+            new_shape = (ny_new, nx_new)
+        else:
+            ny_new, nx_new = new_shape
+        output = np.zeros(shape=(nz,ny_new,nx_new), dtype=array.dtype)
+    elif (ndim == 2) or (ndim == 3):
+        if ndim==2:
+            nz = 1
+            ny, nx = array.shape
+            array = array.reshape([nz,ny,nx])
+        else:
+            nz, ny, nx = array.shape
+
+        if isinstance(new_shape, (float,int,np.int,np.int64)):
+            ny_new = nx_new = int(new_shape+0.5)
+            new_shape = (ny_new, nx_new)
+        elif len(new_shape) < 2:
+            ny_new = nx_new = new_shape[0]
+            new_shape = (ny_new, nx_new)
+        else:
+            ny_new, nx_new = new_shape
+        output = np.zeros(shape=(nz,ny_new,nx_new), dtype=array.dtype)
+    else:
+        raise ValueError('Input image can only have 1 or 2 or 3 dimensions. \
+                          Found {} dimensions.'.format(ndim))
+                      
+    # Input the fill values
+    if fill_val != 0:
+        output += fill_val
+        
+    # Pixel shift values
+    if offset_vals is not None:
+        if ndim == 1:
+            ny_off = 0
+            if isinstance(offset_vals, (float,int,np.int,np.int64)):
+                nx_off = offset_vals
+            elif len(offset_vals) < 2:
+                nx_off = offset_vals[0]
+            else:
+                raise ValueError('offset_vals should be a single value.')
+        else:
+            if len(offset_vals) == 2:
+                ny_off, nx_off = offset_vals
+            else:
+                raise ValueError('offset_vals should have two values.')
+    else:
+        nx_off = ny_off = 0
+                
+    if nx_new>nx:
+        n0 = (nx_new - nx) / 2
+        n1 = n0 + nx
+    elif nx>nx_new:
+        n0 = (nx - nx_new) / 2
+        n1 = n0 + nx_new
+    else:
+        n0, n1 = (0, nx)
+    n0 = int(n0+0.5)
+    n1 = int(n1+0.5)
+
+    if ny_new>ny:
+        m0 = (ny_new - ny) / 2
+        m1 = m0 + ny
+    elif ny>ny_new:
+        m0 = (ny - ny_new) / 2
+        m1 = m0 + ny_new
+    else:
+        m0, m1 = (0, ny)
+    m0 = int(m0+0.5)
+    m1 = int(m1+0.5)
+
+    if (nx_new>=nx) and (ny_new>=ny):
+        #print('Case 1')
+        output[:,m0:m1,n0:n1] = array.copy()
+        for i, im in enumerate(output):
+            output[i] = fshift(im, delx=nx_off, dely=ny_off, pad=True, cval=fill_val)
+    elif (nx_new<=nx) and (ny_new<=ny):
+        #print('Case 2')
+        if (nx_off!=0) or (ny_off!=0):
+            array_temp = array.copy()
+            for i, im in enumerate(array_temp):
+                array_temp[i] = fshift(im, delx=nx_off, dely=ny_off, pad=True, cval=fill_val)
+            output = array_temp[:,m0:m1,n0:n1]
+        else:
+            output = array[:,m0:m1,n0:n1]
+    elif (nx_new<=nx) and (ny_new>=ny):
+        #print('Case 3')
+        if nx_off!=0:
+            array_temp = array.copy()
+            for i, im in enumerate(array_temp):
+                array_temp[i] = fshift(im, delx=nx_off, pad=True, cval=fill_val)
+            output[:,m0:m1,:] = array_temp[:,:,n0:n1]
+        else:
+            output[:,m0:m1,:] = array[:,:,n0:n1]
+        for i, im in enumerate(output):
+            output[i] = fshift(im, dely=ny_off, pad=True, cval=fill_val)
+    elif (nx_new>=nx) and (ny_new<=ny):
+        #print('Case 4')
+        if ny_off!=0:
+            array_temp = array.copy()
+            for i, im in enumerate(array_temp):
+                array_temp[i] = fshift(im, dely=ny_off, pad=True, cval=fill_val)
+            output[:,:,n0:n1] = array_temp[:,m0:m1,:]
+        else:
+            output[:,:,n0:n1] = array[:,m0:m1,:]
+        for i, im in enumerate(output):
+            output[i] = fshift(im, delx=nx_off, pad=True, cval=fill_val)
+        
+    # Flatten if input and output arrays are 1D
+    if (ndim==1) and (ny_new==1):
+        output = output.flatten()
+    elif ndim==2:
+        output = output[0]
+
+    return output
+
+
+def pad_or_cut_to_size_old(array, new_shape, fill_val=0.0):
     """
     Resize an array to a new shape by either padding with zeros
     or trimming off rows and/or columns. The ouput shape can
@@ -49,22 +208,27 @@ def pad_or_cut_to_size(array, new_shape, fill_val=0.0):
     if ndim == 1:
         # is_1d = True
         # Reshape array to a 2D array with nx=1
-        array = array.reshape((-1,1))
-        ny, nx = array.shape
+        array = array.reshape((1,-1,1))
+        nz, ny, nx = array.shape
         if isinstance(new_shape, (float,int,np.int,np.int64)):
             ny_new = int(new_shape+0.5)
             nx_new = 1
             new_shape = (ny_new, nx_new)
         elif len(new_shape) < 2:
-            ny_new = nx_new = new_shape[0]
+            ny_new = new_shape[0]
+            nx_new = 1
             new_shape = (ny_new, nx_new)
         else:
-            ny_new = new_shape[0]
-            nx_new = new_shape[1]
-        output = np.zeros(shape=new_shape, dtype=array.dtype)
-    elif ndim == 2:	
-        # is_1d = False
-        ny, nx = array.shape
+            ny_new, nx_new = new_shape
+        output = np.zeros(shape=(nz,ny_new,nx_new), dtype=array.dtype)
+    elif (ndim == 2) or (ndim == 3):
+        if ndim==2:
+            nz = 1
+            ny, nx = array.shape
+            array = array.reshape([nz,ny,nx])
+        else:
+            nz, ny, nx = array.shape
+
         if isinstance(new_shape, (float,int,np.int,np.int64)):
             ny_new = nx_new = int(new_shape+0.5)
             new_shape = (ny_new, nx_new)
@@ -72,11 +236,10 @@ def pad_or_cut_to_size(array, new_shape, fill_val=0.0):
             ny_new = nx_new = new_shape[0]
             new_shape = (ny_new, nx_new)
         else:
-            ny_new = new_shape[0]
-            nx_new = new_shape[1]
-        output = np.zeros(shape=new_shape, dtype=array.dtype)
+            ny_new, nx_new = new_shape
+        output = np.zeros(shape=(nz,ny_new,nx_new), dtype=array.dtype)
     else:
-        raise ValueError('Input image can only have 1 or 2 dimensions. \
+        raise ValueError('Input image can only have 1 or 2 or 3 dimensions. \
                           Found {} dimensions.'.format(ndim))
                       
     # Input the fill values
@@ -107,20 +270,22 @@ def pad_or_cut_to_size(array, new_shape, fill_val=0.0):
 
     if (nx_new>=nx) and (ny_new>=ny):
         #print('Case 1')
-        output[m0:m1,n0:n1] = array
+        output[:,m0:m1,n0:n1] = array
     elif (nx_new<=nx) and (ny_new<=ny):
         #print('Case 2')
-        output = array[m0:m1,n0:n1]
+        output = array[:,m0:m1,n0:n1]
     elif (nx_new<=nx) and (ny_new>=ny):
         #print('Case 3')
-        output[m0:m1,:] = array[:,n0:n1]
+        output[:,m0:m1,:] = array[:,:,n0:n1]
     elif (nx_new>=nx) and (ny_new<=ny):
         #print('Case 4')
-        output[:,n0:n1] = array[m0:m1,:]
+        output[:,:,n0:n1] = array[:,m0:m1,:]
         
     # Flatten if input and output arrays are 1D
     if (ndim==1) and (nx_new==1):
         output = output.flatten()
+    elif ndim==2:
+        output = output[0]
 
     return output
 
@@ -172,19 +337,19 @@ def fshift(image, delx=0, dely=0, pad=False, cval=0.0):
         # Pad ends with constant value
         if pad:
             padx = np.abs(intx) + 1
-            x = np.pad(image,np.abs(intx),'constant',constant_values=cval)
+            out = np.pad(image,np.abs(intx),'constant',constant_values=cval)
         else:
             padx = 0
-            x = image.copy()
+            out = image.copy()
 
         # shift by integer portion
-        x = np.roll(x, intx)
+        out = np.roll(out, intx)
         # if significant fractional shift...
         if not np.isclose(fracx, 0, atol=1e-5):
-            x = x * (1.-fracx) + np.roll(x,1) * fracx
+            out = out * (1.-fracx) + np.roll(out,1) * fracx
 
-        x = x[padx:padx+image.size]
-        return x
+        out = out[padx:padx+image.size]
+        return out
 
     elif len(image.shape) == 2:	
         # Return if both delx and dely are 0
@@ -208,13 +373,13 @@ def fshift(image, delx=0, dely=0, pad=False, cval=0.0):
             padx = np.abs(intx) + 1
             pady = np.abs(inty) + 1
             pad_vals = ([pady]*2,[padx]*2)
-            x = np.pad(image,pad_vals,'constant',constant_values=cval)
+            out = np.pad(image,pad_vals,'constant',constant_values=cval)
         else:
             padx = 0; pady = 0
-            x = image.copy()
+            out = image.copy()
 
         # shift by integer portion
-        x = np.roll(np.roll(x, intx, axis=1), inty, axis=0)
+        out = np.roll(np.roll(out, intx, axis=1), inty, axis=0)
     
         # Check if fracx and fracy are effectively 0
         fxis0 = np.isclose(fracx,0, atol=1e-5)
@@ -224,15 +389,15 @@ def fshift(image, delx=0, dely=0, pad=False, cval=0.0):
         if not (fxis0 and fyis0):
             # Break bi-linear interpolation into four parts
             # to avoid NaNs unnecessarily affecting integer shifted dimensions
-            x1 = x * ((1-fracx)*(1-fracy))
-            x2 = 0 if fyis0 else np.roll(x,1,axis=0)*((1-fracx)*fracy)
-            x3 = 0 if fxis0 else np.roll(x,1,axis=1)*((1-fracy)*fracx)
-            x4 = 0 if (fxis0 or fyis0) else np.roll(np.roll(x, 1, axis=1), 1, axis=0) * fracx*fracy
+            part1 = out * ((1-fracx)*(1-fracy))
+            part2 = 0 if fyis0 else np.roll(out,1,axis=0)*((1-fracx)*fracy)
+            part3 = 0 if fxis0 else np.roll(out,1,axis=1)*((1-fracy)*fracx)
+            part4 = 0 if (fxis0 or fyis0) else np.roll(np.roll(out, 1, axis=1), 1, axis=0) * fracx*fracy
     
-            x = x1 + x2 + x3 + x4
+            out = part1 + part2 + part3 + part4
     
-        x = x[pady:pady+image.shape[0], padx:padx+image.shape[1]]
-        return x
+        out = out[pady:pady+image.shape[0], padx:padx+image.shape[1]]
+        return out
             
 
         #if not np.allclose([fracx,fracy], 0, atol=1e-5):
