@@ -2267,7 +2267,8 @@ class NIRCam(object):
                     nfield = np.size(v2)
                     cf_mod = field_coeff_func(v2grid, v3grid, cf_fit, v2, v3)
                     # Pad cf_mod array with 0s if undersized
-                    if not np.allclose(psf_coeff.shape, cf_mod.shape):
+                    psf_cf_dim = len(psf_coeff.shape)
+                    if not np.allclose(psf_coeff.shape, cf_mod.shape[-psf_cf_dim:]):
                         new_shape = psf_coeff.shape[1:]
                         cf_mod_resize = np.array([pad_or_cut_to_size(im, new_shape) for im in cf_mod])
                         cf_mod = cf_mod_resize
@@ -2295,7 +2296,7 @@ class NIRCam(object):
         psf_coeff = psf_coeff + psf_coeff_mod
         del psf_coeff_mod
 
-        # if multiple field points were present, we want to 
+        # if multiple field points were present, we want to return PSF for each
         if nfield>1:
             psf_all = []
             for ii in range(nfield):
