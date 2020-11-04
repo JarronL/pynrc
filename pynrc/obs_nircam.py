@@ -7,7 +7,7 @@ from scipy import fftpack
 from copy import deepcopy
 
 # Import libraries
-from . import *
+from .pynrc_core import *
 from .nrc_utils import *
 
 import logging
