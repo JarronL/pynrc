@@ -1062,7 +1062,7 @@ def _wrap_field_coeff_for_mp(arg):
     det_pos = kwargs['detector_position']
     v2, v3  = kwargs['coords']
 
-    print('V2/V3 Coordinates and det pixel (sci) on {}/{}: ({:.2f}, {:.2f}), ({:.1f}, {:.1f})'
+    _log.info('V2/V3 Coordinates and det pixel (sci) on {}/{}: ({:.2f}, {:.2f}), ({:.1f}, {:.1f})'
         .format(det, apname, v2/60, v3/60, det_pos[0], det_pos[1]))
 
     cf, _ = gen_psf_coeff(*args, **kwargs)
