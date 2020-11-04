@@ -1738,7 +1738,7 @@ class NIRCam(object):
         # 2. Find x,y position of max PSF
         # 3. Cut out postage stamp region around that PSF coeff
         psf_coeff = self._psf_coeff
-        psf_coeff_hdr = self._psf_coeff_hdr
+        psf_coeff_hdr = self._psf_coeff_hdr.copy()
         if (trim_psf is not None) and (trim_psf < kwargs['fov_pix']):
             
             # Quickly create a temporary PSF to find max value location
@@ -1763,6 +1763,7 @@ class NIRCam(object):
                 coeff.append(im)
             psf_coeff = np.array(coeff)
             kwargs['fov_pix'] = trim_psf
+            psf_coeff_hdr['FOVPIX'] = trim_psf
 
         satlim = sat_limit_webbpsf(self.bandpass, pupil=self.pupil, mask=self.mask,
             module=self.module, full_well=well_level, well_frac=well_frac,
@@ -1831,8 +1832,8 @@ class NIRCam(object):
             
         # Always use the bg coeff
         psf_coeff = self._psf_coeff_bg
-        psf_coeff_hdr = self._psf_coeff_bg_hdr
-        # We don't necessarily need the entire image, so cut down to size
+        psf_coeff_hdr = self._psf_coeff_bg_hdr.copy()
+        # We don't necessarily need the entire image, so cut down to size for speed
         if not ('WEAK LENS' in self.pupil):
             fov_pix = 33
             fov_pix_over = fov_pix * kwargs['oversample']
@@ -1841,6 +1842,7 @@ class NIRCam(object):
                 coeff.append(pad_or_cut_to_size(im, (fov_pix_over,fov_pix_over)))
             psf_coeff = np.array(coeff)
             kwargs['fov_pix'] = fov_pix
+            psf_coeff_hdr['FOVPIX'] = fov_pix
 
         bglim = bg_sensitivity(self.bandpass, self.pupil, self.mask, self.module,
             pix_scale=pix_scale, sp=sp, units=units, nsig=nsig, tf=tf, quiet=quiet, 
