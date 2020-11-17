@@ -430,7 +430,7 @@ class obs_hci(nrc_hci):
 
         #super(NIRCam,self).__init__(**kwargs)
         # Not sure if this works for both Python 2 and 3
-        nrc_hci.__init__(self, wind_mode=wind_mode, xpix=xpix, ypix=ypix,
+        nrc_hci.__init__(self, wind_mode=wind_mode, xpix=xpix, ypix=ypix, wfe_drift=False,
                          verbose=verbose, **kwargs)
 
         if (wind_mode=='FULL') and (self.channel=='SW'):
@@ -441,7 +441,7 @@ class obs_hci(nrc_hci):
         # Spectral models
         self.sp_sci = sp_sci
         self.sp_ref = sp_ref
-        self._wfe_ref_drift = wfe_ref_drift
+        self.wfe_ref_drift = wfe_ref_drift
         self.wfe_roll_drift = wfe_roll_drift
 
         # Distance to source in pc
@@ -467,7 +467,9 @@ class obs_hci(nrc_hci):
 
             self._gen_psf_list()
 
-        # self._gen_ref(verbose=verbose)
+        if verbose: 
+            print("Creating NIRCam reference class...")
+        self._gen_ref(verbose=False)
 
         # Rescale input disk image to observation parameters
         self._disk_hdulist_input = disk_hdu
@@ -533,8 +535,21 @@ class obs_hci(nrc_hci):
         return self._wfe_ref_drift
     @wfe_ref_drift.setter
     def wfe_ref_drift(self, value):
-        """Set the WFE drift value (updates self.nrc_ref)"""
+        """Set the WFE drift value between sci and ref observations"""
         self._wfe_ref_drift = value
+        if value!=0:
+            self.wfe_drift = True
+
+    @property
+    def wfe_roll_drift(self):
+        """WFE drift (nm) of Roll2 obs relative to Roll1 obs"""
+        return self._wfe_roll_drift
+    @wfe_roll_drift.setter
+    def wfe_roll_drift(self, value):
+        """Set the WFE drift value between roll observations"""
+        self._wfe_roll_drift = value
+        if value!=0:
+            self.wfe_drift = True
 
     def _gen_disk_hdulist(self):
         """Create a correctly scaled disk model image.
@@ -573,37 +588,69 @@ class obs_hci(nrc_hci):
             hdulist_out[0].data = pad_or_cut_to_size(hdulist_out[0].data, (ynew,xnew))
             self.disk_hdulist = hdulist_out
 
+    # Any time update_detectors is called, also call _gen_ref
+    def update_detectors(self, verbose=False, **kwargs):
+        super().update_detectors(verbose=verbose, **kwargs)
 
-    # def _gen_ref(self, verbose=False):
-    #     """Function to generate Reference observation class"""
+        # Update ref detector config
+        try:
+            det_info = self.det_info
+            wind_mode  = det_info['wind_mode']
+            xpix, ypix = (det_info['xpix'], det_info['ypix'])
+            x0, y0     = (det_info['x0'], det_info['y0'])
+            self.nrc_ref.update_detectors(wind_mode=wind_mode, xpix=xpix, ypix=ypix, 
+                                          x0=x0, y0=y0, verbose=False)
+        except AttributeError:
+            if verbose: print("Creating NIRCam reference class...")
+            self._gen_ref(verbose=verbose)
 
-    #     # PSF information
-    #     opd = self.psf_info['opd']
-    #     fov_pix = self.psf_info['fov_pix']
-    #     oversample = self.psf_info['oversample']
+    def _gen_ref(self, verbose=False):
+        """
+        Function to generate Reference observation class.
+        Used only to keep track of detector and multiaccum config,
+        which can differ between sci and ref observations.
+        """
 
-    #     # Detector information
-    #     wind_mode = self.det_info['wind_mode']
-    #     xpix = self.det_info['xpix']
-    #     ypix = self.det_info['ypix']
+        # PSF information
+        # opd = self.psf_info['opd']
+        # fov_pix = self.psf_info['fov_pix']
+        # oversample = self.psf_info['oversample']
 
-    #     offset_r = self.psf_info['offset_r']
-    #     offset_theta = self.psf_info['offset_theta']
+        # Detector information
+        det_info = self.det_info
+        wind_mode  = det_info['wind_mode']
+        xpix, ypix = (det_info['xpix'], det_info['ypix'])
+        x0, y0     = (det_info['x0'], det_info['y0'])
 
-    #     # Create a NIRCam reference class
-    #     # If it already exists, just update OPD info
-    #     try:
-    #         if verbose: print("Updating NIRCam reference coefficients...")
-    #         self.nrc_ref.wfe_drift = self.wfe_ref_drift
-    #     except AttributeError:
-    #         if verbose: print("Creating NIRCam reference class...")
-    #         nrc = nrc_hci(filter=self.filter, pupil=self.pupil, mask=self.mask,
-    #                       module=self.module, wind_mode=wind_mode, xpix=xpix, ypix=ypix,
-    #                       fov_pix=fov_pix, oversample=oversample, opd=opd,
-    #                       offset_r=offset_r, offset_theta=offset_theta,
-    #                       wfe_drift=0, bar_offset=self.bar_offset)
-    #         self.nrc_ref = nrc
-    #         self.nrc_ref.wfe_drift = self.wfe_ref_drift
+        try: 
+            del self.nrc_ref
+        except AttributeError:
+            pass
+
+        nrc = NIRCam(filter=self.filter, pupil=self.pupil, mask=self.mask,
+                     module=self.module, wind_mode=wind_mode, xpix=xpix, ypix=ypix,
+                     x0=x0, y0=y0)
+
+        self.nrc_ref = nrc
+
+        # offset_r = self.psf_info['offset_r']
+        # offset_theta = self.psf_info['offset_theta']
+
+        # Create a NIRCam reference class
+        # If it already exists, just update OPD info
+        # try:
+        #     if verbose: print("Updating NIRCam reference coefficients...")
+        #     self.nrc_ref.wfe_drift = self.wfe_ref_drift
+        # except AttributeError:
+        #     if verbose: print("Creating NIRCam reference class...")
+
+        #     nrc = nrc_hci(filter=self.filter, pupil=self.pupil, mask=self.mask,
+        #                   module=self.module, wind_mode=wind_mode, xpix=xpix, ypix=ypix,
+        #                   fov_pix=fov_pix, oversample=oversample, opd=opd,
+        #                   offset_r=offset_r, offset_theta=offset_theta,
+        #                   wfe_drift=0, bar_offset=self.bar_offset)
+        #     self.nrc_ref = nrc
+        #     self.nrc_ref.wfe_drift = self.wfe_ref_drift
 
 
     def _gen_psf_list(self):
@@ -1116,7 +1163,7 @@ class obs_hci(nrc_hci):
 
     def gen_roll_image(self, PA1=0, PA2=10, zfact=None, oversample=None,
         no_ref=False, opt_diff=True, fix_sat=False, ref_scale_all=False, 
-        wfe_drift0=0, **kwargs):
+        wfe_drift0=0, wfe_ref_drift=None, wfe_roll_drift=None, **kwargs):
         """Make roll-subtracted image.
 
         Create a final roll-subtracted slope image based on current observation
@@ -1203,6 +1250,10 @@ class obs_hci(nrc_hci):
         ysub = np.min([subsize,ypix])
         sub_shape = (ysub, xsub)
 
+        # Option to override wfe_ref_drift and wfe_roll_drift
+        wfe_ref_drift  = self.wfe_ref_drift  if wfe_ref_drift  is None else wfe_ref_drift
+        wfe_roll_drift = self.wfe_roll_drift if wfe_roll_drift is None else wfe_roll_drift
+
         # Position angle decisions
         if PA2 is None:
             roll_angle = 0
@@ -1254,10 +1305,10 @@ class obs_hci(nrc_hci):
         if no_ref:
             # Roll2
             wfe_drift1 = wfe_drift0
-            wfe_drift2 = wfe_drift1 + self.wfe_roll_drift
+            wfe_drift2 = wfe_drift1 + wfe_roll_drift
 
             # Change self.wfe_drift, gen image, and return wfe_drift
-            if np.abs(self.wfe_roll_drift) > eps:
+            if np.abs(wfe_roll_drift) > eps:
                 im_roll2 = self.gen_slope_image(PA=PA2, wfe_drift0=wfe_drift1, **kwargs)
             else:
                 im_roll2 = self.gen_slope_image(PA=PA2, im_star=im_star, **kwargs)
@@ -1307,7 +1358,7 @@ class obs_hci(nrc_hci):
 
         # Reference star slope simulation
         # Ideal slope
-        wfe_drift_ref = wfe_drift0 + self.wfe_ref_drift
+        wfe_drift_ref = wfe_drift0 + wfe_ref_drift
         im_ref = ref.gen_psf(self.sp_ref, return_oversample=False, wfe_drift=wfe_drift_ref)
         im_ref_sub = pad_or_cut_to_size(im_ref, sub_shape)
         im_ref = pad_or_cut_to_size(im_ref, image_shape)
@@ -1339,10 +1390,10 @@ class obs_hci(nrc_hci):
 
             # WFE drift difference between rolls
             wfe_drift1 = wfe_drift0
-            wfe_drift2 = wfe_drift1 + self.wfe_roll_drift
+            wfe_drift2 = wfe_drift1 + wfe_roll_drift
 
             # Change self.wfe_drift, gen image, and return wfe_drift
-            if np.abs(self.wfe_roll_drift) > eps:
+            if np.abs(wfe_roll_drift) > eps:
                 im_star2 = sci.gen_psf(sci.sp_sci, return_oversample=False, wfe_drift=wfe_drift2)
                 im_star2_sub = pad_or_cut_to_size(im_star2, sub_shape)
                 im_star2 = pad_or_cut_to_size(im_star2, image_shape)
@@ -1461,7 +1512,8 @@ class obs_hci(nrc_hci):
 
     def calc_contrast(self, hdu_diff=None, roll_angle=10, nsig=1,
         exclude_disk=True, exclude_planets=True, no_ref=False,
-        wfe_drift0=0, func_std=np.std, **kwargs):
+        wfe_drift0=0, wfe_ref_drift=None, wfe_roll_drift=None,
+        func_std=np.std, **kwargs):
         """Create contrast curve.
 
         Generate n-sigma contrast curve for the current observation settings.
@@ -1519,8 +1571,9 @@ class obs_hci(nrc_hci):
             PA1 = 0
             PA2 = None if abs(roll_angle) < eps else roll_angle
             hdu_diff = self.gen_roll_image(PA1=PA1, PA2=PA2, exclude_disk=exclude_disk,
-                                           exclude_planets=exclude_planets,
-                                           wfe_drift0=wfe_drift0, no_ref=no_ref, **kwargs)
+                                           exclude_planets=exclude_planets, no_ref=no_ref,
+                                           wfe_drift0=wfe_drift0, wfe_ref_drift=wfe_ref_drift,
+                                           wfe_roll_drift=wfe_roll_drift, **kwargs)
 
         data = hdu_diff[0].data
         header = hdu_diff[0].header
@@ -1651,7 +1704,7 @@ class obs_hci(nrc_hci):
 
     def gen_slope_image(self, PA=0, exclude_disk=False, exclude_planets=False,
         exclude_noise=False, zfact=None, do_ref=False, do_roll2=False, im_star=None, 
-        wfe_drift0=0, **kwargs):
+        wfe_drift0=0, wfe_ref_drift=None, wfe_roll_drift=None, **kwargs):
         """Create slope image of observation
         
         Beware that stellar position (centered on a pixel) will likely not
@@ -1704,16 +1757,23 @@ class obs_hci(nrc_hci):
             otherwise MULTIACCUM equation is used.
         """
 
-        obs = self
-        sp = self.sp_ref if do_ref else self.sp_sci
-
+        # Initial WFE drift offset value
         wfe_drift = wfe_drift0
-        if do_ref: 
-            wfe_drift = wfe_drift + self.wfe_ref_drift
-        if do_roll2: 
-            wfe_drift = wfe_drift + self.wfe_roll_drift
+        # Option to override wfe_ref_drift and wfe_roll_drift
+        wfe_ref_drift  = self.wfe_ref_drift  if wfe_ref_drift  is None else wfe_ref_drift
+        wfe_roll_drift = self.wfe_roll_drift if wfe_roll_drift is None else wfe_roll_drift
 
-        det = obs.Detectors[0]
+        if do_ref: 
+            wfe_drift = wfe_drift + wfe_ref_drift
+            det = self.nrc_ref.Detectors[0]
+            sp = self.sp_ref
+        else:
+            det = self.Detectors[0]
+            sp = self.sp_sci
+
+        # Add additional WFE drift for 2nd roll position
+        if do_roll2: 
+            wfe_drift = wfe_drift + wfe_roll_drift
 
         # Final image shape
         image_shape = ypix, xpix = (det.ypix, det.xpix)
@@ -1730,7 +1790,7 @@ class obs_hci(nrc_hci):
 
         # Stellar PSF doesn't rotate
         if im_star is None:
-            im_star = obs.gen_psf(sp, return_oversample=False, wfe_drift=wfe_drift)
+            im_star = self.gen_psf(sp, return_oversample=False, wfe_drift=wfe_drift)
             im_star = pad_or_cut_to_size(im_star, image_shape)
             im_star = fshift(im_star, delx=delx, dely=dely, pad=True)
 
@@ -1742,11 +1802,11 @@ class obs_hci(nrc_hci):
             no_planets = exclude_planets and exclude_noise
 
         # Make sure to include planets and disks for Poisson noise calculations
-        im_disk = 0 if no_disk    else obs.gen_disk_image(PA_offset=PA, **kwargs)
-        im_pl   = 0 if no_planets else obs.gen_planets_image(PA_offset=PA, **kwargs)
+        im_disk = 0 if no_disk    else self.gen_disk_image(PA_offset=PA, **kwargs)
+        im_pl   = 0 if no_planets else self.gen_planets_image(PA_offset=PA, **kwargs)
 
         # Zodiacal bg levels
-        fzodi = obs.bg_zodi(zfact, **kwargs)
+        fzodi = self.bg_zodi(zfact, **kwargs)
 
         # Combine components
         im_final = im_star + im_disk + im_pl + fzodi
@@ -1754,8 +1814,11 @@ class obs_hci(nrc_hci):
         # Noise per pixel
         if not exclude_noise:
             # For each pixel, how many groups until saturation?
-            ng_sat = obs.well_level / (im_final * det.time_group)
-            ng_sat[ng_sat > obs.det_info['ngroup']] = obs.det_info['ngroup']
+            ng_sat = 0.9 * self.well_level / (im_final * det.time_group)
+            # Cap ng_sat to ngroup
+            ngroup = det.multiaccum.ngroup
+            ng_sat[ng_sat > ngroup] = ngroup
+            ng_sat = ng_sat.astype('int')
         
             im_noise = det.pixel_noise(fsrc=im_final, ng=ng_sat, **kwargs)
             # Fix any values due to ng<1
@@ -1763,7 +1826,7 @@ class obs_hci(nrc_hci):
             if np.sum(ind_fix)>0:
                 im_noise[ind_fix] = det.pixel_noise(fsrc=im_final[ind_fix], ng=1, nf=1, **kwargs)
 
-            # Add random noise
+            # Add random Gaussian noise
             im_final += np.random.normal(scale=im_noise)
 
         # Get rid of disk and planet emission

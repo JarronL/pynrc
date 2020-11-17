@@ -482,7 +482,7 @@ class NIRCam(object):
         self._ice_scale = kwargs['ice_scale'] if 'ice_scale' in kwargs.keys() else None
         self._nvr_scale = kwargs['nvr_scale'] if 'nvr_scale' in kwargs.keys() else None
         self._ote_scale = kwargs['ote_scale'] if 'ote_scale' in kwargs.keys() else None
-        self._nc_scale = kwargs['nc_scale'] if 'nc_scale' in kwargs.keys() else None
+        self._nc_scale  = kwargs['nc_scale']  if 'nc_scale'  in kwargs.keys() else None
 
         # WFE Drift, don't calculate coefficients by default
         wfe_drift = kwargs.get('wfe_drift', False)
@@ -604,7 +604,8 @@ class NIRCam(object):
         if vold != self._filter: 
             self._update_bp()
             self.update_psf_coeff()
-        if ch_old != self.channel: self.update_detectors()
+        if ch_old != self.channel: 
+            self.update_detectors()
 
         self._validate_wheels()
 
@@ -1175,20 +1176,20 @@ class NIRCam(object):
             for k in keys:
                 v = self.det_info[k]
                 if isinstance(v,float): print("{:<9} : {:>8.0f}".format(k, v))
-                else: print("  {:<9} : {:>8}".format(k, v))
+                else: print("  {:<10} : {:>8}".format(k, v))
 
             print('New Detector Settings')
             keys = ['wind_mode', 'xpix', 'ypix', 'x0', 'y0']
             for k in keys:
                 v = self.det_info[k]
                 if isinstance(v,float): print("{:<9} : {:>8.0f}".format(k, v))
-                else: print("  {:<9} : {:>8}".format(k, v))
+                else: print("  {:<10} : {:>8}".format(k, v))
     
             print('New Ramp Times')
             ma = self.multiaccum_times
             keys = ['t_group', 't_frame', 't_int', 't_int_tot1', 't_int_tot2', 't_exp', 't_acq']
             for k in keys:
-                print('  {:<9} : {:>8.3f}'.format(k, ma[k]))
+                print('  {:<10} : {:>8.3f}'.format(k, ma[k]))
 
 
     # Check consistencies with pre-defined readout patterns

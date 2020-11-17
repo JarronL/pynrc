@@ -49,7 +49,8 @@ from .maths import robust
 from .maths.fast_poly import *
 from .maths.image_manip import frebin, fshift, pad_or_cut_to_size
 from .maths.image_manip import hist_indices, binned_statistic
-from .maths.coords import dist_image, xy_to_rtheta, rtheta_to_xy, det_to_sci, sci_to_det
+from .maths.coords import dist_image, xy_to_rtheta, rtheta_to_xy, xy_rot
+from .maths.coords import det_to_sci, sci_to_det, plotAxes
 
 # OPD info
 from .opds import opd_default, OPDFile_to_HDUList
@@ -1200,10 +1201,12 @@ def sat_limit_webbpsf(filter_or_bp, pupil=None, mask=None, module='A', pix_scale
 
     # If not set, select some settings based on filter (SW or LW)
     args = channel_select(bp)
-    if pix_scale is None: pix_scale = args[0] # Pixel scale (arcsec/pixel)
+    if pix_scale is None: 
+        pix_scale = args[0] # Pixel scale (arcsec/pixel)
 
     # Spectrum and bandpass to report magnitude that saturates NIRCam band
-    if sp is None: sp = stellar_spectrum('G2V')
+    if sp is None: 
+        sp = stellar_spectrum('G2V')
 
     # Just for good measure, make sure we're all in the same wave units
     bp_lim.convert(bp.waveunits)
