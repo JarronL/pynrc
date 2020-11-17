@@ -1727,7 +1727,8 @@ def simulate_detector_ramp(det, dark_cal_obj, im_slope=None, out_ADU=False,
     ################################
     # Begin...
     ################################
-    if prog_bar: pbar = tqdm(total=13, leave=False)
+    if prog_bar: 
+        pbar = tqdm(total=13, leave=False)
     data = np.zeros([nz,ny,nx])
 
     ####################

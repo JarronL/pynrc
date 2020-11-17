@@ -2033,7 +2033,7 @@ def gen_super_bias(allfiles, DMS=False, mn_func=np.median, std_func=robust.std,
             
     if nsplit>1:
         bias_all = []
-        # pool = mp.Pool(nsplit)        
+        # pool = mp.Pool(nsplit)
         try:
             with mp.Pool(nsplit) as pool:
                 for res in tqdm(pool.imap_unordered(_wrap_super_bias_for_mp, worker_args), total=nfiles):

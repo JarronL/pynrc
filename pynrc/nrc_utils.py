@@ -3453,8 +3453,7 @@ def linder_table(file=None, **kwargs):
     
     return tbl
     
-def linder_filter(table, filt, age, dist=10, 
-    cond_interp=True, cond_file=None, **kwargs):
+def linder_filter(table, filt, age, dist=10, cond_interp=True, cond_file=None, **kwargs):
     """Linder Mags vs Mass Arrays
     
     Given a Linder table, NIRCam filter, and age, return arrays of MJup 
@@ -3462,7 +3461,7 @@ def linder_filter(table, filt, age, dist=10,
     magnitude, otherwise absolute magnitude at 10pc.
     
     This function takes the isochrones tables from Linder et al 2019 and
-    creates a irregular contour grid of filter magnitude and lag(age)
+    creates a irregular contour grid of filter magnitude and log(age)
     where the z-axis is log(mass). This is mapped onto a regular grid
     that is interpolated within the data boundaries and linearly
     extrapolated outside of the region of available data.
@@ -3659,6 +3658,12 @@ def linder_filter(table, filt, age, dist=10,
     mass_arr = 10**func(pts) / 318.0 # Convert to MJup
     
     mag_app_arr = mag_abs_arr + 5*np.log10(dist/10.0)
+
+    # Sort by mass
+    isort = np.argsort(mass_arr)
+    mass_arr = mass_arr[isort]
+    mag_app_arr = mag_app_arr[isort]
+
     return mass_arr, mag_app_arr
     
 
@@ -3904,6 +3909,11 @@ def offset_bar(filt, mask):
     else:
         r, theta = (0.0, 0.0)
 
+    # Want th_bar to be -90 so that r matches webbpsf
+    if theta>0: 
+        r  = -1 * r
+        theta = -1 * theta
+
     #print(r, theta)
     return r, theta
 
@@ -3942,7 +3952,8 @@ def coron_trans(name, module='A', pixscale=None, fov=20, nd_squares=True):
     x -= shape[1] / 2.0
     y,x = (pixscale * y, pixscale * x)
 
-    if 'WB' in name: # Wedge Masks
+    ### Wedge Masks
+    if 'WB' in name: 
         scalefact = (2 + (-x + 7.5) * 4 / 15).clip(2, 6)
         wedgesign = 1 if name == 'MASKSWB' else -1
         scalefact = (2 + (x * wedgesign + 7.5) * 4 / 15).clip(2, 6)
@@ -3956,7 +3967,8 @@ def coron_trans(name, module='A', pixscale=None, fov=20, nd_squares=True):
                                       -4.59674047e-01, 2.60963397e+00, -9.70881273e+00,
                                       2.36585911e+01, -3.63978587e+01, 3.20703511e+01])
 
-        sigmas = scipy.poly1d(polyfitcoeffs)(scalefact)
+        sigma_func = np.poly1d(polyfitcoeffs)
+        sigmas = sigma_func(scalefact)
         sigmar = sigmas * np.abs(y)
         # clip sigma: The minimum is to avoid divide by zero
         #             the maximum truncates after the first sidelobe to match the hardware
@@ -3965,8 +3977,8 @@ def coron_trans(name, module='A', pixscale=None, fov=20, nd_squares=True):
         # the bar should truncate at +- 10 arcsec
         woutside = np.where(np.abs(x) > 10)
         transmission[woutside] = 1.0
-
-    else: # Circular Masks
+    ### Circular Masks
+    else: 
         r = poppy.accel_math._r(x, y)
         sigmar = sigma * r
 
@@ -3976,10 +3988,12 @@ def coron_trans(name, module='A', pixscale=None, fov=20, nd_squares=True):
         sigmar.clip(np.finfo(sigmar.dtype).tiny, bessel_j1_zero2, out=sigmar)  # avoid divide by zero -> NaNs
         if poppy.accel_math._USE_NUMEXPR:
             import numexpr as ne
-            jn1 = scipy.special.j1(sigmar)
+            # jn1 = scipy.special.j1(sigmar)
+            jn1 = scipy.special.jv(1,sigmar)
             transmission = ne.evaluate("(1 - (2 * jn1 / sigmar) ** 2)")
         else:
-            transmission = (1 - (2 * scipy.special.j1(sigmar) / sigmar) ** 2)
+            # transmission = (1 - (2 * scipy.special.j1(sigmar) / sigmar) ** 2)
+            transmission = (1 - (2 * scipy.special.jv(1,sigmar) / sigmar) ** 2)
 
         # r = np.sqrt(x ** 2 + y ** 2)
         # sigmar = sigma * r

@@ -13,7 +13,7 @@ _log = logging.getLogger('pynrc')
 
 from poppy.utils import krebin
 
-from pynrc.maths.coords import dist_image
+from .coords import dist_image
 from scipy.ndimage import fourier_shift
 from astropy.io import fits
 
@@ -45,10 +45,6 @@ def pad_or_cut_to_size(array, new_shape, fill_val=0.0, offset_vals=None):
         of the input array.
     """
     
-    # Return if no difference in shapes
-    if array.shape == new_shape:
-        return array
-
     ndim = len(array.shape)
     if ndim == 1:
         # is_1d = True
@@ -87,6 +83,11 @@ def pad_or_cut_to_size(array, new_shape, fill_val=0.0, offset_vals=None):
         raise ValueError('Input image can only have 1 or 2 or 3 dimensions. \
                           Found {} dimensions.'.format(ndim))
                       
+    # Return if no difference in shapes
+    # This needs to occur after the above so that new_shape is verified to be a tuple
+    if array.shape == new_shape:
+        return array
+
     # Input the fill values
     if fill_val != 0:
         output += fill_val
