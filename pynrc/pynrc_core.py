@@ -484,10 +484,13 @@ class NIRCam(object):
         self._ote_scale = kwargs['ote_scale'] if 'ote_scale' in kwargs.keys() else None
         self._nc_scale = kwargs['nc_scale'] if 'nc_scale' in kwargs.keys() else None
 
-        # WFE Drift, Don't calculate coefficients by default
+        # WFE Drift, don't calculate coefficients by default
         wfe_drift = kwargs.get('wfe_drift', False)
         self._wfe_drift = wfe_drift
         # Field-dependent WFE
+        if kwargs.get('wfe_drift', False)==True:
+            _log.warning("Setting `wfe_drift` as an input parameter is currently not supported.")
+            _log.warning("  Instead, set the class attribute: `nrc.wfe_drift = True`.")
         self._wfe_field = False  # Don't calculate coefficients by default
         # Max FoVs for calculationg drift and field dependnet coefficient residuals
         # Any pixels beyond this size will be considered to have 0 residual difference
@@ -586,7 +589,7 @@ class NIRCam(object):
     @property
     def filter(self):
         """Name of filter bandpass"""
-#         return self._filter
+        # return self._filter
         return self.bandpass.name
     @filter.setter
     def filter(self, value):
@@ -855,55 +858,6 @@ class NIRCam(object):
                 key = 'NRC{}_FULL'.format(self.Detectors[0].detid)
             else:
                 key = None
-
-
-            # # If full frame
-            # if (wind_mode == 'FULL'):
-            #     # Time series (A5 row grism with certain filters)
-            #     if is_grism and ('GRISM0' in self.pupil) and (self.filter in ts_filters):
-            #         key = 'NRC{}_GRISM_{}'.format(detid, self.filter)
-            #     # WFSS
-            #     elif is_grism:
-            #         gstr = 'GRISMR' if self.pupil=='GRISM0' else 'GRISMC'
-            #         key = 'NRC{}_FULL_{}_WFSS'.format(detid, gstr)
-            #     # Coronagraphy
-            #     elif if_coron:
-            #         if ('SWB' in self.mask) and (self.filter in swb_filters):
-            #             key = 'NRC{}_FULL_MASKSWB_{}'.format(detid,self.filter)
-            #         elif ('LWB' in self.mask) and (self.filter in lwb_filters):
-            #             key = 'NRC{}_FULL_MASKLWB_{}'.format(detid,self.filter)
-            #         else:
-            #             key = 'NRC{}_FULL_{}'.format(detid,self.mask)
-            #     # Full frame, generic SIAF
-            #     else:
-            #         key = 'NRC{}_FULL'.format(self.Detectors[0].detid)
-
-            # # Stripe mode settings
-            # # Time series grism and simultaneous SW 
-            # elif (wind_mode == 'STRIPE'):
-            #     if is_grism and (GRISM0 in self.pupil) and (self.filter in ts_filter):
-            #         key = 'NRC{}_GRISM{:.0f}_{}'.format(detid,self.det_info['ypix'],self.filter)
-            #     else:
-            #         key = 'NRC{}_GRISMTS{:.0f}'.format(detid,self.det_info['ypix'])
-
-            # # Subarray window
-            # else:
-            #     if is_coron:
-            #         if ('SWB' in self.mask) and (self.filter in swb_filters) and (detid=='A4'):
-            #             key = 'NRCA4_MASKSWB_{}'.format(self.filter)
-            #         elif ('LWB' in self.mask) and (self.filter in lwb_filters) and (detid=='A5'):
-            #             key = 'NRCA5_MASKLWB_{}'.format(self.filter)
-            #     else:
-            #         key = 'NRC{}_SUB{}P'.format(detid,self.det_info['xpix'])
-            #         if key not in self.siaf_ap_names:
-            #             key = 'NRC{}_TAPSIMG{}'.format(detid,self.det_info['xpix'])
-            #         if key not in self.siaf_ap_names:
-            #             key = 'NRC{}_TAGRISMTS{}'.format(detid,self.det_info['xpix'])
-            #         if key not in self.siaf_ap_names:
-            #             key = 'NRC{}_TAGRISMTS_SCI_{}'.format(detid,self.filter)
-            #         if key not in self.siaf_ap_names:
-            #             key = 'NRC{}_SUB{}'.format(detid,self.det_info['xpix'])
-
 
             # Check if key exists
             if key in self.siaf_ap_names:
@@ -2027,7 +1981,7 @@ class NIRCam(object):
             else:
                 return sat_level
                 
-    def _siafap_sci_coords(self, coord_vals=None, coord_frame='tel'):
+    def siafap_sci_coords(self, coord_vals=None, coord_frame='tel'):
         """
         Return the detector, sci position, and full frame aperture name
         for a set of coordiante values.
@@ -2104,7 +2058,7 @@ class NIRCam(object):
 
         # Determine V2/V3 coordinates
         if coord_vals is not None:
-            detector, detector_position, apname = self._siafap_sci_coords(coord_vals, coord_frame)
+            detector, detector_position, apname = self.siafap_sci_coords(coord_vals, coord_frame)
         else:
             detector = detector_position = apname = None
 
@@ -2282,10 +2236,11 @@ class NIRCam(object):
             if bar_offset is None:
                 r_bar, th_bar = self.offset_bar(self._filter, self.mask)
                 # Want th_bar to be -90 so that r_bar matches webbpsf
-                if th_bar>0: 
-                    r_bar  = -1 * r_bar
-                    th_bar = -1 * th_bar
-                bar_offset = r_bar
+                ### Has been added to nrc_util.offset_bar() ###
+                # if th_bar>0: 
+                #     r_bar  = -1 * r_bar
+                #     th_bar = -1 * th_bar
+                bar_offset = r_bar # arcsec
 
             # Interpolate coefficient offset if not 0
             if bar_offset != 0:
