@@ -32,6 +32,9 @@ from .maths.image_manip import frebin, pad_or_cut_to_size
 from .maths.fast_poly import jl_poly_fit, jl_poly
 from .maths.coords import Tel2Sci_info, NIRCam_V2V3_limits, dist_image
 
+# Program bar
+from tqdm.auto import trange, tqdm
+
 __epsilon = np.finfo(float).eps
 
 ###########################################################################
@@ -924,20 +927,19 @@ def wfed_coeff(filter_or_bp, force=False, save=True, save_name=None, nsplit=None
     Example
     -------
     Generate PSF coefficient, WFE drift modifications, then
-    create an undrifted and drifted PSF.
+    create an undrifted and drifted PSF. (pseudo-code)
 
-    >>> from pynrc import nrc_utils
     >>> fpix, osamp = (128, 4)
-    >>> coeff  = nrc_utils.gen_psf_coeff('F210M', fov_pix=fpix, oversample=osamp)
-    >>> wfe_cf = nrc_utils.wfed_coeff('F210M', fov_pix=fpix, oversample=osamp)
-    >>> psf0   = nrc_utils.gen_image_coeff('F210M', coeff=coeff, fov_pix=fpix, oversample=osamp)
+    >>> coeff, _  = gen_psf_coeff('F210M', fov_pix=fpix, oversample=osamp)
+    >>> wfe_cf    = wfed_coeff('F210M', fov_pix=fpix, oversample=osamp)
+    >>> psf0      = gen_image_coeff('F210M', coeff=coeff, fov_pix=fpix, oversample=osamp)
 
     >>> # Drift the coefficients
     >>> wfe_drift = 5   # nm
     >>> cf_fit = wfe_cf.reshape([wfe_cf.shape[0], -1])
-    >>> cf_mod = nrc_utils.jl_poly(np.array([wfe_drift]), cf_fit).reshape(coeff.shape)
+    >>> cf_mod = jl_poly(np.array([wfe_drift]), cf_fit).reshape(coeff.shape)
     >>> cf_new = coeff + cf_mod
-    >>> psf5nm = nrc_utils.gen_image_coeff('F210M', coeff=cf_new, fov_pix=fpix, oversample=osamp)
+    >>> psf5nm = gen_image_coeff('F210M', coeff=cf_new, fov_pix=fpix, oversample=osamp)
     """
 
     kwargs['force']     = True
@@ -1017,9 +1019,15 @@ def wfed_coeff(filter_or_bp, force=False, save=True, save_name=None, nsplit=None
         poppy_nproc_prev = poppy.conf.n_processes
         poppy.conf.n_processes = 1
 
-        pool = mp.Pool(nsplit)
+        cf_wfe = []
+        # pool = mp.Pool(nsplit)
         try:
-            cf_wfe = pool.map(_wrap_wfed_coeff_for_mp, worker_args)
+            # cf_wfe = pool.map(_wrap_wfed_coeff_for_mp, worker_args)
+            with mp.Pool(nsplit) as pool:
+                for res in tqdm(pool.imap_unordered(_wrap_wfed_coeff_for_mp, worker_args), total=npos):
+                    cf_wfe.append(res)
+                pool.close()
+
             if cf_wfe[0] is None:
                 raise RuntimeError('Returned None values. Issue with multiprocess or WebbPSF??')
         except Exception as e:
@@ -1031,12 +1039,16 @@ def wfed_coeff(filter_or_bp, force=False, save=True, save_name=None, nsplit=None
             raise e
         else:
             _log.debug('Closing multiprocess pool.')
-            pool.close()
+            # pool.close()
 
         poppy.conf.n_processes = poppy_nproc_prev
     else:
         # No multiprocessor
-        cf_wfe = [_wrap_wfed_coeff_for_mp(wa) for wa in worker_args]
+        cf_wfe = []
+        for wa in tqdm(worker_args):
+            cf = _wrap_wfed_coeff_for_mp(wa)
+            cf_wfe.append(cf)
+        # cf_wfe = [_wrap_wfed_coeff_for_mp(wa) for wa in worker_args]
 
     # Get residuals
     cf_wfe = np.array(cf_wfe) - cf_wfe[0]
@@ -1094,23 +1106,25 @@ def field_coeff_resid(filter_or_bp, coeff0, force=False, save=True, save_name=No
         Number of processors to split over. There are checks to 
         make sure you're not requesting more processors than the 
         current machine has available.
+    return_raw : bool
+        Return PSF coefficients of unevenly sampled V2/V3 grid
+        along with the V2/V3 coordinates (cf_resid, v2_all, v3_all).
 
 
     Example
     -------
     Generate PSF coefficient, field position modifications, then
-    create a PSF at some (V2,V3) location.
+    create a PSF at some (V2,V3) location. (pseudo-code)
 
-    >>> from pynrc import nrc_utils
     >>> fpix, osamp = (128, 4)
-    >>> coeff    = nrc_utils.gen_psf_coeff('F210M', fov_pix=fpix, oversample=osamp)
-    >>> cf_resid = nrc_utils.field_coeff('F210M', coeff, fov_pix=fpix, oversample=osamp)
+    >>> coeff, _ = gen_psf_coeff('F210M', fov_pix=fpix, oversample=osamp)
+    >>> cf_resid = field_coeff_resid('F210M', coeff, fov_pix=fpix, oversample=osamp)
 
     >>> # Some (V2,V3) location (arcmin)
     >>> v2, v3 = (1.2, -7)
-    >>> cf_mod = nrc_utils.field_model(v2, v3, cf_resid)
+    >>> cf_mod = field_model(v2, v3, cf_resid)
     >>> cf_new = coeff + cf_mod
-    >>> psf    = nrc_utils.gen_image_coeff('F210M', coeff=cf_new, fov_pix=fpix, oversample=osamp)
+    >>> psf    = gen_image_coeff('F210M', coeff=cf_new, fov_pix=fpix, oversample=osamp)
     """
 
     from astropy.table import Table
@@ -1122,7 +1136,7 @@ def field_coeff_resid(filter_or_bp, coeff0, force=False, save=True, save_name=No
     if return_raw:
         save = False
         force = True
-        _log.warn('return_raw=True; Setting save=False, force=True')
+        _log.warn("return_raw=True; Setting 'save=False' and 'force=True'")
 
     # Get filter throughput and create bandpass
     if isinstance(filter_or_bp, six.string_types):
@@ -1133,28 +1147,9 @@ def field_coeff_resid(filter_or_bp, coeff0, force=False, save=True, save_name=No
         filter = bp.name
     channel = 'SW' if bp.avgwave() < 24000 else 'LW'
 
-    # fov_pix should not be more than some size, otherwise memory issues
+    # Set a default fov_pix and oversample
     fov_pix = kwargs['fov_pix'] if 'fov_pix' in list(kwargs.keys()) else 33
     oversample = kwargs['oversample'] if 'oversample' in list(kwargs.keys()) else 4
-
-    # Final filename to save coeff
-    if save_name is None:
-        # Name to save array of oversampled coefficients
-        save_dir = conf.PYNRC_PATH + 'psf_coeffs/'
-        # Create directory if it doesn't already exist
-        if not os.path.isdir(save_dir):
-            os.makedirs(save_dir)
-
-        # Final filename to save coeff
-        save_name = gen_psf_coeff(bp, return_save_name=True, **kwargs)
-        save_name = os.path.splitext(save_name)[0] + '_cffields.npz'
-
-    # Load file if it already exists
-    if (not force) and os.path.exists(save_name):
-        out = np.load(save_name)
-        return out['arr_0'], out['arr_1'], out['arr_2']
-
-    _log.warn('Generating field-dependent coefficients. This may take some time...')
 
     # Cycle through a list of field points
     # These are the measured CV3 field positions
@@ -1194,6 +1189,25 @@ def field_coeff_resid(filter_or_bp, coeff0, force=False, save=True, save_name=No
     #kwargs['include_si_wfe'] = False
     #cf0 = gen_psf_coeff(filter, **kwargs)
     kwargs['include_si_wfe'] = True
+
+    # Final filename to save coeff
+    if save_name is None:
+        # Name to save array of oversampled coefficients
+        save_dir = conf.PYNRC_PATH + 'psf_coeffs/'
+        # Create directory if it doesn't already exist
+        if not os.path.isdir(save_dir):
+            os.makedirs(save_dir)
+
+        # Final filename to save coeff
+        save_name = gen_psf_coeff(bp, return_save_name=True, **kwargs)
+        save_name = os.path.splitext(save_name)[0] + '_cffields.npz'
+
+    # Load file if it already exists
+    if (not force) and os.path.exists(save_name):
+        out = np.load(save_name)
+        return out['arr_0'], out['arr_1'], out['arr_2']
+
+    _log.warn('Generating field-dependent coefficients. This may take some time...')
 
     # Split over multiple processors?
     nsplit_max = nproc_use(fov_pix, oversample, npos)#, coron=coron_obs)
@@ -1239,9 +1253,16 @@ def field_coeff_resid(filter_or_bp, coeff0, force=False, save=True, save_name=No
         poppy_nproc_prev = poppy.conf.n_processes
         poppy.conf.n_processes = 1
 
-        pool = mp.Pool(nsplit)
+        cf_fields = []
+        ntot = len(worker_args)
+        # pool = mp.Pool(nsplit)
         try:
-            cf_fields = pool.map(_wrap_field_coeff_for_mp, worker_args)
+            with mp.Pool(nsplit) as pool:
+                for res in tqdm(pool.imap_unordered(_wrap_field_coeff_for_mp, worker_args), total=ntot):
+                    cf_fields.append(res)
+                pool.close()
+
+            # cf_fields = pool.map(_wrap_field_coeff_for_mp, worker_args)
             if cf_fields[0] is None:
                 raise RuntimeError('Returned None values. Issue with multiprocess or WebbPSF??')
         except Exception as e:
@@ -1253,17 +1274,21 @@ def field_coeff_resid(filter_or_bp, coeff0, force=False, save=True, save_name=No
             raise e
         else:
             _log.debug('Closing multiprocess pool.')
-            pool.close()
+            # pool.close()
 
         poppy.conf.n_processes = poppy_nproc_prev
     else:  # No multiprocessor
-        cf_fields = [_wrap_field_coeff_for_mp(wa) for wa in worker_args]
+        cf_fields = []
+        for wa in tqdm(worker_args):
+            cf = _wrap_field_coeff_for_mp(wa)
+            cf_fields.append(cf)
+        # cf_fields = [_wrap_field_coeff_for_mp(wa) for wa in worker_args]
 
     # Get residuals
-    cf_fields = np.array(cf_fields) - coeff0
+    cf_fields_resid = np.array(cf_fields) - coeff0
 
     if return_raw:
-        return cf_fields, v2_all, v3_all
+        return cf_fields_resid, v2_all, v3_all
 
     # Create an evenly spaced grid of V2/V3 coordinates
     nv23 = 8
@@ -1271,7 +1296,7 @@ def field_coeff_resid(filter_or_bp, coeff0, force=False, save=True, save_name=No
     v3grid = np.linspace(v3_min, v3_max, num=nv23)
 
     # Interpolate onto an evenly space grid
-    res = make_coeff_resid_grid(v2_all, v3_all, cf_fields, v2grid, v3grid)
+    res = make_coeff_resid_grid(v2_all, v3_all, cf_fields_resid, v2grid, v3grid)
     if save: 
         np.savez(save_name, *res)
 
@@ -1354,19 +1379,19 @@ def wedge_coeff(filter, pupil, mask, force=False, save=True, save_name=None, **k
     -------
     Generate PSF coefficient at bar_offset=0, generate position modifications,
     then use these results to create a PSF at some arbitrary offset location.
+    (pseudo-code)
 
-    >>> from pynrc import nrc_utils
     >>> fpix, osamp = (320, 2)
     >>> filt, pupil, mask = ('F430M', 'WEDGELYOT', 'MASKLWB')
-    >>> coeff    = nrc_utils.gen_psf_coeff(filt, pupil, mask, fov_pix=fpix, oversample=osamp)
-    >>> cf_resid = nrc_utils.wedge_coeff(filt, pupil, mask, fov_pix=fpix, oversample=osamp)
+    >>> coeff    = gen_psf_coeff(filt, pupil, mask, fov_pix=fpix, oversample=osamp)
+    >>> cf_resid = wedge_coeff(filt, pupil, mask, fov_pix=fpix, oversample=osamp)
 
     >>> # The narrow location (arcsec)
     >>> bar_offset = 8
-    >>> cf_fit = nrc_utils.cf_resid.reshape([cf_resid.shape[0], -1])
-    >>> cf_mod = nrc_utils.jl_poly(np.array([bar_offset]), cf_fit).reshape(coeff.shape)
+    >>> cf_fit = cf_resid.reshape([cf_resid.shape[0], -1])
+    >>> cf_mod = jl_poly(np.array([bar_offset]), cf_fit).reshape(coeff.shape)
     >>> cf_new = coeff + cf_mod
-    >>> psf    = nrc_utils.gen_image_coeff(filt, pupil, mask, coeff=cf_new, fov_pix=fpix, oversample=osamp)
+    >>> psf    = gen_image_coeff(filt, pupil, mask, coeff=cf_new, fov_pix=fpix, oversample=osamp)
 
     """
 
@@ -1411,7 +1436,7 @@ def wedge_coeff(filter, pupil, mask, force=False, save=True, save_name=None, **k
     cf0, _ = gen_psf_coeff(filter, bar_offset=0, **kwargs)
 
     cf_offset = []
-    for val in values:
+    for val in tqdm(values):
         _log.debug('Bar Offset: {:.1f} arcsec'.format(val))
         kwargs['bar_offset'] = val
 
