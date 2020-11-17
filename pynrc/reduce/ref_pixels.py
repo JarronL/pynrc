@@ -262,6 +262,7 @@ class NRC_refs(object):
             return
             
         self.refs_amps_avg = calc_avg_amps(refs_all, data_shape, nchans, self.altcol)
+        self.supermean = robust.mean(refs_all)
 
     def correct_amp_refs(self, supermean=False):
         """Correct amplifier offsets
@@ -282,7 +283,7 @@ class NRC_refs(object):
 
         # Supermean
         # the average of the average is the DC level of the output channel
-        smean = robust.mean(refs_all) if supermean else 0.0
+        smean = self.supermean if supermean else 0.0
     
         nchans = self.detector.nout
         chsize = self.detector.chsize
@@ -1039,6 +1040,81 @@ def smooth_fft(data, delt, first_deriv=False, second_deriv=False):
         return Smoothed_Data
     
 
+def chrem_med(imarr, nchans=4, yind=None, bpmask=None, in_place=True,
+              mean_func=np.median):
+    """ Subtract Amplifier Channel Offsets
+    
+    Sometimes amplifiers have offsets relative to each other 
+    due to imperfect tracking of reference pixels. This function
+    determines the average offset from zero of each channel
+    and subtracts the mean/median from the entire channel.
+    
+    Parameters
+    ----------
+    imarr : ndarray
+        Array of image (or single image).
+    nchans : int
+        Number of amplifier readout channels.
+    yind : array-like
+        Two element array to select a y-range for calculating
+        the channel offset.
+    bpmask : bool array
+        Bad pixel mask (1 for bad, 0 for good). Can either
+        be a single image or image cube of same size as `imarr`.
+    in_place : bool
+        Correct in-place? If False, returns a copy of the array
+        with channels offset.
+    mean_func : func
+        Function to use for performing the mean calculation.
+    
+    """
+    
+    sh_orig = imarr.shape
+    if len(sh_orig)==2:
+        nz = 1
+        ny, nx = sh_orig
+        imarr = imarr.reshape([nz,ny,nx])
+    else:
+        nz, ny, nx = sh_orig    
+        
+    chsize = int(nx / nchans)
+    
+    # Make copy of array?
+    arr_out = imarr if in_place else imarr.copy()
+    
+    # Define y index start/stop locations
+    yind = np.array([0,ny]) if yind is None else yind
+    
+    bpmask = np.zeros([ny,nx]) if bpmask is None else bpmask
+    bpmask = bpmask.squeeze()
+    
+    # Cropped array
+    for ch in np.arange(nchans):
+        # Get channel x-indices
+        x1 = int(ch*chsize)
+        x2 = int(x1 + chsize)
+
+        # Select the channel and y-range
+        imch = arr_out[:, yind[0]:yind[1], x1:x2]
+        # imch_ind = imch.reshape([imch.shape[0],-1])
+        
+        # Take median of all pixels in channel for each image
+        if len(bpmask.shape)==2:
+            bpmask_ch = bpmask[yind[0]:yind[1], x1:x2]
+            igood = (bpmask_ch == 0)
+            chmed = mean_func(imch[:,igood], axis=1)
+
+            # Subtract median channel from each image
+            arr_out[:,:,x1:x2] -= chmed.reshape([-1,1,1])
+        else:
+            for jj, im in enumerate(imch): 
+                bpmask_ch = bpmask[jj, yind[0]:yind[1], x1:x2]
+                igood = (bpmask_ch == 0)
+                arr_out[jj,:,x1:x2] -= mean_func(im[igood])
+                    
+    return arr_out.reshape(sh_orig)
+
+
 def channel_averaging(im, nchans=4, same_scan_direction=False, off_chans=True, 
     mn_func=np.nanmedian, **kwargs):
     """Estimate common 1/f noise in image
@@ -1076,8 +1152,11 @@ def channel_averaging(im, nchans=4, same_scan_direction=False, off_chans=True,
 
     # Flip channels if they're reversed
     if same_scan_direction==False:
+        # Make sure we don't modify the input array
+        im = im.copy()
         for ch in range(nchans):
-            if np.mod(ch,2)==1: im[:,:,ch] = im[:,::-1,ch]
+            if np.mod(ch,2)==1: 
+                im[:,:,ch] = im[:,::-1,ch]
                 
     if off_chans == False:
         im = im.reshape([-1,nchans])
@@ -1099,7 +1178,13 @@ def channel_averaging(im, nchans=4, same_scan_direction=False, off_chans=True,
             arr_list.append(ch_mn)
         else: 
             arr_list.append(ch_mn[:,::-1])
-#    im = im.reshape([ny,chsize,nchans]).transpose([0,2,1]).reshape([ny,nx])
+    # im = im.reshape([ny,chsize,nchans]).transpose([0,2,1]).reshape([ny,nx])
+
+    # Flip channels back to original position
+    if same_scan_direction==False:
+        for ch in range(nchans):
+            if np.mod(ch,2)==1: 
+                im[:,:,ch] = im[:,::-1,ch]
             
     return np.concatenate(arr_list, axis=1)
 
@@ -1184,7 +1269,9 @@ def channel_smooth_savgol(im_arr, winsize=31, order=3, per_line=False,
     Parameters
     ==========
     im_arr : ndarray
-        Input array of images (intended to be a cube of output channels). 
+        Input array of images (intended to be a cube of output channels).
+        Shape should either be (ny, chsize) to smooth a single channel or
+        (nchan, ny, chsize) for  multiple channels.
         Each image is operated on separately. If only two dimensions,
         then only a single input image is assumed. NaN's will be
         interpolated over.
@@ -1192,7 +1279,7 @@ def channel_smooth_savgol(im_arr, winsize=31, order=3, per_line=False,
     Keyword Args
     ============
     winsize : int
-        Size of the window filter.
+        Size of the window filter. Should be an odd number.
     order : int
         Order of the polynomial used to fit the samples.
     per_line : bool
@@ -1228,6 +1315,8 @@ def channel_smooth_savgol(im_arr, winsize=31, order=3, per_line=False,
 
     # Reshape in case of nz=1
     im_arr = im_arr.reshape([nz, -1])
+    if mask is not None:
+        mask = mask.reshape([nz, -1])
 
     res_arr = []
     for i, im in enumerate(im_arr):
@@ -1285,7 +1374,7 @@ def channel_smooth_butter(im_arr, order=3, freq=0.1, per_line=False, mask=None):
         such as stellar sources or pixel outliers.
     """
 
-    from scipy.signal import butter, filtfilt, savgol
+    from scipy.signal import butter, filtfilt
 
     sh = im_arr.shape
     if len(sh)==2:
@@ -1296,6 +1385,9 @@ def channel_smooth_butter(im_arr, order=3, freq=0.1, per_line=False, mask=None):
 
     # Reshape in case of nz=1
     im_arr = im_arr.reshape([nz, -1])
+    if mask is not None:
+        mask = mask.reshape([nz, -1])
+
 
     res_arr = []
     b, a = butter(order, freq, btype='lowpass', analog=False)

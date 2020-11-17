@@ -174,11 +174,16 @@ class HXRGNoise:
         Pixel dimension of full detector (square).
     reference_pixel_border_width : int
         Width of reference pixel border around image area.
+    same_scan_direction : bool
+        Are all the output channels read in the same direction?
+        By default fast-scan readout direction is ``[-->,<--,-->,<--]``
+        If ``same_scan_direction``, then all ``-->``
     reverse_scan_direction : bool
         Enable this to reverse the fast scanner readout directions. 
         This capability was added to support Teledyne's programmable 
         fast scan readout directions. The default setting of False 
         corresponds to what HxRG detectors default to upon power up.
+        If ``reverse_scan_direction``, then ``[<--,-->,<--,-->]`` or all ``<--``
     use_fftw : bool
         If pyFFTW is installed, you can use this in place of np.fft.
     ncores : int
@@ -192,7 +197,8 @@ class HXRGNoise:
     def __init__(self, naxis1=None, naxis2=None, naxis3=None, n_out=None,
                  dt=None, nroh=None, nfoh=None, nfoh_pix=None,
                  dark_file=None, bias_file=None, verbose=False,
-                 reverse_scan_direction=False, reference_pixel_border_width=None,
+                 reverse_scan_direction=False, same_scan_direction=False,
+                 reference_pixel_border_width=None,
                  wind_mode='FULL', x0=0, y0=0, det_size=None, 
                  use_fftw=False, ncores=None):
 
@@ -219,7 +225,7 @@ class HXRGNoise:
         wind_mode = wind_mode.upper()
         modes = ['FULL', 'STRIPE', 'WINDOW']
         if wind_mode not in modes:
-            _log.warning('%s not a valid window readout mode! Returning...' % inst_params['wind_mode'])
+            _log.warning(f'{wind_mode} not a valid window readout mode! Returning...')
             os.sys.exit()
         if wind_mode == 'WINDOW':
             n_out = 1
@@ -257,8 +263,8 @@ class HXRGNoise:
         if bias_file is not None:
             if os.path.isfile(self.bias_file) is False:
                 raise ValueError('There was an error finding bias_file {}'.format(bias_file))
-                print('There was an error finding bias_file!')
-                print(bias_file)
+                # print('There was an error finding bias_file!')
+                # print(bias_file)
                 #os.sys.exit()
 
 #             print('There was an error finding bias_file! Check to be')
@@ -292,6 +298,8 @@ class HXRGNoise:
 
         # Configure readout direction
         self.reverse_scan_direction = reverse_scan_direction
+        self.same_scan_direction = same_scan_direction
+
 
         # Compute the number of pixels in the fast-scan direction per output
         self.xsize = self.naxis1 // self.n_out
@@ -802,26 +810,33 @@ class HXRGNoise:
             tt = np.reshape(tt, (self.naxis3, self.naxis2+self.nfoh, \
                                  self.xsize+self.nroh))[:,:self.naxis2,:self.xsize]
             for op in np.arange(self.n_out):
-                x0 = op * self.xsize
-                x1 = x0 + self.xsize
+                x1 = op * self.xsize
+                x2 = x1 + self.xsize
 
                 # By default fast-scan readout direction is [-->,<--,-->,<--]
                 # If reverse_scan_direction is True, then [<--,-->,<--,-->]
-                # TODO: Include option for all --> or all <--
-                modnum = 1 if self.reverse_scan_direction else 0
-                if np.mod(op,2) == modnum:
-                    #self.c_pink_map[:,:,x0:x1] = tt
-                    result[:,:,x0:x1] += tt
+                # same_scan_direction: all --> or all <--
+                if self.same_scan_direction:
+                    flip = True if self.reverse_scan_direction else False
+                elif np.mod(ch,2)==0:
+                    flip = True if self.reverse_scan_direction else False
                 else:
-                    #self.c_pink_map[:,:,x0:x1] = tt[:,:,::-1]
-                    result[:,:,x0:x1] += tt[:,:,::-1]
+                    flip = False if self.reverse_scan_direction else True
+
+                if flip: 
+                    #self.c_pink_map[:,:,x1:x2] = tt[:,:,::-1]
+                    result[:,:,x1:x2] += tt[:,:,::-1]
+                else:
+                    #self.c_pink_map[:,:,x1:x2] = tt
+                    result[:,:,x1:x2] += tt
+
             del tt
             #result += self.c_pink_map
             #del self.c_pink_map
 
 
         # Add uncorrelated pink noise. Because this pink noise is stationary and
-        # different for each output, we don't need to flip it.
+        # different for each output, we don't need to flip it (but why not?)
         if self.u_pink is not None:
             # We want self.u_pink to be an array or list
             if isinstance(self.u_pink, (np.ndarray,list)):
@@ -839,13 +854,26 @@ class HXRGNoise:
                 #self.u_pink_map = np.zeros((self.naxis3,self.naxis2,self.naxis1))
                 self.message('Adding u_pink noise')
                 for op in np.arange(self.n_out):
-                    x0 = op * self.xsize
-                    x1 = x0 + self.xsize
+                    x1 = op * self.xsize
+                    x2 = x1 + self.xsize
                     tt = self.u_pink[op] * self.pink_noise('pink')
                     tt = np.reshape(tt, (self.naxis3, self.naxis2+self.nfoh, \
                                      self.xsize+self.nroh))[:,:self.naxis2,:self.xsize]
-                    #self.u_pink_map[:,:,x0:x1] = tt
-                    result[:,:,x0:x1] += tt
+
+                    if self.same_scan_direction:
+                        flip = True if self.reverse_scan_direction else False
+                    elif np.mod(ch,2)==0:
+                        flip = True if self.reverse_scan_direction else False
+                    else:
+                        flip = False if self.reverse_scan_direction else True
+
+                    if flip: 
+                        #self.u_pink_map[:,:,x1:x2] = tt[:,:,::-1]
+                        result[:,:,x1:x2] += tt[:,:,::-1]
+                    else:
+                        #self.u_pink_map[:,:,x1:x2] = tt
+                        result[:,:,x1:x2] += tt
+
                     del tt
                 #result += self.u_pink_map
                 #del self.u_pink_map

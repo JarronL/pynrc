@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<VOTABLE version="1.4" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns="http://www.ivoa.net/xml/VOTable/v1.3"
+  xsi:schemaLocation="http://www.ivoa.net/xml/VOTable/v1.3 http://www.ivoa.net/xml/VOTable/v1.3">
+ <DESCRIPTION>
+   VizieR Astronomical Server vizier.u-strasbg.fr
+    Date: 2020-10-16T20:39:29 [V1.99+ (14-Oct-2013)]
+   Explanations and Statistics of UCDs:			See LINK below
+   In case of problem, please report to:	cds-question@unistra.fr
+   In this version, NULL integer columns are written as an empty string
+   &lt;TD&gt;&lt;/TD&gt;, explicitely possible from VOTable-1.3
+ </DESCRIPTION>
+<!-- VOTable description at http://www.ivoa.net/Documents/latest/VOT.html -->
+<INFO ID="VERSION" name="votable-version" value="1.99+ (14-Oct-2013)"/>
+<INFO ID="Ref" name="-ref" value="VOTx21790"/>
+<INFO name="-out.form" value="mini"/>
+<INFO name="MaxTuples" value="50000" />
+<INFO name="queryParameters" value="5">
+-oc.form=D.
+-c=GJ436b
+-phot
+-out=_raj,_dej,_tabname(),_ID(),_sed4
+-c.rs=1
+</INFO>
+<INFO ID="Target" name="-c" value="175.546222+26.706572,rs=1.">
+Constraint -c.rs=1</INFO>
+
+<RESOURCE ID="VizieR_S656195969" name="VizieR(2020-10-16T20:39:29)">
+  <DESCRIPTION>VizieR database maintained by CDS, see http://vizier.u-strasbg.fr</DESCRIPTION>
+  <COOSYS ID="J2000_2000.000" system="eq_FK5" equinox="J2000" epoch="2000.000"/>
+  <COOSYS ID="J2000" system="eq_FK5" equinox="J2000"/>
+  <TABLE ID="VizieR_0" name="allVizieR">
+    <DESCRIPTION>all VizieR catalogues</DESCRIPTION>
+    <!-- Definitions of GROUPs and FIELDs -->
+    <GROUP ID="gsed" name="_sed" ucd="phot" utype="spec:PhotometryPoint">
+      <DESCRIPTION>The SED group is made of 4 columns: mean frequency, flux, flux error, and filter designation</DESCRIPTION>
+      <FIELDref ref="sed_freq" utype="photdm:PhotometryFilter.SpectralAxis.Coverage.Location.Value"/>
+      <FIELDref ref="sed_flux" utype="spec:PhotometryPoint"/>
+      <FIELDref ref="sed_eflux" utype="spec:PhotometryPointError"/>
+      <FIELDref ref="sed_filter" utype="photdm:PhotometryFilter.identifier"/>
+    </GROUP>
+    <FIELD name="_RAJ2000" ucd="pos.eq.ra" ref="J2000" datatype="double" width="13" precision="9" unit="deg">
+      <DESCRIPTION>Right ascension (FK5, Equinox=J2000.0) at Epoch=J2000, proper motions taken into account </DESCRIPTION>
+    </FIELD>
+    <FIELD name="_DEJ2000" ucd="pos.eq.dec" ref="J2000" datatype="double" width="13" precision="9" unit="deg">
+      <DESCRIPTION>Declination (FK5, Equinox=J2000.0) at Epoch=J2000, proper motions taken into account </DESCRIPTION>
+    </FIELD>
+    <FIELD name="_tabname" ucd="meta.table" datatype="char" arraysize="32*">
+      <DESCRIPTION>Table name</DESCRIPTION>
+      <LINK href="http://vizier.u-strasbg.fr/viz-bin/VizieR-5?-info=XML&amp;-out.add=.&amp;-source=I/289/out&amp;-c=${+RAJ2000}${+DEJ2000}&amp;-c.eq=J2000.000&amp;-c.rs=0.5"/>
+    </FIELD>
+    <FIELD name="_ID" ucd="meta.id" datatype="char" arraysize="64*">
+      <DESCRIPTION>String which identifies the row</DESCRIPTION>
+    </FIELD>
+    <FIELD ID="sed_freq" name="_sed_freq" ucd="em.freq" unit="GHz" datatype="double" width="10" precision="E6">
+      <DESCRIPTION>Mean frequency, in GHz</DESCRIPTION>
+    </FIELD>
+    <FIELD ID="sed_flux" name="_sed_flux" ucd="phot.flux.density" unit="Jy" datatype="float" width="9" precision="E3">
+      <DESCRIPTION>Corresponding flux density, in Jy</DESCRIPTION>
+    </FIELD>
+    <FIELD ID="sed_eflux" name="_sed_eflux" ucd="stat.error;phot.flux.density" unit="Jy" datatype="float" width="8" precision="E2">
+      <DESCRIPTION>Mean error (standard deviations) of flux density</DESCRIPTION>
+    </FIELD>
+    <FIELD ID="sed_filter" name="_sed_filter" ucd="meta.id;instr.filter" unit="" datatype="char" width="32" arraysize="32*">
+      <DESCRIPTION>Filter designation, in the form photoSystem:filterName; a designation starting by ':=' is an assumed monochromatic point; this column is empty when the frequency is specified for each data point.</DESCRIPTION>
+      <LINK href="http://cdsarc.u-strasbg.fr/viz-bin/metafilter?${_sed_filter}"/>
+    </FIELD>
+<DATA><TABLEDATA>
+<TR><TD>175.54622600</TD><TD>+26.70657000</TD><TD>I/312/sample</TD><TD>PPMX===114211.0+264223 &amp;-c=175.546226 +26.706570,eq=J2000&amp;-c.rs=</TD><TD>138.55e+3</TD><TD>2.51</TD><TD>0.04</TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>175.54622600</TD><TD>+26.70657000</TD><TD>I/312/sample</TD><TD>PPMX===114211.0+264223 &amp;-c=175.546226 +26.706570,eq=J2000&amp;-c.rs=</TD><TD>181.75e+3</TD><TD>3.12</TD><TD>0.07</TD><TD>2MASS:H</TD></TR>
+<TR><TD>175.54622600</TD><TD>+26.70657000</TD><TD>I/312/sample</TD><TD>PPMX===114211.0+264223 &amp;-c=175.546226 +26.706570,eq=J2000&amp;-c.rs=</TD><TD>241.96e+3</TD><TD>2.74</TD><TD>0.06</TD><TD>2MASS:J</TD></TR>
+<TR><TD>175.54622600</TD><TD>+26.70657000</TD><TD>I/317/sample</TD><TD>PPMXL===4274276840622292655&amp;-c=175.546226 +26.706570,eq=J2000&amp;-c</TD><TD>138.55e+3</TD><TD>2.51</TD><TD>0.04</TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>175.54622600</TD><TD>+26.70657000</TD><TD>I/317/sample</TD><TD>PPMXL===4274276840622292655&amp;-c=175.546226 +26.706570,eq=J2000&amp;-c</TD><TD>181.75e+3</TD><TD>3.12</TD><TD>0.07</TD><TD>2MASS:H</TD></TR>
+<TR><TD>175.54622600</TD><TD>+26.70657000</TD><TD>I/317/sample</TD><TD>PPMXL===4274276840622292655&amp;-c=175.546226 +26.706570,eq=J2000&amp;-c</TD><TD>241.96e+3</TD><TD>2.74</TD><TD>0.06</TD><TD>2MASS:J</TD></TR>
+<TR><TD>175.546222305600</TD><TD>+26.706570171600</TD><TD>I/339/hsoy</TD><TD>-c=175.5462223056 +26.7065701716,eq=J2000&amp;-c.rs=0.004</TD><TD>181.75e+3</TD><TD>3.12</TD><TD>0.07</TD><TD>2MASS:H</TD></TR>
+<TR><TD>175.546222305600</TD><TD>+26.706570171600</TD><TD>I/339/hsoy</TD><TD>-c=175.5462223056 +26.7065701716,eq=J2000&amp;-c.rs=0.004</TD><TD>241.96e+3</TD><TD>2.74</TD><TD>0.06</TD><TD>2MASS:J</TD></TR>
+<TR><TD>175.546222305600</TD><TD>+26.706570171600</TD><TD>I/339/hsoy</TD><TD>-c=175.5462223056 +26.7065701716,eq=J2000&amp;-c.rs=0.004</TD><TD>445.46e+3</TD><TD>0.519</TD><TD>0.000</TD><TD>Gaia:G</TD></TR>
+<TR><TD>175.5462217</TD><TD>+26.7065703</TD><TD>II/122B/merged</TD><TD>recno=135083</TD><TD>541.43e+3</TD><TD>0.195</TD><TD></TD><TD>Johnson:V</TD></TR>
+<TR><TD>175.5462224466200</TD><TD>+26.7065716920000</TD><TD>IV/38/tic</TD><TD>-c=175.54622244662 +26.70657169200,eq=J2000&amp;-c.rs=0.004</TD><TD>138.55e+3</TD><TD>2.51</TD><TD>0.04</TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>175.5462224466200</TD><TD>+26.7065716920000</TD><TD>IV/38/tic</TD><TD>-c=175.54622244662 +26.70657169200,eq=J2000&amp;-c.rs=0.004</TD><TD>183.92e+3</TD><TD>3.09</TD><TD>0.07</TD><TD>Johnson:H</TD></TR>
+<TR><TD>175.5462224466200</TD><TD>+26.7065716920000</TD><TD>IV/38/tic</TD><TD>-c=175.54622244662 +26.70657169200,eq=J2000&amp;-c.rs=0.004</TD><TD>239.83e+3</TD><TD>2.80</TD><TD>0.06</TD><TD>Johnson:J</TD></TR>
+<TR><TD>175.5462224466200</TD><TD>+26.7065716920000</TD><TD>IV/38/tic</TD><TD>-c=175.54622244662 +26.70657169200,eq=J2000&amp;-c.rs=0.004</TD><TD>332.44e+3</TD><TD>1.25</TD><TD>0.00</TD><TD>SDSS:z</TD></TR>
+<TR><TD>175.5462224466200</TD><TD>+26.7065716920000</TD><TD>IV/38/tic</TD><TD>-c=175.54622244662 +26.70657169200,eq=J2000&amp;-c.rs=0.004</TD><TD>392.66e+3</TD><TD>0.980</TD><TD>0.001</TD><TD>SDSS:i</TD></TR>
+<TR><TD>175.5462224466200</TD><TD>+26.7065716920000</TD><TD>IV/38/tic</TD><TD>-c=175.54622244662 +26.70657169200,eq=J2000&amp;-c.rs=0.004</TD><TD>479.90e+3</TD><TD>0.337</TD><TD>0.000</TD><TD>SDSS:r</TD></TR>
+<TR><TD>175.5462224466200</TD><TD>+26.7065716920000</TD><TD>IV/38/tic</TD><TD>-c=175.54622244662 +26.70657169200,eq=J2000&amp;-c.rs=0.004</TD><TD>541.43e+3</TD><TD>0.196</TD><TD>0.018</TD><TD>Johnson:V</TD></TR>
+<TR><TD>175.5462224466200</TD><TD>+26.7065716920000</TD><TD>IV/38/tic</TD><TD>-c=175.54622244662 +26.70657169200,eq=J2000&amp;-c.rs=0.004</TD><TD>621.98e+3</TD><TD>68.4e-3</TD><TD>0.1e-3</TD><TD>SDSS:g</TD></TR>
+<TR><TD>175.5462224466200</TD><TD>+26.7065716920000</TD><TD>IV/38/tic</TD><TD>-c=175.54622244662 +26.70657169200,eq=J2000&amp;-c.rs=0.004</TD><TD>674.90e+3</TD><TD>64.0e-3</TD><TD>12.5e-3</TD><TD>Johnson:B</TD></TR>
+<TR><TD>175.5462224466200</TD><TD>+26.7065716920000</TD><TD>IV/38/tic</TD><TD>-c=175.54622244662 +26.70657169200,eq=J2000&amp;-c.rs=0.004</TD><TD>851.92e+3</TD><TD>1.47e-3</TD><TD>0.01e-3</TD><TD>SDSS:u</TD></TR>
+<TR><TD>175.5462225</TD><TD>+26.7065717</TD><TD>B/pastel/pastel</TD><TD>recno=77858</TD><TD>138.55e+3</TD><TD>2.51</TD><TD>0.04</TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>175.5462225</TD><TD>+26.7065717</TD><TD>B/pastel/pastel</TD><TD>recno=77858</TD><TD>181.75e+3</TD><TD>3.12</TD><TD>0.07</TD><TD>2MASS:H</TD></TR>
+<TR><TD>175.5462225</TD><TD>+26.7065717</TD><TD>B/pastel/pastel</TD><TD>recno=77858</TD><TD>241.96e+3</TD><TD>2.74</TD><TD>0.06</TD><TD>2MASS:J</TD></TR>
+<TR><TD>175.5462225</TD><TD>+26.7065717</TD><TD>B/pastel/pastel</TD><TD>recno=77858</TD><TD>541.43e+3</TD><TD>0.207</TD><TD>0.002</TD><TD>Johnson:V</TD></TR>
+<TR><TD>175.5462225</TD><TD>+26.7065717</TD><TD>B/pastel/pastel</TD><TD>recno=77858</TD><TD>674.90e+3</TD><TD>63.9e-3</TD><TD>16.7e-3</TD><TD>Johnson:B</TD></TR>
+<TR><TD>175.54622611</TD><TD>+26.70657000</TD><TD>J/ApJ/582/1011/table2</TD><TD>recno=18322</TD><TD>181.75e+3</TD><TD>3.11</TD><TD></TD><TD>2MASS:H</TD></TR>
+<TR><TD>175.54622611</TD><TD>+26.70657000</TD><TD>J/ApJ/582/1011/table2</TD><TD>recno=18322</TD><TD>241.96e+3</TD><TD>2.72</TD><TD></TD><TD>2MASS:J</TD></TR>
+<TR><TD>175.5462256</TD><TD>+26.7065700</TD><TD>J/ApJ/704/975/table3</TD><TD>recno=104</TD><TD>138.55e+3</TD><TD>2.52</TD><TD></TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>175.5462256</TD><TD>+26.7065700</TD><TD>J/ApJ/704/975/table3</TD><TD>recno=104</TD><TD>181.75e+3</TD><TD>3.11</TD><TD></TD><TD>2MASS:H</TD></TR>
+<TR><TD>175.5462256</TD><TD>+26.7065700</TD><TD>J/ApJ/704/975/table3</TD><TD>recno=104</TD><TD>241.96e+3</TD><TD>2.74</TD><TD></TD><TD>2MASS:J</TD></TR>
+<TR><TD>175.5462256</TD><TD>+26.7065700</TD><TD>J/ApJ/704/975/table3</TD><TD>recno=104</TD><TD>541.43e+3</TD><TD>0.195</TD><TD></TD><TD>Johnson:V</TD></TR>
+<TR><TD>175.5462236</TD><TD>+26.7065706</TD><TD>J/ApJ/705/1226/table1</TD><TD>recno=144</TD><TD>4.1976e+3</TD><TD>4.80e-3</TD><TD>2.20e-3</TD><TD>Spitzer/MIPS:70</TD></TR>
+<TR><TD>175.5462236</TD><TD>+26.7065706</TD><TD>J/ApJ/705/1226/table1</TD><TD>recno=144</TD><TD>12.663e+3</TD><TD>39.6e-3</TD><TD></TD><TD>Spitzer/MIPS:24</TD></TR>
+<TR><TD>175.5462236</TD><TD>+26.7065706</TD><TD>J/ApJ/705/1226/table1</TD><TD>recno=144</TD><TD>138.55e+3</TD><TD>2.52</TD><TD></TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>175.5462250</TD><TD>+26.7065694</TD><TD>J/ApJ/748/93/stars</TD><TD>recno=46</TD><TD>138.55e+3</TD><TD>2.51</TD><TD></TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>175.5462250</TD><TD>+26.7065694</TD><TD>J/ApJ/748/93/stars</TD><TD>recno=46</TD><TD>541.43e+3</TD><TD>0.196</TD><TD></TD><TD>Johnson:V</TD></TR>
+<TR><TD>175.5462250</TD><TD>+26.7065694</TD><TD>J/ApJ/796/48/table4</TD><TD>recno=3</TD><TD>136.89e+3</TD><TD>2.43</TD><TD></TD><TD>Johnson:K</TD></TR>
+<TR><TD>175.546223705</TD><TD>+26.706570452</TD><TD>J/A+A/546/A61/tablea1</TD><TD>recno=56901</TD><TD>745.75e+3</TD><TD>0.200</TD><TD></TD><TD>HIP:Hp</TD></TR>
+<TR><TD>175.5462225</TD><TD>+26.7065717</TD><TD>J/A+A/600/A13/tablea3</TD><TD>recno=122</TD><TD>541.43e+3</TD><TD>0.198</TD><TD></TD><TD>Johnson:V</TD></TR>
+<TR><TD>175.5462217</TD><TD>+26.7065703</TD><TD>J/A+A/609/A117/table1</TD><TD>recno=4</TD><TD>136.89e+3</TD><TD>2.43</TD><TD>0.04</TD><TD>Johnson:K</TD></TR>
+<TR><TD>175.5462225</TD><TD>+26.7065717</TD><TD>J/A+A/612/A49/tableb1</TD><TD>recno=155</TD><TD>239.83e+3</TD><TD>2.80</TD><TD></TD><TD>Johnson:J</TD></TR>
+<TR><TD>175.5462225</TD><TD>+26.7065717</TD><TD>J/A+A/620/A180/table2</TD><TD>recno=137</TD><TD>181.75e+3</TD><TD>3.12</TD><TD></TD><TD>2MASS:H</TD></TR>
+<TR><TD>175.5462225</TD><TD>+26.7065717</TD><TD>J/A+A/620/A180/table2</TD><TD>recno=137</TD><TD>241.96e+3</TD><TD>2.74</TD><TD></TD><TD>2MASS:J</TD></TR>
+<TR><TD>175.55</TD><TD>+26.71</TD><TD>J/A+A/623/A72/hipgpma</TD><TD>recno=56546</TD><TD>445.46e+3</TD><TD>0.440</TD><TD>0.000</TD><TD>Gaia:G</TD></TR>
+<TR><TD>175.55</TD><TD>+26.71</TD><TD>J/A+A/623/A72/hipgpma</TD><TD>recno=56546</TD><TD>541.43e+3</TD><TD>0.209</TD><TD></TD><TD>Johnson:V</TD></TR>
+<TR><TD>175.546222222</TD><TD>+26.706571667</TD><TD>J/A+A/636/A74/list</TD><TD>recno=442</TD><TD>445.46e+3</TD><TD>0.448</TD><TD></TD><TD>Gaia:G</TD></TR>
+<TR><TD>175.54609694</TD><TD>+26.70668194</TD><TD>J/AJ/142/138/Mdwarfs</TD><TD>recno=4270</TD><TD>138.55e+3</TD><TD>2.52</TD><TD></TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>175.54609694</TD><TD>+26.70668194</TD><TD>J/AJ/142/138/Mdwarfs</TD><TD>recno=4270</TD><TD>181.75e+3</TD><TD>3.11</TD><TD></TD><TD>2MASS:H</TD></TR>
+<TR><TD>175.54609694</TD><TD>+26.70668194</TD><TD>J/AJ/142/138/Mdwarfs</TD><TD>recno=4270</TD><TD>241.96e+3</TD><TD>2.74</TD><TD></TD><TD>2MASS:J</TD></TR>
+<TR><TD>175.54609694</TD><TD>+26.70668194</TD><TD>J/AJ/142/138/Mdwarfs</TD><TD>recno=4270</TD><TD>563.63e+3</TD><TD>0.203</TD><TD></TD><TD>HIP:VT</TD></TR>
+<TR><TD>175.54609694</TD><TD>+26.70668194</TD><TD>J/AJ/142/138/Mdwarfs</TD><TD>recno=4270</TD><TD>713.28e+3</TD><TD>53.9e-3</TD><TD></TD><TD>HIP:BT</TD></TR>
+<TR><TD>175.54609694</TD><TD>+26.70668194</TD><TD>J/AJ/142/138/Mdwarfs</TD><TD>recno=4270</TD><TD>1.9607e+6</TD><TD>20.1e-6</TD><TD></TD><TD>GALEX:FUV</TD></TR>
+<TR><TD>175.54609694</TD><TD>+26.70668194</TD><TD>J/AJ/145/102/Mdwarfs</TD><TD>recno=748</TD><TD>138.55e+3</TD><TD>2.52</TD><TD></TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>175.54609694</TD><TD>+26.70668194</TD><TD>J/AJ/145/102/Mdwarfs</TD><TD>recno=748</TD><TD>181.75e+3</TD><TD>3.11</TD><TD></TD><TD>2MASS:H</TD></TR>
+<TR><TD>175.54609694</TD><TD>+26.70668194</TD><TD>J/AJ/145/102/Mdwarfs</TD><TD>recno=748</TD><TD>241.96e+3</TD><TD>2.74</TD><TD></TD><TD>2MASS:J</TD></TR>
+<TR><TD>175.54609694</TD><TD>+26.70668194</TD><TD>J/AJ/145/102/Mdwarfs</TD><TD>recno=748</TD><TD>1.2967e+6</TD><TD>20.1e-6</TD><TD></TD><TD>GALEX:NUV</TD></TR>
+<TR><TD>175.5461667</TD><TD>+26.7065556</TD><TD>J/AJ/147/20/table6</TD><TD>recno=217</TD><TD>138.55e+3</TD><TD>2.51</TD><TD></TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>175.5462083</TD><TD>+26.7065833</TD><TD>J/AJ/147/20/table7</TD><TD>recno=66</TD><TD>138.55e+3</TD><TD>2.51</TD><TD></TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>175.546200</TD><TD>+26.706600</TD><TD>J/AJ/156/102/table9</TD><TD>recno=1571932</TD><TD>138.55e+3</TD><TD>2.51</TD><TD></TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>175.546200</TD><TD>+26.706600</TD><TD>J/AJ/156/102/table9</TD><TD>recno=1571932</TD><TD>181.75e+3</TD><TD>3.12</TD><TD></TD><TD>2MASS:H</TD></TR>
+<TR><TD>175.546200</TD><TD>+26.706600</TD><TD>J/AJ/156/102/table9</TD><TD>recno=1571932</TD><TD>241.96e+3</TD><TD>2.74</TD><TD></TD><TD>2MASS:J</TD></TR>
+<TR><TD>175.546200</TD><TD>+26.706600</TD><TD>J/AJ/156/102/table9</TD><TD>recno=1571932</TD><TD>445.46e+3</TD><TD>0.519</TD><TD></TD><TD>Gaia:G</TD></TR>
+<TR><TD>175.5462225</TD><TD>+26.7065717</TD><TD>J/AJ/157/63/table2</TD><TD>recno=13</TD><TD>13.571e+3</TD><TD>48.6e-3</TD><TD>1.7e-3</TD><TD>WISE:W4</TD></TR>
+<TR><TD>175.5462225</TD><TD>+26.7065717</TD><TD>J/AJ/157/63/table2</TD><TD>recno=13</TD><TD>25.934e+3</TD><TD>0.144</TD><TD>0.002</TD><TD>WISE:W3</TD></TR>
+<TR><TD>175.5462225</TD><TD>+26.7065717</TD><TD>J/AJ/157/63/table2</TD><TD>recno=13</TD><TD>65.172e+3</TD><TD>0.904</TD><TD>0.040</TD><TD>WISE:W2</TD></TR>
+<TR><TD>175.5462225</TD><TD>+26.7065717</TD><TD>J/AJ/157/63/table2</TD><TD>recno=13</TD><TD>89.490e+3</TD><TD>1.20</TD><TD>0.12</TD><TD>WISE:W1</TD></TR>
+<TR><TD>175.5462225</TD><TD>+26.7065717</TD><TD>J/AJ/157/63/table2</TD><TD>recno=13</TD><TD>138.55e+3</TD><TD>2.51</TD><TD>0.04</TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>175.5462225</TD><TD>+26.7065717</TD><TD>J/AJ/157/63/table2</TD><TD>recno=13</TD><TD>181.75e+3</TD><TD>3.12</TD><TD>0.07</TD><TD>2MASS:H</TD></TR>
+<TR><TD>175.5462225</TD><TD>+26.7065717</TD><TD>J/AJ/157/63/table2</TD><TD>recno=13</TD><TD>241.96e+3</TD><TD>2.74</TD><TD>0.06</TD><TD>2MASS:J</TD></TR>
+<TR><TD>175.5462225</TD><TD>+26.7065717</TD><TD>J/AJ/157/63/table2</TD><TD>recno=13</TD><TD>332.44e+3</TD><TD>1.28</TD><TD>0.00</TD><TD>SDSS:z</TD></TR>
+<TR><TD>175.5462225</TD><TD>+26.7065717</TD><TD>J/AJ/157/63/table2</TD><TD>recno=13</TD><TD>392.66e+3</TD><TD>1.01</TD><TD>0.00</TD><TD>SDSS:i</TD></TR>
+<TR><TD>175.5462225</TD><TD>+26.7065717</TD><TD>J/AJ/157/63/table2</TD><TD>recno=13</TD><TD>445.46e+3</TD><TD>1.25</TD><TD>0.00</TD><TD>Gaia:G</TD></TR>
+<TR><TD>175.5462225</TD><TD>+26.7065717</TD><TD>J/AJ/157/63/table2</TD><TD>recno=13</TD><TD>445.46e+3</TD><TD>0.130</TD><TD>0.000</TD><TD>Gaia:G</TD></TR>
+<TR><TD>175.5462225</TD><TD>+26.7065717</TD><TD>J/AJ/157/63/table2</TD><TD>recno=13</TD><TD>479.90e+3</TD><TD>0.343</TD><TD>0.000</TD><TD>SDSS:r</TD></TR>
+<TR><TD>175.5462225</TD><TD>+26.7065717</TD><TD>J/AJ/157/63/table2</TD><TD>recno=13</TD><TD>621.98e+3</TD><TD>75.6e-3</TD><TD>0.0e-3</TD><TD>SDSS:g</TD></TR>
+<TR><TD>175.5462225</TD><TD>+26.7065717</TD><TD>J/AJ/157/63/table2</TD><TD>recno=13</TD><TD>851.92e+3</TD><TD>8.29e-3</TD><TD>0.10e-3</TD><TD>SDSS:u</TD></TR>
+<TR><TD>175.5461667</TD><TD>+26.7065556</TD><TD>J/AJ/157/216/table4</TD><TD>recno=728</TD><TD>138.55e+3</TD><TD>2.52</TD><TD></TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>175.5461667</TD><TD>+26.7065556</TD><TD>J/AJ/157/216/table4</TD><TD>recno=728</TD><TD>181.75e+3</TD><TD>3.11</TD><TD></TD><TD>2MASS:H</TD></TR>
+<TR><TD>175.5461667</TD><TD>+26.7065556</TD><TD>J/AJ/157/216/table4</TD><TD>recno=728</TD><TD>241.96e+3</TD><TD>2.74</TD><TD></TD><TD>2MASS:J</TD></TR>
+<TR><TD>175.5461667</TD><TD>+26.7065556</TD><TD>J/AJ/157/216/table4</TD><TD>recno=728</TD><TD>380.16e+3</TD><TD>1.29</TD><TD></TD><TD>Cousins:I</TD></TR>
+<TR><TD>175.5461667</TD><TD>+26.7065556</TD><TD>J/AJ/157/216/table4</TD><TD>recno=728</TD><TD>463.43e+3</TD><TD>0.453</TD><TD></TD><TD>Cousins:R</TD></TR>
+<TR><TD>175.5461667</TD><TD>+26.7065556</TD><TD>J/AJ/157/216/table4</TD><TD>recno=728</TD><TD>541.43e+3</TD><TD>0.200</TD><TD></TD><TD>Johnson:V</TD></TR>
+<TR><TD>175.5462083</TD><TD>+26.7065833</TD><TD>J/PASP/122/885/table1</TD><TD>recno=1949</TD><TD>138.55e+3</TD><TD>2.51</TD><TD></TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>175.5462083</TD><TD>+26.7065833</TD><TD>J/PASP/122/885/table1</TD><TD>recno=1949</TD><TD>181.75e+3</TD><TD>3.12</TD><TD></TD><TD>2MASS:H</TD></TR>
+<TR><TD>175.5462083</TD><TD>+26.7065833</TD><TD>J/PASP/122/885/table1</TD><TD>recno=1949</TD><TD>241.96e+3</TD><TD>2.74</TD><TD></TD><TD>2MASS:J</TD></TR>
+<TR><TD>175.54622611</TD><TD>+26.70657000</TD><TD>J/MNRAS/435/2161/table3</TD><TD>Seq=4169</TD><TD>138.55e+3</TD><TD>2.51</TD><TD></TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>175.54622611</TD><TD>+26.70657000</TD><TD>J/MNRAS/435/2161/table3</TD><TD>Seq=4169</TD><TD>181.75e+3</TD><TD>3.12</TD><TD></TD><TD>2MASS:H</TD></TR>
+<TR><TD>175.54622611</TD><TD>+26.70657000</TD><TD>J/MNRAS/435/2161/table3</TD><TD>Seq=4169</TD><TD>241.96e+3</TD><TD>2.74</TD><TD></TD><TD>2MASS:J</TD></TR>
+<TR><TD>175.546250</TD><TD>+26.706389</TD><TD>J/MNRAS/443/2561/stars</TD><TD>recno=1385</TD><TD>138.55e+3</TD><TD>2.51</TD><TD>0.04</TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>175.546250</TD><TD>+26.706389</TD><TD>J/MNRAS/443/2561/stars</TD><TD>recno=1385</TD><TD>181.75e+3</TD><TD>3.12</TD><TD>0.07</TD><TD>2MASS:H</TD></TR>
+<TR><TD>175.546250</TD><TD>+26.706389</TD><TD>J/MNRAS/443/2561/stars</TD><TD>recno=1385</TD><TD>241.96e+3</TD><TD>2.74</TD><TD>0.06</TD><TD>2MASS:J</TD></TR>
+<TR><TD>175.546250</TD><TD>+26.706389</TD><TD>J/MNRAS/443/2561/stars</TD><TD>recno=1385</TD><TD>541.43e+3</TD><TD>0.186</TD><TD>0.002</TD><TD>Johnson:V</TD></TR>
+<TR><TD>175.546250</TD><TD>+26.706389</TD><TD>J/MNRAS/443/2561/stars</TD><TD>recno=1385</TD><TD>541.43e+3</TD><TD>0.195</TD><TD></TD><TD>Johnson:V</TD></TR>
+<TR><TD>175.546250</TD><TD>+26.706389</TD><TD>J/MNRAS/443/2561/stars</TD><TD>recno=1385</TD><TD>674.90e+3</TD><TD>57.2e-3</TD><TD>0.5e-3</TD><TD>Johnson:B</TD></TR>
+<TR><TD>175.5462217</TD><TD>+26.7065703</TD><TD>J/MNRAS/444/711/stars</TD><TD>recno=5</TD><TD>38.083e+3</TD><TD>0.200</TD><TD>0.004</TD><TD>Spitzer/IRAC:8.0</TD></TR>
+<TR><TD>175.5462217</TD><TD>+26.7065703</TD><TD>J/MNRAS/444/711/stars</TD><TD>recno=5</TD><TD>52.311e+3</TD><TD>0.355</TD><TD>0.020</TD><TD>Spitzer/IRAC:5.8</TD></TR>
+<TR><TD>175.5462217</TD><TD>+26.7065703</TD><TD>J/MNRAS/444/711/stars</TD><TD>recno=5</TD><TD>66.724e+3</TD><TD>0.832</TD><TD>0.018</TD><TD>Spitzer/IRAC:4.5</TD></TR>
+<TR><TD>175.5462217</TD><TD>+26.7065703</TD><TD>J/MNRAS/444/711/stars</TD><TD>recno=5</TD><TD>84.449e+3</TD><TD>1.23</TD><TD>0.04</TD><TD>Spitzer/IRAC:3.6</TD></TR>
+<TR><TD>175.5462217</TD><TD>+26.7065703</TD><TD>J/MNRAS/444/711/stars</TD><TD>recno=5</TD><TD>138.55e+3</TD><TD>2.51</TD><TD>0.04</TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>175.5462217</TD><TD>+26.7065703</TD><TD>J/MNRAS/444/711/stars</TD><TD>recno=5</TD><TD>181.75e+3</TD><TD>3.12</TD><TD>0.07</TD><TD>2MASS:H</TD></TR>
+<TR><TD>175.5462217</TD><TD>+26.7065703</TD><TD>J/MNRAS/444/711/stars</TD><TD>recno=5</TD><TD>241.96e+3</TD><TD>2.74</TD><TD>0.06</TD><TD>2MASS:J</TD></TR>
+<TR><TD>175.54622611</TD><TD>+26.70657000</TD><TD>J/MNRAS/449/2618/table1</TD><TD>recno=117</TD><TD>138.55e+3</TD><TD>2.51</TD><TD>0.04</TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>175.54622611</TD><TD>+26.70657000</TD><TD>J/MNRAS/449/2618/table1</TD><TD>recno=117</TD><TD>181.75e+3</TD><TD>3.12</TD><TD>0.07</TD><TD>2MASS:H</TD></TR>
+<TR><TD>175.54622611</TD><TD>+26.70657000</TD><TD>J/MNRAS/449/2618/table1</TD><TD>recno=117</TD><TD>241.96e+3</TD><TD>2.74</TD><TD>0.06</TD><TD>2MASS:J</TD></TR>
+<TR><TD>175.5462250</TD><TD>+26.7065694</TD><TD>J/MNRAS/454/2863/table1</TD><TD>recno=5</TD><TD>136.89e+3</TD><TD>2.44</TD><TD></TD><TD>Johnson:K</TD></TR>
+<TR><TD>175.5462250</TD><TD>+26.7065694</TD><TD>J/MNRAS/454/2863/table1</TD><TD>recno=5</TD><TD>183.92e+3</TD><TD>3.08</TD><TD></TD><TD>Johnson:H</TD></TR>
+<TR><TD>175.5462250</TD><TD>+26.7065694</TD><TD>J/MNRAS/454/2863/table1</TD><TD>recno=5</TD><TD>239.83e+3</TD><TD>2.80</TD><TD></TD><TD>Johnson:J</TD></TR>
+<TR><TD>175.5462250</TD><TD>+26.7065694</TD><TD>J/MNRAS/454/2863/table1</TD><TD>recno=5</TD><TD>541.43e+3</TD><TD>0.200</TD><TD></TD><TD>Johnson:V</TD></TR>
+<TR><TD>175.5462250</TD><TD>+26.7065694</TD><TD>J/MNRAS/454/2863/table1</TD><TD>recno=5</TD><TD>674.90e+3</TD><TD>57.7e-3</TD><TD></TD><TD>Johnson:B</TD></TR>
+<TR><TD>175.54622611</TD><TD>+26.70657000</TD><TD>J/MNRAS/471/770/table2</TD><TD>recno=51868</TD><TD>36.207e+3</TD><TD>0.290</TD><TD></TD><TD>MSX:A</TD></TR>
+<TR><TD>175.54622611</TD><TD>+26.70657000</TD><TD>J/MNRAS/471/770/table2</TD><TD>recno=51868</TD><TD>499.42e+3</TD><TD>0.187</TD><TD></TD><TD>Subaru/Suprime:IA598</TD></TR>
+<TR><TD>175.54622611</TD><TD>+26.70657000</TD><TD>J/MNRAS/471/770/table2</TD><TD>recno=51868</TD><TD>541.43e+3</TD><TD>0.186</TD><TD></TD><TD>Johnson:V</TD></TR>
+<TR><TD>175.54622611</TD><TD>+26.70657000</TD><TD>J/MNRAS/471/770/table2</TD><TD>recno=51868</TD><TD>745.75e+3</TD><TD>0.200</TD><TD></TD><TD>HIP:Hp</TD></TR>
+</TABLEDATA></DATA>
+<INFO name="matches" value="34">matching records</INFO>
+
+<INFO name="Warning" value="increase the precision for computed column 6"/>
+<INFO name="Warning" value="increase the precision for computed column 6"/>
+<INFO name="Warning" value="increase the precision for computed column 7"/>
+<INFO name="Warning" value="increase the precision for computed column 7"/>
+<INFO name="Warning" value="increase the precision for computed column 11"/>
+<INFO name="Warning" value="connection: 19 free, 0 closed, 0 opend"/>
+<INFO name="Warning" value="change VO format int  (%08d) to char"/>
+<INFO name="Warning" value="change VO format int  (%02d) to char"/>
+<INFO name="Warning" value="change VO format int  (%03d) to char"/>
+<INFO name="Warning" value="change VO format int  (%03d) to char"/>
+<INFO name="Warning" value="(patch vizier 20171220) accept several mainpos to add _V column"/>
+<INFO name="Warning" value="change VO format int  (%02d) to char"/>
+<INFO name="Warning" value="change VO format int  (%02d) to char"/>
+<INFO name="Warning" value="change VO format int  (%02d) to char"/>
+<INFO name="Warning" value="change VO format int  (%02d) to char"/>
+<INFO name="Warning" value="change VO format int  (%02d) to char"/>
+<INFO name="Warning" value="change VO format int  (%02d) to char"/>
+<INFO name="Warning" value="change VO format int  (%02d) to char"/>
+<INFO name="Warning" value="change VO format int  (%02d) to char"/>
+<INFO name="Warning" value="change VO format int  (%05d) to char"/>
+<INFO name="Warning" value="(patch vizier 20171220) accept several mainpos to add _V column"/>
+<INFO name="Warning" value="change VO format int  (%010d) to char"/>
+<INFO name="Warning" value="(patch vizier 20171220) accept several mainpos to add _V column"/>
+<INFO name="Warning" value="modify format to integer [Tbl] (fmt=%2R)"/>
+<INFO name="Warning" value="modify format to integer [TflagB] (fmt=%08X)"/>
+<INFO name="Warning" value="modify format to integer [Tflag] (fmt=%08X)"/>
+<INFO name="Warning" value="modify format to integer [Btarg1] (fmt=%016llX)"/>
+<INFO name="Warning" value="modify format to integer [Atarg1] (fmt=%016llX)"/>
+<INFO name="Warning" value="modify format to integer [Btarg1] (fmt=%016llX)"/>
+<INFO name="Warning" value="modify format to integer [Atarg1] (fmt=%016llX)"/>
+<INFO name="Warning" value="change VO format int  (%03d) to char"/>
+<INFO name="Warning" value="change VO format int  (%03d) to char"/>
+<INFO name="Warning" value="modify format to integer [flags] (fmt=%02X)"/>
+<INFO name="Warning" value="modify format to integer [C4f] (fmt=%02X)"/>
+<INFO name="Warning" value="modify format to integer [Al3f] (fmt=%02X)"/>
+<INFO name="Warning" value="modify format to integer [Mg2f] (fmt=%02X)"/>
+<INFO name="Warning" value="modify format to integer [Si4f] (fmt=%02X)"/>
+<INFO name="Warning" value="change VO format int  (%04d) to char"/>
+  </TABLE>
+</RESOURCE>
+</VOTABLE>

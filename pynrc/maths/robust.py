@@ -24,6 +24,7 @@ For additional information about the original IDL routines, see:
 from __future__ import division, print_function#, unicode_literals
 
 import numpy as np
+from numpy import median
 
 import logging
 _log = logging.getLogger('pynrc')
@@ -42,7 +43,8 @@ __delta = 5.0e-7
 def medabsdev(data, axis=None, keepdims=False, nan=True):
     """Median Absolute Deviation
     
-    A "robust" version of standard deviation.
+    A "robust" version of standard deviation. Runtime is the 
+    same as `astropy.stats.funcs.mad_std`.
     
     Parameters
     ----------
@@ -242,7 +244,7 @@ def mean(inputData, Cut=3.0, axis=None, dtype=None, keepdims=False,
     good = absdiff <= cutOff
 
     if return_mask:
-        return ~np.isnan(data_naned)
+        return np.reshape(~np.isnan(data_naned), inputData.shape)
 
     data_naned = data.copy()
     data_naned[~good] = np.nan
@@ -268,7 +270,7 @@ def mean(inputData, Cut=3.0, axis=None, dtype=None, keepdims=False,
 
 
 
-def mean_old(inputData, Cut=3.0, axis=None, dtype=None):
+def _mean_old(inputData, Cut=3.0, axis=None, dtype=None):
     """Robust mean
     
     Robust estimator of the mean of a data set.  Based on the 
@@ -281,7 +283,7 @@ def mean_old(inputData, Cut=3.0, axis=None, dtype=None):
            
     inputData = np.array(inputData)
     if axis is not None:
-        fnc = lambda x: mean_old(x, dtype=dtype)
+        fnc = lambda x: _mean_old(x, dtype=dtype)
         dataMean = np.apply_along_axis(fnc, axis, inputData)
     else:
         data = inputData.ravel()
@@ -357,7 +359,7 @@ def mode(inputData, axis=None, dtype=None):
                     return data[1]
             else:
                 wMin = data[-1] - data[0]
-                N = data.size/2 + data.size%2 
+                N = int(data.size/2 + data.size%2)
                 for i in range(0, N):
                     w = data[i+N-1] - data[i] 
                     if w < wMin:
@@ -485,7 +487,7 @@ def std(inputData, Zero=False, axis=None, dtype=None, keepdims=False, return_mas
         return sigma
 
 
-def std_old(inputData, Zero=False, axis=None, dtype=None):
+def _std_old(inputData, Zero=False, axis=None, dtype=None):
     """
     Robust estimator of the standard deviation of a data set.  
 
@@ -497,7 +499,7 @@ def std_old(inputData, Zero=False, axis=None, dtype=None):
     """
 
     if axis is not None:
-        fnc = lambda x: std_old(x, dtype=dtype)
+        fnc = lambda x: _std_old(x, dtype=dtype)
         sigma = np.apply_along_axis(fnc, axis, inputData)
     else:
         data = inputData.ravel()

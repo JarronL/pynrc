@@ -474,14 +474,25 @@ def det_to_sci(image, detid):
     
     xflip = ['A1','A3','A5','B2','B4']
     yflip = ['A2','A4','B1','B3','B5']
+
+    # Handle multiple array of images
+    ndim = len(image.shape)
+    if ndim==2:
+        # Convert to image cube
+        ny, nx = image.shape
+        image = image.reshape([1,ny,nx])
     
     for s in xflip:
         if detname in s:
-            image = image[:,::-1] 
+            image = image[:,:,::-1] 
     for s in yflip:
         if detname in s:
-            image = image[::-1,:] 
+            image = image[:,::-1,:] 
     
+    # Convert back to 2D if input was 2D
+    if ndim==2:
+        image = image.reshape([ny,nx])
+
     return image
     
 def sci_to_det(image, detid):
@@ -514,7 +525,7 @@ def V2V3_to_det(image, detid):
 
 
 def plotAxes(ax, position=(0.9,0.1), label1='V2', label2='V3', dir1=[-1,0], dir2=[0,1],
-             angle=0, alength=0.12, width=2, headwidth=8, color='w'):
+             angle=0, alength=0.12, width=2, headwidth=8, color='w', alpha=1):
     """Compass arrows
     
     Show V2/V3 coordinate axis on a plot. By default, this function will plot
@@ -546,12 +557,13 @@ def plotAxes(ax, position=(0.9,0.1), label1='V2', label2='V3', dir1=[-1,0], dir2
         Width of the base of the arrow head in points.
     color : color
         Self-explanatory.
+    alpha : float
+        Transparency.
     """
-    arrowprops={'color':color, 'width':width, 'headwidth':headwidth}
+    arrowprops={'color':color, 'width':width, 'headwidth':headwidth, 'alpha':alpha}
     
     dir1 = xy_rot(dir1[0], dir1[1], angle)
     dir2 = xy_rot(dir2[0], dir2[1], angle)
-
     
     for (label, direction) in zip([label1,label2], np.array([dir1,dir2])):
         ax.annotate("", xytext=position, xy=position + alength * direction,
@@ -559,4 +571,4 @@ def plotAxes(ax, position=(0.9,0.1), label1='V2', label2='V3', dir1=[-1,0], dir2
         textPos = position + alength * direction*1.3
         ax.text(textPos[0], textPos[1], label, transform=ax.transAxes,
                 horizontalalignment='center', verticalalignment='center',
-                color=color, fontsize=12)
+                color=color, fontsize=12, alpha=alpha)

@@ -1,6 +1,10 @@
 from __future__ import print_function, division
 import numpy as np
 
+from astropy.io import fits
+from astropy.time import Time
+import datetime, time
+
 import logging
 _log = logging.getLogger('detops')
 
@@ -115,7 +119,7 @@ class multiaccum(object):
         return self._nd1
     @nd1.setter
     def nd1(self, value):
-        value = self._check_int('nd1',nd1,0)
+        value = self._check_int('nd1',value,0)
         self._nd1 = self._check_custom(value, self._nd1)
 
     @property
@@ -124,7 +128,7 @@ class multiaccum(object):
         return self._nd2
     @nd2.setter
     def nd2(self, value):
-        value = self._check_int('nd2',nd2,0)
+        value = self._check_int('nd2',value,0)
         self._nd2 = self._check_custom(value, self._nd2)
 
     @property
@@ -133,7 +137,7 @@ class multiaccum(object):
         return self._nd3
     @nd3.setter
     def nd3(self, value):
-        value = self._check_int('nd3',nd3,0)
+        value = self._check_int('nd3',value,0)
         self._nd3 = self._check_custom(value, self._nd3)
 
     @property
@@ -142,7 +146,7 @@ class multiaccum(object):
         return self._nr1
     @nr1.setter
     def nr1(self, value):
-        self._nr1 = self._check_int(value, minval=0)
+        self._nr1 = self._check_int('nr1', value, minval=0)
 
     @property
     def nr2(self):
@@ -150,7 +154,16 @@ class multiaccum(object):
         return self._nr2
     @nr2.setter
     def nr2(self, value):
-        self._nr2 = self._check_int(value, minval=0)
+        self._nr2 = self._check_int('nr2', value, minval=0)
+
+    @property
+    def nread_tot(self):
+        """Total number of read frames in a ramp, including drops"""
+        nf = self.nf; nd1 = self.nd1; nd2 = self.nd2; nd3 = self.nd3
+        ngroup = self.ngroup
+
+        nframes = nd1 + ngroup*nf + (ngroup-1)*nd2 + nd3
+        return nframes
 
     @property
     def read_mode(self):
@@ -310,11 +323,16 @@ class det_timing(object):
         self._nff = nff
 
         self.wind_mode = wind_mode.upper()
-        self.xpix = xpix; self.x0 = x0
-        self.ypix = ypix; self.y0 = y0
+        self._xpix = xpix; self._x0 = x0
+        self._ypix = ypix; self._y0 = y0
 
         self._validate_pixel_settings()
 
+        # By default fast-scan readout direction is [-->,<--,-->,<--]
+        # If same_scan_direction, then all --> 
+        # If reverse_scan_direction, then [<--,-->,<--,-->] or all <--
+        self.same_scan_direction = False
+        self.reverse_scan_direction = False
 
         # Pixel Rate in Hz
         self._pixel_rate = pixrate
@@ -326,26 +344,53 @@ class det_timing(object):
         self.multiaccum = multiaccum(**kwargs)
 
     @property
+    def y0(self):
+        return int(self._y0)
+    @y0.setter
+    def y0(self, val):
+        self._y0 = val
+    @property
+    def x0(self):
+        return int(self._x0)
+    @x0.setter
+    def x0(self, val):
+        self._x0 = val
+    @property
+    def ypix(self):
+        return int(self._ypix)
+    @ypix.setter
+    def ypix(self, val):
+        self._ypix = val
+    @property
+    def xpix(self):
+        return int(self._xpix)
+    @xpix.setter
+    def xpix(self, val):
+        self._xpix = val
+
+    @property
     def nout(self):
         """Number of simultaenous detector output channels stripes"""
         return 1 if self.wind_mode == 'WINDOW' else self._nchans
 
     @property
     def chsize(self):
-        """"""
+        """Size of Amplifier Channel"""
         return int(self.xpix // self.nout)
 
     @property
     def ref_info(self):
-        """Array of reference pixel borders being read out [lower, upper, left, right]."""
+        """Array of reference pixel borders [lower, upper, left, right]."""
         det_size = self._detector_pixels
         x1 = self.x0; x2 = x1 + self.xpix
         y1 = self.y0; y2 = y1 + self.ypix
 
         w = 4 # Width of ref pixel border
-        lower = w-y1; upper = w-(det_size-y2)
-        left  = w-x1; right = w-(det_size-x2)
-        ref_all = np.array([lower,upper,left,right])
+        lower = int(w-y1)
+        upper = int(w-(det_size-y2))
+        left  = int(w-x1)
+        right = int(w-(det_size-x2))
+        ref_all = np.array([lower,upper,left,right], dtype='int')
         ref_all[ref_all<0] = 0
         return ref_all
 
@@ -372,7 +417,6 @@ class det_timing(object):
     @nff.setter
     def nff(self, val):
         self._nff = val
-
 
     def _validate_pixel_settings(self):
         """ 
@@ -417,8 +461,17 @@ class det_timing(object):
                              .format(y0,ypix,detpix))
 
         # Update values if no errors were thrown
-        self.xpix = xpix; self.x0 = x0
-        self.ypix = ypix; self.y0 = y0
+        self._xpix = xpix; self._x0 = x0
+        self._ypix = ypix; self._y0 = y0
+
+    def _fix_precision(self, input):
+        """
+        Many timing calculations result from minor precision issues with very
+        small numbers (1e-16) added the real result. This function attempts
+        to truncate these small innaccuracies by dividing by the clock sample
+        time to get the total integer number of clock cycles.
+        """
+        return int(input * self._pixel_rate + 0.5) / self._pixel_rate
 
     @property
     def _extra_lines(self):
@@ -487,9 +540,9 @@ class det_timing(object):
     def time_frame(self):
         """Determine frame times based on xpix, ypix, and wind_mode."""
 
-        chsize = self.chsize                        # Number of x-pixels within a channel
-        xticks = self.chsize + self._line_overhead  # Clock ticks per line
-        flines = self.ypix + self._extra_lines      # Lines per frame
+        chsize = self.chsize                   # Number of x-pixels within a channel
+        xticks = chsize + self._line_overhead  # Clock ticks per line
+        flines = self.ypix + self._extra_lines # Lines per frame
 
         # Add a single pix offset for full frame and stripe.
         pix_offset = self._frame_overhead_pix
@@ -517,7 +570,7 @@ class det_timing(object):
         ngroup = ma.ngroup
 
         tint = (nd1 + ngroup*nf + (ngroup-1)*nd2) * self.time_frame
-        return tint
+        return self._fix_precision(tint)
 
     @property
     def time_int(self):
@@ -530,9 +583,11 @@ class det_timing(object):
         
         ma = self.multiaccum
         if ma.ngroup<=1:
-            return self.time_frame * (ma.nd1 + (ma.nf + 1) / 2)
+            res = self.time_frame * (ma.nd1 + (ma.nf + 1) / 2)
         else:
-            return self.time_group * (ma.ngroup - 1)
+            res = self.time_group * (ma.ngroup - 1)
+
+        return self._fix_precision(res)
 
     @property
     def time_int_eff(self):
@@ -542,7 +597,8 @@ class det_timing(object):
     @property
     def time_exp(self):
         """Total photon collection time for all ramps."""
-        return self.multiaccum.nint * self.time_ramp
+        res = self.multiaccum.nint * self.time_ramp
+        return self._fix_precision(res)
 
 #     @property
 #     def time_total_int(self):
@@ -572,7 +628,8 @@ class det_timing(object):
         nr = ma.nr1
 
         nframes = nr + nd1 + ngroup*nf + (ngroup-1)*nd2 + nd3        
-        return nframes * self.time_frame + self.time_row_reset
+        res = nframes * self.time_frame + self.time_row_reset
+        return self._fix_precision(res)
 
     @property
     def time_total_int2(self):
@@ -592,16 +649,25 @@ class det_timing(object):
             return 0.
         else:
             nframes = nr + nd1 + ngroup*nf + (ngroup-1)*nd2 + nd3        
-            return nframes * self.time_frame + self.time_row_reset
+            res = nframes * self.time_frame + self.time_row_reset
+            return self._fix_precision(res)
 
     @property
     def time_total(self):
         """Total exposure acquisition time"""
-#         exp1 = 0 if self.multiaccum.nint == 0 else self.time_total_int1
-#         exp2 = 0 if self.multiaccum.nint <= 1 else self.time_total_int2 * (self.multiaccum.nint-1)
+        # exp1 = 0 if self.multiaccum.nint == 0 else self.time_total_int1
+        # exp2 = 0 if self.multiaccum.nint <= 1 else self.time_total_int2 * (self.multiaccum.nint-1)
         exp1 = self.time_total_int1
         exp2 = self.time_total_int2 * (self.multiaccum.nint-1)
-        return exp1 + exp2 + self._exp_delay
+        res = exp1 + exp2 + self._exp_delay
+        return self._fix_precision(res)
+
+    @property
+    def times_group_avg(self):
+        """Times at each averaged group"""
+        ma = self.multiaccum
+        nf_avg = np.arange(ma.nf+1).sum() / ma.nf
+        return np.arange(ma.ngroup) * self.time_group + (ma.nd1 + nf_avg) * self.time_frame
 
     def to_dict(self, verbose=False):
         """Export detector settings to a dictionary."""
@@ -619,8 +685,71 @@ class det_timing(object):
                  ('t_int_tot1', self.time_total_int1), 
                  ('t_int_tot2', self.time_total_int2)]
         return tuples_to_dict(times, verbose)
+
+    def int_times_table(self, date_start, time_start, offset_seconds=None):
+        """Create and populate the INT_TIMES table, which is saved as a
+        separate extension in the output data file.
+
+        Parameters
+        ----------
+        date_start : str
+            Date string of observation ('2020-02-28')
+        time_start : str
+            Time string of observation ('12:24:56')
+
+        Returns
+        -------
+        int_times_tab : astropy.table.Table
+            Table of starting, mid, and end times for each integration
+        """
         
-    def pix_timing_map(self, same_scan_direction=False, reverse_scan_direction=False,
+        from astropy.table import Table
+        from astropy.time import Time, TimeDelta
+        from astropy import units as u
+
+        if offset_seconds is None:
+            offset_seconds = 0
+
+        integration_numbers = np.arange(self.multiaccum.nint)
+
+        start_time_string = date_start + 'T' + time_start
+        start_time = Time(start_time_string) + offset_seconds * u.second
+
+        integration_time = self.time_total_int2
+        integ_time_delta = TimeDelta(integration_time * u.second)
+        start_times = start_time + (integ_time_delta * integration_numbers)
+
+        reset_time = self.multiaccum.nr2 * self.time_frame
+        integration_time_exclude_reset = TimeDelta((integration_time - reset_time) * u.second)
+        end_times = start_times + integration_time_exclude_reset
+
+        mid_times = start_times + integration_time_exclude_reset / 2.
+
+        # For now, let's keep the BJD (Barycentric?) times identical
+        # to the MJD times.
+        start_times_bjd = start_times
+        mid_times_bjd = mid_times
+        end_times_bjd = end_times
+
+        # Create table
+        nrows = len(integration_numbers)
+        data_list = [(integration_numbers[i] + 1, 
+                      start_times.mjd[i], mid_times.mjd[i], end_times.mjd[i],
+                      start_times_bjd.mjd[i], mid_times_bjd.mjd[i], end_times_bjd.mjd[i]) 
+                     for i in range(nrows)]
+
+        int_times_tab = np.array(data_list,
+                                 dtype=[('integration_number','<i2'),
+                                        ('int_start_MJD_UTC','<f8'),
+                                        ('int_mid_MJD_UTC', '<f8'),
+                                        ('int_end_MJD_UTC','<f8'),
+                                        ('int_start_BJD_TDB','<f8'),
+                                        ('int_mid_BJD_TDB','<f8'),
+                                        ('int_end_BJD_TDB','<f8')])
+
+        return int_times_tab
+        
+    def pix_timing_map(self, same_scan_direction=None, reverse_scan_direction=None,
                        avg_groups=False, reset_zero=False, return_flat=False):
         """Create array of pixel times for a single ramp. 
         
@@ -641,7 +770,6 @@ class det_timing(object):
             bit-shifter. Setting ``avg_groups=True`` also averages the
             pixel times in a similar manner. Default is True.
         return_flat : bool
-            
         
         Keyword Args
         ------------
@@ -686,6 +814,11 @@ class det_timing(object):
         chsize = self.chsize                   # Number of x-pixels within a channel
         xticks = chsize + self._line_overhead  # Clock ticks per line
         flines = ypix + self._extra_lines      # Lines per frame
+
+        if same_scan_direction is None:
+            same_scan_direction = self.same_scan_direction
+        if reverse_scan_direction is None:
+            reverse_scan_direction = self.reverse_scan_direction
         
         # Pixel-by-pixel or line-by-line reset?
         line_reset = True if 'line' in self._reset_type.lower() else False
@@ -793,7 +926,7 @@ class det_timing(object):
                 im -= data_reset
             
         # Put into time
-        print(data.dtype)
+        # print(data.dtype)
         data /= self._pixel_rate
 
         # Return timing info
@@ -895,9 +1028,8 @@ def nrc_header(det_class, filter=None, pupil=None, obs_time=None, header=None,
 
     # Dates and times
     obs_time = datetime.datetime.utcnow() if obs_time is None else obs_time
-    # Total time to complete obs = (ramp_time+reset_time)*nramps
-    # ramp_time does not include reset frames!!
-    tdel = ma.nint * (d.time_int + d.time_frame) + d._exp_delay
+    # Total time to complete obs including all overheads
+    tdel = d.time_total 
     dtstart = obs_time.isoformat()
     aTstart = Time(dtstart)
     dtend = (obs_time + datetime.timedelta(seconds=tdel)).isoformat()
@@ -1035,6 +1167,8 @@ def nrc_header(det_class, filter=None, pupil=None, obs_time=None, header=None,
     hdr['NRESETS2']= (ma.nr2, 'Number of reset frames between each integration')
     hdr['INTTIME'] = (d.time_int, 'Total integration time for one MULTIACCUM')
     hdr['EXPTIME'] = (d.time_exp, 'Exposure duration (seconds) calculated')
+    hdr['FASTAXIS']= (d.fastaxis, 'Fast readout direction relative to image axes for Amp1')
+    hdr['SLOWAXIS']= (d.slowaxis, 'Slow readout direction relative to image axes')
     
     # Subarray names
     if DMS == True:
@@ -1195,7 +1329,7 @@ def create_detops(header, DMS=False, read_mode=None, nint=None, ngroup=None,
     nff=None):
     """NIRCam Detector class from header
 
-    Create a detector class based on header settings.
+    Create a NIRCam detector class based on header settings.
     Can override settings with a variety of keyword arguments.
 
     Parameters
@@ -1281,8 +1415,7 @@ def create_detops(header, DMS=False, read_mode=None, nint=None, ngroup=None,
 
 
     # Add MultiAccum info
-    if DMS: hnames = ['READPATT', 'NINTS', 'NGROUPS']
-    else:   hnames = ['READOUT',  'NINT',  'NGROUP']
+    hnames = ['READPATT', 'NINTS', 'NGROUPS'] if DMS else ['READOUT',  'NINT',  'NGROUP']
 
     read_mode = header[hnames[0]] if read_mode is None else read_mode
     nint      = header[hnames[1]] if nint      is None else nint
