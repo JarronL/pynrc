@@ -332,7 +332,7 @@ def do_opt(obs_dict, tacq_max=1800, **kwargs):
 
 
 # For each filter setting, generate a series of contrast curves at different WFE values
-def do_contrast(obs_dict, wfe_list, filt_keys, nsig=5, roll_angle=10, verbose=True, **kwargs):
+def do_contrast(obs_dict, wfe_list, filt_keys, nsig=5, roll_angle=10, verbose=False, **kwargs):
     """
     kwargs to pass to calc_contrast() and their defaults:
 
@@ -346,16 +346,18 @@ def do_contrast(obs_dict, wfe_list, filt_keys, nsig=5, roll_angle=10, verbose=Tr
     ref_scale_all = False
     """
     contrast_all = {}
-    for i, key in enumerate(filt_keys):
-        if verbose: print(key)
+    for i in trange(len(filt_keys), desc='Observations'):
+        key = filt_keys[i]
         obs = obs_dict[key]
+        if verbose: 
+            print(key)
 
         wfe_roll_temp = obs.wfe_roll_drift
         wfe_ref_temp  = obs.wfe_ref_drift
 
         # Stores tuple of (Radial Distances, Contrast, and Sensitivity) for each WFE drift
         curves = []
-        for wfe_drift in wfe_list:
+        for wfe_drift in tqdm(wfe_list, leave=False, desc='WFE Drift'):
             
             if ('no_ref' in list(kwargs.keys())) and (kwargs['no_ref']==True):
                 obs.wfe_roll_drift = wfe_drift
@@ -563,7 +565,7 @@ def average_slopes(hdulist):
         for i in np.arange(1,ng)[::-1]:
             ind = (im_slope==-10) & (~sat_mask[i])
             if np.any(ind): # Check if any pixels are still True
-                im_slope[ind] = pynrc.fast_poly.jl_poly_fit(tvals, data[:,ind])[1]
+                im_slope[ind] = jl_poly_fit(tvals, data[:,ind])[1]
             #print(im_slope[ind].shape)
 
         # Special case of only first frame unsaturated

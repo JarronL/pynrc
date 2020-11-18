@@ -1309,9 +1309,9 @@ class obs_hci(nrc_hci):
 
             # Change self.wfe_drift, gen image, and return wfe_drift
             if np.abs(wfe_roll_drift) > eps:
-                im_roll2 = self.gen_slope_image(PA=PA2, wfe_drift0=wfe_drift1, **kwargs)
+                im_roll2 = self.gen_slope_image(PA=PA2, wfe_drift0=wfe_drift1, do_roll2=True, **kwargs)
             else:
-                im_roll2 = self.gen_slope_image(PA=PA2, im_star=im_star, **kwargs)
+                im_roll2 = self.gen_slope_image(PA=PA2, im_star=im_star, do_roll2=True, **kwargs)
 
             # Fix saturated pixels
             if fix_sat:
@@ -1401,7 +1401,7 @@ class obs_hci(nrc_hci):
             else:
                 im_star2 = im_star
                 im_star2_sub = im_star_sub
-            im_roll2 = self.gen_slope_image(PA=PA2, im_star=im_star2, **kwargs)
+            im_roll2 = self.gen_slope_image(PA=PA2, im_star=im_star2, do_roll2=True, **kwargs)
 
             if ref_scale_all:
                 im_star2_sub = fshift(im_roll2, delx=-delx, dely=-dely, pad=True)
