@@ -16,6 +16,8 @@ from .nrc_utils import *
 from .obs_nircam import model_to_hdulist, obs_hci
 #from .obs_nircam import plot_contrasts, plot_contrasts_mjup, planet_mags, plot_planet_patches
 
+from tqdm.auto import tqdm, trange
+
 import logging
 _log = logging.getLogger('nb_funcs')
 
@@ -373,7 +375,7 @@ def do_contrast(obs_dict, wfe_list, filt_keys, nsig=5, roll_angle=10, verbose=Fa
     return contrast_all
 
 
-def do_gen_hdus(obs_dict, filt_keys, wfe_ref_drift, wfe_roll_drift, verbose=True, **kwargs):
+def do_gen_hdus(obs_dict, filt_keys, wfe_ref_drift, wfe_roll_drift, verbose=False, **kwargs):
     
     """
     kwargs to pass to gen_roll_image() and their defaults:
@@ -392,7 +394,7 @@ def do_gen_hdus(obs_dict, filt_keys, wfe_ref_drift, wfe_roll_drift, verbose=True
     """
     
     hdulist_dict = {}
-    for key in filt_keys:
+    for key in tqdm(filt_keys):
         if verbose: print(key)
         obs = obs_dict[key]
         obs.wfe_ref_drift = wfe_ref_drift
@@ -1164,7 +1166,7 @@ def do_plot_contrasts(curves_ref, curves_roll, nsig, wfe_list, obs, age, age2=No
 def do_plot_contrasts2(key1, key2, curves_all, nsig, obs_dict, wfe_list, age, sat_dict=None,
                        label1='Curves1', label2='Curves2', xr=[0,10], yr=[24,8], 
                        yscale2='log', yr2=None, av_vals=[0,10], curves_all2=None, 
-                       c1=None, c2=None, linder_models=True, **kwargs):
+                       c1=None, c2=None, linder_models=True, planet_patches=True, **kwargs):
 
     fig, axes = plt.subplots(1,2, figsize=(14,5))
 
@@ -1194,10 +1196,10 @@ def do_plot_contrasts2(key1, key2, curves_all, nsig, obs_dict, wfe_list, age, sa
                        ax=ax, xr=xr, yr=yr, colors=c2)
 
     # Planet mass locations
-    plot_planet_patches(ax, obs_dict[key1], age=age, update_title=True, av_vals=av_vals, 
-                        linder=linder_models, **kwargs)
-
-
+    if planet_patches:
+        plot_planet_patches(ax, obs_dict[key1], age=age, update_title=True, av_vals=av_vals, 
+                            linder=linder_models, **kwargs)
+    ax.set_title('Flux Sensitivities')
 
     # Right plot (Converted to MJup/MEarth)
     ax = axes[1]
@@ -1236,14 +1238,22 @@ def do_plot_contrasts2(key1, key2, curves_all, nsig, obs_dict, wfe_list, age, sa
     h3 = handles[2*nwfe:]
     h1_t = [mpatches.Patch(color='none', label=label1)]
     h2_t = [mpatches.Patch(color='none', label=label2)]
-    h3_t = [mpatches.Patch(color='none', label='Models')]
-    if key2 is not None:
-        handles_new = h1_t + h1 + h2_t + h2 + h3_t + h3
-        ncol = 3
+    h3_t = [mpatches.Patch(color='none', label='{} ({})'.format(mod_str, obs_dict[key1].filter))]
+    if planet_patches:
+        if key2 is not None:
+            handles_new = h1_t + h1 + h2_t + h2 + h3_t + h3
+            ncol = 3
+        else:
+            h3 = handles[nwfe:]
+            handles_new = h1_t + h1 + h3_t + h3
+            ncol = 2
     else:
-        h3 = handles[nwfe:]
-        handles_new = h1_t + h1 + h3_t + h3
-        ncol = 2
+        if key2 is not None:
+            handles_new = h1_t + h1 + h2_t + h2
+            ncol = 2
+        else:
+            handles_new = h1_t + h1
+            ncol = 1        
     ax.legend(ncol=ncol, handles=handles_new, loc=1, fontsize=9)
 
     # Right legend
