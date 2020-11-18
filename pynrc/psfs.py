@@ -888,7 +888,7 @@ def _wrap_wfed_coeff_for_mp(arg):
     args, kwargs = arg
 
     wfe = kwargs['wfe_drift']
-    print('WFE Drift: {} nm'.format(wfe))
+    # print('WFE Drift: {} nm'.format(wfe))
 
     cf, _ = gen_psf_coeff(*args, **kwargs)
     return cf
