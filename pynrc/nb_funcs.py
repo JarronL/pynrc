@@ -163,7 +163,7 @@ def disk_rim_model(a_asec, b_asec, pa=0, sig_asec=0.1, flux_frac=0.5,
     return fits.HDUList([hdu])
 
 
-def obs_wfe(wfe_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None, 
+def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None, 
             wind_mode='WINDOW', subsize=None, fov_pix=None, verbose=False, narrow=False):
     """
     For a given WFE drift and series of filters, create a list of 
@@ -173,7 +173,7 @@ def obs_wfe(wfe_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None,
     if sp_ref is None: sp_ref = sp_sci
 
     obs_dict = {}
-    for filt, mask, pupil in filt_list:
+    for filt, pupil, mask in filt_list:
         # Create identification key
         key = make_key(filt, mask=mask, pupil=pupil)
         print(key)
@@ -229,8 +229,8 @@ def obs_wfe(wfe_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None,
         
         # Initialize and store the observation
         # A reference observation is stored inside each parent obs_hci class.
-        obs_dict[key] = obs_hci(sp_sci, sp_ref, dist, filter=filt, mask=mask, pupil=pupil, 
-                                wfe_ref_drift=wfe_drift, fov_pix=fov_pix, oversample=oversample, 
+        obs_dict[key] = obs_hci(sp_sci, sp_ref, dist, filter=filt, mask=mask, pupil=pupil, module=module,
+                                wfe_ref_drift=wfe_ref_drift, fov_pix=fov_pix, oversample=oversample, 
                                 wind_mode=wind_mode, xpix=subuse, ypix=subuse,
                                 disk_hdu=hdu_disk, verbose=verbose, bar_offset=bar_offset)
         fov_pix = fov_pix_orig
@@ -314,11 +314,13 @@ def obs_optimize(obs_dict, sp_opt=None, well_levels=None, tacq_max=1800, **kwarg
             print(strout)
 
             # SW filter piggy-back on two LW filters, so 2 x tacq
-            is_SW = obs.bandpass.avgwave()/1e4 < 2.5
-            if is_SW: v3 *= 2
+            # is_SW = obs.bandpass.avgwave()/1e4 < 2.5
+            # if is_SW: 
+            #     v3 *= 2
             
             # Coronagraphic observations have two roll positions, so cut NINT by 2
-            if obs.mask is not None: v3 = int(v3/2) 
+            if obs.mask is not None: 
+                v3 = int(v3/2) 
             obs2.update_detectors(read_mode=v1, ngroup=v2, nint=v3)
         
 
