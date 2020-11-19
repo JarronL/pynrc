@@ -41,8 +41,16 @@ class nrc_hci(NIRCam):
 
     def __init__(self, wind_mode='WINDOW', xpix=320, ypix=320, wfe_drift=True, verbose=False, **kwargs):
 
-        if 'FULL'   in wind_mode: xpix = ypix = 2048
-        if 'STRIPE' in wind_mode: xpix = 2048
+        # Ensure xpix and ypix values make sense
+        # And set to Mod B if direct imaging in window mode; 
+        #   defaults to Mod A otherwise (or overided by user-specified settings)
+        if 'FULL'   in wind_mode: 
+            xpix = ypix = 2048
+        elif 'STRIPE' in wind_mode: 
+            xpix = 2048
+        else: # WINDOW; default to Mod B if direct imaging
+            if kwargs.get('module', None) is None:
+                kwargs['module'] = 'B' if kwargs.get('mask',None) is None else 'A'
 
         #super(NIRCam,self).__init__(**kwargs)
         NIRCam.__init__(self, wind_mode=wind_mode, xpix=xpix, ypix=ypix, wfe_drift=False, **kwargs)
