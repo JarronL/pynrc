@@ -85,7 +85,8 @@ def pad_or_cut_to_size(array, new_shape, fill_val=0.0, offset_vals=None):
                       
     # Return if no difference in shapes
     # This needs to occur after the above so that new_shape is verified to be a tuple
-    if array.shape == new_shape:
+    # If offset_vals is set, then continue to perform shift function
+    if (array.shape == new_shape) and (offset_vals is None):
         return array
 
     # Input the fill values

@@ -3619,7 +3619,7 @@ def linder_filter(table, filt, age, dist=10, cond_interp=True, cond_file=None, *
     # Irregular grid
     x2 = mag2
     y2 = np.log10(age2 * 1e6)
-    z2 = mass2_mjup * 318
+    z2 = mass2_mjup * 318 # Convert to Earth masses
     zlog2 = np.log10(z2)
     
 
@@ -3662,12 +3662,26 @@ def linder_filter(table, filt, age, dist=10, cond_interp=True, cond_file=None, *
     pts = np.array([(age_log,xval) for xval in mag_abs_arr])
     mass_arr = 10**func(pts) / 318.0 # Convert to MJup
     
+    # TODO: Rewrite this function to better extrapolate to lower and higher masses
+    # For now, fit low order polynomial
+    isort = np.argsort(mag_abs_arr)
+    mag_abs_arr = mag_abs_arr[isort]
+    mass_arr = mass_arr[isort]
+    ind_fit = mag_abs_arr<x.max()
+    lxmap = [mag_abs_arr.min(), mag_abs_arr.max()]
+    xfit = np.append(mag_abs_arr[ind_fit], mag_abs_arr[-1])
+    yfit = np.log10(np.append(mass_arr[ind_fit], mass_arr[-1]))
+    cf = jl_poly_fit(xfit, yfit, deg=4, use_legendre=False, lxmap=lxmap)
+    mass_arr = 10**jl_poly(mag_abs_arr,cf)
+
+
     mag_app_arr = mag_abs_arr + 5*np.log10(dist/10.0)
 
     # Sort by mass
     isort = np.argsort(mass_arr)
     mass_arr = mass_arr[isort]
     mag_app_arr = mag_app_arr[isort]
+
 
     return mass_arr, mag_app_arr
     
