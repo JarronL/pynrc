@@ -4,6 +4,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 
 import os, scipy
+from scipy.interpolate import interp1d
 from astropy.io import fits
 import astropy.units as u
 
@@ -254,7 +255,7 @@ class OTE_WFE_Drift_Model(OTE_Linear_Model_WSS):
             12.92, 15.02, 18.00, 21.57, 23.94, 26.90, 32.22, 
             35.76, 41.07, 45.20, 50.50, 100.58
         ])
-        # Normalized frill drift amplitiude
+        # Normalized frill drift amplitude
         frill_wfe_drift_norm = np.array([
             0.000, 0.069, 0.120, 0.176, 0.232, 0.277,
             0.320, 0.362, 0.404, 0.444, 0.480, 0.514,
@@ -264,8 +265,8 @@ class OTE_WFE_Drift_Model(OTE_Linear_Model_WSS):
         ])
 
         # Create interpolation function
-        finterp = scipy.interpolate.interp1d(frill_hours, frill_wfe_drift_norm, 
-                                             kind='cubic', fill_value=(0,1), bounds_error=False)
+        finterp = interp1d(frill_hours, frill_wfe_drift_norm,
+                           kind='cubic', fill_value=(0, 1), bounds_error=False)
                                              
         # Convert input time to hours and get normalized amplitude
         time_hour = delta_time.to(u.hour).value
@@ -292,7 +293,7 @@ class OTE_WFE_Drift_Model(OTE_Linear_Model_WSS):
         
         Function to determine the factor to scale the delta OPD associated with
         OTE backplane thermal distortion. Returns the RMS WFE (nm) depending on 
-        time and slew ngles.
+        time and slew angles.
         
         Parameters
         ----------
@@ -326,8 +327,8 @@ class OTE_WFE_Drift_Model(OTE_Linear_Model_WSS):
         ])
         
         # Create interpolation function
-        finterp = scipy.interpolate.interp1d(thermal_hours, thermal_wfe_drift_norm, 
-                                             kind='cubic', fill_value=(0,1), bounds_error=False)
+        finterp = interp1d(thermal_hours, thermal_wfe_drift_norm,
+                           kind='cubic', fill_value=(0, 1), bounds_error=False)
                                              
         # Convert input time to hours and get normalized amplitude
         time_hour = delta_time.to(u.hour).value
@@ -396,8 +397,8 @@ class OTE_WFE_Drift_Model(OTE_Linear_Model_WSS):
 
         # res = np.interp(time_arr_minutes, tvals, wfe_iec_all)
 
-        finterp = scipy.interpolate.interp1d(tvals, wfe_iec_all, kind=interp_kind, 
-                                             fill_value=(0,1), bounds_error=False)
+        finterp = interp1d(tvals, wfe_iec_all, kind=interp_kind,
+                           fill_value=(0, 1), bounds_error=False)
         res = finterp(time_arr_minutes)
 
         return res
@@ -510,7 +511,7 @@ class OTE_WFE_Drift_Model(OTE_Linear_Model_WSS):
         elif return_dopd_fin:
             return delta_opd_fin
         else:
-            _log.warning('Must specify `return_wfe_amps` andor `return_dopd_fin`')
+            _log.warning('Must specify `return_wfe_amps` and/or `return_dopd_fin`')
 
             
     
@@ -577,7 +578,7 @@ class OTE_WFE_Drift_Model(OTE_Linear_Model_WSS):
         kwargs['do_thermal'] = do_thermal
         kwargs['do_frill'] = do_frill
         kwargs['do_iec'] = False
-        for i in islew:
+        for i in tqdm(islew):
             ang1 = slew_angles[0] if i==0 else ang2
             ang2 = slew_angles[i]
 
@@ -673,7 +674,7 @@ class OTE_WFE_Drift_Model(OTE_Linear_Model_WSS):
 
         # Create interpolation function
         dt_vals = delta_time.to('hour')
-        func = scipy.interpolate.interp1d(dt_vals, dopds, axis=0, kind=interp_kind, bounds_error=True)
+        func = interp1d(dt_vals, dopds, axis=0, kind=interp_kind, bounds_error=True)
 
         opds_new = func(dt_new_vals)
 
@@ -681,7 +682,7 @@ class OTE_WFE_Drift_Model(OTE_Linear_Model_WSS):
             wfe_dict_new = {}
             for k in wfe_dict.keys():
                 vals = wfe_dict[k]
-                func = scipy.interpolate.interp1d(dt_vals, vals, kind=interp_kind, bounds_error=True)
+                func = interp1d(dt_vals, vals, kind=interp_kind, bounds_error=True)
                 wfe_dict_new[k] = func(dt_new_vals)
 
             return opds_new, wfe_dict_new
@@ -694,7 +695,7 @@ class OTE_WFE_Drift_Model(OTE_Linear_Model_WSS):
                           mn_func=np.mean, interpolate=False, **kwargs):
         """ Get averages at each slew position
 
-        Given a series of times and slew angles, calcualte the average OPD and
+        Given a series of times and slew angles, calculate the average OPD and
         WFE RMS error within each slew angle position. Returns a tuple with new 
         arrays of (dt_new, opds_new, wfe_dict_new). 
         
@@ -751,7 +752,7 @@ class OTE_WFE_Drift_Model(OTE_Linear_Model_WSS):
         # Indices where slews occur
         islew = np.where(slew_angles[1:] - slew_angles[:-1] != 0)[0] + 1
 
-        # Start and stop indices for each slew positin
+        # Start and stop indices for each slew position
         i1_arr = np.concatenate(([0], islew))
         i2_arr = np.concatenate((islew, [len(slew_angles)]))
 

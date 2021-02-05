@@ -1245,7 +1245,7 @@ class NIRCam(object):
             wstr = '{} mask is no visible in SW module (filter is {})'.format(mask,filter)
             do_warn(wstr)
 
-        # Ned F200W paired with WEAK LENS +4
+        # Need F200W paired with WEAK LENS +4
         # The F212N2 filter is handled in the read_filter function
         wl_list = ['WEAK LENS +12 (=4+8)', 'WEAK LENS -4 (=4-8)', 'WEAK LENS +4']
         if (pupil in wl_list) and (filter!='F200W'):
@@ -2156,7 +2156,7 @@ class NIRCam(object):
         if (wfe_drift>0) and (self.wfe_drift==False):
             _log.warning("`wfe_drift` keyword is set, but `self.wfe_drift` is False. Toggle `self.wfe_drift=True` to use this feature.")
             _log.warning("`gen_psf` will continue with `wfe_drift=0`.")
-        elif (wfe_drift>0) and self.wfe_drift:
+        elif (wfe_drift>0) and (self.wfe_drift==True):
             if use_bg_psf:
                 cf_fit = self._psf_coeff_bg_mod['wfe_drift'] 
                 lxmap  = self._psf_coeff_bg_mod['wfe_drift_lxmap'] 

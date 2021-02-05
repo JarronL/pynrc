@@ -170,16 +170,20 @@ class NRC_refs(object):
             elif (not DMS) and (not header['SUBARRAY']):
                 wind_mode = 'FULL'
             else:
+                # Turn off log warnings
+                log_prev = pynrc.conf.logging_level
+                pynrc.setup_logging('ERROR', verbose=False)
                 # Test if STRIPE or WINDOW
                 det_stripe = pynrc.DetectorOps(detector, 'STRIPE', xpix, ypix, x0, y0)
                 det_window = pynrc.DetectorOps(detector, 'WINDOW', xpix, ypix, x0, y0)
                 dt_stripe = np.abs(header['TFRAME'] - det_stripe.time_frame)
                 dt_window = np.abs(header['TFRAME'] - det_window.time_frame)
                 wind_mode = 'STRIPE' if dt_stripe<dt_window else 'WINDOW'
+                # Restore previous log levels
+                pynrc.setup_logging(log_prev, verbose=False)
 
         # Add MultiAccum info
-        if DMS: hnames = ['READPATT', 'NINTS', 'NGROUPS']  
-        else:   hnames = ['READOUT',  'NINT',  'NGROUP']
+        hnames = ['READPATT', 'NINTS', 'NGROUPS'] if DMS else ['READOUT',  'NINT',  'NGROUP']
 
         read_mode = header[hnames[0]] if read_mode is None else read_mode
         nint      = header[hnames[1]] if nint      is None else nint

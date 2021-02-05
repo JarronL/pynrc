@@ -933,7 +933,7 @@ class obs_hci(nrc_hci):
                     cmask_sub = cmask[ypos-3:ypos+3,xpos-3:xpos+3]
                     trans = np.mean(cmask_sub)
                 else:
-                    xpos, ypox = (int(delx), int(dely))
+                    xpos, ypos = (int(delx), int(dely))
                     cmask_sub = cmask[ypos-3:ypos+3,xpos-3:xpos+3]
                     trans = np.mean(cmask_sub)
 
@@ -1357,6 +1357,9 @@ class obs_hci(nrc_hci):
             hdu.header['EXTNAME'] = ('ROLL_SUB')
             hdu.header['OVERSAMP'] = oversample
             hdu.header['PIXELSCL'] = sci.pix_scale / hdu.header['OVERSAMP']
+            hdu.header['FILTER']   = self.filter
+            hdu.header['TEXP_SCI'] = self.multiaccum_times['t_exp']
+            hdu.header['TEXP_REF'] = 0
             hdulist = fits.HDUList([hdu])
 
             return hdulist
@@ -1496,6 +1499,8 @@ class obs_hci(nrc_hci):
             else:
                 final = final2
 
+            texp_sci = 2 * self.multiaccum_times['t_exp']
+
         # For only a single roll
         else:
             # Optimal differencing (with scaling only on the inner regions)
@@ -1505,6 +1510,7 @@ class obs_hci(nrc_hci):
                 final = im_roll1 - im_ref * scale1
 
             final = rotate_offset(final, PA1, cen=cen_over, reshape=True, cval=np.nan)
+            texp_sci = self.multiaccum_times['t_exp']
 
         # De-rotate PA1 to North
         #if abs(PA1) > eps:
@@ -1514,6 +1520,9 @@ class obs_hci(nrc_hci):
         hdu.header['EXTNAME'] = ('REF_SUB')
         hdu.header['OVERSAMP'] = oversample
         hdu.header['PIXELSCL'] = sci.pix_scale / hdu.header['OVERSAMP']
+        hdu.header['FILTER']   = self.filter
+        hdu.header['TEXP_SCI'] = texp_sci
+        hdu.header['TEXP_REF'] = (self.nrc_ref.multiaccum_times['t_exp'])
         hdulist = fits.HDUList([hdu])
 
         return hdulist
@@ -1852,7 +1861,8 @@ class obs_hci(nrc_hci):
 
         Create image showing level of saturation for each pixel.
         Saturation at different number of groups is possible with
-        ngroup keyword. Returns an array the same shape as `det_info`.
+        ngroup keyword. Returns an array the same shape as `det_info`
+        [ypix,xpix] properties.
 
         Parameters
         ----------
@@ -1895,17 +1905,23 @@ class obs_hci(nrc_hci):
         assert ngroup >= 0
 
         obs = self
-        sp = self.sp_ref if do_ref else self.sp_sci
+        if do_ref: 
+            det = self.nrc_ref.Detectors[0]
+            ma = self.nrc_ref.multiaccum
+            multiaccum_times = self.nrc_ref.multiaccum_times
+        else:
+            det = self.Detectors[0]
+            ma = self.multiaccum
+            multiaccum_times = self.multiaccum_times
 
-        if ngroup > obs.det_info['ngroup']:
+        if ngroup > ma.ngroup:
             _log.warning("Specified ngroup is greater than self.det_info['ngroup'].")
 
-        t_frame = obs.multiaccum_times['t_frame']
-        t_int = obs.multiaccum_times['t_int']
+        t_frame = multiaccum_times['t_frame']
+        t_int = multiaccum_times['t_int']
         if ngroup==0:
             t_sat = t_frame
         else:
-            ma = obs.multiaccum
             nf = ma.nf; nd1 = ma.nd1; nd2 = ma.nd2
             t_sat = (nd1 + ngroup*nf + (ngroup-1)*nd2) * t_frame
 

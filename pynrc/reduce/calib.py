@@ -272,10 +272,10 @@ class nircam_dark(object):
         lower, upper, left, right = self.det.ref_info
 
         ref_mask = np.zeros([ny,nx], dtype='bool')
-        ref_mask[0:lower,:] = True
-        ref_mask[-upper:,:] = True
-        ref_mask[:,0:left] = True
-        ref_mask[:,-right:] = True
+        if lower>0: ref_mask[0:lower,:] = True
+        if upper>0: ref_mask[-upper:,:] = True
+        if left>0:  ref_mask[:,0:left] = True
+        if right>0: ref_mask[:,-right:] = True
         self._mask_ref = ref_mask
 
         ch_mask = np.zeros([ny,nx])
@@ -1058,13 +1058,13 @@ class nircam_dark(object):
 
             # White Noise
             yf = freq**(0)
-            varience = np.mean(rd_noise**2)
-            yf1 = len(yf) * varience * yf / yf.sum()
+            variance = np.mean(rd_noise**2)
+            yf1 = len(yf) * variance * yf / yf.sum()
 
             # Uncorrelated Pink Noise
             yf = freq**(-1); yf[0]=0
-            varience = np.mean(u_pink**2) / np.sqrt(2)
-            yf2 = len(yf) * varience * yf / yf.sum() 
+            variance = np.mean(u_pink**2) / np.sqrt(2)
+            yf2 = len(yf) * variance * yf / yf.sum() 
 
             # Get residual, to calculate scale factors for correlated noise model
             yresid = ps_all.mean(axis=0) - yf2 - yf1
@@ -3129,9 +3129,16 @@ def calc_eff_noise(allfiles, superbias=None, temporal=True, spatial=True,
 
     # Masks for active, reference, and amplifiers
     rlow, rup, rleft, rright = det.ref_info
-    act_mask = np.zeros([ny,nx]).astype('bool')
-    act_mask[rlow:-rup,rleft:-rright] = True
-    ref_mask = ~act_mask
+
+    ref_mask = np.zeros([ny,nx], dtype=bool)
+    if rlow>0:   ref_mask[0:rlow,:]   = True
+    if rup>0:    ref_mask[-rup:,:]    = True
+    if rleft>0:  ref_mask[:,0:rleft]  = True
+    if rright>0: ref_mask[:,-rright:] = True
+    act_mask = ~ref_mask
+    # act_mask = np.zeros([ny,nx]).astype('bool')
+    # act_mask[rlow:-rup,rleft:-rright] = True  # This doesn't work correctly if rright or rup are 0!!
+    # ref_mask = ~act_mask
     ch_mask = np.zeros([ny,nx])
     for ch in np.arange(nchan):
         ch_mask[:,ch*chsize:(ch+1)*chsize] = ch
@@ -4209,7 +4216,7 @@ def get_freq_array(pow_spec, dt=1, nozero=False, npix_odd=False):
         we don't obtain NaN's later when calculating 1/f noise.
     npix_odd : bool
         We normally assume that the original time-domain data
-        was comprised an even number of pixels. However, if it
+        was comprised of an even number of pixels. However, if it
         were actually odd, the frequency array will be slightly
         shifted. Set this to True if the intrinsic data that was
         used to generate the pow_spec had an odd number of elements.
