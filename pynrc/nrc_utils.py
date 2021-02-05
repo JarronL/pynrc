@@ -2457,36 +2457,37 @@ def stellar_spectrum(sptype, *renorm_args, **kwargs):
     catname = kwargs.get('catname')
     if catname is None: catname = 'bosz'
     lookuptable = {
+        # https://www.pas.rochester.edu/~emamajek/EEM_dwarf_UBVIJHK_colors_Teff.txt
         "O0V": (50000, 0.0, 4.0), # Bracketing for interpolation
-        "O3V": (45000, 0.0, 4.0),
-        "O5V": (41000, 0.0, 4.5),
-        "O7V": (37000, 0.0, 4.0),
-        "O9V": (33000, 0.0, 4.0),
-        "B0V": (30000, 0.0, 4.0),
-        "B1V": (25000, 0.0, 4.0),
-        "B3V": (19000, 0.0, 4.0),
-        "B5V": (15000, 0.0, 4.0),
-        "B8V": (12000, 0.0, 4.0),
-        "A0V": (9500, 0.0, 4.0),
-        "A1V": (9250, 0.0, 4.0),
-        "A3V": (8250, 0.0, 4.0),
-        "A5V": (8250, 0.0, 4.0),
-        "F0V": (7250, 0.0, 4.0),
-        "F2V": (7000, 0.0, 4.0),
-        "F5V": (6500, 0.0, 4.0),
-        "F8V": (6250, 0.0, 4.5),
-        "G0V": (6000, 0.0, 4.5),
-        "G2V": (5750, 0.0, 4.5),
-        "G5V": (5650, 0.0, 4.5),
-        "G8V": (5500, 0.0, 4.5),
-        "K0V": (5250, 0.0, 4.5),
-        "K2V": (4750, 0.0, 4.5),
-        "K5V": (4250, 0.0, 4.5),
-        "K7V": (4000, 0.0, 4.5),
-        "M0V": (3750, 0.0, 4.5),
-        "M2V": (3500, 0.0, 4.5),
-        "M5V": (3500, 0.0, 5.0),
-        "M9V": (3000, 0.0, 5.0),   # Bracketing for interpolation
+        "O3V": (46000, 0.0, 4.0),
+        "O5V": (43000, 0.0, 4.5),
+        "O7V": (36500, 0.0, 4.0),
+        "O9V": (32500, 0.0, 4.0),
+        "B0V": (31500, 0.0, 4.0),
+        "B1V": (26000, 0.0, 4.0),
+        "B3V": (17000, 0.0, 4.0),
+        "B5V": (15700, 0.0, 4.0),
+        "B8V": (12500, 0.0, 4.0),
+        "A0V": (9700, 0.0, 4.0),
+        "A1V": (9200, 0.0, 4.0),
+        "A3V": (8550, 0.0, 4.0),
+        "A5V": (8080, 0.0, 4.0),
+        "F0V": (7220, 0.0, 4.0),
+        "F2V": (6810, 0.0, 4.0),
+        "F5V": (6510, 0.0, 4.0),
+        "F8V": (6170, 0.0, 4.5),
+        "G0V": (5920, 0.0, 4.5),
+        "G2V": (5770, 0.0, 4.5),
+        "G5V": (5660, 0.0, 4.5),
+        "G8V": (5490, 0.0, 4.5),
+        "K0V": (5280, 0.0, 4.5),
+        "K2V": (5040, 0.0, 4.5),
+        "K5V": (4410, 0.0, 4.5),
+        "K7V": (4070, 0.0, 4.5),
+        "M0V": (3870, 0.0, 4.5),
+        "M2V": (3550, 0.0, 4.5),
+        "M5V": (3030, 0.0, 5.0),
+        "M9V": (2400, 0.0, 5.0),   # Bracketing for interpolation
         "O0IV": (50000, 0.0, 3.8), # Bracketing for interpolation
         "B0IV": (30000, 0.0, 3.8),
         "B8IV": (12000, 0.0, 3.8),
@@ -3276,7 +3277,7 @@ def sp_accr(mmdot, rin=2, dist=10, truncated=False,
     """Exoplanet accretion flux values (Zhu et al., 2015).
 
     Calculated the wavelength-dependent flux of an exoplanet accretion disk/shock
-    from Zhu et al. (2015). A
+    from Zhu et al. (2015). 
 
     Note
     ----
@@ -4440,4 +4441,29 @@ def coron_ap_locs(module, channel, mask, pupil=None, full=False):
 
     return cdict
 
-
+def coron_detector(mask, module, channel=None):
+    """
+    Return detector name for a given coronagraphic mask, module,
+    and channel.
+    """
+    
+    # Grab default channel
+    if channel is None:
+        if ('210R' in mask) or ('SW' in mask):
+            channel = 'SW'
+        else:
+            channel = 'LW'
+    
+    # If LW, always A5 or B5
+    # If SW, bar masks are A4/B3, round masks A2/B1; M430R is invalid
+    if channel=='LW':
+        detname = module + '5'
+    elif (channel=='SW') and ('430R' in mask):
+        raise AttributeError("MASK430R not valid for SW channel")
+    else:
+        if module=='A':
+            detname = 'A2' if mask[-1]=='R' else 'A4'
+        else:
+            detname = 'B1' if mask[-1]=='R' else 'B3'
+            
+    return detname
