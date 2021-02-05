@@ -1033,6 +1033,8 @@ def hist_indices(values, bins=10, return_more=False):
     try: # if bins is an integer
         binsize = (vmax - vmin) / bins
         bins = np.arange(vmin, vmax + binsize, binsize)
+        bins[0] = vmin
+        bins[-1] = vmax
     except: # otherwise assume it's already an array
         binsize = bins[1] - bins[0]
     
