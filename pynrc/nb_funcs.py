@@ -287,20 +287,19 @@ def obs_optimize(obs_dict, sp_opt=None, well_levels=None, tacq_max=1800, **kwarg
         print(key)
 
         obs = obs_dict[key]
+        obs_ref = obs.nrc_ref
+
         sp_sci, sp_ref = (obs.sp_sci, obs.sp_ref)
         
         # SW filter piggy-back on two LW filters, so 2 x tacq
         is_SW = obs.bandpass.avgwave()/1e4 < 2.5
 
-        sci = obs
-        ref = sci.nrc_ref
-
         # Ramp optimization for both science and reference targets
-        for obs2, sp in zip([sci, ref], [sp_sci, sp_ref]):
+        for j, sp in enumerate([sp_sci, sp_ref]):
             i = nrow = 0
             while nrow==0:
                 well_max = well_levels[i]
-                tbl = obs2.ramp_optimize(sp_opt, sp, well_frac_max=well_max, tacq_max=tacq_max, **kwargs)
+                tbl = obs.ramp_optimize(sp_opt, sp, well_frac_max=well_max, tacq_max=tacq_max, **kwargs)
                 nrow = len(tbl)
                 i+=1
                 
@@ -308,7 +307,7 @@ def obs_optimize(obs_dict, sp_opt=None, well_levels=None, tacq_max=1800, **kwarg
             v1, v2, v3 = tbl['Pattern', 'NGRP', 'NINT'][0]
             
             vals = list(tbl[0])#.as_void()
-            strout = '{:8} {} {}'.format(vals[0], vals[1], vals[2])
+            strout = '{:10} {:4.0f} {:4.0f}'.format(vals[0], vals[1], vals[2])
             for v in vals[3:]:
                 strout = strout + ', {:.4f}'.format(v)
             print(strout)
@@ -321,6 +320,7 @@ def obs_optimize(obs_dict, sp_opt=None, well_levels=None, tacq_max=1800, **kwarg
             # Coronagraphic observations have two roll positions, so cut NINT by 2
             if obs.mask is not None: 
                 v3 = int(v3/2) 
+            obs2 = obs if j==0 else obs_ref
             obs2.update_detectors(read_mode=v1, ngroup=v2, nint=v3)
         
 
@@ -397,7 +397,7 @@ def do_gen_hdus(obs_dict, filt_keys, wfe_ref_drift, wfe_roll_drift, verbose=Fals
     
     hdulist_dict = {}
     for key in tqdm(filt_keys):
-        if verbose: print(key)
+        # if verbose: print(key)
         obs = obs_dict[key]
         obs.wfe_ref_drift = wfe_ref_drift
         obs.wfe_roll_drift = wfe_roll_drift
@@ -409,16 +409,20 @@ def do_gen_hdus(obs_dict, filt_keys, wfe_ref_drift, wfe_roll_drift, verbose=Fals
 
 def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True, 
                   plot=True, xylim=2.5, return_fig_axes=False):
+
+    """Only for obs.hci classes"""
     
     ng_max = obs.det_info['ngroup'] if ng_max is None else ng_max
     
     # Well level of each pixel for science source
-    image = obs.gen_slope_image(exclude_noise=True, use_cmask=True, quick_PSF=True)
+    # image = obs.gen_slope_image(exclude_noise=True, use_cmask=True, quick_PSF=True)
+    image = obs.gen_psf(obs.sp_sci)
     sci_levels1 = obs.saturation_levels(ngroup=ng_min, image=image)
     sci_levels2 = obs.saturation_levels(ngroup=ng_max, image=image)
 
     # Well level of each pixel for reference source
-    image = obs.gen_slope_image(exclude_noise=True, use_cmask=True, quick_PSF=True, do_ref=True)
+    # image = obs.gen_slope_image(exclude_noise=True, use_cmask=True, quick_PSF=True, do_ref=True)
+    image = obs.gen_psf(obs.sp_ref)
     ref_levels1 = obs.saturation_levels(ngroup=ng_min, image=image, do_ref=True)
     ref_levels2 = obs.saturation_levels(ngroup=ng_max, image=image, do_ref=True)
     
@@ -1170,7 +1174,7 @@ def do_plot_contrasts2(key1, key2, curves_all, nsig, obs_dict, wfe_list, age, sa
                        yscale2='log', yr2=None, av_vals=[0,10], curves_all2=None, 
                        c1=None, c2=None, linder_models=True, planet_patches=True, **kwargs):
 
-    fig, axes = plt.subplots(1,2, figsize=(14,5))
+    fig, axes = plt.subplots(1,2, figsize=(14,4.5))
 
     lin_vals = np.linspace(0.2,0.8,len(wfe_list))
     if c1 is None: c1 = plt.cm.Blues_r(lin_vals)
