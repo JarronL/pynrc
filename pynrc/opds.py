@@ -803,11 +803,7 @@ class OTE_WFE_Drift_Model(OTE_Linear_Model_WSS):
     def opds_as_hdul(self, delta_time, slew_angles, delta_opds=None, wfe_dict=None,
                      case=None, add_main_opd=True, slew_averages=False, 
                      return_ind=None, **kwargs):
-        """Convert series of delta OPDS to HDUList
-        
-        Given 
-        
-        """
+        """Convert series of delta OPDS to HDUList"""
 
         if delta_opds is None:
             case = 'BOL' if case is None else case
