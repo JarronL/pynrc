@@ -6,7 +6,7 @@ from astropy.time import Time
 import datetime, time
 
 import logging
-_log = logging.getLogger('detops')
+_log = logging.getLogger('pynrc')
 
 class multiaccum(object):
     """
@@ -428,8 +428,8 @@ class det_timing(object):
 
         modes = ['FULL', 'STRIPE', 'WINDOW']
         if wind_mode not in modes:
-            print('{} not a valid window readout mode! Returning...'.format(wind_mode))
-            return
+            wstr = str.join(', ', modes)
+            raise ValueError("{} not a valid readout mode. Acceptable values: ".format(wind_mode, wstr))
 
         detpix = self._detector_pixels
         xpix = self.xpix; x0 = self.x0
@@ -438,19 +438,19 @@ class det_timing(object):
         # Check some consistencies with frame sizes
         if wind_mode == 'FULL':
             if ypix != detpix:
-                print('In {0} mode, but ypix not {1}. Setting ypix={1}.'\
+                _log.warn('In {0} mode, but ypix not {1}. Setting ypix={1}.'\
                        .format(wind_mode,detpix))
                 ypix = detpix
             if y0 != 0:
-                print('In {0} mode, but x0 not 0. Setting y0=0.'.format(wind_mode))
+                _log.warn('In {0} mode, but x0 not 0. Setting y0=0.'.format(wind_mode))
                 y0 = 0
 
         if (wind_mode == 'STRIPE') or (wind_mode == 'FULL'):
             if xpix != detpix:
-                print('In {0} mode, but xpix not {1}. Setting xpix={1}.'.format(wind_mode,detpix))
+                _log.warn('In {0} mode, but xpix not {1}. Setting xpix={1}.'.format(wind_mode,detpix))
                 xpix = detpix
             if x0 != 0:
-                print('In {0} mode, but x0 not 0. Setting x0=0.'.format(wind_mode))
+                _log.warn('In {0} mode, but x0 not 0. Setting x0=0.'.format(wind_mode))
                 x0 = 0
     
         if (x0+xpix) > detpix:
