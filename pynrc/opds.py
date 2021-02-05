@@ -3,8 +3,13 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 
-import os, scipy
+import os
+
+import scipy
+import scipy.stats
+from scipy.stats import arcsine
 from scipy.interpolate import interp1d
+
 from astropy.io import fits
 import astropy.units as u
 
@@ -354,7 +359,7 @@ class OTE_WFE_Drift_Model(OTE_Linear_Model_WSS):
 
     
     def gen_iec_series(self, delta_time, amplitude=3.5, period=5.0, 
-        interp_kind='linear'):
+        interp_kind='linear', random_seed=None):
         """Create a series of IEC WFE scale factors
         
         Create a series of random IEC heater state changes based on 
@@ -372,6 +377,9 @@ class OTE_WFE_Drift_Model(OTE_Linear_Model_WSS):
             from -0.5*amplitude to +0.5*amplitude.
         period : float
             Period in minutes of IEC oscillations. Usually 3-5 minutes.
+        random_seed : int
+            Provide a random seed value between 0 and (2**32)-1 to generate
+            reproducible random values.
         interp_kind : str or int
             Specifies the kind of interpolation as a string
             ('linear', 'nearest', 'zero', 'slinear', 'quadratic', 'cubic',
@@ -393,12 +401,16 @@ class OTE_WFE_Drift_Model(OTE_Linear_Model_WSS):
         dt = period
         nsamp = int(np.max(time_arr_minutes)/dt) + 2
         tvals = np.arange(nsamp) * dt
-        wfe_iec_all = scipy.stats.arcsine().rvs(nsamp) * amplitude - amplitude / 2
+
+        # Random values between 0 and 1
+        arcsine_rand = arcsine.rvs(size=nsamp, random_state=random_seed)
+        # Scale by amplitude
+        wfe_iec_all = arcsine_rand * amplitude - amplitude / 2
 
         # res = np.interp(time_arr_minutes, tvals, wfe_iec_all)
 
         finterp = interp1d(tvals, wfe_iec_all, kind=interp_kind,
-                           fill_value=(0, 1), bounds_error=False)
+                           fill_value=0, bounds_error=False)
         res = finterp(time_arr_minutes)
 
         return res
