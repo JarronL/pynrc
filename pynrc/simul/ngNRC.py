@@ -128,15 +128,16 @@ def SCAnoise(det=None, scaid=None, params=None, caldir=None, file_out=None,
     # Extensive testing on both Python 2 & 3 shows that 4 cores is optimal for FFTW
     # Beyond four cores, the speed improvement is small. Those other processors are
     # are better used elsewhere.
-    if use_fftw and (ncores is None): ncores = 4
+    if use_fftw and (ncores is None): 
+        ncores = 4
 
     if det is None:
-        wind_mode = params.pop('wind_mode', 'FULL')
-        xpix = params.pop('xpix', 2048)
-        ypix = params.pop('ypix', 2048)
-        x0 = params.pop('x0', 0)
-        y0 = params.pop('y0', 0)
-        det = DetectorOps(scaid, wind_mode, xpix, ypix, x0, y0, params)
+        # wind_mode = params.pop('wind_mode', 'FULL')
+        # xpix = params.pop('xpix', 2048)
+        # ypix = params.pop('ypix', 2048)
+        # x0 = params.pop('x0', 0)
+        # y0 = params.pop('y0', 0)
+        det = DetectorOps(detector=scaid, **params)
     else:
         scaid = det.scaid
 
