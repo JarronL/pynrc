@@ -88,9 +88,9 @@ __pycache__/
 
 # Distribution / packaging
 .Python
-env/
 build/
 develop-eggs/
+dist/
 downloads/
 eggs/
 .eggs/
@@ -100,9 +100,12 @@ parts/
 sdist/
 var/
 wheels/
+pip-wheel-metadata/
+share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -117,13 +120,16 @@ pip-delete-this-directory.txt
 # Unit test / coverage reports
 htmlcov/
 .tox/
+.nox/
 .coverage
 .coverage.*
 .cache
 nosetests.xml
 coverage.xml
-*,cover
+*.cover
+*.py,cover
 .hypothesis/
+.pytest_cache/
 
 # Translations
 *.mo
@@ -132,6 +138,8 @@ coverage.xml
 # Django stuff:
 *.log
 local_settings.py
+db.sqlite3
+db.sqlite3-journal
 
 # Flask stuff:
 instance/
@@ -157,13 +165,14 @@ Untitled*.ipynb
 # celery beat schedule file
 celerybeat-schedule
 
-# dotenv
+# Environments
 .env
-
-# virtualenv
-.venv/
+.venv
+env/
 venv/
 ENV/
+env.bak/
+venv.bak/
 
 # Spyder project settings
 .spyderproject
@@ -172,11 +181,13 @@ ENV/
 # Rope project settings
 .ropeproject
 
-# End of https://www.gitignore.io/api/macos,emacs,python
-
 # mkdocs documentation
 /site
 
 # mypy
 .mypy_cache/
+.dmypy.json
+dmypy.json
 
+# Pyre type checker
+.pyre/
