@@ -113,14 +113,14 @@ def SCAnoise(det=None, scaid=None, params=None, caldir=None, file_out=None,
     >>> scaid = 481
     >>> caldir = '/data/darks_sim/nghxrg/sca_images/'
     >>> file_out = '/data/darks_sim/dark_sim_481.fits'
-    >>> hdu = ngNRC.SCAnoise(scaid, params, file_out=file_out, caldir=caldir, \
+    >>> hdu = ngNRC.SCAnoise(scaid, params, file_out=file_out, caldir=caldir, 
     >>>    dark=True, bias=True, out_ADU=True, use_fftw=False, ncores=None, verbose=False)
 
     Don't save file, but keep hdu in e- for adding to simulated observation ramp:
 
     >>> scaid = 481
     >>> caldir = '/data/darks_sim/nghxrg/sca_images/'
-    >>> hdu = ngNRC.SCAnoise(scaid, params, file_out=None, caldir=caldir, \
+    >>> hdu = ngNRC.SCAnoise(scaid, params, file_out=None, caldir=caldir, 
     >>>    dark=True, bias=True, out_ADU=False, use_fftw=False, ncores=None, verbose=False)
 
     """
@@ -472,12 +472,12 @@ def SCAnoise(det=None, scaid=None, params=None, caldir=None, file_out=None,
 #     if return_results: 
 #         return outHDU
 
+
 def slope_to_ramps(det, dark_cal_obj, im_slope=None, filter=None, pupil=None, 
                    targ_name=None, obs_time=None, file_out=None, 
                    out_ADU=True, DMS=True, return_results=True, **kwargs):
     
-    """Simulate HDUList frome slope
-    
+    """Simulate HDUList from slope image
     
     Parameters
     ==========
@@ -563,7 +563,6 @@ def slope_to_ramps(det, dark_cal_obj, im_slope=None, filter=None, pupil=None,
             
     # FITSWriter (ISIM format)
     else:
-        assert len(im_slope.shape)==2, "`im_slope` should be a single image"
         data = simulate_detector_ramp(det, dark_cal_obj, im_slope=im_slope, 
                                       out_ADU=out_ADU,  return_zero_frame=False, **kwargs)
         hdu = fits.PrimaryHDU(data)
@@ -642,7 +641,7 @@ def add_ipc(im, alpha_min=0.0065, alpha_max=None, kernel=None):
         yp, xp = int(yp), int(xp)
 
     # Pad images to have a pixel border of zeros
-    im_pad = np.pad(im, ((0,0), (yp,yp), (xp,xp)), 'constant')
+    im_pad = np.pad(im, ((0,0), (yp,yp), (xp,xp)), 'symmetric')
     
     # Check for custom kernel (overrides alpha values)
     if (kernel is not None) or (alpha_max is None):
@@ -1325,7 +1324,7 @@ def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
         if np.any(u_pink):
             _log.info('Adding uncorrelated pink noise...')
             
-            for ch in range(nchan):
+            for ch in trange(nchan, leave=False):
                 x1 = ch*chsize
                 x2 = x1 + chsize
 
@@ -1358,7 +1357,7 @@ def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
         pf_acn = np.sqrt(facn**alpha)
         pf_acn[0] = 0.
 
-        for ch in np.arange(nchan):
+        for ch in trange(nchan):
             x1 = ch*chsize
             x2 = x1 + chsize
 
@@ -1461,15 +1460,19 @@ def gen_dark_ramp(dark, out_shape, tf=10.73677, gain=1, ref_info=None,
 def sim_dark_ramp(det, super_dark, ramp_avg_ch=None, ramp_avg_tf=10.73677, 
     out_ADU=False, verbose=False, **kwargs):
     """
-    Simulate a dark current ramp based on input det class and
-    super dark image.
+    Simulate a dark current ramp based on input det class and a
+    super dark image. 
+    
+    By default, returns ramp in terms of e- using gain information 
+    provide in `det` input. To return in terms of ADU, set 
+    `out_ADU=True` (divides by gain).
 
     Parameters
     ----------
     det : Detector Class
         Desired detector class output
     super_dark : ndarray
-        Dark current input image
+        Dark current input image (DN/sec)
     
     Keyword Args
     ------------
@@ -1567,14 +1570,16 @@ def sim_dark_ramp(det, super_dark, ramp_avg_ch=None, ramp_avg_tf=10.73677,
 def sim_image_ramp(det, im_slope, verbose=False, **kwargs):
     """
     Simulate an image ramp based on input det class and slope image.
-    Uses the `sim_dark_ramp` function.
+    Uses the `sim_dark_ramp` function. By default, returns ramp in
+    terms of e- using gain information provide in `det` input. To
+    return in terms of ADU, set `out_ADU=True` (divides by gain).
 
     Parameters
     ----------
     det : Detector Class
         Desired detector class output
     im_slope : ndarray
-        Input slope image
+        Input slope image (DN/sec)
     
     Keyword Args
     ------------
@@ -1588,6 +1593,85 @@ def sim_image_ramp(det, im_slope, verbose=False, **kwargs):
 
     return sim_dark_ramp(det, im_slope, ramp_avg_ch=None, verbose=False, **kwargs)
 
+def apply_nonlin(cube, cf_arr, sat_vals, well_depth,
+                 use_legendre=True, lxmap=[0,1e5]):
+    """
+    Given a simulated cube of data in electrons, apply non-linearity 
+    coefficients to obtain values in DN (ADU).
+
+    Parameters
+    ----------
+    cube : ndarray
+        Simulated ramp data in e-. These should be intrinsic
+        flux values with Poisson noise, but prior to read noise,
+        kTC, IPC, etc. Size (nz,ny,nx).
+    cf_arr : ndarray
+        Set of polynomial coefficients that convert intrinsic
+        flux values to detector values DN (ADU) of size (ncf,ny,nx).
+    sat_vals : ndarray
+        An image indicating that saturation levels in DN for each
+        pixel of size (ny,nx). 
+    well_depth : float
+        Assumed well depth in e-. Values in `cube` above this
+        are considerds saturated and will be truncated. 
+    
+    Keyword Args
+    ------------
+    use_legendre : bool
+        Were the derived coefficients fit using Legendre polynomials?
+    lxmap : 2-element array
+        Legendre polynomials are normally mapped to xvals of [-1,+1].
+        `lxmap` gives the option to supply the values for xval that
+        should get mapped to [-1,+1]. If set to None, then assumes 
+        [xvals.min(),xvals.max()].
+    """
+
+    from numpy.polynomial import legendre
+    nz, ny, nx = cube.shape
+    
+    res = np.zeros_like(cube)
+    for i in trange(nz):
+        # Values higher than well depth
+        ind_high = cube[i] > well_depth
+
+        xvals = cube[i].reshape([1,-1])
+    
+        ncf = cf_arr.shape[0]
+
+        if use_legendre:
+            # Values to map to [-1,+1]
+            if lxmap is None:
+                lxmap = [np.min(xvals), np.max(xvals)]
+
+            # Remap xvals -> lxvals
+            dx = lxmap[1] - lxmap[0]
+            lxvals = 2 * (xvals - (lxmap[0] + dx/2)) / dx
+
+            # Use Identity matrix to evaluate each polynomial component
+            xfan = legendre.legval(lxvals, np.identity(ncf))
+        else:
+            # Create an array of exponent values
+            parr = np.arange(ncf, dtype='float')
+            # If 3D, this reshapes xfan to 2D
+            xfan = xvals**parr.reshape([-1,1]) # Array broadcasting
+            xfan = xfan.reshape([ncf,1,-1])
+
+
+        # Reshape coeffs to 2D array
+        cf = cf_arr.reshape([ncf,-1])
+
+        gain = np.sum(xfan * cf.reshape([ncf,1,-1]), axis=0)
+        gain = gain.reshape([-1,ny,nx]).squeeze()
+        igood = gain!=0
+        res[i,igood] = cube[i,igood] / gain[igood]
+
+        # Correct any pixels that are above saturation DN
+        # res[i,ind_high] = sat_vals[ind_high]
+        ind_over = (res[i]>sat_vals) | ind_high
+        res[i,ind_over] = sat_vals[ind_over]
+
+    
+    return res
 
 def simulate_detector_ramp(det, dark_cal_obj, im_slope=None, out_ADU=False,
                            include_dark=True, include_bias=True, include_ktc=True, 
@@ -1595,7 +1679,7 @@ def simulate_detector_ramp(det, dark_cal_obj, im_slope=None, out_ADU=False,
                            include_acn=True, apply_ipc=True, apply_ppc=True, 
                            include_refinst=True, include_colnoise=True, col_noise=None,
                            amp_crosstalk=True, add_crs=True, latents=None, linearity_map=None, 
-                           return_zero_frame=None, return_full_ramp=False, prog_bar=False):
+                           return_zero_frame=None, return_full_ramp=False, prog_bar=True):
     
     """ Return a single simulated ramp
     
@@ -1774,7 +1858,7 @@ def simulate_detector_ramp(det, dark_cal_obj, im_slope=None, out_ADU=False,
     # TODO: Add non-linearity
     if prog_bar: pbar.set_description("Non-Linearity")
     # Truncate anything above well level
-    # This wwill be part of non-linearity after full implementation
+    # This will be part of non-linearity after full implementation
     if linearity_map is not None:
         pass
     well_max = det.well_level
@@ -1797,7 +1881,7 @@ def simulate_detector_ramp(det, dark_cal_obj, im_slope=None, out_ADU=False,
     if prog_bar: pbar.update(1)
     
     ####################
-    # Apply PPC (when should this occur?)
+    # Apply PPC (is this best location for this to occur?)
     if prog_bar: pbar.set_description("Include PPC")
     if apply_ppc:
         data = add_ppc(data, nchans=nchan, kernel=k_ppc, in_place=True,
@@ -1805,7 +1889,7 @@ def simulate_detector_ramp(det, dark_cal_obj, im_slope=None, out_ADU=False,
     if prog_bar: pbar.update(1)
     
     ####################
-    # TODO: Add channel crosstalk
+    # TODO: Add amplifier channel crosstalk
     if prog_bar: pbar.set_description("Amplifier Crosstalk")
     if amp_crosstalk:
         pass
