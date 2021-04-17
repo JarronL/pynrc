@@ -429,7 +429,7 @@ class det_timing(object):
         modes = ['FULL', 'STRIPE', 'WINDOW']
         if wind_mode not in modes:
             wstr = str.join(', ', modes)
-            raise ValueError("{} not a valid readout mode. Acceptable values: ".format(wind_mode, wstr))
+            raise ValueError("{} not a valid readout mode. Acceptable values: {}".format(wind_mode, wstr))
 
         detpix = self._detector_pixels
         xpix = self.xpix; x0 = self.x0
@@ -664,7 +664,7 @@ class det_timing(object):
 
     @property
     def times_group_avg(self):
-        """Times at each averaged group"""
+        """Times at each averaged group since reset"""
         ma = self.multiaccum
         nf_avg = np.arange(ma.nf+1).sum() / ma.nf
         return np.arange(ma.ngroup) * self.time_group + (ma.nd1 + nf_avg) * self.time_frame

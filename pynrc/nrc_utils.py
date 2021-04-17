@@ -205,10 +205,10 @@ def read_filter(filter, pupil=None, mask=None, module=None, ND_acq=False,
     mod = module.lower()
     filt_dir = conf.PYNRC_PATH + 'throughputs/'
     filt_file = filter + '_nircam_plus_ote_throughput_mod' + mod + '_sorted.txt'
-    bp = S.FileBandpass(filt_dir+filt_file)
-    bp_name = filter
 
     _log.debug('Reading file: '+filt_file)
+    bp = S.FileBandpass(filt_dir+filt_file)
+    bp_name = filter
 
     # Select channel (SW or LW) for minor decisions later on
     channel = 'SW' if bp.avgwave()/1e4 < 2.3 else 'LW'
@@ -276,7 +276,7 @@ def read_filter(filter, pupil=None, mask=None, module=None, ND_acq=False,
         bp = bp.resample(warr)
 
     # Coronagraphic throughput modifications
-    # Substrate transmission
+    # Substrate transmission (off-axis substrate with occulting masks)
     if ((mask  is not None) and ('MASK' in mask)) or coron_substrate or ND_acq:
         # Sapphire mask transmission values for coronagraphic substrate
         hdulist = fits.open(conf.PYNRC_PATH + 'throughputs/jwst_nircam_moda_com_substrate_trans.fits')
@@ -320,8 +320,8 @@ def read_filter(filter, pupil=None, mask=None, module=None, ND_acq=False,
         bp = S.ArrayBandpass(bp.wave, th_new)
 
 
-    # Lyot stop wedge modifications
-    # Substrate transmission
+    # Lyot stop wedge modifications 
+    # Substrate transmission (located in pupil wheel to deflect beam)
     if (pupil is not None) and ('LYOT' in pupil):
 
         # Transmission values for wedges in Lyot stop
@@ -1363,6 +1363,12 @@ def sat_limit_webbpsf(filter_or_bp, pupil=None, mask=None, module='A', pix_scale
 
 
 def var_ex_model(ng, nf, params):
+    """ Variance Excess Model
+
+    Measured pixel variance shows a slight excess above the measured values.
+    The input `params` describes this excess variance. This funciton can be 
+    used to fit the excess variance for a variety of different readout patterns.
+    """
     return 12. * (ng - 1.)/(ng + 1.) * params[0]**2 - params[1] / nf**0.5
 
 def pix_noise(ngroup=2, nf=1, nd2=0, tf=10.73677, rn=15.0, ktc=29.0, p_excess=(0,0),
@@ -2454,8 +2460,7 @@ def stellar_spectrum(sptype, *renorm_args, **kwargs):
     metallicity = kwargs.pop('metallicity', None)
     log_g = kwargs.pop('log_g', None)
 
-    catname = kwargs.get('catname')
-    if catname is None: catname = 'bosz'
+    catname = kwargs.get('catname', 'bosz')
     lookuptable = {
         # https://www.pas.rochester.edu/~emamajek/EEM_dwarf_UBVIJHK_colors_Teff.txt
         "O0V": (50000, 0.0, 4.0), # Bracketing for interpolation

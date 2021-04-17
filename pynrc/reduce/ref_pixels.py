@@ -819,7 +819,7 @@ def calc_col_smooth(refvals, data_shape, perint=False, edge_wrap=False,
     delt=5.24E-4, savgol=False, winsize=31, order=3, **kwargs):
     """Perform optimal smoothing of side ref pix
     
-    Geneated smoothed version of column reference values.
+    Generates smoothed version of column reference values.
     Smooths values from calc_avg_cols() via FFT.
 
     Parameters

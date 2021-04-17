@@ -96,8 +96,10 @@ def jl_poly(xvals, coeff, dim_reorder=False, use_legendre=False, lxmap=None, **k
         # Result to be ordered (nx,ny,nz)
         yfit = np.dot(cf.T, xfan)
 
-        if ndim==1 or n==1: yfit = yfit.ravel()
-        if ndim==3: yfit = yfit.reshape((dim[1],dim[2],n))
+        if ndim==1 or n==1: 
+            yfit = yfit.ravel()
+        if ndim==3: 
+            yfit = yfit.reshape((dim[1],dim[2],n))
     else:
         # This is the Python preferred ordering
         # Coefficients are assumed (deg+1,ny,nx)
@@ -105,8 +107,10 @@ def jl_poly(xvals, coeff, dim_reorder=False, use_legendre=False, lxmap=None, **k
         # Result to be ordered (nz,ny,nx)
         yfit = np.dot(xfan.T,cf)
 
-        if ndim==1 or n==1: yfit = yfit.ravel()
-        if ndim==3: yfit = yfit.reshape((n,dim[1],dim[2]))
+        if ndim==1 or n==1: 
+            yfit = yfit.ravel()
+        if ndim==3: 
+            yfit = yfit.reshape((n,dim[1],dim[2]))
 
     return yfit
 
@@ -151,7 +155,7 @@ def jl_poly_fit(x, yvals, deg=1, QR=True, robust_fit=False, niter=25, use_legend
     use_legendre : bool
         Fit with Legendre polynomials, an orthonormal basis set.
     lxmap : ndarray or None
-        Legendre polynomials are normaly mapped to xvals of [-1,+1].
+        Legendre polynomials are normally mapped to xvals of [-1,+1].
         `lxmap` gives the option to supply the values for xval that
         should get mapped to [-1,+1]. If set to None, then assumes 
         [xvals.min(),xvals.max()].
@@ -218,6 +222,9 @@ def jl_poly_fit(x, yvals, deg=1, QR=True, robust_fit=False, niter=25, use_legend
         # Use Identity matrix to evaluate each polynomial component
         a = legendre.legval(lx, np.identity(deg+1))
     else:
+        # Normalize x values to closer to 1 for numerical stability with large inputs
+        xnorm = np.mean(x)
+        x = x / xnorm
         a = np.array([x**num for num in range(deg+1)], dtype='float')
     b = yvals.reshape([orig_shape[0],-1])
 
@@ -285,4 +292,8 @@ def jl_poly_fit(x, yvals, deg=1, QR=True, robust_fit=False, niter=25, use_legend
             #print(coeff_all.mean(axis=1), coeff_all.std(axis=1), np.nanmax(diff), ind_fit[ind_fit].size)
             if 0 < np.nanmax(diff) < close_enough: break
     
+    if not use_legendre:
+        parr = np.arange(deg+1, dtype='float')
+        coeff_all = coeff_all / (xnorm**parr.reshape([-1,1]))
+
     return coeff_all.reshape(cf_shape)
