@@ -178,9 +178,9 @@ def Tel2Sci_info(channel, coords, pupil=None, output='sci', return_apname=False,
     for apname in apnames:
         ap = mysiaf[apname]
         try:
-            vals = ap.Tel2Sci(V2, V3)
-        except AttributeError:
             vals = ap.tel_to_sci(V2, V3)
+        except AttributeError:
+            vals = ap.Tel2Sci(V2, V3)
         cens.append(vals)
     cens = np.array(cens)
 
@@ -193,9 +193,9 @@ def Tel2Sci_info(channel, coords, pupil=None, output='sci', return_apname=False,
     apname = apnames[ind]
     ap = mysiaf[apname]
     try:
-        detector_position = ap.convert(V2, V3, frame_from='Tel', frame_to=output)
-    except TypeError:
         detector_position = ap.convert(V2, V3, 'tel', output.lower())
+    except TypeError:
+        detector_position = ap.convert(V2, V3, frame_from='Tel', frame_to=output)
 
     if return_apname:
         return detector, detector_position, apname
@@ -365,7 +365,7 @@ def get_v2v3_limits(pupil=None, border=10, return_corners=False, **kwargs):
     border : float
         Extend a border by some number of arcsec.
     return_corners : bool
-        Return the actualy aperture corners.
+        Return the actual aperture corners.
         Otherwise, values are chosen to be a square in V2/V3.
     """
     
@@ -513,15 +513,15 @@ def sci_to_det(image, detid):
     # Flips occur along the same axis and manner as in det_to_sci()
     return det_to_sci(image, detid)
   
-def det_to_V2V3(image, detid):
-    """Same as `det_to_sci`"""
-    _log.warning('det_to_V2V3 function is deprecated. Please use det_to_sci()')
-    return det_to_sci(image, detid)
+# def det_to_V2V3(image, detid):
+#     """Same as `det_to_sci`"""
+#     _log.warning('det_to_V2V3 function is deprecated. Please use det_to_sci()')
+#     return det_to_sci(image, detid)
     
-def V2V3_to_det(image, detid):
-    """Same as `sci_to_det`"""
-    _log.warning('V2V3_to_det function is deprecated. Please use sci_to_det()')
-    return sci_to_det(image, detid)
+# def V2V3_to_det(image, detid):
+#     """Same as `sci_to_det`"""
+#     _log.warning('V2V3_to_det function is deprecated. Please use sci_to_det()')
+#     return sci_to_det(image, detid)
 
 
 def plotAxes(ax, position=(0.9,0.1), label1='V2', label2='V3', dir1=[-1,0], dir2=[0,1],
