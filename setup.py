@@ -19,10 +19,7 @@ import ast
 
 import ah_bootstrap
 #A dirty hack to get around some early import/configurations ambiguities
-if sys.version_info[0] >= 3:
-    import builtins
-else:
-    import __builtin__ as builtins
+import builtins
 builtins._ASTROPY_SETUP_ = True
 
 from astropy_helpers.setup_helpers import (
@@ -105,12 +102,13 @@ with open('HISTORY.rst') as history_file:
 
 requirements = [
           'Click>=6.0',
-          'numpy>=1.15.0',
-          'matplotlib>=2',
-          'scipy>=0.16.0',
+          'numpy>=1.13.0',
+          'matplotlib>=3.0.0',
+          'scipy>=1.0.0',
           'pysynphot>=0.9.7',
-          'poppy>=0.7.0',
-          'webbpsf>=0.7.0',
+          'poppy>=0.9.1',
+          'webbpsf>=0.9.1',
+          'tqdm>4',
       ]
 # RTD cannot handle certain 
 # if not (os.environ.get('READTHEDOCS') == 'True'):
@@ -164,7 +162,6 @@ setup(
         #'Programming Language :: Python :: 2',
         #'Programming Language :: Python :: 2.7',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
     ],
