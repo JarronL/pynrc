@@ -18,7 +18,7 @@ def perform_benchmarks(filter='F430M', pupil=None, mask=None, module='A',
     kwargs['fov_pix'] = fov_pix
     kwargs['oversample'] = oversample
 
-    kwargs['opd'] = ('OPD_RevW_ote_for_NIRCam_requirements.fits.gz', 0)
+    kwargs['opd'] = ('OPD_RevW_ote_for_NIRCam_predicted.fits.gz', 0)
     kwargs['jitter'] = 'gaussian'
     kwargs['jitter_sigma'] = 0.007
 

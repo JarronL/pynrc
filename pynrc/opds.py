@@ -20,8 +20,11 @@ import logging
 _log = logging.getLogger('pynrc')
 from .logging_utils import setup_logging
 
+# Progress bar
+from tqdm.auto import trange, tqdm
+
 # Default OPD info
-opd_default = ('OPD_RevW_ote_for_NIRCam_requirements.fits', 0)
+opd_default = ('OPD_RevW_ote_for_NIRCam_predicted.fits', 0)
 
 # The following won't work on readthedocs compilation
 on_rtd = os.environ.get('READTHEDOCS') == 'True'
@@ -52,7 +55,19 @@ def OPDFile_to_HDUList(file, slice=0):
     try:
         hdul = fits.open(file)
     except FileNotFoundError:
-        opd_dir = os.path.join(webbpsf.utils.get_webbpsf_data_path(),'NIRCam','OPD')
+        
+        if 'NIRCam' in file:
+            inst = 'NIRCam'
+        elif 'MIRI' in file:
+            inst = 'MIRI'
+        elif 'NIRSpec' in file:
+            inst = 'NIRSpec'
+        elif 'NIRISS' in file:
+            inst = 'NIRISS'
+        elif 'FGS' in file:
+            inst = 'FGS'
+
+        opd_dir = os.path.join(webbpsf.utils.get_webbpsf_data_path(),inst,'OPD')
         hdul = fits.open(os.path.join(opd_dir, file))
     ndim = len(hdul[0].data.shape)
 
@@ -852,8 +867,8 @@ class OTE_WFE_Drift_Model(OTE_Linear_Model_WSS):
             hdr['STARTANG'] = (ang1, "Starting sun pitch angle [deg]")
             hdr['ENDANG']   = (ang2, "Ending sun pitch angle [deg]")
             hdr['THRMCASE'] = (case, "Thermal model case, beginning or end of life")
-            if add_main_opd:
-                hdr['OPDSLICE'] = (self.opd_slice, 'OPD slice index')
+            # if add_main_opd:
+            #     hdr['OPDSLICE'] = (self.opd_slice, 'OPD slice index')
 
             hdr['WFE_RMS'] = (self.calc_rms(hdu.data)*1e9, "RMS WFE [nm]")
             # Include the WFE RMS inputs from each component
