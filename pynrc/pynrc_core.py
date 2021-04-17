@@ -20,7 +20,6 @@ import logging
 _log = logging.getLogger('pynrc')
 
 class DetectorOps(det_timing):
-#class DetectorOps(object):
     """ 
     Class to hold detector operations information. Includes SCA attributes such as
     detector names and IDs as well as :class:`multiaccum` class for ramp settings.
@@ -279,8 +278,8 @@ class DetectorOps(det_timing):
     def slowaxis(self):
         """Slow readout direction in sci coords"""
         # https://jwst-pipeline.readthedocs.io/en/latest/jwst/references_general/references_general.html#orientation-of-detector-image
-        # 481, 3, 5, 7, 9 have fastaxis equal +2
-        # Others have fastaxis equal -2
+        # 481, 3, 5, 7, 9 have slowaxis equal +2
+        # Others have slowaxis equal -2
         slowaxis = +2 if np.mod(self.scaid,2)==1 else -2
         return slowaxis
 
@@ -694,8 +693,9 @@ class NIRCam(object):
         return self._bandpass
     def _update_bp(self):
         """Update bandpass based on filter, pupil, and module, etc."""
-        self._bandpass = read_filter(self._filter, self._pupil, self._mask, 
-                                     self.module, self.ND_acq,
+        # TODO: Add grism_order and coron_substrate (maybe?)
+        self._bandpass = read_filter(self._filter, pupil=self._pupil, mask=self._mask, 
+                                     module=self.module, ND_acq=self.ND_acq,
                                      ice_scale=self._ice_scale, nvr_scale=self._nvr_scale,
                                      ote_scale=self._ote_scale, nc_scale=self._nc_scale)
 
@@ -2175,7 +2175,7 @@ class NIRCam(object):
                 cf_mod = cf_mod_resize
             psf_coeff_mod += cf_mod
 
-        # Modify PSF coefficients based on field-dependent
+        # Modify PSF coefficients based on field-dependence
         nfield = 1
         if (coord_vals is not None) and (self.wfe_field==False):
             _log.warning("coord_vals keyword is set, but `self.wfe_field` is False. Toggle `self.wfe_field=True` to use this feature.")
@@ -2891,13 +2891,16 @@ def gen_fits(args):
     """
     Helper function for generating FITs integrations from a slope image
     """
-    from .simul.ngNRC import slope_to_ramp
+    from .simul.ngNRC import slope_to_ramps
+
+    args, kwargs = args
+    det, dark_cal_obj = args
 
     # Must call np.random.seed() for multiprocessing, otherwise 
     # random numbers for parallel processes start in the same seed state!
     np.random.seed()
     try:
-        res = slope_to_ramp(*args)
+        res = slope_to_ramps(det, dark_cal_obj, **kwargs)
     except Exception as e:
         print('Caught exception in worker thread:')
         # This prints the type, value, and stack trace of the
