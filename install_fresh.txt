@@ -4,10 +4,10 @@ WebbPSF
 
 1. conda config --append channels http://ssb.stsci.edu/astroconda
 2. conda install pysynphot poppy jwxml pysiaf
-	- pysynphot 0.9.12
-	- poppy 0.8.0
-	- jwxml 0.3.0
-	- pysiaf 0.1.8
+	- pysynphot 
+	- poppy 
+	- jwxml 
+	- pysiaf 
 3. conda update scikit-image --no-deps
 4. conda install webbpsf --no-deps
 

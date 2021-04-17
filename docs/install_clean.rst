@@ -5,13 +5,12 @@ Install from New Conda Environment
 ===================================
 
 This installation tutorial assumes a clean installation with 
-Anaconda and has been verified on both Python 2.7 and 3.6 using 
-the following modules:
+Anaconda and has been verified on 3.6 using the following modules:
 
-* Numpy 1.14   
-* Matplotlib 2.1
-* Scipy 1.0    
-* Astropy 2.0
+* Numpy 1.16   
+* Matplotlib >3.0
+* Scipy >1.0
+* Astropy >3.0
 
 
 .. _configure_astroconda_channel:
