@@ -414,8 +414,7 @@ def fshift(image, delx=0, dely=0, pad=False, cval=0.0):
     else:
         raise ValueError('Input image can only have 1 or 2 dimensions. \
                           Found {} dimensions.'.format(len(image.shape)))
-                          
-                          
+
                           
 def fourier_imshift(image, xshift, yshift, pad=False, cval=0.0):
     """Fourier shift image
@@ -759,7 +758,7 @@ def fix_nans_with_med(im, niter_max=5, verbose=False, **kwargs):
         
     return im
 
-    
+
 def image_rescale(HDUlist_or_filename, args_in, args_out, cen_star=True):
     """
     Scale the flux and rebin the image with a give pixel scale and distance
@@ -778,7 +777,7 @@ def image_rescale(HDUlist_or_filename, args_in, args_out, cen_star=True):
 
     Returns an HDUlist of the new image
     """
-    im_scale, dist = args_in
+    pixscale_in, dist_in = args_in
     pixscale_out, dist_new = args_out
 
     if isinstance(HDUlist_or_filename, six.string_types):
@@ -789,13 +788,13 @@ def image_rescale(HDUlist_or_filename, args_in, args_out, cen_star=True):
         raise ValueError("Input must be a filename or HDUlist")
 
     # By moving the image closer, we increased the flux (inverse square law)
-    image = (hdulist[0].data) * (dist / dist_new)**2
+    image = (hdulist[0].data) * (dist_in / dist_new)**2
     #hdulist.close()
 
     # We also increased the angle that the image subtends
     # So, each pixel would have a large angular size
     # New image scale in arcsec/pixel
-    imscale_new = im_scale * dist / dist_new
+    imscale_new = pixscale_in * dist_in / dist_new
 
     # Before rebinning, we want the flux in the central pixel to
     # always be in the central pixel (the star). So, let's save
