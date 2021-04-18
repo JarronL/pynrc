@@ -69,14 +69,55 @@ def slope_to_ramps(det, dark_cal_obj, im_slope=None, filter=None, pupil=None,
             
             >>> datetime.datetime(2016, 5, 9, 11, 57, 5, 796686)
             
-    file_out : str
-        Name (including directory) to save FITS file
+    file_out : str or None
+        Name (including directory) to save FITS file. 
+        If None, then won't save; make sure to set return_results=True.
     out_ADU : bool
         If true, divide by gain and convert to 16-bit UINT.
     DMS : bool
         Package the data in the format used by DMS?
     return_results : bool
         Return HDUList result?
+
+    Keyword Args
+    ============
+    return_full_ramp : bool
+        By default, we average groups and drop frames as specified in the
+        `det` input. If this keyword is set to True, then return all raw
+        frames within the ramp. The last set of `nd2` frames will be omitted.
+    include_dark : bool
+        Add dark current?
+    include_bias : bool
+        Add detector bias?
+    include_ktc : bool
+        Add kTC noise?
+    include_rn : bool
+        Add readout noise per frame?
+    include_cpink : bool
+        Add correlated 1/f noise to all amplifiers?
+    include_upink : bool
+        Add uncorrelated 1/f noise to each amplifier?
+    include_acn : bool
+        Add alternating column noise?
+    apply_ipc : bool
+        Include interpixel capacitance?
+    apply_ppc : bool
+        Apply post-pixel coupling to linear analog signal?
+    include_refinst : bool
+        Include reference/active pixel instabilities?
+    include_colnoise : bool
+        Add in column noise per integration?
+    col_noise : ndarray or None
+        Option to explicitly specify column noise distribution in
+        order to shift by one for subsequent integrations
+    amp_crosstalk : bool
+        Crosstalk between amplifiers?
+    add_crs : bool
+        Add cosmic ray events?
+    latents : None
+        Apply persistence.
+    linearity_map : ndarray
+        Add non-linearity.
     """
     import os
     import datetime
@@ -85,6 +126,9 @@ def slope_to_ramps(det, dark_cal_obj, im_slope=None, filter=None, pupil=None,
     # Number of saved frames in a ramp
     ma   = det.multiaccum
     nint = ma.nint
+
+    if (file_out is None) and (not return_results):
+        raise ValueError("Set either file_out or return_results=True")
         
     if DMS:
         is_cube = True if (im_slope is not None) and (len(im_slope.shape)==3) else False
@@ -1337,7 +1381,7 @@ def simulate_detector_ramp(det, dark_cal_obj, im_slope=None, out_ADU=False,
     keys = ['spat_det', 'spat_pink_corr', 'spat_pink_uncorr']
     cds_vals = [np.sqrt(np.mean(cds_dict[k]**2, axis=0)) for k in keys]
     # CDS Noise values
-    rd_noise_cds, c_pink_cds, u_pink_cds = cds_vals
+    # rd_noise_cds, c_pink_cds, u_pink_cds = cds_vals
     # Noise per frame
     rn, cp, up = cds_vals / np.sqrt(2)
     acn = 1
@@ -1529,80 +1573,3 @@ def simulate_detector_ramp(det, dark_cal_obj, im_slope=None, out_ADU=False,
     else:
         return ramp_resample(data, det, return_zero_frame=return_zero_frame)
 
-
-# npix = 20
-# arr = np.random.rand(npix) * 4000
-# arr[1] = 0
-# #arr[-1] = 2**16-1
-# 
-# pixel_time = 10. # usec
-# 
-# darr = np.roll(arr,-1) - arr
-# tarr = np.arange(100.) / pixel_time
-# tau = 1.5
-# vt = darr.reshape([-1,1])*(1-np.exp(-tarr.reshape([1,-1])/tau))
-# vt = vt.ravel()
-# 
-# arr_full = arr.repeat(len(tarr))
-# arr_new = np.roll(arr_full + vt, len(tarr))
-# 
-# tfull = np.arange(len(arr_new)) * pixel_time / len(tarr)
-# 
-# # Pixel sample times
-# t_sample = np.arange(npix)*pixel_time + 6.
-# v_sample = np.interp(t_sample, tfull, arr_new)
-# 
-# fig, ax = plt.subplots(1,1, figsize=(12,5))
-# ax.plot(tfull, arr_full)#[0:-20])
-# ax.plot(tfull, arr_new)
-# ax.xaxis.get_major_locator().set_params(nbins=9, steps=[1, 2, 5, 10])
-# 
-# fig.tight_layout()
-# 
-# from astropy.convolution import convolve
-# alpha = 0.018
-# kernel = np.array([0.0, 1-alpha, alpha])
-# arr_ppc = convolve(arr, kernel)
-# 
-# 
-# arr[1] = 0
-# arr[-1] = 2**16-1
-# # Convert to usec timestep
-# arr = arr.repeat(10)
-# 
-# from scipy.ndimage import gaussian_filter1d
-# res = gaussian_filter1d(arr, 1.5)
-# 
-# plt.clf()
-# plt.plot(arr[0:-20])
-# plt.plot(res[0:-20])
-# 
-# 
-# res = arr.copy()
-# res = res.reshape([npix,-1])
-# res[:, 0:3] = np.nan
-# res[:, -3:] = np.nan
-# res = res.ravel()
-# 
-# im_mask = np.isnan(res)
-# x = mask_helper() # Returns the nonzero (True) indices of a mask
-# res[im_mask]= np.interp(x(im_mask), x(~im_mask), res[~im_mask])
-# 
-# plt.clf()
-# plt.plot(arr[0:-20])
-# plt.plot(res[0:-20])
-# 
-# 
-# from scipy.signal import butter, filtfilt
-# b, a = butter(3, 0.2, btype='lowpass', analog=False)
-# res = filtfilt(b, a, arr)
-# 
-# from scipy.signal import savgol_filter
-# winsize = 5
-# res2 = savgol_filter(arr, winsize, 3)
-# 
-# plt.clf()
-# plt.plot(arr)
-# plt.plot(res)
-# #plt.plot(res2)
-# 
