@@ -17,7 +17,6 @@ from astropy.modeling import models, fitting
 
 # Multiprocessing
 import multiprocessing as mp
-import traceback
 
 # Program bar
 from tqdm.auto import trange, tqdm
@@ -414,7 +413,7 @@ class nircam_dark(object):
             super_dark_ramp, bias_off, masks_dict = res
 
             # Add residual bias offset
-            super_bias += bias_off
+            super_bias = self.super_bias + bias_off
             
             # Save updated superbias frame to directory
             hdu = fits.PrimaryHDU(super_bias)
@@ -1949,7 +1948,7 @@ def get_fits_data(fits_file, return_header=False, bias=None, reffix=False,
     bias : ndarray
         If specified, will subtract bias image from ramp.
     reffix : bool
-        Perform reference correction?
+        Perform reference correction? 
     DMS : bool
         Is the FITS file DMS format?
     int_ind : int
@@ -1962,15 +1961,47 @@ def get_fits_data(fits_file, return_header=False, bias=None, reffix=False,
         For instance `grp_ind=[0:10]` will select only
         the first 10 groups from the FITS cube.
     
-    Keyword Args
-    ============
-    'nchans': nchan, 
-    'altcol': True, 
-    'in_place': True,    
-    'fixcol': True, 
-    'avg_type': 'pixel', 
-    'savgol': True, 
-    'perint': False    
+    reffix Args
+    ===========
+    altcol : bool
+        Calculate separate reference values for even/odd columns. (default: True)
+    supermean : bool
+        Add back the overall mean of the reference pixels. (default: False)
+    top_ref : bool
+        Include top reference rows when correcting channel offsets. (default: True)
+    bot_ref : bool
+        Include bottom reference rows when correcting channel offsets. (default: True)
+    ntop : int
+        Specify the number of top reference rows. (default: 4)
+    nbot : int
+        Specify the number of bottom reference rows. (default: 4)
+    mean_func : func
+        Function used to calculate averages. (default: `robust.mean`)
+
+    left_ref : bool
+        Include left reference cols when correcting 1/f noise. (default: True)
+    right_ref : bool
+        Include right reference cols when correcting 1/f noise. (default: True)
+    nleft : int
+        Specify the number of left reference columns. (default: 4)
+    nright : int
+        Specify the number of right reference columns. (default: 4)
+    perint : bool
+        Smooth side reference pixel per integration, otherwise do frame-by-frame.
+        (default: False)
+    avg_type :str
+        Type of side column averaging to perform to determine ref pixel drift. 
+        Allowed values are 'pixel', 'frame', or 'int' (default: 'frame'):
+            * 'int'   : Subtract the avg value of all side ref pixels in ramp.
+            * 'frame' : For each frame, get avg of side ref pixels and subtract framewise.
+            * 'pixel' : For each ref pixel, subtract its avg value from all frames.
+
+    savgol : bool
+        Use Savitsky-Golay filter method rather than FFT. (default: True)
+    winsize : int
+        Size of the window filter. (default: 31)
+    order : int
+        Order of the polynomial used to fit the samples. (default: 3)
     """
     
     # Want to automatically determine if FITS files have DMS structure
@@ -2092,9 +2123,9 @@ def gen_super_bias(allfiles, DMS=False, mn_func=np.median, std_func=robust.std,
     """ Generate a Super Bias Image
 
     Read in a number of dark ramps, perform a polynomial fit to the data,
-    and return the average of all ibas offsets. This a very simple
-    procedure that is useful for estimating an initial bias image. Will
-    not work well for weird pixels. 
+    and return the average of all bias offsets. This a very simple
+    procedure that is useful for estimating an initial bias image. 
+    Will not work well for weird pixels. 
     """
     
     # Set logging to WARNING to suppress messages

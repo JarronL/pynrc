@@ -21,8 +21,6 @@ Modification History:
     - Deprecate nghxrg, SCANoise, and slope_to_ramp
     - Instead use slope_to_ramps
 """
-# Necessary for Python 2.6 and later
-#from __future__ import division, print_function
 from __future__ import absolute_import, division, print_function, unicode_literals
 
 import numpy as np
@@ -538,10 +536,6 @@ def gen_ramp_biases(ref_dict, nchan=None, data_shape=(2,2048,2048), ref_border=[
         ref_noise = std * pink_noise(nz)
         cube[:, mask_ref & mask_ch] += ref_noise.reshape([-1,1])
 
-        
-        # cube[:,mask_ref & mask_ch] += ref_inst[:,ch].reshape([-1,1])
-
-
     # Set even/odd offsets
     ######################
     mask_even = np.zeros([ny,nx]).astype('bool')
@@ -564,8 +558,8 @@ def fft_noise(pow_spec, nstep_out=None, fmin=None, f=None,
               pad_mode='edge', **kwargs):
     """ Random Noise from Power Spectrum
     
-    Returns a noised array where the instrinsic where the distribution
-    is follows that of the input power spectrum. The output has an
+    Returns a noised array where the instrinsic distribution
+    follows that of the input power spectrum. The output has an
     instrinsic standard deviation scaled to 1.0.
     
     Parameters
@@ -653,7 +647,7 @@ def fft_noise(pow_spec, nstep_out=None, fmin=None, f=None,
     the_std = 2 * np.sqrt(np.sum(w**2) + w_last**2) / n_ifft
     
     # Generate scaled random power + phase
-    sr = lin_spec
+    #sr = lin_spec
     sr = np.random.normal(scale=lin_spec)
     si = np.random.normal(scale=lin_spec)
 
