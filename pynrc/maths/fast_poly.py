@@ -1,10 +1,7 @@
-from __future__ import absolute_import, division, print_function, unicode_literals
+#from __future__ import absolute_import, division, print_function, unicode_literals
 
 import numpy as np
 from numpy.polynomial import legendre
-
-#import logging
-#_log = logging.getLogger('pynrc')
 
 def jl_poly(xvals, coeff, dim_reorder=False, use_legendre=False, lxmap=None, **kwargs):
     """Evaluate polynomial
@@ -94,7 +91,8 @@ def jl_poly(xvals, coeff, dim_reorder=False, use_legendre=False, lxmap=None, **k
         # Coefficients are assumed (deg+1,nx,ny)
         # xvals have length nz
         # Result to be ordered (nx,ny,nz)
-        yfit = np.dot(cf.T, xfan)
+        # Use np.matmul instead of np.dot for speed improvement
+        yfit = np.matmul(cf.T, xfan) # cf.T @ xfan 
 
         if ndim==1 or n==1: 
             yfit = yfit.ravel()
@@ -105,7 +103,8 @@ def jl_poly(xvals, coeff, dim_reorder=False, use_legendre=False, lxmap=None, **k
         # Coefficients are assumed (deg+1,ny,nx)
         # xvals have length nz
         # Result to be ordered (nz,ny,nx)
-        yfit = np.dot(xfan.T,cf)
+        # Use np.matmul instead of np.dot for speed improvement
+        yfit = np.matmul(xfan.T, cf) # xfan.T @ cf
 
         if ndim==1 or n==1: 
             yfit = yfit.ravel()
@@ -236,7 +235,8 @@ def jl_poly_fit(x, yvals, deg=1, QR=True, robust_fit=False, niter=25, use_legend
         # Perform QR decomposition of the A matrix
         q, r = np.linalg.qr(a.T, 'reduced')
         # computing Q^T*b (project b onto the range of A)
-        qTb = np.dot(q.T, b)
+        # Use np.matmul instead of np.dot for speed improvement
+        qTb = np.matmul(q.T, b) # q.T @ b 
         # solving R*x = Q^T*b
         coeff_all = np.linalg.lstsq(r, qTb, rcond=None)[0]
     else:
@@ -280,7 +280,8 @@ def jl_poly_fit(x, yvals, deg=1, QR=True, robust_fit=False, niter=25, use_legend
             ind_fit = outliers.sum(axis=0) > 0
             if ind_fit[ind_fit].size == 0: break
             if QR:
-                qTb = np.dot(q.T, yvals_fix[:,ind_fit])
+                # Use np.matmul instead of np.dot for speed improvement
+                qTb = np.matmul(q.T, yvals_fix[:,ind_fit]) # q.T @ yvals_fix[:,ind_fit]
                 coeff_all[:,ind_fit] = np.linalg.lstsq(r, qTb, rcond=None)[0]
             else:
                 coeff_all[:,ind_fit] = np.linalg.lstsq(a.T, yvals_fix[:,ind_fit], rcond=None)[0]
