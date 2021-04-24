@@ -647,9 +647,12 @@ def fft_noise(pow_spec, nstep_out=None, fmin=None, f=None,
     the_std = 2 * np.sqrt(np.sum(w**2) + w_last**2) / n_ifft
     
     # Generate scaled random power + phase
-    #sr = lin_spec
-    sr = np.random.normal(scale=lin_spec)
-    si = np.random.normal(scale=lin_spec)
+    # sr = lin_spec
+    # sr = np.random.normal(scale=lin_spec)
+    # si = np.random.normal(scale=lin_spec)
+    # For large numbers, faster to gen with scale=1, then multiply
+    sr = np.random.normal(size=len(lin_spec)) * lin_spec
+    si = np.random.normal(size=len(lin_spec)) * lin_spec
 
     # If the signal length is even, frequencies +/- 0.5 are equal
     # so the coefficient must be real.
@@ -691,6 +694,8 @@ def pink_noise(nstep_out, pow_spec=None, f=None, fmin=None, alpha=-1, **kwargs):
     fmin : float or None
         Low-frequency cutoff. Power spectrum values below this cut-off
         point get set equal to the power spectrum value at fmin.
+    alpha : float
+        Power spectrum index to generate if `pow_spec` is not specified directly.
     pad_mode : str or function
         One of the following string values or a user supplied function.
         Default is 'edge'.
@@ -739,7 +744,7 @@ def pink_noise(nstep_out, pow_spec=None, f=None, fmin=None, alpha=-1, **kwargs):
         pow_spec[0] = 0.
         
     if f is not None:
-        assert len(f)==len(pow_spec), "f and p_filter must be same size"
+        assert len(f)==len(pow_spec), "f and pow_spec must be same size"
         
     assert len(pow_spec)>=nstep_out, "Power spectrum must be greater than nstep_out"
             
