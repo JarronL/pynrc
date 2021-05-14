@@ -164,7 +164,8 @@ def disk_rim_model(a_asec, b_asec, pa=0, sig_asec=0.1, flux_frac=0.5,
 
 
 def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None, 
-            wind_mode='WINDOW', subsize=None, fov_pix=None, verbose=False, narrow=False):
+            wind_mode='WINDOW', subsize=None, fov_pix=None, verbose=False, narrow=False,
+            **kwargs):
     """
     For a given WFE drift and series of filters, create a list of 
     NIRCam observations.
@@ -215,7 +216,9 @@ def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None,
         fov_pix = subuse if fov_pix is None else fov_pix
 
         # Make sure fov_pix is odd for direct imaging
-        if (mask is None) and (np.mod(fov_pix,2)==0):
+        # if (mask is None) and (np.mod(fov_pix,2)==0):
+        #     fov_pix += 1
+        if np.mod(fov_pix,2)==0:
             fov_pix += 1
         # Other coronagraph vs direct imaging settings
         module, oversample = ('B', 4) if mask is None else ('A', 2)
@@ -232,7 +235,8 @@ def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None,
         obs_dict[key] = obs_hci(sp_sci, sp_ref, dist, filter=filt, mask=mask, pupil=pupil, module=module,
                                 wfe_ref_drift=wfe_ref_drift, fov_pix=fov_pix, oversample=oversample, 
                                 wind_mode=wind_mode, xpix=subuse, ypix=subuse,
-                                disk_hdu=hdu_disk, verbose=verbose, bar_offset=bar_offset)
+                                disk_hdu=hdu_disk, verbose=verbose, bar_offset=bar_offset,
+                                **kwargs)
         fov_pix = fov_pix_orig
 
         # if there's a disk input, then we want to remove disk 
