@@ -1024,7 +1024,7 @@ def wfed_coeff(filter_or_bp, force=False, save=True, save_name=None, nsplit=None
         try:
             # cf_wfe = pool.map(_wrap_wfed_coeff_for_mp, worker_args)
             with mp.Pool(nsplit) as pool:
-                for res in tqdm(pool.imap_unordered(_wrap_wfed_coeff_for_mp, worker_args), total=npos):
+                for res in tqdm(pool.imap(_wrap_wfed_coeff_for_mp, worker_args), total=npos, leave=False):
                     cf_wfe.append(res)
                 pool.close()
 
@@ -1258,7 +1258,7 @@ def field_coeff_resid(filter_or_bp, coeff0, force=False, save=True, save_name=No
         # pool = mp.Pool(nsplit)
         try:
             with mp.Pool(nsplit) as pool:
-                for res in tqdm(pool.imap_unordered(_wrap_field_coeff_for_mp, worker_args), total=ntot):
+                for res in tqdm(pool.imap(_wrap_field_coeff_for_mp, worker_args), total=ntot, leave=False):
                     cf_fields.append(res)
                 pool.close()
 
