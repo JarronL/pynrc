@@ -2876,10 +2876,12 @@ class source_spectrum(object):
         norm = np.mean(yvals)
 
         resid = (mod_interp - yvals)
-        if use_err: resid /= evals
+        if use_err: 
+            resid /= evals
 
         # Return non-NaN normalized values
-        return resid[~np.isnan(resid)] / norm
+        ind_good = np.isfinite(resid)
+        return resid[ind_good] / norm
 
     def fit_SED(self, x0=None, robust=True, use_err=True, IR_excess=False,
                  wlim=[0.3,10], verbose=True):
@@ -3464,7 +3466,7 @@ def linder_table(file=None, **kwargs):
     
     return tbl
     
-def linder_filter(table, filt, age, dist=10, cond_interp=True, cond_file=None, **kwargs):
+def linder_filter(table, filt, age, dist=10, cond_file=None, **kwargs):
     """Linder Mags vs Mass Arrays
     
     Given a Linder table, NIRCam filter, and age, return arrays of MJup 
@@ -3763,7 +3765,6 @@ def cond_table(age=None, file=None, **kwargs):
     ind2 = np.array(ind2)-1
 
     # Everything is Gyr, but prefer Myr
-    ages_str = np.array(times_gyr)
     ages_gyr = np.array(times_gyr, dtype='float64')
     ages_myr = np.array(ages_gyr * 1000, dtype='int')
     #times = ['{:.0f}'.format(a) for a in ages_myr]
