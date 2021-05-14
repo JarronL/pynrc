@@ -477,7 +477,7 @@ class obs_hci(nrc_hci):
 
         if verbose: 
             print("Creating NIRCam reference class...")
-        self._gen_ref(verbose=False)
+        self._gen_ref(verbose=False, quick=kwargs.get('quick'))
 
         # Rescale input disk image to observation parameters
         self._disk_hdulist_input = disk_hdu
@@ -610,9 +610,10 @@ class obs_hci(nrc_hci):
                                           x0=x0, y0=y0, verbose=False)
         except AttributeError:
             if verbose: print("Creating NIRCam reference class...")
-            self._gen_ref(verbose=verbose)
+            quick = kwargs.get('quick')
+            self._gen_ref(verbose=verbose, quick=quick)
 
-    def _gen_ref(self, verbose=False):
+    def _gen_ref(self, quick=None, verbose=False):
         """
         Function to generate Reference observation class.
         Used only to keep track of detector and multiaccum config,
@@ -637,7 +638,7 @@ class obs_hci(nrc_hci):
 
         nrc = NIRCam(filter=self.filter, pupil=self.pupil, mask=self.mask,
                      module=self.module, wind_mode=wind_mode, xpix=xpix, ypix=ypix,
-                     x0=x0, y0=y0)
+                     x0=x0, y0=y0, quick=quick)
 
         self.nrc_ref = nrc
 
@@ -1169,7 +1170,7 @@ class obs_hci(nrc_hci):
 
         return image
 
-    def gen_roll_image(self, PA1=0, PA2=10, zfact=None, oversample=None,
+    def gen_roll_image(self, PA1=0, PA2=10, oversample=None,
         no_ref=False, opt_diff=True, fix_sat=False, ref_scale_all=False, 
         wfe_drift0=0, wfe_ref_drift=None, wfe_roll_drift=None, **kwargs):
         """Make roll-subtracted image.

@@ -1477,7 +1477,7 @@ class NIRCam(object):
             try: quick = self._psf_info['quick']
             except (AttributeError, KeyError): 
                 # Turn on `quick` narrowband filter
-                quick = True if 'N' in self.filter else False        
+                quick = True #if 'N' in self.filter else False        
             
         if jitter=='none':
             jitter = None
@@ -1561,9 +1561,9 @@ class NIRCam(object):
             self._psf_info_bg = {'fov_pix':self._fov_pix_bg, 'oversample':oversample, 
                 'offset_r':0, 'offset_theta':0, 'bar_offset': 0, 'tel_pupil':tel_pupil, 
                 'opd':opd, 'jitter':jitter, 'jitter_sigma':jitter_sigma, 'use_legendre':use_legendre, 
-                'include_si_wfe':include_si_wfe, 'save':save, 'force':force}
-            self._psf_coeff_bg, self._psf_coeff_bg_hdr = gen_psf_coeff(self.bandpass, self.pupil, None, self.module, 
-                **self._psf_info_bg)
+                'include_si_wfe':include_si_wfe, 'save':save, 'force':force, 'quick':quick}
+            self._psf_coeff_bg, self._psf_coeff_bg_hdr = gen_psf_coeff(self.bandpass, pupil=self.pupil, mask=None, 
+                module=self.module, **self._psf_info_bg)
 
             # Update off-axis WFE drift
             if self._wfe_drift:
