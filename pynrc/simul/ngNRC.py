@@ -1302,7 +1302,7 @@ def simulate_detector_ramp(det, dark_cal_obj, im_slope=None, out_ADU=False,
     
     """ Return a single simulated ramp
     
-    The output will be in raw detector coordiantes.
+    The output will be in raw detector coordinates.
     
     Parameters
     ==========

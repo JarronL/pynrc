@@ -2555,7 +2555,7 @@ def gen_super_dark(allfiles, super_bias=None, DMS=False, **kwargs):
 def gen_super_ramp(allfiles, super_bias=None, DMS=False, **kwargs):
     """
     Average together all linearity ramps to create a super ramp.
-    Subtracts a biass frame to determine more appropriate pixel
+    Subtracts a bias frame to determine more appropriate pixel
     by pixel average. Tries to decipher t=0 intercept for odd 
     behaving pixels.
     """
