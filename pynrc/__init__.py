@@ -67,18 +67,20 @@ class Conf(_config.ConfigNamespace):
 
 conf = Conf()
 
+# from webbpsf_ext import robust
 
-from .logging_utils import setup_logging#, restart_logging
+from .logging_utils import setup_logging
 setup_logging(conf.default_logging_level, verbose=False)
 
-from .nrc_utils import (read_filter, pix_noise, bp_2mass, bp_wise, \
-                        stellar_spectrum, source_spectrum, planets_sb12)
+from .nrc_utils import read_filter, bp_2mass, bp_wise
+from .nrc_utils import pix_noise
+from .nrc_utils import stellar_spectrum, source_spectrum, planets_sb12
 
-from .pynrc_core import (DetectorOps, NIRCam)
+from .pynrc_core import DetectorOps, NIRCam
 
-from .obs_nircam import (obs_hci, nrc_hci)
+from .obs_nircam import obs_hci, nrc_hci
 
-from .detops import (multiaccum, det_timing, nrc_header)
+from .detops import multiaccum, det_timing, nrc_header
 
 #from .ngNRC import slope_to_ramp, nproc_use_ng
 

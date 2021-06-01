@@ -8,6 +8,8 @@ import datetime, time
 import logging
 _log = logging.getLogger('pynrc')
 
+from webbpsf_ext.webbpsf_ext_core import _check_list
+
 class multiaccum(object):
     """
     A class for defining MULTIACCUM ramp settings.
@@ -219,8 +221,8 @@ class multiaccum(object):
             self._nd1 = 0
             self._nd2 = nd2
             self._nd3 = 0
-            _log.info('Setting nf={}, nd1={}, nd2={}, nd3={}.'\
-                     .format(self.nf, self.nd1, self.nd2, self.nd3))
+            _log.info('Setting ngroup={}, nf={}, nd1={}, nd2={}, nd3={}.'\
+                     .format(self.ngroup, self.nf, self.nd1, self.nd2, self.nd3))
 
 
     def _check_custom(self, val_new, val_orig):
@@ -934,21 +936,7 @@ class det_timing(object):
             return data.ravel()
         else: # Get rid of dimensions of length 1
             return data.squeeze()
-        
-        
-def _check_list(value, temp_list, var_name=None):
-    """
-    Helper function to test if a value exists within a list. 
-    If not, then raise ValueError exception.
-    This is mainly used for limiting the allowed values of some variable.
-    """
-    if value not in temp_list:
-        # Replace None value with string for printing
-        if None in temp_list: temp_list[temp_list.index(None)] = 'None'
-        var_name = '' if var_name is None else var_name + ' '
-        err_str = "Invalid {}setting: {} \n\tValid values are: {}" \
-                         .format(var_name, value, ', '.join(temp_list))
-        raise ValueError(err_str)
+
 
 def tuples_to_dict(pairs, verbose=False):
     """

@@ -1,4 +1,3 @@
-from __future__ import absolute_import, division, print_function, unicode_literals
 import numpy as np
 import logging
 _log = logging.getLogger('pynrc')
@@ -10,11 +9,8 @@ _log = logging.getLogger('pynrc')
 import numpy as np
 import pynrc
 from pynrc.maths import robust
-#from pynrc.maths import nrc_utils
+from pynrc import DetectorOps, setup_logging, conf
 from scipy.signal import savgol_filter
-
-#from . import *
-#from .nrc_utils import *
 
 
 ### # import matplotlib
@@ -171,16 +167,16 @@ class NRC_refs(object):
                 wind_mode = 'FULL'
             else:
                 # Turn off log warnings
-                log_prev = pynrc.conf.logging_level
-                pynrc.setup_logging('ERROR', verbose=False)
+                log_prev = conf.logging_level
+                setup_logging('ERROR', verbose=False)
                 # Test if STRIPE or WINDOW
-                det_stripe = pynrc.DetectorOps(detector, 'STRIPE', xpix, ypix, x0, y0)
-                det_window = pynrc.DetectorOps(detector, 'WINDOW', xpix, ypix, x0, y0)
+                det_stripe = DetectorOps(detector, 'STRIPE', xpix, ypix, x0, y0)
+                det_window = DetectorOps(detector, 'WINDOW', xpix, ypix, x0, y0)
                 dt_stripe = np.abs(header['TFRAME'] - det_stripe.time_frame)
                 dt_window = np.abs(header['TFRAME'] - det_window.time_frame)
                 wind_mode = 'STRIPE' if dt_stripe<dt_window else 'WINDOW'
                 # Restore previous log levels
-                pynrc.setup_logging(log_prev, verbose=False)
+                setup_logging(log_prev, verbose=False)
 
         # Add MultiAccum info
         hnames = ['READPATT', 'NINTS', 'NGROUPS'] if DMS else ['READOUT',  'NINT',  'NGROUP']
@@ -192,7 +188,7 @@ class NRC_refs(object):
         ma_args = {'read_mode':read_mode, 'nint':nint, 'ngroup':ngroup}
                 
         # Create detector class
-        self.detector = pynrc.DetectorOps(detector, wind_mode, xpix, ypix, x0, y0, **ma_args)
+        self.detector = DetectorOps(detector, wind_mode, xpix, ypix, x0, y0, **ma_args)
 
     @property
     def multiaccum(self):

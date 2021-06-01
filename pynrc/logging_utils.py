@@ -38,7 +38,7 @@ def restart_logging(verbose=True):
     """
 
     level = str(conf.logging_level).upper()
-    lognames = ['pynrc', 'webbpsf', 'poppy']
+    lognames = ['pynrc', 'webbpsf_ext', 'webbpsf', 'poppy']
 
     root_logger = logging.getLogger()
     root_logger.handlers = []

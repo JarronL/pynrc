@@ -1298,7 +1298,7 @@ def simulate_detector_ramp(det, dark_cal_obj, im_slope=None, out_ADU=False,
                            include_acn=True, apply_ipc=True, apply_ppc=True, 
                            include_refinst=True, include_colnoise=True, col_noise=None,
                            amp_crosstalk=True, add_crs=True, latents=None, linearity_map=None, 
-                           return_zero_frame=None, return_full_ramp=False, prog_bar=True):
+                           return_zero_frame=None, return_full_ramp=False, prog_bar=True, **kwargs):
     
     """ Return a single simulated ramp
     

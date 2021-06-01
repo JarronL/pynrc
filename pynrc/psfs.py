@@ -5,8 +5,6 @@ import six, os
 
 # Import libraries
 import numpy as np
-import matplotlib
-import matplotlib.pyplot as plt
 
 import datetime, time
 import sys, platform
@@ -14,10 +12,9 @@ import multiprocessing as mp
 import traceback
 
 import scipy
-from scipy.interpolate import griddata, RegularGridInterpolator, interp1d
-from numpy.polynomial import legendre
+from scipy.interpolate import griddata, RegularGridInterpolator
 
-from astropy.io import fits, ascii
+from astropy.io import fits
 import astropy.units as u
 
 import logging
@@ -37,6 +34,8 @@ from tqdm.auto import trange, tqdm
 
 __epsilon = np.finfo(float).eps
 
+from webbpsf_ext.psfs import nproc_use, gen_image_from_coeff
+
 ###########################################################################
 #
 #    WebbPSF Stuff
@@ -44,19 +43,17 @@ __epsilon = np.finfo(float).eps
 ###########################################################################
 
 try:
-    import webbpsf
+    import webbpsf_ext
 except ImportError:
-    raise ImportError('WebbPSF is not installed. pyNRC depends on its inclusion.')
+    raise ImportError('webbpsf_ext is not installed. pyNRC depends on its inclusion.')
+import webbpsf, poppy
+from webbpsf.opds import OTE_Linear_Model_WSS
+
 # Check that minimum required version meets requirements
 on_rtd = os.environ.get('READTHEDOCS') == 'True'
 if not on_rtd:
     _webbpsf_version_min = (0,9,0)
     _ = webbpsf.utils.get_webbpsf_data_path(_webbpsf_version_min)
-
-from webbpsf.opds import OTE_Linear_Model_WSS
-
-# Link to WebbPSF's instance of poppy
-from webbpsf.webbpsf_core import poppy
 
 # Set up some poppy and webbpsf defaults
 # Turn off multiprocessing, which is faster now due to improved
@@ -68,12 +65,6 @@ poppy.conf.use_multiprocessing = False
 # It also doesn't play well with multiprocessing
 poppy.conf.use_fftw = False
 
-# Make sure we can use multiprocessing!
-# Apple's Accelerate framework in 2.7 doesn't work with mp
-d = np.__config__.blas_opt_info
-accel_bool = ('extra_link_args' in d.keys() and ('-Wl,Accelerate' in d['extra_link_args']))
-if (sys.version_info < (3,4,0)) and (platform.system()=='Darwin') and accel_bool:
-    poppy.conf.use_multiprocessing = False
 # If the machine has 2 or less CPU cores, then no mp
 if mp.cpu_count()<3:
     poppy.conf.use_multiprocessing = False
@@ -110,106 +101,6 @@ class webbpsf_NIRCam_mod(webbpsf_NIRCam):
         #         self._detector_npixels - 1))
 
         self._detector_position = (int(position[0]), int(position[1]))
-
-
-def nproc_use(fov_pix, oversample, nwavelengths, coron=False):
-    """Estimate Number of Processors
-
-    Attempt to estimate a reasonable number of processors to use
-    for a multi-wavelength calculation. One really does not want
-    to end up swapping to disk with huge arrays.
-
-    NOTE: Requires ``psutil`` package. Otherwise defaults to ``mp.cpu_count() / 2``
-
-    Parameters
-    -----------
-    fov_pix : int
-        Square size in detector-sampled pixels of final PSF image.
-    oversample : int
-        The optical system that we will be calculating for.
-    nwavelengths : int
-        Number of wavelengths.
-    coron : bool
-        Is the nproc recommendation for coronagraphic imaging?
-        If so, the total RAM usage is different than for direct imaging.
-    """
-
-    try:
-        import psutil
-    except ImportError:
-        nproc = int(mp.cpu_count() // 2)
-        if nproc < 1: nproc = 1
-
-        _log.info("No psutil package available, cannot estimate optimal nprocesses.")
-        _log.info("Returning nproc=ncpu/2={}.".format(nproc))
-        return nproc
-
-    mem = psutil.virtual_memory()
-    avail_GB = mem.available / 1024**3
-    # Leave 10% for other things
-    avail_GB *= 0.9
-
-    fov_pix_over = fov_pix * oversample
-
-    # For multiprocessing, memory accumulates into the main process
-    # so we have to subtract the total from the available amount
-    reserve_GB = nwavelengths * fov_pix_over**2 * 8 / 1024**3
-    # If not enough available memory, then just return nproc=1
-    if avail_GB < reserve_GB:
-        _log.warn('Not enough available memory ({} GB) to \
-                   to hold resulting PSF info ({} GB)!'.\
-                   format(avail_GB,reserve_GB))
-        return 1
-
-    avail_GB -= reserve_GB
-
-    # Memory formulas are based on fits to memory usage stats for:
-    #   fov_arr = np.array([16,32,128,160,256,320,512,640,1024,2048])
-    #   os_arr = np.array([1,2,4,8])
-    if coron:  # Coronagraphic Imaging (in MB)
-        mem_total = (oversample*1024*2.4)**2 * 16 / (1024**2) + 500
-        if fov_pix > 1024: mem_total *= 1.6
-    else:  # Direct Imaging (also spectral imaging)
-        mem_total = 5*(fov_pix_over)**2 * 8 / (1024**2) + 300.
-
-    # Convert to GB
-    mem_total /= 1024
-
-    # How many processors to split into?
-    nproc = int(avail_GB / mem_total)
-    nproc = np.min([nproc, mp.cpu_count(), poppy.conf.n_processes])
-
-    # Each PSF calculation will constantly use multiple processors
-    # when not oversampled, so let's divide by 2 for some time
-    # and memory savings on those large calculations
-    if oversample==1:
-        nproc = np.ceil(nproc / 2)
-
-    _log.debug('avail mem {}; mem tot: {}; nproc_init: {:.0f}'.\
-        format(avail_GB, mem_total, nproc))
-
-    nproc = np.min([nproc, nwavelengths])
-    # Resource optimization:
-    # Split iterations evenly over processors to free up minimally used processors.
-    # For example, if there are 5 processes only doing 1 iteration, but a single
-    #	processor doing 2 iterations, those 5 processors (and their memory) will not
-    # 	get freed until the final processor is finished. So, to minimize the number
-    #	of idle resources, take the total iterations and divide by two (round up),
-    #	and that should be the final number of processors to use.
-    np_max = np.ceil(nwavelengths / nproc)
-    nproc = int(np.ceil(nwavelengths / np_max))
-
-    if nproc < 1: nproc = 1
-
-    # Multiprocessing can only swap up to 2GB of data from the child
-    # process to the master process. Return nproc=1 if too much data.
-    im_size = (fov_pix_over)**2 * 8 / (1024**3)
-    nproc = 1 if (im_size * np_max) >=2 else nproc
-
-    _log.debug('avail mem {}; mem tot: {}; nproc_fin: {:.0f}'.\
-        format(avail_GB, mem_total, nproc))
-
-    return int(nproc)
 
 
 def _wrap_coeff_for_mp(args):

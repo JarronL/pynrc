@@ -1,9 +1,6 @@
-# Necessary for Python 2.6 and later
-#from __future__ import division, print_function
 from __future__ import absolute_import, division, print_function, unicode_literals
 
 import numpy as np
-import datetime, os
 
 from astropy.io import fits
 from astropy.table import Table
@@ -15,11 +12,6 @@ from astropy import units as u
 import pysiaf
 from pysiaf import rotations
 from jwst.datamodels import Level1bModel
-
-from pynrc.maths.coords import det_to_sci, sci_to_det
-
-# Program bar
-from tqdm.auto import trange, tqdm
 
 def dec_to_base36(val):
     """Convert decimal number to base 36 (0-Z)"""
