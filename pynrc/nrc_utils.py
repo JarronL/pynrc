@@ -54,9 +54,6 @@ from .maths.coords import *
 # from .maths.coords import dist_image, xy_to_rtheta, rtheta_to_xy, xy_rot
 # from .maths.coords import det_to_sci, sci_to_det, plotAxes
 
-# OPD info
-from .opds import opd_default, OPDFile_to_HDUList
-
 ###########################################################################
 #    Logging info
 ###########################################################################

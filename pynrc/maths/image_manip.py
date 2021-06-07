@@ -23,8 +23,7 @@ def shift_subtract(params, reference, target, mask=None, pad=False,
                    shift_function=fshift):
     """Shift and subtract image
     
-    Use Fourier Shift theorem for subpixel shifts for 
-    input into least-square optimizer.
+    Subpixel shifts for input into least-square optimizer.
     
     Parameters
     ----------
@@ -106,7 +105,7 @@ def align_LSQ(reference, target, mask=None, pad=False,
     #                args=(reference,target,mask,pad,shift_function))
 
     #results = [out[0],out[1],out[2]] #x,y,beta
-    return res.x
+    return out
 
 
 # Fix NaN values
