@@ -20,8 +20,7 @@ import astropy.units as u
 import logging
 _log = logging.getLogger('pynrc')
 
-from . import conf
-from .logging_utils import setup_logging
+from .logging_utils import conf, setup_logging
 
 from .nrc_utils import read_filter, S, grism_res
 from .opds import opd_default, OPDFile_to_HDUList

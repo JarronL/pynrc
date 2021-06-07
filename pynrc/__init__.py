@@ -6,8 +6,9 @@ pyNRC is a set of Python-based tools for planning observations with JWST NIRCam,
 such as an ETC, a simple image slope simulator, and an enhanced data simulator.
 This package works for a variety of NIRCam observing modes including direct imaging, 
 coronagraphic imaging, slitless grism spectroscopy, DHS observations, 
-and weak lens imaging. All PSFs are generated via WebbPSF 
-(https://webbpsf.readthedocs.io) to reproduce realistic JWST images and spectra.
+and weak lens imaging. All PSFs are generated via webbpsf (https://webbpsf.readthedocs.io) 
+and webbpsf_ext (https://github.com/JarronL/webbpsf_ext) to reproduce realistic JWST 
+images and spectra.
 
 Developed by Jarron Leisenring and contributors at University of Arizona (2015-21).
 """
@@ -84,7 +85,7 @@ from .detops import multiaccum, det_timing, nrc_header
 
 #from .ngNRC import slope_to_ramp, nproc_use_ng
 
-from .maths import *
+from .maths import coords, robust, fast_poly, image_manip
 
 from .simul import ngNRC
 

@@ -43,11 +43,11 @@ def restart_logging(verbose=True):
     root_logger = logging.getLogger()
     root_logger.handlers = []
 
-    if level in ['DEBUG', 'INFO', 'WARN', 'WARNING', 'ERROR', 'CRITICAL']:
+    if level in ['DEBUG', 'INFO', 'WARN', 'ERROR', 'CRITICAL']:
         level_id = getattr(logging, level)  # obtain one of the DEBUG, INFO, WARN,
                                             # or ERROR constants
         if verbose:
-            print("pyNRC log messages of level {0} and above will be shown.".format(level))
+            print(f"webbpsf_ext log messages of level {level} and above will be shown.")
     elif level == 'NONE':
         root_logger.handlers = []  # n.b. this will clear any handlers other libs/users configured
         return
