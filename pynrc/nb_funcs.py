@@ -22,7 +22,7 @@ import logging
 _log = logging.getLogger('nb_funcs')
 
 import pynrc
-pynrc.setup_logging('WARNING', verbose=False)
+pynrc.setup_logging('WARN', verbose=False)
 
 """
 Common functions for notebook simulations and plotting.
@@ -932,9 +932,9 @@ def plot_planet_patches(ax, obs, age=10, entropy=13, mass_list=[10,5,2,1], av_va
         ax.set_title('{} -- {}{}'.format(obs.filter,ent_str,av_str))
 
 
-def plot_hdulist(hdulist, xr=None, yr=None, ax=None, return_ax=False,
+def plot_hdulist(hdulist, ext=0, xr=None, yr=None, ax=None, return_ax=False,
     cmap=None, scale='linear', vmin=None, vmax=None, axes_color='white',
-    half_pix_shift=True, cb_label='Counts/sec', **kwargs):
+    half_pix_shift=False, cb_label='Counts/sec', **kwargs):
 
     from webbpsf import display_psf
 
@@ -949,21 +949,21 @@ def plot_hdulist(hdulist, xr=None, yr=None, ax=None, return_ax=False,
     # However, even array sizes will have (0,0) at the pixel border,
     # so this just shifts the entire image accordingly.
     if half_pix_shift:
-        oversamp = hdulist[0].header['OVERSAMP']
+        oversamp = hdulist[ext].header['OVERSAMP']
         shft = 0.5*oversamp
         hdul = deepcopy(hdulist)
         hdul[0].data = fshift(hdul[0].data, shft, shft)
     else:
         hdul = hdulist
 
-    data = hdul[0].data
+    data = hdul[ext].data
     if vmax is None:
         vmax = 0.75 * np.nanmax(data) if scale=='linear' else np.nanmax(data)
     if vmin is None:
         vmin = 0 if scale=='linear' else vmax/1e6
 
     
-    out = display_psf(hdul, ax=ax, title='', cmap=cmap,
+    out = display_psf(hdul, ext=ext, ax=ax, title='', cmap=cmap,
                       scale=scale, vmin=vmin, vmax=vmax, return_ax=True, **kwargs)
     try:
         ax, cb = out

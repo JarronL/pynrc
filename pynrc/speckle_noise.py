@@ -10,7 +10,7 @@ from pynrc.nrc_utils import webbpsf, poppy, offset_bar
 import astropy.io.fits as fits
 import multiprocessing as mp
 
-pynrc.setup_logging('WARNING', verbose=False)
+pynrc.setup_logging('WARN', verbose=False)
 
 from poppy import zernike
 from poppy.optics import MultiHexagonAperture

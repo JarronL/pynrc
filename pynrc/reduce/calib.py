@@ -756,7 +756,7 @@ class nircam_dark(object):
             
         # Suppress info logs
         log_prev = pynrc.conf.logging_level
-        pynrc.setup_logging('WARNING', verbose=False)
+        pynrc.setup_logging('WARN', verbose=False)
 
         tarr_all = []
         for i, patt in enumerate(patterns):
@@ -2130,7 +2130,7 @@ def gen_super_bias(allfiles, DMS=False, mn_func=np.median, std_func=robust.std,
     
     # Set logging to WARNING to suppress messages
     log_prev = pynrc.conf.logging_level
-    pynrc.setup_logging('WARNING', verbose=False)
+    pynrc.setup_logging('WARN', verbose=False)
 
     kw = kwargs.copy()
     kw['deg'] = deg
@@ -2368,7 +2368,7 @@ def gen_super_dark(allfiles, super_bias=None, DMS=False, **kwargs):
     
     # Set logging to WARNING to suppress messages
     log_prev = pynrc.conf.logging_level
-    pynrc.setup_logging('WARNING', verbose=False)
+    pynrc.setup_logging('WARN', verbose=False)
 
     if super_bias is None:
         super_bias = 0
@@ -2562,7 +2562,7 @@ def gen_super_ramp(allfiles, super_bias=None, DMS=False, **kwargs):
 
     # Set logging to WARNING to suppress messages
     log_prev = pynrc.conf.logging_level
-    pynrc.setup_logging('WARNING', verbose=False)
+    pynrc.setup_logging('WARN', verbose=False)
 
     if super_bias is None:
         super_bias = 0
@@ -2793,7 +2793,7 @@ def gen_col_variations(allfiles, super_bias=None, super_dark_ramp=None,
 
     # Set logging to WARNING to suppress messages
     log_prev = pynrc.conf.logging_level
-    pynrc.setup_logging('WARNING', verbose=False)
+    pynrc.setup_logging('WARN', verbose=False)
 
     hdr = fits.getheader(allfiles[0])
     det = create_detops(hdr, DMS=DMS)
@@ -3478,7 +3478,7 @@ def calc_eff_noise(allfiles, superbias=None, temporal=True, spatial=True,
     """
 
     log_prev = pynrc.conf.logging_level
-    pynrc.setup_logging('WARNING', verbose=False)
+    pynrc.setup_logging('WARN', verbose=False)
 
     hdr = fits.getheader(allfiles[0])
     det = create_detops(hdr, DMS=DMS)
@@ -4449,7 +4449,7 @@ def get_power_spec_all(allfiles, super_bias=None, det=None, DMS=False, include_o
 
     # Set logging to WARNING to suppress messages
     log_prev = pynrc.conf.logging_level
-    pynrc.setup_logging('WARNING', verbose=False)
+    pynrc.setup_logging('WARN', verbose=False)
 
     if super_bias is None:
         super_bias = 0
