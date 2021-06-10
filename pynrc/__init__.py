@@ -12,9 +12,6 @@ images and spectra.
 
 Developed by Jarron Leisenring and contributors at University of Arizona (2015-21).
 """
-from __future__ import absolute_import, division, print_function, unicode_literals
-
-
 from .version import __version__
 
 import astropy
@@ -51,8 +48,12 @@ class Conf(_config.ConfigNamespace):
     PYNRC_PATH = _config.ConfigItem(path, 'Directory path to data files \
                                     required for pynrc calculations.')
 
+    autoconfigure_logging = _config.ConfigItem(
+        False,
+        'Should pynrc configure logging for itself and others?'
+    )
     logging_level = _config.ConfigItem(
-        ['INFO', 'DEBUG', 'WARN', 'WARNING', 'ERROR', 'CRITICAL', 'NONE'],
+        ['INFO', 'DEBUG', 'WARN', 'ERROR', 'CRITICAL', 'NONE'],
         'Desired logging level for pyNRC.'
     )
     default_logging_level = _config.ConfigItem('INFO', 

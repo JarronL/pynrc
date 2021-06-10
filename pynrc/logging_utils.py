@@ -1,10 +1,11 @@
-from __future__ import print_function
 import sys
+from webbpsf_ext.logging_utils import setup_logging as setup_logging_wext
+
+from . import conf
 
 import logging
 _log = logging.getLogger('pynrc')
 
-from . import conf
 
 _DISABLE_FILE_LOGGING_VALUE = 'none'
 
@@ -38,7 +39,7 @@ def restart_logging(verbose=True):
     """
 
     level = str(conf.logging_level).upper()
-    lognames = ['pynrc', 'webbpsf_ext', 'webbpsf', 'poppy']
+    lognames = ['pynrc', 'webbpsf', 'poppy']
 
     root_logger = logging.getLogger()
     root_logger.handlers = []
@@ -47,7 +48,7 @@ def restart_logging(verbose=True):
         level_id = getattr(logging, level)  # obtain one of the DEBUG, INFO, WARN,
                                             # or ERROR constants
         if verbose:
-            print(f"webbpsf_ext log messages of level {level} and above will be shown.")
+            print(f"pyNRC log messages of level {level} and above will be shown.")
     elif level == 'NONE':
         root_logger.handlers = []  # n.b. this will clear any handlers other libs/users configured
         return
@@ -104,6 +105,12 @@ def setup_logging(level='INFO', filename=None, verbose=True):
     By default, this sets up log messages to be written to the screen, 
     but the user can also request logging to a file.
 
+    Editing the WebbPSF config file to set `autoconfigure_logging = True`
+    (and any of the logging settings you wish to persist) instructs
+    WebbPSF to apply your settings on import. (This is not
+    done by default in case you have configured `logging` yourself
+    and don't wish to overwrite your configuration.)
+
     For more advanced log handling, see the Python logging module's
     own documentation.
 
@@ -145,3 +152,5 @@ def setup_logging(level='INFO', filename=None, verbose=True):
 
     conf.logging_filename = filename
     restart_logging(verbose=verbose)
+
+    setup_logging_wext(level=level, filename=filename, verbose=False)

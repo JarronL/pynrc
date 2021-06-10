@@ -10,6 +10,9 @@ from webbpsf_ext.webbpsf_ext_core import _check_list
 
 import pysiaf
 
+from . import conf
+from .logging_utils import setup_logging
+
 import logging
 _log = logging.getLogger('pynrc')
 
@@ -652,7 +655,7 @@ class NIRCam(NIRCam_ext):
         self._det_info = merge_dicts(kw1,kw2)
 
         if verbose:
-            print('New Ramp Settings:')
+            print('New Ramp Settings')
             keys = ['read_mode', 'nf', 'nd2', 'ngroup', 'nint']
             for k in keys:
                 v = self.det_info[k]
@@ -903,7 +906,10 @@ class NIRCam(NIRCam_ext):
         ts_filters = ['F277W','F356W','F444W','F322W2']
         # Coronagraphic bar filters
         swb_filters = ['F182M','F187N','F210M','F212N','F200W']
-        lwb_filters = ['F250M','F300M','F277W','F335M','F360M','F356W','F410M','F430M','F460M','F480M','F444W']
+        lwb_filters = [
+            'F250M','F300M','F277W','F335M','F360M',
+            'F356W','F410M','F430M','F460M','F480M','F444W'
+            ]
 
         # Coronagraphy
         if is_coron:

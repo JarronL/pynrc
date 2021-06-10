@@ -42,7 +42,8 @@ from astropy.time import Time
 from scipy.interpolate import griddata, RegularGridInterpolator, interp1d
 from numpy.polynomial import legendre
 
-from .logging_utils import conf, setup_logging
+from . import conf
+from .logging_utils import setup_logging
 
 from .maths import robust
 from .maths.fast_poly import *
