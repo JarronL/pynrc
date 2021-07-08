@@ -114,14 +114,14 @@ class nrc_hci(NIRCam):
 
 
     def gen_offset_psf(self, offset_r, offset_theta, sp=None, return_oversample=False, 
-        use_coeff=True, wfe_drift=None, **kwargs):
+        wfe_drift=None, use_coeff=True, coron_rescale=False, **kwargs):
         """Create a PSF offset from center FoV
 
         Generate some off-axis PSF at a given (r,theta) offset from center.
         This function is mainly for coronagraphic observations where the
         off-axis PSF varies w.r.t. position. The PSF is centered in the
         resulting image. The offset values are assumed to be in 'idl' coordinate
-        frame.
+        frame relative to the mask center.
 
         Parameters
         ----------
@@ -139,17 +139,20 @@ class nrc_hci(NIRCam):
             Return either the pixel-sampled or oversampled PSF.
         use_coeff : bool
             If True, uses `calc_psf_from_coeff`, other WebbPSF's built-in `calc_psf`.
+        coron_rescale : bool
+            Rescale off-axis coronagraphic PSF to better match analytic prediction
+            when source overlaps coronagraphic occulting mask.
         """
 
         coords = rtheta_to_xy(offset_r, offset_theta)
 
         if use_coeff:
             psf = self.calc_psf_from_coeff(sp=sp, return_oversample=return_oversample, 
-                wfe_drift=wfe_drift, coord_vals=coords, coord_frame='idl', return_hdul=False, **kwargs)
+                wfe_drift=wfe_drift, coord_vals=coords, coord_frame='idl', 
+                coron_rescale=coron_rescale, return_hdul=False, **kwargs)
         else:
             psf = self.calc_psf(sp=sp, return_hdul=False, return_oversample=return_oversample, 
                 wfe_drift=wfe_drift, coord_vals=coords, coord_frame='idl', **kwargs)
-
 
         return psf
 
@@ -403,8 +406,11 @@ class obs_hci(nrc_hci):
         """
         Create a series of x and y position offsets for a SGD pattern.
         This includes the central position as the first in the series.
-        By default, will also add random movement errors using the
+        By default, will also add random position errors using the
         `slew_std` and `fsm_std` keywords. Returned values are in arcsec.
+
+        This initializes a set of target acquisition offsets
+        for each roll position and reference observation.  
         
         Parameters
         ==========
@@ -708,7 +714,8 @@ class obs_hci(nrc_hci):
 
 
     def gen_planets_image(self, PA_offset=0, xyoff_asec=(0,0), use_cmask=False, 
-        wfe_drift=None, return_oversample=False, **kwargs):
+        wfe_drift=None, use_coeff=True, return_oversample=False, 
+        coron_rescale=True, **kwargs):
         """Create image of just planets.
 
         Use info stored in self.planets to create a noiseless slope image
@@ -771,7 +778,8 @@ class obs_hci(nrc_hci):
             dely_asec = dely_asec + offy_asec
             r, th = xy_to_rtheta(delx_asec, dely_asec)
             psf_planet = self.gen_offset_psf(r, th, sp=sp, return_oversample=True, 
-                                             wfe_drift=wfe_drift, **kwargs)
+                                             use_coeff=use_coeff, wfe_drift=wfe_drift, 
+                                             coron_rescale=coron_rescale, **kwargs)
 
             # Expand to full size
             psf_planet = pad_or_cut_to_size(psf_planet, (ypix_over, xpix_over))
@@ -1512,6 +1520,7 @@ class obs_hci(nrc_hci):
         # Determine reference star scale factor
         scale1 = scale_ref_image(im_star_sub, im_ref_sub)
         _log.debug('scale1: {0:.3f}'.format(scale1))
+        # print('scale1: {0:.3f}'.format(scale1), im_star_sub.sum(), im_ref_sub.sum())
         # if oversample>1:
         #     kernel = Gaussian2DKernel(0.5*oversample)
         #     im_ref = convolve_fft(im_ref, kernel, allow_huge=True)
@@ -1576,6 +1585,7 @@ class obs_hci(nrc_hci):
             #im_star_sub = pad_or_cut_to_size(im_star+im_pl_r2, sub_shape)
             scale2 = scale_ref_image(im_star2_sub, im_ref_sub)
             _log.debug('scale2: {0:.3f}'.format(scale2))
+            # print('scale2: {0:.3f}'.format(scale2), im_star2_sub.sum(), im_ref_sub.sum())
             # if oversample>1:
             #     kernel = Gaussian2DKernel(0.5*oversample)
             #     im_roll2 = convolve_fft(im_roll2, kernel, allow_huge=True)
@@ -1791,6 +1801,9 @@ class obs_hci(nrc_hci):
             Three arrays in a tuple: the radius in arcsec, n-sigma contrast,
             and n-sigma magnitude sensitivity limit (vega mag).
         """
+        from webbpsf_ext.webbpsf_ext_core import _nrc_coron_psf_sums
+        from webbpsf_ext.webbpsf_ext_core import nrc_mask_trans
+
         if no_ref and (roll_angle==0):
             _log.warning('If no_ref=True, roll_angle must not equal 0. Setting no_ref=False')
             no_ref = False
@@ -1824,10 +1837,12 @@ class obs_hci(nrc_hci):
             off_vals = []
             max_vals = []
             rvals_pix = np.insert(np.arange(1,xpix/2,5), 0, 0.1)
-            for j, roff_pix in enumerate(rvals_pix):
+            for roff_pix in rvals_pix:
                 roff_asec = roff_pix * pixscale
-                psf1 = self.gen_offset_psf(roff_asec, 0, return_oversample=False)
-                psf2 = self.gen_offset_psf(roff_asec, roll_angle, return_oversample=False)
+                psf1 = self.gen_offset_psf(roff_asec, 0, return_oversample=False, 
+                                           coron_rescale=True)
+                psf2 = self.gen_offset_psf(roff_asec, roll_angle, return_oversample=False, 
+                                           coron_rescale=True)
 
                 psf1 = fshift(psf1, delx=0, dely=roff_pix, pad=False)
                 xoff, yoff = xy_rot(0, roff_pix, 10)
@@ -1853,49 +1868,69 @@ class obs_hci(nrc_hci):
         elif not self.is_coron: # Direct imaging
             psf = self.calc_psf_from_coeff(return_oversample=False, return_hdul=False)
             psf_max = psf.max()
+
         elif self.image_mask[-1]=='R': # Round masks
-            # Image mask
-            im_mask = self.gen_mask_image(pixelscale=pixscale, nd_squares=False)
+            ny, nx = (ypix, xpix)
+            yv = (np.arange(ny) - ny/2) * pixscale
+            xv = np.zeros_like(yv)
 
-            ny, nx = im_mask.shape
-            xv = (np.arange(nx) - nx/2) * pixscale
-
-            # Linear combine on-axis and off-axis PSFs
-            avals = np.interp(rr, xv, im_mask[ny//2,:]**2)
+            # Get mask transmission
+            trans = nrc_mask_trans(self.image_mask, xv, yv)
+            # Linear combination of min/max to determine PSF max value at given distance
+            # Get a and b values for each position
+            avals = trans**2
             bvals = 1 - avals
+
+            # Init if _psf_sums dict doesn't exist
+            try:
+                _ = self._psf_sums['psf_off_max']
+            except:
+                _ = _nrc_coron_psf_sums(self, (0,0), 'idl')
             psf_off_max = self._psf_sums['psf_off_max']
             psf_cen_max = self._psf_sums['psf_cen_max']
 
+            # Linear combination
             psf_max = avals * psf_off_max + bvals * psf_cen_max
+            # Interpolate values at rr locations
+            psf_max = 10**np.interp(rr, yv, np.log10(psf_max))
+            # Fix anything outside of bounds
             psf_max[rr>10] = psf_max[(rr>5) & (rr<10)].max()
+
         elif self.image_mask[-1]=='B': # Bar masks
-            npix = np.max([xpix,ypix])
-
-            # Image mask
-            im_mask = self.gen_mask_image(pixelscale=pixscale, bar_offset=0, nd_squares=False)
-
             # For off-axis PSF max values, use fiducial at bar_offset location
             bar_offset = self.bar_offset
-            ny, nx = im_mask.shape
-            xloc = int(bar_offset / pixscale + nx/2)
-            mask_cut = im_mask[:,xloc]
+            ny, nx = (ypix, xpix)
+            xpos = bar_offset / pixscale + nx/2
 
-            # Interpolate along the horizontal cut
+            # Get mask transmission for grid of points
             yv = (np.arange(ny) - ny/2) * pixscale
-            avals = np.interp(rr, yv, mask_cut**2)
+            xv = np.ones_like(yv) * xpos
+            trans = nrc_mask_trans(self.image_mask, xv, yv)
+            # Linear combination of min/max to determine PSF max value at given distance
+            # Get a and b values for each position
+            avals = trans**2
             bvals = 1 - avals
+
+            # Init if _psf_sums dict doesn't exist
+            try:
+                _ = self._psf_sums['psf_off_max']
+            except:
+                _ = _nrc_coron_psf_sums(self, (0,0), 'idl')
 
             psf_off_max = self._psf_sums['psf_off_max']
             # Linear interpolate psf center max value
-            psf_cenm_max = self._psf_sums['psf_cen_m8_max']
-            psf_cenp_max = self._psf_sums['psf_cen_p8_max']
-            x1, x2 = (-8, 8)
-            y1, y2 = (psf_cenm_max, psf_cenp_max)
-            dx, dy = (x2-x1, y2-y1)
-            psf_cen_max = y1 + (xloc - x1) * (dy / dx)
+            xvals = self._psf_sums['psf_cen_xvals']
+            psf_cen_max_arr = self._psf_sums['psf_cen_max_arr']
+            finterp = interp1d(xvals, psf_cen_max_arr, kind='linear', fill_value='extrapolate')
+            psf_cen_max = finterp(bar_offset)
 
+            # Linear combination
             psf_max = avals * psf_off_max + bvals * psf_cen_max
+            # Interpolate values at rr locations
+            psf_max = 10**np.interp(rr, yv, np.log10(psf_max))
+            # Fix anything outside of bounds
             psf_max[rr>10] = psf_max[(rr>5) & (rr<10)].max()
+
 
         #plt.plot(rr[rr<3], psf_max[rr<3])
 
