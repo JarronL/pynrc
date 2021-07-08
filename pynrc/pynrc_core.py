@@ -1125,8 +1125,8 @@ class NIRCam(NIRCam_ext):
         # Update aperture
         self.aperturename = ap.AperName
 
-    def calc_psf_from_coeff(self, sp=None, return_oversample=True, 
-        wfe_drift=None, coord_vals=None, coord_frame='tel', use_bg_psf=False, **kwargs):
+    def calc_psf_from_coeff(self, sp=None, return_oversample=True, wfe_drift=None, 
+        coord_vals=None, coord_frame='tel', use_bg_psf=False, **kwargs):
 
         kwargs['sp'] = sp
         kwargs['return_oversample'] = return_oversample
@@ -1138,6 +1138,27 @@ class NIRCam(NIRCam_ext):
             return self._nrc_bg.calc_psf_from_coeff(**kwargs)
         else:
             return super().calc_psf_from_coeff(**kwargs)
+
+    def calc_psf(self, sp=None, return_oversample=True, wfe_drift=None, 
+        coord_vals=None, coord_frame='tel', use_bg_psf=False, **kwargs):
+
+        kwargs['sp'] = sp
+        kwargs['return_oversample'] = return_oversample
+        kwargs['wfe_drift'] = wfe_drift
+        kwargs['coord_vals'] = coord_vals
+        kwargs['coord_frame'] = coord_frame
+
+        _log.info("Calculating PSF from WebbPSF parent function")
+        log_prev = conf.logging_level
+        setup_logging('WARN', verbose=False)
+
+        if use_bg_psf:
+            res = self._nrc_bg.calc_psf(**kwargs)
+        else:
+            res = super().calc_psf(**kwargs)
+
+        setup_logging(log_prev, verbose=False)
+        return res
 
 
     def sat_limits(self, sp=None, bp_lim=None, units='vegamag', well_frac=0.8,
