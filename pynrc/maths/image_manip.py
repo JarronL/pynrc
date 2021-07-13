@@ -19,7 +19,7 @@ from webbpsf_ext.image_manip import rotate_offset, rotate_shift_image
 from webbpsf_ext.image_manip import image_rescale, model_to_hdulist
 from webbpsf_ext.maths import hist_indices, binned_statistic
 
-def shift_subtract(params, reference, target, mask=None, pad=False, 
+def shift_subtract(params, reference, target, mask=None, pad=False, interp='cubic',
                    shift_function=fshift):
     """Shift and subtract image
     
@@ -38,6 +38,9 @@ def shift_subtract(params, reference, target, mask=None, pad=False,
     pad : bool
         Should we pad the array before shifting, then truncate?
         Otherwise, the image is wrapped.
+    interp : str
+        Interpolation for fshift function. Default is 'cubic'.
+        Options are 'linear', 'cubic', or 'quintic'.
     shift_function : func
         which function to use for sub-pixel shifting
             
@@ -50,7 +53,7 @@ def shift_subtract(params, reference, target, mask=None, pad=False,
     xshift, yshift, beta = params
 
     if shift_function is not None:
-        offset = shift_function(reference, xshift, yshift, pad)
+        offset = shift_function(reference, xshift, yshift, pad=pad, interp=interp)
     else:
         offset = reference
     
@@ -59,7 +62,7 @@ def shift_subtract(params, reference, target, mask=None, pad=False,
     else:
         return ( target - beta * offset ).ravel() #.flatten()
 
-def align_LSQ(reference, target, mask=None, pad=False, 
+def align_LSQ(reference, target, mask=None, pad=False, interp='cubic',
               shift_function=fshift):
     """Find best shift value
     
@@ -78,6 +81,9 @@ def align_LSQ(reference, target, mask=None, pad=False,
     pad : bool
         Should we pad the array before shifting, then truncate?
         Otherwise, the image is wrapped.
+    interp : str
+        Interpolation for fshift function. Default is 'cubic'.
+        Options are 'linear', 'cubic', or 'quintic'.
     shift_function : func
         which function to use for sub-pixel shifting.
         Options are fourier_imshift or fshift.
@@ -99,7 +105,7 @@ def align_LSQ(reference, target, mask=None, pad=False,
     # May want to play around with f_scale...
     res = least_squares(shift_subtract, init_pars, diff_step=0.1,
                         loss='soft_l1', f_scale=1.0, args=(reference,target), 
-                        kwargs={'mask':mask,'pad':pad,'shift_function':shift_function})
+                        kwargs={'mask':mask,'pad':pad,'shift_function':shift_function,'interp':interp})
     out = res.x
     #out,_ = leastsq(shift_subtract, init_pars, 
     #                args=(reference,target,mask,pad,shift_function))

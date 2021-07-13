@@ -781,12 +781,12 @@ class NIRCam(NIRCam_ext):
             self.pupilopd = opd
 
         # Source and mask offsetting
-        if (offset_r is not None) and (self.options.get('offset_r') != offset_r):
+        if (offset_r is not None) and (self.options.get('source_offset_r') != offset_r):
             update_coeffs = True
-            self.options['offset_r'] = offset_r
-        if (offset_theta is not None) and (self.options.get('offset_theta') != offset_theta):
+            self.options['source_offset_r'] = offset_r
+        if (offset_theta is not None) and (self.options.get('source_offset_theta') != offset_theta):
             update_coeffs = True
-            self.options['offset_theta'] = offset_theta
+            self.options['source_offset_theta'] = offset_theta
         if (bar_offset is not None) and (self.options.get('bar_offset') != bar_offset):
             update_coeffs = True
             self.options['bar_offset'] = bar_offset
@@ -1263,7 +1263,7 @@ class NIRCam(NIRCam_ext):
             fov_pix_over = trim_psf * osamp
             coeff = []
             for im in psf_coeff:
-                im = fshift(im, -xsh, -ysh)
+                im = fshift(im, -xsh, -ysh, interp='cubic')
                 im = pad_or_cut_to_size(im, (fov_pix_over,fov_pix_over))
                 coeff.append(im)
             psf_coeff = np.array(coeff)

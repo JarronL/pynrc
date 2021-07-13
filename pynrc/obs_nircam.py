@@ -793,7 +793,7 @@ class obs_hci(nrc_hci):
                 dely += (ycen - ypix/2)
             delx_over = delx * self.oversample
             dely_over = dely * self.oversample
-            psf_planet = fshift(psf_planet, delx=delx_over, dely=dely_over, pad=True)
+            psf_planet = fshift(psf_planet, delx=delx_over, dely=dely_over, pad=True, interp='cubic')
 
             # Determine if any throughput loss due to coronagraphic mask
             # artifacts, such as the mask holder or ND squares.
@@ -1371,7 +1371,7 @@ class obs_hci(nrc_hci):
         delx_over, dely_over = np.array([delx, dely]) * oversample
 
         # Perform shift and create slope image
-        im_star = fshift(im_star, delx=delx_over, dely=dely_over, pad=True)
+        im_star = fshift(im_star, delx=delx_over, dely=dely_over, pad=True, interp='cubic')
         im_roll1 = self.gen_slope_image(PA=PA1, xyoff_asec=xyoff_asec1, im_star=im_star, return_oversample=True, **kwargs)
 
         if no_ref and (roll_angle==0):
@@ -1413,9 +1413,9 @@ class obs_hci(nrc_hci):
 
             # Shift roll images by pointing offsets
             dx, dy = -1 * xyoff_asec1 * oversample / self.pixelscale
-            im_roll1_sh = fshift(im_roll1, delx=dx, dely=dy)
+            im_roll1_sh = fshift(im_roll1, delx=dx, dely=dy, interp='cubic')
             dx, dy = -1 * xyoff_asec2 * oversample / self.pixelscale
-            im_roll2_sh = fshift(im_roll2, delx=dx, dely=dy)
+            im_roll2_sh = fshift(im_roll2, delx=dx, dely=dy, interp='cubic')
             # Difference the two rolls
             diff_r1 = im_roll1_sh - im_roll2_sh
             diff_r2 = -1 * diff_r1
@@ -1446,6 +1446,7 @@ class obs_hci(nrc_hci):
             hdu = fits.PrimaryHDU(final)
             hdu.header['EXTNAME'] = ('ROLL_SUB')
             hdu.header['OVERSAMP'] = (oversample, 'Oversample compared to detector pixels')
+            hdu.header['OSAMP'] =    (oversample, 'Oversample compared to detector pixels')
             hdu.header['PIXELSCL'] = (self.pixelscale / oversample, 'Image pixel scale (asec/pix)')
             hdu.header['FILTER']   = (self.filter, 'Filter name')
             if self.is_lyot:  hdu.header['PUPIL']    = (self.pupil_mask, 'Pupil plane mask')
@@ -1463,6 +1464,7 @@ class obs_hci(nrc_hci):
                 hdu = fits.ImageHDU(im)
                 hdu.header['EXTNAME'] = (roll_names[ii])
                 hdu.header['OVERSAMP'] = (oversample, 'Oversample compared to detector pixels')
+                hdu.header['OSAMP'] =    (oversample, 'Oversample compared to detector pixels')
                 hdu.header['PIXELSCL'] = (self.pixelscale / oversample, 'Image pixel scale (asec/pix)')
                 hdu.header['FILTER']   = (self.filter, 'Filter name')
                 if self.is_lyot:  hdu.header['PUPIL']    = (self.pupil_mask, 'Pupil plane mask')
@@ -1508,7 +1510,7 @@ class obs_hci(nrc_hci):
         delx_over, dely_over = np.array([delx, dely]) * oversample
 
         # Perform shift and create slope image
-        im_ref = fshift(im_ref, delx=delx_over, dely=dely_over, pad=True)
+        im_ref = fshift(im_ref, delx=delx_over, dely=dely_over, pad=True, interp='cubic')
         # With noise
         im_ref = self.gen_slope_image(im_star=im_ref, do_ref=True, 
                                       return_oversample=True, **kwargs)
@@ -1528,9 +1530,9 @@ class obs_hci(nrc_hci):
 
         # Shift roll images by pointing offsets
         dx, dy = -1 * xyoff_asec1 * oversample / self.pixelscale
-        im_roll1_sh = fshift(im_roll1, delx=dx, dely=dy)
+        im_roll1_sh = fshift(im_roll1, delx=dx, dely=dy, interp='cubic')
         dx, dy = -1 * xyoff_asec_ref * oversample / self.pixelscale
-        im_ref_sh = fshift(im_ref, delx=dx, dely=dy)
+        im_ref_sh = fshift(im_ref, delx=dx, dely=dy, interp='cubic')
                     
         # Telescope Roll 2 with reference subtraction
         if (abs(roll_angle) > eps):
@@ -1568,7 +1570,7 @@ class obs_hci(nrc_hci):
                 delx_over, dely_over = np.array([delx, dely]) * oversample
 
                 # Perform shift and create slope image
-                im_star2 = fshift(im_star2, delx=delx_over, dely=dely_over, pad=True)
+                im_star2 = fshift(im_star2, delx=delx_over, dely=dely_over, pad=True, interp='cubic')
             # Create Roll2 slope image
             im_roll2 = self.gen_slope_image(PA=PA2, im_star=im_star2, do_roll2=True, 
                                             return_oversample=True, **kwargs)
@@ -1592,7 +1594,7 @@ class obs_hci(nrc_hci):
 
             # Shift roll images by pointing offsets
             dx, dy = -1 * xyoff_asec2 * oversample / self.pixelscale
-            im_roll2_sh = fshift(im_roll2, delx=dx, dely=dy)
+            im_roll2_sh = fshift(im_roll2, delx=dx, dely=dy, interp='cubic')
                 
             # Subtraction with and without scaling
             im_diff1_r2 = im_roll2_sh - im_ref_sh
@@ -1686,6 +1688,7 @@ class obs_hci(nrc_hci):
         hdu = fits.PrimaryHDU(final)
         hdu.header['EXTNAME'] = ('REF_SUB')
         hdu.header['OVERSAMP'] = (osamp_out, 'Oversample compared to detector pixels')
+        hdu.header['OSAMP'] =    (osamp_out, 'Oversample compared to detector pixels')
         hdu.header['PIXELSCL'] = (pixscale_out, 'Image pixel scale (asec/pix)')
         hdu.header['FILTER']   = (self.filter, 'Filter name')
         if self.is_lyot: hdu.header['PUPIL'] = (self.pupil_mask, 'Pupil plane mask')
@@ -1700,6 +1703,7 @@ class obs_hci(nrc_hci):
         hdu = fits.ImageHDU(im_roll1)
         hdu.header['EXTNAME'] = ('ROLL1')
         hdu.header['OVERSAMP'] = (osamp_out, 'Oversample compared to detector pixels')
+        hdu.header['OSAMP'] =    (osamp_out, 'Oversample compared to detector pixels')
         hdu.header['PIXELSCL'] = (pixscale_out, 'Image pixel scale (asec/pix)')
         hdu.header['FILTER']   = (self.filter, 'Filter name')
         if self.is_lyot:  hdu.header['PUPIL']    = (self.pupil_mask, 'Pupil plane mask')
@@ -1717,6 +1721,7 @@ class obs_hci(nrc_hci):
             hdu = fits.ImageHDU(im_roll2)
             hdu.header['EXTNAME'] = ('ROLL2')
             hdu.header['OVERSAMP'] = (osamp_out, 'Oversample compared to detector pixels')
+            hdu.header['OSAMP']    = (osamp_out, 'Oversample compared to detector pixels')
             hdu.header['PIXELSCL'] = (pixscale_out, 'Image pixel scale (asec/pix)')
             hdu.header['FILTER']   = (self.filter, 'Filter name')
             if self.is_lyot:  hdu.header['PUPIL']    = (self.pupil_mask, 'Pupil plane mask')
@@ -1736,6 +1741,7 @@ class obs_hci(nrc_hci):
             hdu = fits.ImageHDU(im_ref)
             hdu.header['EXTNAME'] = ('REF')
             hdu.header['OVERSAMP'] = (osamp_out, 'Oversample compared to detector pixels')
+            hdu.header['OSAMP']    = (osamp_out, 'Oversample compared to detector pixels')
             hdu.header['PIXELSCL'] = (pixscale_out, 'Image pixel scale (asec/pix)')
             hdu.header['FILTER']   = (self.filter, 'Filter name')
             if self.is_lyot:  hdu.header['PUPIL']    = (self.pupil_mask, 'Pupil plane mask')
@@ -1801,8 +1807,7 @@ class obs_hci(nrc_hci):
             Three arrays in a tuple: the radius in arcsec, n-sigma contrast,
             and n-sigma magnitude sensitivity limit (vega mag).
         """
-        from webbpsf_ext.webbpsf_ext_core import _nrc_coron_psf_sums
-        from webbpsf_ext.webbpsf_ext_core import nrc_mask_trans
+        from webbpsf_ext.webbpsf_ext_core import _nrc_coron_psf_sums, nrc_mask_trans
 
         if no_ref and (roll_angle==0):
             _log.warning('If no_ref=True, roll_angle must not equal 0. Setting no_ref=False')
@@ -1826,7 +1831,7 @@ class obs_hci(nrc_hci):
         pixscale = self.pixelscale
 
         # Radial noise binned to detector pixels
-        rr, stds = radial_std(data, pixscale=header['PIXELSCL'], oversample=header['OVERSAMP'], 
+        rr, stds = radial_std(data, pixscale=header['PIXELSCL'], oversample=header['OSAMP'], 
                               supersample=False, func=func_std)
 
         # Normalize by psf max value
@@ -1844,12 +1849,12 @@ class obs_hci(nrc_hci):
                 psf2 = self.gen_offset_psf(roff_asec, roll_angle, return_oversample=False, 
                                            coron_rescale=True)
 
-                psf1 = fshift(psf1, delx=0, dely=roff_pix, pad=False)
+                psf1 = fshift(psf1, delx=0, dely=roff_pix, pad=False, interp='cubic')
                 xoff, yoff = xy_rot(0, roff_pix, 10)
-                psf2 = fshift(psf2, delx=xoff, dely=yoff, pad=False)
+                psf2 = fshift(psf2, delx=xoff, dely=yoff, pad=False, interp='cubic')
 
                 diff = psf1 - psf2
-                maxv = diff.max()
+                maxv = np.max(diff)
 
                 off_vals.append(roff_pix)
                 max_vals.append(maxv)
@@ -1894,7 +1899,8 @@ class obs_hci(nrc_hci):
             # Interpolate values at rr locations
             psf_max = 10**np.interp(rr, yv, np.log10(psf_max))
             # Fix anything outside of bounds
-            psf_max[rr>10] = psf_max[(rr>5) & (rr<10)].max()
+            if rr.max()>10:
+                psf_max[rr>10] = psf_max[(rr>5) & (rr<10)].max()
 
         elif self.image_mask[-1]=='B': # Bar masks
             # For off-axis PSF max values, use fiducial at bar_offset location
@@ -1929,11 +1935,8 @@ class obs_hci(nrc_hci):
             # Interpolate values at rr locations
             psf_max = 10**np.interp(rr, yv, np.log10(psf_max))
             # Fix anything outside of bounds
-            psf_max[rr>10] = psf_max[(rr>5) & (rr<10)].max()
-
-
-        #plt.plot(rr[rr<3], psf_max[rr<3])
-
+            if rr.max()>10:
+                psf_max[rr>10] = psf_max[(rr>5) & (rr<10)].max()
 
         # We also want to know the Poisson noise for the PSF values.
         # For instance, even if psf_max is significantly above the

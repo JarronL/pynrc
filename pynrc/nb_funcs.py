@@ -949,7 +949,7 @@ def plot_hdulist(hdulist, ext=0, xr=None, yr=None, ax=None, return_ax=False,
     # However, even array sizes will have (0,0) at the pixel border,
     # so this just shifts the entire image accordingly.
     if half_pix_shift:
-        oversamp = hdulist[ext].header['OVERSAMP']
+        oversamp = hdulist[ext].header['OSAMP']
         shft = 0.5*oversamp
         hdul = deepcopy(hdulist)
         hdul[0].data = fshift(hdul[0].data, shft, shft)

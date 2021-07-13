@@ -25,7 +25,7 @@ from .logging_utils import setup_logging
 
 from .nrc_utils import read_filter, S, grism_res
 from .opds import opd_default, OPDFile_to_HDUList
-from .maths.image_manip import frebin, pad_or_cut_to_size
+from .maths.image_manip import fshift, frebin, pad_or_cut_to_size
 from .maths.fast_poly import jl_poly_fit, jl_poly
 from .maths.coords import Tel2Sci_info, NIRCam_V2V3_limits, dist_image
 
@@ -1594,9 +1594,9 @@ def gen_image_coeff(filter_or_bp, pupil=None, mask=None, module='A',
                     fracx = fracx + 1
                     intx = intx - 1
 
-                # spec_over[:,intx:intx+fov_pix_over] += fshift(psf_fit[i], fracx)
-                im = psf_fit[i]
-                spec_over[:,intx:intx+fov_pix_over] += im*(1.-fracx) + np.roll(im,1,axis=1)*fracx
+                spec_over[:,intx:intx+fov_pix_over] += fshift(psf_fit[i], delx=fracx, interp='cubic')
+                # im = psf_fit[i]
+                # spec_over[:,intx:intx+fov_pix_over] += im*(1.-fracx) + np.roll(im,1,axis=1)*fracx
 
             spec_over[spec_over<__epsilon] = 0 #__epsilon
 
