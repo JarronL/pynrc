@@ -149,7 +149,7 @@ def siafap_sci_coords(inst, coord_vals=None, coord_frame='tel'):
     return (detector, detector_position, apname)
 
 def det_to_sci(image, detid):
-    """Detector to science orientation
+    """ Detector to science orientation
     
     Reorient image from detector coordinates to 'sci' coordinate system.
     This places +V3 up and +V2 to the LEFT. Detector pixel (0,0) is assumed 
@@ -197,7 +197,7 @@ def det_to_sci(image, detid):
     return image
     
 def sci_to_det(image, detid):
-    """Science to detector orientation
+    """ Science to detector orientation
     
     Reorient image from 'sci' coordinates to detector coordinate system.
     Assumes +V3 up and +V2 to the LEFT. The result places the detector
@@ -213,4 +213,3 @@ def sci_to_det(image, detid):
     
     # Flips occur along the same axis and manner as in det_to_sci()
     return det_to_sci(image, detid)
-  
