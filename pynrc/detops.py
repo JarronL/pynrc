@@ -324,6 +324,7 @@ class det_timing(object):
         self._nchans = nchans
         self._nff = nff
 
+        self.multiaccum = multiaccum(**kwargs)
         self.wind_mode = wind_mode.upper()
         self._xpix = xpix; self._x0 = x0
         self._ypix = ypix; self._y0 = y0
@@ -342,8 +343,15 @@ class det_timing(object):
         self._line_overhead = loh
         # Pixel or line resets
         self._reset_type = reset_type
-        
-        self.multiaccum = multiaccum(**kwargs)
+
+    @property
+    def wind_mode(self):
+        """Window mode attribute"""
+        return self._wind_mode
+    @wind_mode.setter
+    def wind_mode(self, value):
+        """Set Window mode attribute"""
+        self._wind_mode = value
 
     @property
     def y0(self):
@@ -756,7 +764,7 @@ class det_timing(object):
         """Create array of pixel times for a single ramp. 
         
         Each pixel value corresponds to the precise time at which
-        that pixel was read out during the ramp acquisiton. The first
+        that pixel was read out during the ramp acquisition. The first
         pixel(s) have t=0.
         
         Parameters

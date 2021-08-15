@@ -111,7 +111,20 @@ class DetectorOps(det_timing):
                       .format(detector, ', '.join(self.detid_list), \
                       ', '.join(str(e) for e in self.scaid_list)))
 
+        # For full arrays number of resets in first integration is 0
+        # self.wind_mode = wind_mode
+
         _log.info('Initializing SCA {}/{}'.format(self.scaid,self.detid))
+
+    @property
+    def wind_mode(self):
+        """Window mode attribute"""
+        return self._wind_mode
+    @wind_mode.setter
+    def wind_mode(self, value):
+        """Set Window mode attribute"""
+        self._wind_mode = value
+        self.multiaccum.nr1 = 0 if value=='FULL' else 1
 
     @property
     def scaid(self):
@@ -1051,10 +1064,11 @@ class NIRCam(NIRCam_ext):
         else:
             wind_mode = 'WINDOW'
         
-        xcorn, ycorn = ap.corners('det')
-        indmin = np.where(xcorn+ycorn == np.min(xcorn+ycorn))
-        x0 = int(xcorn[indmin[0][0]])
-        y0 = int(ycorn[indmin[0][0]])
+        # xcorn, ycorn = ap.corners('det')
+        # indmin = np.where(xcorn+ycorn == np.min(xcorn+ycorn))
+        # x0 = int(xcorn[indmin[0][0]])
+        # y0 = int(ycorn[indmin[0][0]])
+        x0, y0 = np.array(ap.dms_corner()) - 1
               
         # Update pupil and mask info
         mask = None
@@ -1125,11 +1139,12 @@ class NIRCam(NIRCam_ext):
         # Update aperture
         self.aperturename = ap.AperName
 
-    def calc_psf_from_coeff(self, sp=None, return_oversample=True, wfe_drift=None, 
-        coord_vals=None, coord_frame='tel', use_bg_psf=False, **kwargs):
+    def calc_psf_from_coeff(self, sp=None, return_oversample=True, return_hdul=True,
+        wfe_drift=None, coord_vals=None, coord_frame='tel', use_bg_psf=False, **kwargs):
 
         kwargs['sp'] = sp
         kwargs['return_oversample'] = return_oversample
+        kwargs['return_hdul'] = return_hdul
         kwargs['wfe_drift'] = wfe_drift
         kwargs['coord_vals'] = coord_vals
         kwargs['coord_frame'] = coord_frame
@@ -1139,11 +1154,13 @@ class NIRCam(NIRCam_ext):
         else:
             return super().calc_psf_from_coeff(**kwargs)
 
-    def calc_psf(self, sp=None, return_oversample=True, wfe_drift=None, 
-        coord_vals=None, coord_frame='tel', use_bg_psf=False, **kwargs):
+    def calc_psf(self, sp=None, return_oversample=True, return_hdul=True,
+        wfe_drift=None, coord_vals=None, coord_frame='tel', use_bg_psf=False, 
+        **kwargs):
 
         kwargs['sp'] = sp
         kwargs['return_oversample'] = return_oversample
+        kwargs['return_hdul'] = return_hdul
         kwargs['wfe_drift'] = wfe_drift
         kwargs['coord_vals'] = coord_vals
         kwargs['coord_frame'] = coord_frame
