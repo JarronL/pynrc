@@ -3867,7 +3867,7 @@ def ppc_deconvolve(im, kernel, kfft=None, nchans=4, in_place=False,
 def get_ipc_kernel(imdark, tint=None, boxsize=5, nchans=4, bg_remove=True,
                    hotcut=[5000,50000], calc_ppc=False,
                    same_scan_direction=False, reverse_scan_direction=False,
-                   suppress_error_msg=False):
+                   ref_info=[4,4,4,4], suppress_error_msg=False):
     """ Derive IPC/PPC Convolution Kernels
     
     Find the IPC and PPC kernels used to convolve detector pixel data.
@@ -3893,7 +3893,7 @@ def get_ipc_kernel(imdark, tint=None, boxsize=5, nchans=4, bg_remove=True,
         Remove the average dark current values for each hot pixel cut-out.
         Only works if boxsize>3.
     hotcut : array-like
-        Min and max values of hot pixels (above bg and bias) to cosider.
+        Min and max values of hot pixels (above bg and bias) to consider.
     calc_ppc : bool
         Calculate and return post-pixel coupling?
     same_scan_direction : bool
@@ -3914,12 +3914,13 @@ def get_ipc_kernel(imdark, tint=None, boxsize=5, nchans=4, bg_remove=True,
     boxsize = int(2*boxhalf + 1)
     distmin = np.ceil(np.sqrt(2.0) * boxhalf)
 
-    # Get rid of pixels around border
     pixmask = ((imtemp>hotcut[0]) & (imtemp<hotcut[1]))
-    pixmask[0:4+boxhalf, :] = False
-    pixmask[-4-boxhalf:, :] = False
-    pixmask[:, 0:4+boxhalf] = False
-    pixmask[:, -4-boxhalf:] = False
+    # Get rid of pixels around border
+    lower, upper, left, right = ref_info
+    pixmask[0:lower+boxhalf, :] = False
+    pixmask[-upper-boxhalf:, :] = False
+    pixmask[:, 0:left+boxhalf] = False
+    pixmask[:, -right-boxhalf:] = False
 
     # Ignore borders between amplifiers
     for ch in range(1, nchans):
@@ -3946,6 +3947,8 @@ def get_ipc_kernel(imdark, tint=None, boxsize=5, nchans=4, bg_remove=True,
         if not suppress_error_msg:
             _log.warn("No hot pixels found!")
         return None
+    else:
+        _log.info(f'Number of hot pixels: {nhot}')
 
     # Stack all hot pixels in a cube
     hot_all = []
