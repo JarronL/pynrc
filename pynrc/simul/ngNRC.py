@@ -1275,7 +1275,6 @@ def apply_nonlin(cube, cf_arr, sat_vals, well_depth,
             xfan = xvals**parr.reshape([-1,1]) # Array broadcasting
             xfan = xfan.reshape([ncf,1,-1])
 
-
         # Reshape coeffs to 2D array
         cf = cf_arr.reshape([ncf,-1])
 

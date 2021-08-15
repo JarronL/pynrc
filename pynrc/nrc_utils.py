@@ -73,7 +73,7 @@ except ImportError:
 # Some useful functions for displaying and measuring PSFs
 import webbpsf, poppy
 from poppy import (radial_profile, measure_radial, measure_fwhm, measure_ee)
-from poppy import (measure_sharpness, measure_centroid, measure_strehl)
+from poppy import (measure_sharpness, measure_centroid) #, measure_strehl)
 
 import pysynphot as S
 # Extend default wavelength range to 5.6 um
@@ -153,72 +153,6 @@ def channel_select(bp):
         pex = (1.5,10.0)
 
     return (pix_scale, idark, pex)
-
-def place_grismr_tso(waves, imarr, siaf_ap, wref=None, im_coords='sci'):
-    """
-    Shift image such that undeviated wavelength sits at the
-    SIAF aperture reference location.
-    """
-    
-    from .maths.coords import det_to_sci
-
-    if len(imarr.shape) > 2:
-        nz, ny_in, nx_in = imarr.shape
-    else:
-        nz = 1
-        ny_in, nx_in = imarr.shape
-        imarr = imarr.reshape([nz,ny_in,nx_in])
-    
-    # Convert to sci coordinates
-    if im_coords=='det':
-        det_name = siaf_ap.AperName[3:5]
-        imarr = det_to_sci(imarr, det_name)
-
-    # Determine reference wavelength
-    if wref is None:
-        if 'GRISMC' in siaf_ap.AperName:
-            pupil = 'GRISMC'
-        elif 'GRISM' in siaf_ap.AperName:
-            pupil = 'GRISMR'
-        else: # generic grism
-            pupil = 'GRISM'
-        module = 'A' if 'NRCA' in siaf_ap.AperName else 'B'
-        wref = grism_wref(pupil, module)
-
-    # Get reference coordinates
-    yref, xref = (siaf_ap.YSciRef, siaf_ap.XSciRef)
-    
-    # Final image size
-    ny_out, nx_out = (siaf_ap.YSciSize, siaf_ap.XSciSize)
-    
-    # Empirically determine shift value in dispersion direction
-    wnew_temp = pad_or_cut_to_size(waves, nx_out)
-    
-    # Index of reference wavelength associated with ref pixel
-    ind = (wnew_temp>wref-0.01) & (wnew_temp<wref+0.01)
-    xnew_temp = np.interp(wref, wnew_temp[ind], np.arange(nx_out)[ind])
-    xoff = xref - xnew_temp
-    
-    # Move to correct position in y
-    yoff = yref - (int(ny_out/2) - 1)
-    # if np.mod(ny_in,2)==0: # If even, shift by half a pixel?
-    #     yoff = yoff + 0.5
-    
-    imarr = pad_or_cut_to_size(imarr, (ny_out,nx_out), offset_vals=(yoff,xoff), fill_val=np.nan)
-    waves = pad_or_cut_to_size(waves, nx_out, offset_vals=xoff, fill_val=np.nan)
-    
-    # Remove NaNs
-    ind_nan = np.isnan(imarr)
-    imarr[ind_nan] = np.min(imarr[~ind_nan])
-    # Remove NaNs
-    # Fill in with wavelength solution (linear extrapolation)
-    ind_nan = np.isnan(waves)
-    # waves[ind_nan] = 0
-    arr = np.arange(nx_out)
-    cf = jl_poly_fit(arr[~ind_nan], waves[~ind_nan])
-    waves[ind_nan] = jl_poly(arr[ind_nan], cf)
-
-    return waves, imarr
 
 
 
@@ -1679,6 +1613,261 @@ def grism_background_com(filter, pupil='GRISM90', module='A', sp_bg=None,
         res = 0
 
     return res
+
+
+def place_grismr_tso(waves, imarr, siaf_ap, wref=None, im_coords='sci'):
+    """
+    Shift image such that undeviated wavelength sits at the
+    SIAF aperture reference location.
+    """
+    
+    from .maths.coords import det_to_sci
+
+    if len(imarr.shape) > 2:
+        nz, ny_in, nx_in = imarr.shape
+    else:
+        nz = 1
+        ny_in, nx_in = imarr.shape
+        imarr = imarr.reshape([nz,ny_in,nx_in])
+    
+    # Convert to sci coordinates
+    if im_coords=='det':
+        det_name = siaf_ap.AperName[3:5]
+        imarr = det_to_sci(imarr, det_name)
+
+    # Determine reference wavelength
+    if wref is None:
+        if 'GRISMC' in siaf_ap.AperName:
+            pupil = 'GRISMC'
+        elif 'GRISM' in siaf_ap.AperName:
+            pupil = 'GRISMR'
+        else: # generic grism
+            pupil = 'GRISM'
+        module = 'A' if 'NRCA' in siaf_ap.AperName else 'B'
+        wref = grism_wref(pupil, module)
+
+    # Get reference coordinates
+    yref, xref = (siaf_ap.YSciRef, siaf_ap.XSciRef)
+    
+    # Final image size
+    ny_out, nx_out = (siaf_ap.YSciSize, siaf_ap.XSciSize)
+    
+    # Empirically determine shift value in dispersion direction
+    wnew_temp = pad_or_cut_to_size(waves, nx_out)
+    
+    # Index of reference wavelength associated with ref pixel
+    ind = (wnew_temp>wref-0.01) & (wnew_temp<wref+0.01)
+    xnew_temp = np.interp(wref, wnew_temp[ind], np.arange(nx_out)[ind])
+    xoff = xref - xnew_temp
+    
+    # Move to correct position in y
+    yoff = yref - (int(ny_out/2) - 1)
+    # if np.mod(ny_in,2)==0: # If even, shift by half a pixel?
+    #     yoff = yoff + 0.5
+    
+    imarr = pad_or_cut_to_size(imarr, (ny_out,nx_out), offset_vals=(yoff,xoff), fill_val=np.nan)
+    waves = pad_or_cut_to_size(waves, nx_out, offset_vals=xoff, fill_val=np.nan)
+    
+    # Remove NaNs
+    ind_nan = np.isnan(imarr)
+    imarr[ind_nan] = np.min(imarr[~ind_nan])
+    # Remove NaNs
+    # Fill in with wavelength solution (linear extrapolation)
+    ind_nan = np.isnan(waves)
+    # waves[ind_nan] = 0
+    arr = np.arange(nx_out)
+    cf = jl_poly_fit(arr[~ind_nan], waves[~ind_nan])
+    waves[ind_nan] = jl_poly(arr[ind_nan], cf)
+
+    return waves, imarr
+
+
+
+###########################################################################
+#
+#    Pick-off images for a given module
+#
+###########################################################################
+
+def pickoff_xy(ap_obs):
+    """
+    Return pickoff mirror FoV x/y limits in terms of science pixel coordinates
+    
+    ap_obs : Aperture to create observation (e.g., 'NRCA5_FULL')
+    """
+
+    siaf = pysiaf.Siaf('NIRCAM')
+    ap_siaf = siaf[ap_obs]
+    module = ap_obs[3:4]
+
+    # Determine pick-off mirror FoV from 
+    ap1 = siaf['NRC{}5_GRISMC_WFSS'.format(module)]
+    ap2 = siaf['NRC{}5_GRISMR_WFSS'.format(module)]
+    ap3 = siaf['NRCA5_FULL_MASK335R']
+
+    # V2/V3 coordinates of pick-off FoV
+    v2_1, v3_1 = ap1.corners('tel', False)
+    v2_2, v3_2 = ap2.corners('tel', False)
+    v2_3, v3_3 = ap3.corners('tel', False)
+    if module == 'B': v2_3 *= -1
+    v2_all = np.array([v2_1, v2_2, v2_3]).flatten()
+    v3_all = np.array([v3_1, v3_2, v3_3]).flatten()
+
+    # Convert to science pixel positions
+    x_new, y_new = ap_siaf.tel_to_sci(v2_all, v3_all)
+    # sci pixel values are use are X.5
+    x1, x2 = np.array([x_new.min(), x_new.max()]).astype(np.int) + 0.5
+    y1, y2 = np.array([y_new.min(), y_new.max()]).astype(np.int) + 0.5
+
+    return (x1, x2, y1, y2)
+
+
+def pickoff_image(ap_obs, v2_obj, v3_obj, flux_obj, oversample=1):
+    """
+    Create an unconvolved image of filled pixel values that have 
+    been shifted via bilinear interpolation. The image will then
+    be convolved with a PSF to create the a focal plane image that
+    is the size of the NIRCam pick-off mirror. This image should
+    then be cropped to generate the final detector image.
+
+    Returns the tuple (xsci, ysci, image), where xsci and ysci are
+    the science coordinates associated with the image.
+    
+    Parameters
+    ==========
+    ap_obs : str
+        Name of aperture in which the observation is taking place.
+        Necessary to determine pixel locations for stars.
+    v2_obj : ndarray
+        List of V2 coordiantes of stellar sources
+    v3_obj : ndarray
+        List of V3 coordinates of stellar sources
+    flux_obj : ndarray
+        List of fluxes (e-/sec) for each source
+    
+    Keyword Args
+    ============
+    oversample : int
+        If set, the returns an oversampled version of the image to
+        convolve with PSFs. If set to one, then detector pixels.
+    """
+    
+    from scipy.interpolate import interp2d
+
+    # xpix and ypix locations in science orientation
+    siaf = pysiaf.Siaf('NIRCAM')
+    ap_siaf = siaf[ap_obs]
+
+    xpix, ypix = ap_siaf.tel_to_sci(v2_obj, v3_obj)
+    x1, x2, y1, y2 = pickoff_xy(ap_obs)
+
+    # Mask all sources that are outside pick-off mirror
+    mask = ((xpix>x1) & (xpix<x2-1)) & ((ypix>y1) & (ypix<y2-1))
+    xpix = xpix[mask]
+    ypix = ypix[mask]
+    src_flux = flux_obj[mask]
+
+    # Create oversized and oversampled image
+    ys = int((y2 - y1) * oversample)
+    xs = int((x2 - x1) * oversample)
+    oversized_image = np.zeros([ys,xs])
+    
+    # X and Y detector pixel values
+    dstep = 1/oversample
+    xsci = np.arange(x1, x2, dstep)
+    ysci = np.arange(y1, y2, dstep)
+
+    # Zero-based (x,y) locations for oversized images
+    xvals_os = (xpix - x1) * oversample
+    yvals_os = (ypix - y1) * oversample
+
+    # separate into an integers and fractions
+    intx = xvals_os.astype(np.int)
+    inty = yvals_os.astype(np.int)
+    fracx = xvals_os - intx
+    fracy = yvals_os - inty
+    
+    # flip negative shift values
+    ind = fracx < 0
+    fracx[ind] += 1
+    intx[ind] -= 1
+    ind = fracy<0
+    fracy[ind] += 1
+    inty[ind] -= 1
+
+    # Bilinear interpolation of all sources
+    val1 = src_flux * ((1-fracx)*(1-fracy))
+    val2 = src_flux * ((1-fracx)*fracy)
+    val3 = src_flux * ((1-fracy)*fracx)
+    val4 = src_flux * (fracx*fracy)
+
+    # Add star-by-star in case of overlapped indices
+    for i, (iy, ix) in enumerate(zip(inty,intx)):
+        oversized_image[iy,   ix]   += val1[i]
+        oversized_image[iy+1, ix]   += val2[i]
+        oversized_image[iy,   ix+1] += val3[i]
+        oversized_image[iy+1, ix+1] += val4[i]
+        
+    #print("NStars: {}".format(len(intx)))
+    
+    return xsci, ysci, oversized_image 
+
+
+def gen_unconvolved_point_source_image(nrc, tel_pointing, ra_deg, dec_deg, mags, expnum=1, osamp=1):
+    
+    from webbpsf_ext.spectra import mag_to_counts
+    
+    # Observation aperture
+    siaf_ap_obs = nrc.siaf_ap
+    ap_obs_name = nrc.aperturename
+    
+    # Get all source fluxes
+    # mags = tbl[nrc.filter].data
+    flux_obj = mag_to_counts(mags, nrc.bandpass)
+    
+    # Convert RA, Dec coordiantes into V2/V3 (arcsec)
+    # ra_deg, dec_deg = (tbl['ra'], tbl['dec'])
+    idl_off = [tel_pointing.position_offsets_act[expnum-1]]
+    v2_obj, v3_obj = tel_pointing.radec_to_frame((ra_deg, dec_deg), frame_out='tel', idl_offsets=idl_off)
+    
+    # Create initial POM image, then contract to reasonable size
+    xsci, ysci, im_pom = pickoff_image(ap_obs_name, v2_obj, v3_obj, flux_obj, oversample=osamp)
+
+    # Crop based on subarray window size
+    # Maximum required size depends on PSF and detector readout size
+
+    # Min and max sci coordinates to keep
+    xmin = ymin = int(-nrc.fov_pix/2 - 1)
+    xmax = int(siaf_ap_obs.XSciSize + nrc.fov_pix/2 + 1)
+    ymax = int(siaf_ap_obs.YSciSize + nrc.fov_pix/2 + 1)
+
+    xmask = (xsci>=xmin) & (xsci<xmax)
+    ymask = (ysci>=ymin) & (ysci<ymax)
+
+    # Keep only regions that contribute to final convolved image
+    xsci = xsci[xmask]
+    ysci = ysci[ymask]
+    im_sci = im_pom[ymask][:,xmask]
+    
+    # Make science image HDUList from 
+    hdul_sci_image = fits.HDUList([fits.PrimaryHDU(im_sci)])
+    hdul_sci_image[0].header['PIXELSCL'] = nrc.pixelscale / osamp
+    hdul_sci_image[0].header['OSAMP'] = osamp
+    hdul_sci_image[0].header['INSTRUME'] = nrc.name
+    hdul_sci_image[0].header['APERNAME'] = ap_obs_name
+    
+    # Get X and Y indices corresponding to aperture reference
+    xind_ref = np.argmin(np.abs(xsci - siaf_ap_obs.XSciRef))
+    yind_ref = np.argmin(np.abs(ysci - siaf_ap_obs.YSciRef))
+    hdul_sci_image[0].header['XIND_REF'] = (xind_ref, "x index of aperture reference")
+    hdul_sci_image[0].header['YIND_REF'] = (yind_ref, "y index of aperture reference")
+    hdul_sci_image[0].header['XSCI0']    = (np.min(xsci), "xsci value at (x,y)=(0,0) corner")
+    hdul_sci_image[0].header['YSCI0']    = (np.min(ysci), "ysci value at (x,y)=(0,0) corner")
+    hdul_sci_image[0].header['CFRAME'] = 'sci'
+
+    # print(im_pom.shape, im_sci.shape)
+    
+    return hdul_sci_image
 
 ###########################################################################
 #

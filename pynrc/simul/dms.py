@@ -1,20 +1,23 @@
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 import numpy as np
 
 from astropy.io import fits
 from astropy.table import Table
 from astropy.time import Time, TimeDelta
-from astropy.coordinates import SkyCoord
 from astropy import units as u
 
 # STScI modules
 import pysiaf
 from pysiaf import rotations
 from jwst.datamodels import Level1bModel
+import warnings
+
+import logging
+_log = logging.getLogger('pynrc')
+
+from .apt import populate_obs_params
 
 def dec_to_base36(val):
-    """Convert decimal number to base 36 (0-Z)"""
+    """Convert decimal integer to base 36 (0-Z)"""
 
     digits ='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
     
@@ -36,7 +39,7 @@ def jw_obs_id(pid, obs_num, visit_num, visit_gp, seq_id, act_id, exp_num):
     
     gg: visit group
     s: parallel sequence ID (1=prime, 2-5=parallel)
-    aa: activity number (base 36)
+    aa: activity number (base 36) (only for WFSC, coarse and fine phasing)
     
     eeeee: exposure number
     segNNN: the text “seg” followed by a three-digit segment number (optional)
@@ -49,7 +52,7 @@ def jw_obs_id(pid, obs_num, visit_num, visit_gp, seq_id, act_id, exp_num):
     jw93065002001_02101_00001_nrca1_rate.fits
     """
     
-    act_id_b36 = dec_to_base36(act_id)
+    act_id_b36 = act_id if isinstance(act_id, str) else dec_to_base36(int(act_id))
     
     res = {}
     res['program_number']     = '{:05d}'.format(int(pid))       # Program ID number
@@ -95,7 +98,7 @@ def DMS_filename(obs_id_info, detname, segNum=None, prodType='uncal'):
     #fname = f'jw{vid}_{vgp}{sid}{aid}_{eid}_nrc[a-b][1-5]_[uncal,rate,cal].fits' 
         
     part1 = f'jw{vid}_{vgp}{sid}{aid}_{eid}'
-    part2 = "" if segNum is None else "-seg{:.0f}".format(segNum)
+    part2 = "" if segNum is None else f"-seg{segNum:.0f}"
     part3 = '_' + detname + '_' + prodType + '.fits'
     
     fname = part1 + part2 + part3
@@ -106,7 +109,6 @@ def create_group_entry(integration, groupnum, endday, endmilli, endsubmilli, end
                        xd, yd, gap, comp_code, comp_text, barycentric, heliocentric):
     """Add the GROUP extension to the output file
 
-    From an example Mark Kyprianou sent:
     Parameters
     ----------
     integration : int
@@ -181,6 +183,7 @@ def populate_group_table(starttime, grouptime, ramptime, numint, numgroup, ny, n
     These will not be completely correct because access to other ssb
     scripts and more importantly, databases, is necessary. But they should be
     close.
+
     Parameters
     ----------
     starttime : astropy.time.Time
@@ -202,6 +205,9 @@ def populate_group_table(starttime, grouptime, ramptime, numint, numgroup, ny, n
     grouptable : numpy.ndarray
         Group extension data for all groups in the exposure
     """
+
+    import warnings
+
     # Create the table with a first row populated by garbage
     grouptable = create_group_entry(999, 999, 0, 0, 0, 'void', 0, 0, 0, 0, 'void', 1., 1.)
 
@@ -213,7 +219,9 @@ def populate_group_table(starttime, grouptime, ramptime, numint, numgroup, ny, n
     # May want to ignore warnings as astropy.time.Time will give a warning
     # related to unknown leap seconds if the date is too far in
     # the future.
-    baseday = Time('2020-01-01T00:00:00')
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        baseday = Time('2020-01-01T00:00:00')
 
     # Integration start times
     rampdelta  = TimeDelta(ramptime, format='sec')
@@ -265,164 +273,14 @@ def populate_group_table(starttime, grouptime, ramptime, numint, numgroup, ny, n
     grouptable = grouptable[1:]
     return grouptable
 
-
-def update_dms_headers(filename):
-    """
-    Given the name of a valid partially populated level 1b JWST file,
-    add a couple simple WCS parameters from the SIAF keywords in that
-    file that contain information about the telescope pointing. 
-
-    It presumes all the accessed keywords are present from the JWST
-    pipeline data model.
-
-    Parameters
-    ----------
-    filename : str
-        file name
-
-    """
-    hdulist = fits.open(filename, mode='update')
-    pheader = hdulist[0].header
-    fheader = hdulist[1].header
-
-    local_roll  = fheader['ROLL_REF']
-    v3idlyang   = fheader['V3I_YANG']
-    vparity     = fheader['VPARITY']
-    pa_aper_deg = local_roll - vparity * v3idlyang
-
-    D2R = np.pi / 180.0
-    fheader['PC1_1'] = -np.cos(pa_aper_deg * D2R)
-    fheader['PC1_2'] = np.sin(pa_aper_deg * D2R)
-    fheader['PC2_1'] = np.sin(pa_aper_deg * D2R)
-    fheader['PC2_2'] = np.cos(pa_aper_deg * D2R)
-    fheader['RA_REF'] = fheader['CRVAL1']
-    fheader['DEC_REF'] = fheader['CRVAL2']
-    
-    # Now we need to adjust the datamodl header keyword
-    # If we leave it as Level1bModel, the pipeline doesn't
-    # work properly
-    if '1b' in pheader['DATAMODL']:
-        pheader['DATAMODL'] = 'RampModel'
-
-    hdulist.flush()
-    hdulist.close()
-
-def obs_params_populate(obs, target_name, date_obs, time_obs, pa_v3, obs_id_info, 
-                        time_exp_offset=0, segNum=None, int_range=None, **kwargs):
-    """
-    Populate the observation parameters dictionary with keywords
-    necessary to input into JWST pipeline data model container
-    in preparation for saving the DMS FITS file.
-    """
-    
-    det = obs.Detectors[0]
-    siaf_ap = obs.siaf_ap
-    
-    c = SkyCoord.from_name(target_name)
-    
-    if int_range is None:
-        integration_start = 1
-        integration_end   = det.nint
-        nint_seg = det.nint
-    else:
-        integration_start = int_range[0] + 1
-        integration_end   = int_range[1]
-        nint_seg = integration_end - integration_start + 1
-        
-    # Start time for integrations considered in this segment
-    start_time_string = date_obs + 'T' + time_obs
-    t_offset_sec = (integration_start-1)*det.time_total_int2 + time_exp_offset
-    start_time_int = Time(start_time_string) + t_offset_sec*u.second
-    
-    obs_params = {
-        # Proposal info
-        'pi_name'          : 'UNKNOWN',
-        'title'            : 'UNKNOWN',
-        'category'         : 'UNKNOWN',
-        'sub_category'     : 'UNKNOWN',
-        'science_category' : 'UNKNOWN',
-
-        # Target info
-        'target_name'  : target_name,
-        'catalog_name' : 'UNKNOWN',
-        'ra'           : c.ra.deg,
-        'dec'          : c.dec.deg,
-        'pa_v3'        : pa_v3,
-        'siaf_ap'      : siaf_ap,
-
-        # Observation info
-        'obs_id_info' : obs_id_info,
-        'obs_label'   : 'UNKNOWN',
-        'date-obs'    : date_obs,
-        'time-obs'    : time_obs,
-        
-        # Instrument configuration
-        'module'  : obs.module,
-        'channel' : 'LONG' if 'LW' in obs.channel else 'SHORT', 
-        'detector': det.detname,
-        'filter'  : obs.filter,
-        'pupil'   : obs.pupil,
-        # Observation Type
-        'exp_type' : 'UNKNOWN',
-
-        'subarray_name' : obs.get_subarray_name(),
-        # subarray_bounds indexed to zero, but values in header should be indexed to 1.
-        'xstart'   : det.x0+1,
-        'ystart'   : det.y0+1,
-        'xsize'    : det.xpix,
-        'ysize'    : det.ypix,   
-        'fastaxis' : det.fastaxis,
-        'slowaxis' : det.slowaxis,
-
-        # MULTIACCUM
-        'readpatt'         : det.multiaccum.read_mode,
-        'nframes'          : det.multiaccum.nf,
-        'ngroups'          : det.multiaccum.ngroup,
-        'nints'            : det.multiaccum.nint,
-        'sample_time'      : int(1e6/det._pixel_rate),
-        'frame_time'       : det.time_frame,
-        'group_time'       : det.time_group,
-        'groupgap'         : det.multiaccum.nd2,
-        'nresets1'         : det.multiaccum.nr1,
-        'nresets2'         : det.multiaccum.nr2,
-        'integration_time' : det.time_int,
-        'exposure_time'    : det.time_exp,
-        'tint_plus_overhead' : det.time_total_int2,
-        'texp_plus_overhead' : det.time_total,
-
-        # Exposure Start time relative to TIME-OBS (seconds)
-        'texp_start_relative' : time_exp_offset,
-        # Create INT_TIMES table, to be saved in INT_TIMES extension
-        # Currently, this is all integrations within the exposure, despite segment
-        'int_times' : det.int_times_table(date_obs, time_obs, offset_seconds=time_exp_offset),
-        'integration_start' : integration_start,
-        'integration_end'   : integration_end,
-        # Group times only populate for the current 
-        'group_times'       : populate_group_table(start_time_int, det.time_group, det.time_total_int2, 
-                                                   nint_seg, det.multiaccum.ngroup, det.xpix, det.ypix),
-
-        # Dither information defaults (update later)
-        'primary_type'          : 'NONE',     # Primary dither pattern name
-        'position_number'       : 1,          # Primary dither position number
-        'total_points'          : 1,          # Total number of primary dither positions
-        'pattern_size'          : 'DEFAULT',  # Primary dither pattern size 
-        'subpixel_type'         : 'NONE',     # Subpixel dither pattern name
-        'subpixel_number'       : 1,          # Subpixel dither position number
-        'subpixel_total_points' : 1,          # Total number of subpixel dither positions
-        'x_offset'              : 0.0,        # Dither pointing offset from starting position in x (arcsec)
-        'y_offset'              : 0.0,        # Dither pointing offset from starting position in y (arcsec)
-    }
-    
-    for key in kwargs:
-        obs_params[key] = kwargs[key]
-    
-    # Create output filename
-    obs_params['filename'] = DMS_filename(obs_id_info, det.detname, segNum=segNum, prodType='uncal')
-    
-    return obs_params
-
 def create_DMS_HDUList(sci_data, zero_data, obs_params):
     
+    # Make sure data is a 4D array
+    if len(sci_data.shape)<4:
+        nz, ny, nx = sci_data.shape
+        sci_data  = sci_data.reshape([1,nz,ny,nx])
+        zero_data = zero_data.reshape([1,ny,nx])
+
     outModel = Level1bModel(data=sci_data, zeroframe=zero_data)
     outModel.meta.model_type = 'RampModel'
     
@@ -444,14 +302,13 @@ def create_DMS_HDUList(sci_data, zero_data, obs_params):
     outModel.meta.date = start_time_string
 
     # Science target information
-    ra, dec = (obs_params['ra'], obs_params['dec'])
     outModel.meta.target.proposer_name = obs_params['target_name']
     outModel.meta.target.catalog_name  = obs_params['catalog_name']
-    outModel.meta.target.ra  = ra
-    outModel.meta.target.dec = dec
+    outModel.meta.target.ra  = obs_params['ra']
+    outModel.meta.target.dec = obs_params['dec']
     outModel.meta.coordinates.reference_frame = 'ICRS'
     
-    # Observation Type
+    # Exposure Type
     # Possible types:
     #   NRC_DARK, NRC_FLAT, NRC_LED, NRC_GRISM
     #   NRC_TACQ, NRC_TACONFIRM, NRC_FOCUS
@@ -483,22 +340,22 @@ def create_DMS_HDUList(sci_data, zero_data, obs_params):
     outModel.meta.instrument.pupil  = pupil
 
     # Detector information 
-    outModel.meta.subarray.name = obs_params['subarray_name']
+    outModel.meta.subarray.name     = obs_params['subarray_name']
     # subarray_bounds indexed to zero, but values in header should be indexed to 1.
-    outModel.meta.subarray.xstart = obs_params['xstart']
-    outModel.meta.subarray.ystart = obs_params['ystart']
-    outModel.meta.subarray.xsize  = obs_params['xsize']
-    outModel.meta.subarray.ysize  = obs_params['ysize']
+    outModel.meta.subarray.xstart   = obs_params['xstart']
+    outModel.meta.subarray.ystart   = obs_params['ystart']
+    outModel.meta.subarray.xsize    = obs_params['xsize']
+    outModel.meta.subarray.ysize    = obs_params['ysize']
     outModel.meta.subarray.fastaxis = obs_params['fastaxis']
     outModel.meta.subarray.slowaxis = obs_params['slowaxis']
     
     # MULTIACCUM Settings
-    outModel.meta.exposure.readpatt = obs_params['readpatt']
-    outModel.meta.exposure.nframes  = obs_params['nframes']
-    outModel.meta.exposure.ngroups  = obs_params['ngroups']
-    outModel.meta.exposure.nints    = obs_params['nints']
-    outModel.meta.exposure.integration_start = obs_params['integration_start']
-    outModel.meta.exposure.integration_end   = obs_params['integration_end']
+    outModel.meta.exposure.readpatt              = obs_params['readpatt']
+    outModel.meta.exposure.nframes               = obs_params['nframes']
+    outModel.meta.exposure.ngroups               = obs_params['ngroups']
+    outModel.meta.exposure.nints                 = obs_params['nints']
+    outModel.meta.exposure.integration_start     = obs_params['integration_start']
+    outModel.meta.exposure.integration_end       = obs_params['integration_end']
     outModel.meta.exposure.nresets_at_start      = obs_params['nresets1']
     outModel.meta.exposure.nresets_between_ints  = obs_params['nresets2']
         
@@ -518,9 +375,17 @@ def create_DMS_HDUList(sci_data, zero_data, obs_params):
 
     # set the exposure start time
     outModel.meta.exposure.start_time = start_time.mjd 
-    outModel.meta.exposure.end_time = start_time.mjd + texp_tot / (24*3600.)
-    outModel.meta.exposure.mid_time = start_time.mjd + texp_tot / (24*3600.) / 2.
-    outModel.meta.exposure.duration = texp_tot
+    outModel.meta.exposure.end_time   = start_time.mjd + texp_tot / (24*3600.)
+    outModel.meta.exposure.mid_time   = start_time.mjd + texp_tot / (24*3600.) / 2.
+    outModel.meta.exposure.duration   = texp_tot
+
+    # populate the GROUP extension table
+    n_int, n_group, n_y, n_x = outModel.data.shape
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        outModel.group = populate_group_table(start_time, obs_params['group_time'], obs_params['integration_time'],
+                                              n_int, n_group, n_y, n_x)
+
 
     # Observation/program ID information
     outModel.meta.observation.observation_label = obs_params['obs_label']
@@ -528,19 +393,20 @@ def create_DMS_HDUList(sci_data, zero_data, obs_params):
     outModel.meta.observation.program_number     = obs_id_info['program_number']
     outModel.meta.observation.observation_number = obs_id_info['observation_number']
     outModel.meta.observation.visit_number       = obs_id_info['visit_number']
-    outModel.meta.observation.visit_group     = obs_id_info['visit_group']
-    outModel.meta.observation.sequence_id     = obs_id_info['sequence_id']
-    outModel.meta.observation.activity_id     = obs_id_info['activity_id']
-    outModel.meta.observation.exposure_number = obs_id_info['exposure_number']
-    outModel.meta.observation.visit_id        = obs_id_info['visit_id']
-    outModel.meta.observation.obs_id          = obs_id_info['obs_id']
+    outModel.meta.observation.visit_group        = obs_id_info['visit_group']
+    outModel.meta.observation.sequence_id        = obs_id_info['sequence_id']
+    outModel.meta.observation.activity_id        = obs_id_info['activity_id']
+    outModel.meta.observation.exposure_number    = obs_id_info['exposure_number']
+    outModel.meta.observation.visit_id           = obs_id_info['visit_id']
+    outModel.meta.observation.obs_id             = obs_id_info['obs_id']
 
     # Telescope pointing
-    pa_v3 = obs_params['pa_v3']
     siaf_ap = obs_params['siaf_ap']
+    pa_v3   = obs_params['pa_v3']
     # ra_v1, dec_v1, and pa_v3 are not used by the level 2 pipelines
     # compute pointing of V1 axis
-    attitude_matrix = rotations.attitude(siaf_ap.V2Ref, siaf_ap.V3Ref, ra, dec, pa_v3)
+    ra_obs, dec_obs = (obs_params['ra_obs'], obs_params['dec_obs'])
+    attitude_matrix = rotations.attitude(siaf_ap.V2Ref, siaf_ap.V3Ref, ra_obs, dec_obs, pa_v3)
     pointing_ra_v1, pointing_dec_v1 = rotations.pointing(attitude_matrix, 0., 0.)
     outModel.meta.pointing.ra_v1 = pointing_ra_v1
     outModel.meta.pointing.dec_v1 = pointing_dec_v1
@@ -560,10 +426,12 @@ def create_DMS_HDUList(sci_data, zero_data, obs_params):
     # WCS Info
     outModel.meta.aperture.name = siaf_ap.AperName
     outModel.meta.wcsinfo.wcsaxes = 2
-    outModel.meta.wcsinfo.crval1 = ra
-    outModel.meta.wcsinfo.crval2 = dec
+    outModel.meta.wcsinfo.crval1 = obs_params['ra_obs']
+    outModel.meta.wcsinfo.crval2 = obs_params['dec_obs']
     outModel.meta.wcsinfo.crpix1 = siaf_ap.XSciRef
     outModel.meta.wcsinfo.crpix2 = siaf_ap.YSciRef
+    # outModel.meta.wcsinfo.crpix1 = int(siaf_ap.XSciRef)
+    # outModel.meta.wcsinfo.crpix2 = int(siaf_ap.YSciRef)
     outModel.meta.wcsinfo.ctype1 = 'RA---TAN'
     outModel.meta.wcsinfo.ctype2 = 'DEC--TAN'
     outModel.meta.wcsinfo.cunit1 = 'deg'
@@ -574,14 +442,133 @@ def create_DMS_HDUList(sci_data, zero_data, obs_params):
     outModel.meta.wcsinfo.v3yangle = siaf_ap.V3IdlYAngle
     outModel.meta.wcsinfo.cdelt1 = siaf_ap.XSciScale / 3600.
     outModel.meta.wcsinfo.cdelt2 = siaf_ap.YSciScale / 3600.
-    outModel.meta.wcsinfo.siaf_xref_sci = siaf_ap.XSciRef
-    outModel.meta.wcsinfo.siaf_yref_sci = siaf_ap.YSciRef
+
+    # Grism TSO data have the XREF_SCI and YREF_SCI keywords populated.
+    # These are used to describe the location of the source on the detector.
+    try:
+        outModel.meta.wcsinfo.siaf_xref_sci = obs_params['XREF_SCI']
+        outModel.meta.wcsinfo.siaf_yref_sci = obs_params['YREF_SCI']
+    except KeyError:
+        outModel.meta.wcsinfo.siaf_xref_sci = siaf_ap.XSciRef
+        outModel.meta.wcsinfo.siaf_yref_sci = siaf_ap.YSciRef
+
     # V3 roll angle at the ref point
-    roll_ref = rotations.posangle(attitude_matrix, siaf_ap.V2Ref, siaf_ap.V3Ref)
-    if roll_ref < 0:
-        roll_ref += 360
+    roll_ref = compute_local_roll(pa_v3, obs_params['ra_obs'], obs_params['dec_obs'], siaf_ap.V2Ref, siaf_ap.V3Ref)
     outModel.meta.wcsinfo.roll_ref = roll_ref
     
     outModel.meta.filename = obs_params['filename']
     
     return outModel
+
+def update_dms_headers(filename, obs_params):
+    """
+    Given the name of a valid partially populated level 1b JWST file,
+    add a couple simple WCS parameters from the SIAF keywords, which
+    contain information about the telescope pointing. 
+
+    It presumes all the accessed keywords are present from the JWST
+    pipeline data model.
+
+    Parameters
+    ----------
+    filename : str
+        file name
+
+    """
+    hdulist = fits.open(filename, mode='update')
+    pheader = hdulist[0].header
+    fheader = hdulist[1].header
+
+    try:
+        v2ref = float(pheader['V2_REF'])
+        v3ref = float(pheader['V3_REF'])
+        v3idlyang = float(pheader['V3I_YANG'])
+        vparity   = int(pheader['VPARITY'])
+        pa_v3 = float(pheader['PA_V3'])
+    except:
+        v2ref = float(fheader['V2_REF'])
+        v3ref = float(fheader['V3_REF'])
+        v3idlyang = float(fheader['V3I_YANG'])
+        vparity   = int(fheader['VPARITY'])
+        pa_v3 = float(fheader['PA_V3'])
+
+    ra_ref = fheader['CRVAL1']
+    dec_ref = fheader['CRVAL2']
+
+    local_roll  = compute_local_roll(pa_v3, ra_ref, dec_ref, v2ref, v3ref)
+    pa_aper_deg = local_roll - vparity * v3idlyang
+
+    D2R = np.pi / 180.0
+    fheader['PC1_1']   = -np.cos(pa_aper_deg * D2R)
+    fheader['PC1_2']   = np.sin(pa_aper_deg * D2R)
+    fheader['PC2_1']   = np.sin(pa_aper_deg * D2R)
+    fheader['PC2_2']   = np.cos(pa_aper_deg * D2R)
+    fheader['RA_REF']  = ra_ref
+    fheader['DEC_REF'] = dec_ref
+    fheader['ROLL_REF'] = local_roll
+    fheader['WCSAXES'] = len(fheader['CTYPE*'])
+
+    fheader['SIAF'] = (pysiaf.JWST_PRD_VERSION, "SIAF PRD version")
+
+    # Segment exposure information
+    if obs_params['EXSEGNUM'] is not None:
+        pheader['EXSEGNUM'] = obs_params['EXSEGNUM']
+    if obs_params['EXSEGTOT'] is not None:
+        pheader['EXSEGTOT'] = obs_params['EXSEGTOT']
+    
+    # Now we need to adjust the datamodl header keyword
+    # If we leave it as Level1bModel, the pipeline doesn't
+    # work properly
+    if '1b' in pheader['DATAMODL']:
+        pheader['DATAMODL'] = 'RampModel'
+
+    hdulist.flush()
+    hdulist.close()
+
+def compute_local_roll(pa_v3, ra_ref, dec_ref, v2_ref, v3_ref):
+    """
+    Computes the position angle of V3 (measured N to E) at the reference point of an aperture.
+
+    Parameters
+    ----------
+    pa_v3 : float
+        Position angle of V3 at (V2, V3) = (0, 0) [in deg]
+    v2_ref, v3_ref : float
+        Reference point in the V2, V3 frame [in arcsec]
+    ra_ref, dec_ref : float
+        RA and DEC corresponding to V2_REF and V3_REF, [in deg]
+
+    Returns
+    -------
+    new_roll : float
+        The value of ROLL_REF (in deg)
+
+    """
+    v2 = np.deg2rad(v2_ref / 3600)
+    v3 = np.deg2rad(v3_ref / 3600)
+    ra_ref = np.deg2rad(ra_ref)
+    dec_ref = np.deg2rad(dec_ref)
+    pa_v3 = np.deg2rad(pa_v3)
+
+    M = np.array([[np.cos(ra_ref) * np.cos(dec_ref),
+                   -np.sin(ra_ref) * np.cos(pa_v3) + np.cos(ra_ref) * np.sin(dec_ref) * np.sin(pa_v3),
+                   -np.sin(ra_ref) * np.sin(pa_v3) - np.cos(ra_ref) * np.sin(dec_ref) * np.cos(pa_v3)],
+                  [np.sin(ra_ref) * np.cos(dec_ref),
+                   np.cos(ra_ref) * np.cos(pa_v3) + np.sin(ra_ref) * np.sin(dec_ref) * np.sin(pa_v3),
+                   np.cos(ra_ref) * np.sin(pa_v3) - np.sin(ra_ref) * np.sin(dec_ref) * np.cos(pa_v3)],
+                   [np.sin(dec_ref),
+                    -np.cos(dec_ref) * np.sin(pa_v3),
+                    np.cos(dec_ref) * np.cos(pa_v3)]
+                  ])
+
+    return _roll_angle_from_matrix(M, v2, v3)
+
+
+def _roll_angle_from_matrix(matrix, v2, v3):
+    X = -(matrix[2, 0] * np.cos(v2) + matrix[2, 1] * np.sin(v2)) * np.sin(v3) + matrix[2, 2] * np.cos(v3)
+    Y = (matrix[0, 0] *  matrix[1, 2] - matrix[1, 0] * matrix[0, 2]) * np.cos(v2) + \
+      (matrix[0, 1] * matrix[1, 2] - matrix[1, 1] * matrix[0, 2]) * np.sin(v2)
+    new_roll = np.rad2deg(np.arctan2(Y, X))
+    if new_roll < 0:
+        new_roll += 360
+    return new_roll
