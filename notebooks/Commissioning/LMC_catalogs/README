@@ -1,5 +1,11 @@
 #---------------------------------------------------------------------
 
+TLDR: Use lmc_catalog_flag1.cat from Matteo for
+	- flag1 -> bright, isolated list
+	- reminder: 1=>isolated, 2=>crowded, 0=>simulated
+
+#---------------------------------------------------------------------
+
 These are files that can be found at:
 
 https://stsci.box.com/s/vekeclao9dtb0l1mpvk4ga0fbznugixx
