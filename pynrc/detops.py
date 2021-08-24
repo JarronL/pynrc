@@ -380,7 +380,7 @@ class det_timing(object):
 
     @property
     def nout(self):
-        """Number of simultaenous detector output channels stripes"""
+        """Number of simultaneous detector output channels stripes"""
         return 1 if self.wind_mode == 'WINDOW' else self._nchans
 
     @property
@@ -403,6 +403,32 @@ class det_timing(object):
         ref_all = np.array([lower,upper,left,right], dtype='int')
         ref_all[ref_all<0] = 0
         return ref_all
+
+    @property
+    def mask_act(self):
+        """Active pixel mask for det coordinates"""
+        # mask_act = np.zeros([self.ypix,self.xpix]).astype('bool')
+        # rb, rt, rl, rr = self.ref_info
+        # mask_act[rb:-rt,rl:-rr] = True  # This doesn't work if rr or rt are 0!!
+        return ~self.mask_ref
+    @property
+    def mask_ref(self):
+        """Reference pixel mask for det coordinates"""
+        # [bottom, upper, left, right]
+        rb, rt, rl, rr = self.ref_info
+        ref_mask = np.zeros([self.ypix,self.xpix], dtype=bool)
+        if rb>0: ref_mask[0:rb,:] = True
+        if rt>0: ref_mask[-rt:,:] = True
+        if rl>0: ref_mask[:,0:rl] = True
+        if rr>0: ref_mask[:,-rr:] = True
+        return ref_mask
+    @property
+    def mask_channels(self):
+        """Channel masks for det coordinates"""
+        ch_mask = np.zeros([self.ypix,self.xpix])
+        for ch in np.arange(self.nout):
+            ch_mask[:,ch*self.chsize:(ch+1)*self.chsize] = ch
+        return ch_mask
 
     @property
     def nff(self):
