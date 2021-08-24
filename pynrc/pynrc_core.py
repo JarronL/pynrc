@@ -1,7 +1,12 @@
 """pyNRC - Python ETC and Simulator for JWST NIRCam"""
 
 # Import libraries
+import numpy as np
+import matplotlib
+import matplotlib.pyplot as plt
+
 from astropy.table import Table
+from astropy.io import ascii
 from webbpsf_ext.webbpsf_ext_core import NIRCam_ext
 from .nrc_utils import *
 
@@ -88,10 +93,10 @@ class DetectorOps(det_timing):
         #     effective noise plots.
         self._properties_SW = {'pixel_scale':pixscale_SW, 'dark_current':0.002, 'read_noise':11.5, 
                                'IPC':0.54, 'PPC':0.09, 'p_excess':(1.0,5.0), 'ktc':37.6,
-                               'well_level':100e3, 'well_level_old':81e3}
+                               'well_level':105e3, 'well_level_old':81e3}
         self._properties_LW = {'pixel_scale':pixscale_LW, 'dark_current':0.034, 'read_noise':10.0, 
                                'IPC':0.60, 'PPC':0.19, 'p_excess':(1.5,10.0), 'ktc':36.8,
-                               'well_level':80e3, 'well_level_old':75e3}
+                               'well_level':83e3, 'well_level_old':75e3}
         # Automatically set the pixel scale based on detector selection
         self.auto_pixscale = True  
 
@@ -157,7 +162,8 @@ class DetectorOps(det_timing):
         # Select various detector properties (pixel scale, dark current, read noise, etc)
         # depending on LW or SW detector
         dtemp = self._properties_LW if self.channel=='LW' else self._properties_SW
-        if self.auto_pixscale: self.pixelscale = dtemp['pixel_scale']
+        if self.auto_pixscale: 
+            self.pixelscale = dtemp['pixel_scale']
         self.ktc          = dtemp['ktc']
         self.dark_current = dtemp['dark_current']
         self.read_noise   = dtemp['read_noise']
@@ -200,6 +206,17 @@ class DetectorOps(det_timing):
     def channel(self):
         """Detector channel 'SW' or 'LW' (inferred from detector ID)"""
         return 'LW' if self.detid.endswith('5') else 'SW'
+
+    def xtalk(self, file_path=None):
+        """Detector cross talk information"""
+
+        if file_path is None:
+            file = 'xtalk20150303g0.errorcut.txt'
+            file_path = os.path.join(conf.PYNRC_PATH, 'sim_params', file)
+
+        xt_coeffs = ascii.read(file_path, header_start=0)
+        ind = xt_coeffs['Det'] == self.detid
+        return xt_coeffs[ind]
 
     def pixel_noise(self, fsrc=0.0, fzodi=0.0, fbg=0.0, rn=None, ktc=None, idark=None,
         p_excess=None, ng=None, nf=None, verbose=False, **kwargs):
@@ -1365,8 +1382,8 @@ class NIRCam(NIRCam_ext):
         """Sensitivity limits.
         
         Convenience function for returning the point source (and surface brightness)
-        sensitivity for the given instrument setup. See bg_sensitivity() for more
-        details.
+        sensitivity for the given instrument setup. See `sensitivities` function 
+        for more details.
 
         Parameters
         ----------
@@ -1494,18 +1511,64 @@ class NIRCam(NIRCam_ext):
 
         return fzodi_pix
 
-    def bg_zodi_image(self, zfact=None, **kwargs):
+    def bg_zodi_image(self, zfact=None, frame='sci', **kwargs):
         """Zodiacal light image
         
         Returns an image of background Zodiacal light emission
-        in e-/sec/pix. 
+        in e-/sec in specified coordinate frame.
+
+        Parameters
+        ----------
+        zfact : float
+            Factor to scale Zodiacal spectrum (default 2.5)
+        frame : str
+            Return in 'sci' or 'det' coordinates?
+
+        Keyword Args
+        ------------
+        ra : float
+            Right ascension in decimal degrees
+        dec : float
+            Declination in decimal degrees
+        thisday : int
+            Calendar day to use for background calculation.  
+            If not given, will use the average of visible calendar days.
+
+        Notes
+        -----
+        Representative values for zfact:
+
+            * 0.0 - No zodiacal emission
+            * 1.0 - Minimum zodiacal emission from JWST-CALC-003894
+            * 1.2 - Required NIRCam performance
+            * 2.5 - Average (default)
+            * 5.0 - High
+            * 10.0 - Maximum
         """
 
+        detid = self.Detector.detid
         x0, y0 = (self.det_info['x0'], self.det_info['y0'])
         xpix, ypix = (self.det_info['xpix'], self.det_info['ypix'])
-        sp_zodi = zodi_spec(zfact, **kwargs)
 
-        detid = self.Detector.detid
+        # Dark image
+        if self.is_dark:
+            return np.zeros([ypix,xpix])
+
+        bp = self.bandpass
+        waveset   = bp.wave
+        sp_zodi   = zodi_spec(zfact, **kwargs)
+        obs_zodi  = S.Observation(sp_zodi, bp, waveset)
+        fzodi_pix = obs_zodi.countrate() * (self.pixelscale/206265.0)**2
+
+        # Get equivalent 
+        if 'ra' in kwargs.keys():
+            sp_zodi_temp   = zodi_spec(zfact=1)
+            obs_zodi_temp  = S.Observation(sp_zodi_temp, bp, waveset)
+            fzodi_pix_temp = obs_zodi_temp.countrate() * (self.pixelscale/206265.0)**2
+            zfact = fzodi_pix / fzodi_pix_temp
+            _ = kwargs.pop('ra')
+            _ = kwargs.pop('dec')
+            _ = kwargs.pop('thisday')
 
         filter = self.filter
         pupil  = self.pupil_mask
@@ -1539,7 +1602,19 @@ class NIRCam(NIRCam_ext):
             # No spatial structures for direct imaging an certain Lyot masks.
             im_bg = np.ones([ypix,xpix]) * self.bg_zodi(zfact, **kwargs)
 
-        return im_bg
+        # Clear reference pixels
+        # im_bg = sci_to_det(im_bg, detid)
+        # mask_ref = self.Detector.mask_ref
+        # im_bg[mask_ref] = 0
+        # im_bg = det_to_sci(im_bg, detid)
+
+        if frame=='det':
+            return sci_to_det(im_bg, detid)
+        elif frame=='sci':
+            return im_bg
+        else:
+            raise ValueError(f"frame {frame} not recognized. Use either 'sci' or 'det'.")
+
         
 
     def ramp_optimize(self, sp, sp_bright=None, is_extended=False, patterns=None,
@@ -1888,6 +1963,42 @@ class NIRCam(NIRCam_ext):
             if verbose: print(t_all)
 
         return t_all
+
+    def gen_psfs_over_fov(self, sptype='G0V', wfe_drift=0, osamp=1, npsf_per_full_fov=15,
+                          return_coords=None, use_coeff=True, **kwargs):
+        """Create PSF grid over full field of view
+        
+        Wrapper around `calc_psf_grid` that returns normalized PSFs across the 
+        full field of view.
+
+        Parameters
+        ==========
+        sptype : str
+            Spectral type, such as 'A0V' or 'K2III'.
+        wfe_drift : float
+            Desired WFE drift value relative to default OPD.
+        osamp : int
+            Sampling of output PSF relative to detector sampling.
+        npsf_per_full_fov : int
+            Number of PSFs across one dimension of the instrument's field of 
+            view. If a coronagraphic observation, then this is for the nominal
+            coronagrahic field of view.
+        return_coords : None or str
+            Option to also return coordinate values in desired frame 
+            ('det', 'sci', 'tel', 'idl'). Output is then xvals, yvals, hdul_psfs.
+        use_coeff : bool
+            If True, uses `calc_psf_from_coeff`, other WebbPSF's built-in `calc_psf`.
+        """
+
+        # Create input spectrum that is  star normalized by unit response
+        bp = self.bandpass
+        sp = stellar_spectrum(sptype, bp.unit_response(), 'flam', bp)
+
+        res = self.calc_psfs_grid(sp=sp, wfe_drift=wfe_drift, osamp=osamp,
+                                  return_coords=return_coords, use_coeff=use_coeff,
+                                  npsf_per_full_fov=npsf_per_full_fov, **kwargs)
+        return res
+        
 
     def gen_exposures(self, sp=None, im_slope=None, file_out=None, return_results=None,
                       targ_name=None, timeFileNames=False, DMS=True, 
@@ -2467,6 +2578,32 @@ def saturation_limits(inst, psf_coeff=None, psf_coeff_hdr=None, sp=None, bp_lim=
                     format(bp_lim.name, bp.name, sp_norm.name, out2['satlim'], out2['units']) )
 
         return out1, out2
+
+def _mlim_helper(sub_im, mag_norm=10, mag_arr=np.arange(5,35,1),
+    nsig=5, nint=1, snr_fact=1, forwardSNR=False, **kwargs):
+    """Helper function for determining grism sensitivities"""
+
+    sub_im_sum = sub_im.sum()
+
+    # Just return the SNR for the input sub image
+    if forwardSNR:
+        im_var = pix_noise(fsrc=sub_im, **kwargs)**2
+        ns_sum = np.sqrt(np.sum(im_var) / nint)
+        return snr_fact * sub_im_sum / ns_sum
+
+    fact_arr = 10**((mag_arr-mag_norm)/2.5)
+    snr_arr = []
+
+    for f in fact_arr:
+        im = sub_im / f
+        im_var = pix_noise(fsrc=im, **kwargs)**2
+        im_sum = sub_im_sum / f
+        ns_sum = np.sqrt(np.sum(im_var) / nint)
+
+        snr_arr.append(im_sum / ns_sum)
+    snr_arr = snr_fact*np.asarray(snr_arr)
+    return np.interp(nsig, snr_arr[::-1], mag_arr[::-1])
+
 
 def sensitivities(inst, psf_coeff=None, psf_coeff_hdr=None, sp=None, units=None, 
                   forwardSNR=False, nsig=10, tf=10.737, ngroup=2, nf=1, nd2=0, nint=1,

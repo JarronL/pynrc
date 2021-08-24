@@ -21,21 +21,300 @@ Modification History:
     - Deprecate nghxrg, SCANoise, and slope_to_ramp
     - Instead use slope_to_ramps
 """
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 import numpy as np
+import os
+
 from astropy.io import fits
+from astropy.convolution import convolve
+
+from datetime import datetime
+
+from .dms import create_DMS_HDUList, update_dms_headers
+from ..nrc_utils import pad_or_cut_to_size, jl_poly, gen_unconvolved_point_source_image
+from ..reduce.calib import ramp_resample, nircam_cal
+from ..maths.coords import det_to_sci, sci_to_det
+from ..maths.image_manip import convolve_image
+from .. import conf
 
 # Program bar
 from tqdm.auto import trange, tqdm
 
-from pynrc.nrc_utils import pad_or_cut_to_size, jl_poly
-from pynrc.reduce.calib import ramp_resample
-from pynrc.maths.coords import det_to_sci, sci_to_det
-
 import logging
 _log = logging.getLogger('pynrc')
 
+def slope_to_level1b(im_slope, obs_params, cal_obj=None, save_dir=None, **kwargs):
+    """Simulate DMS HDUList from slope image
+    
+    Requires input of obs_params input dictionary as generated from
+    APT input files (see `DMS_input` class in apt.py). 
+
+    Also, make sure the `calib` directory exists in PYNRC_PATH and is 
+    populated with detector calibration information.
+
+    Look at keyword args to exclude specific detector effects.
+
+    Parameters
+    ==========
+    im_slope : ndarray
+        Slope in e-/sec of image from all sky sources, including
+        Zodiacal background. Should exclude dark current background,
+        which is handled separately from calib directory.
+    obs_params : dict
+        Dictionary of parameters to populate DMS header. See
+        `create_DMS_HDUList` in dms.py.
+    cal_obj : :class:`pynrc.nircam_cal`
+        DMS object built from exported APT files. See `DMS_input`
+        in apt.py.
+    save_dir : None or str
+        Option to override output directory as specified in `obs_params` dictionary.
+        If not specified as either a function keyword or in `obs_params`, then files 
+        are saved in current working directory.
+
+    Keyword Args
+    ============
+    include_dark : bool
+        Add dark current?
+    include_bias : bool
+        Add detector bias?
+    include_ktc : bool
+        Add kTC noise?
+    include_rn : bool
+        Add readout noise per frame?
+    include_cpink : bool
+        Add correlated 1/f noise to all amplifiers?
+    include_upink : bool
+        Add uncorrelated 1/f noise to each amplifier?
+    include_acn : bool
+        Add alternating column noise?
+    apply_ipc : bool
+        Include interpixel capacitance?
+    apply_ppc : bool
+        Apply post-pixel coupling to linear analog signal?
+    include_refoffsets : bool
+        Include reference offests between amplifiers and odd/even columns?
+    include_refinst : bool
+        Include reference/active pixel instabilities?
+    include_colnoise : bool
+        Add in column noise per integration?
+    col_noise : ndarray or None
+        Option to explicitly specify column noise distribution in
+        order to shift by one for subsequent integrations
+    amp_crosstalk : bool
+        Crosstalk between amplifiers?
+    add_crs : bool
+        Add cosmic ray events? See Robberto et al 2010 (JWST-STScI-001928).
+    cr_model: str
+        Cosmic ray model to use: 'SUNMAX', 'SUNMIN', or 'FLARES'.
+    cr_scale: float
+        Scale factor for probabilities.
+    latents : None
+        Apply persistence.
+    apply_nonlinearity : bool
+        Apply non-linearity?
+    random_nonlin : bool
+        Add randomness to the linearity coefficients?
+    prog_bar : bool
+        Show a progress bar for this ramp generation?
+    """
+    
+    det = obs_params['det_obj']
+    
+    if cal_obj is None:
+        caldir = os.path.join(conf.PYNRC_PATH, 'calib', str(det.scaid))
+        cal_obj = nircam_cal(det.scaid, caldir)
+        
+    # Simulate ramp data
+    res = simulate_detector_ramp(det, cal_obj, im_slope=im_slope, return_zero_frame=True,
+                                 return_full_ramp=False, **kwargs)
+    sci_data, zero_data = res
+    
+    # Create Level 1b data model
+    out_model = create_DMS_HDUList(sci_data, zero_data, obs_params)
+    
+    # First check if save_dir was passed through kwargs
+    save_dir = kwargs.get('save_dir')
+    # Next check if specified in obs_params
+    if save_dir is None:
+        save_dir = obs_params.get('save_dir')
+    # file_path = obs_params['filename']
+    file_path = 'pynrc_' + obs_params['filename']
+    if save_dir is not None:
+        file_path = os.path.join(save_dir, file_path)
+        
+    # Save model to DMS FITS file and update header information
+    print(f'Saving: {file_path}')
+    out_model.save(file_path)
+    update_dms_headers(file_path, obs_params)
+
+
+def sources_to_level1b(source_table, nircam_obj, obs_params, tel_pointing, 
+                       hdul_psfs=None, cal_obj=None, im_bg=None, 
+                       save_dir=None, **kwargs):
+    """Simulate DMS HDUList from slope image
+    
+    Requires input of obs_params input dictionary as generated from
+    APT input files (see `DMS_input` class in apt.py). 
+
+    Also, make sure the `calib` directory exists in PYNRC_PATH and is 
+    populated with detector calibration information.
+
+    Look at keyword args to exclude specific detector effects.
+
+    Parameters
+    ==========
+    source_table : astropy Table
+        Table of objects in across the region, including headers
+        'ra', 'dec', and object fluxes in NIRCam filter in vega mags where
+        headers are labeled the filter name (e.g, 'F444W').
+    nircam_obj : :class:`pynrc.NIRCam`
+        NIRCam instrument class for PSF generation.
+    obs_params : dict
+        Dictionary of parameters to populate DMS header. See
+        `create_DMS_HDUList` in dms.py.
+    tel_pointing : :class:`webbpsf_ext.jwst_point`
+        JWST telescope pointing information. Holds pointing coordinates 
+        and dither information for a given telescope visit.
+    cal_obj : :class:`pynrc.nircam_cal`
+        NIRCam calibration class that holds the necessary calibration 
+        info to simulate a ramp.
+    im_bg : None or ndarray
+        Option to specify a pre-generated image (or single value) of the
+        Zodiacal background emission. If not specified, then gets
+        automatically generating.
+    save_dir : None or str
+        Option to override output directory as specified in `obs_params` dictionary.
+        If not specified as either a function keyword or in `obs_params`, then files 
+        are saved in current working directory.
+
+    Keyword Args
+    ============
+    npsf_per_full_fov : int
+        Number of PSFs across one dimension of the instrument's field of 
+        view. If a coronagraphic observation, then this is for the nominal
+        coronagrahic field of view.
+    sptype : str
+        Spectral type, such as 'A0V' or 'K2III'.
+    wfe_drift : float
+        Desired WFE drift value relative to default OPD.
+    osamp : int
+        Sampling of output PSF relative to detector sampling. If `hdul_psfs` is 
+        specified, then the 'OSAMP' header keyword takes precedence.
+    use_coeff : bool
+        If True, uses `calc_psf_from_coeff`, other WebbPSF's built-in `calc_psf`.
+        Coefficients are much faster
+
+    Ramp Gen Keywords
+    =================
+    include_dark : bool
+        Add dark current?
+    include_bias : bool
+        Add detector bias?
+    include_ktc : bool
+        Add kTC noise?
+    include_rn : bool
+        Add readout noise per frame?
+    include_cpink : bool
+        Add correlated 1/f noise to all amplifiers?
+    include_upink : bool
+        Add uncorrelated 1/f noise to each amplifier?
+    include_acn : bool
+        Add alternating column noise?
+    apply_ipc : bool
+        Include interpixel capacitance?
+    apply_ppc : bool
+        Apply post-pixel coupling to linear analog signal?
+    include_refoffsets : bool
+        Include reference offests between amplifiers and odd/even columns?
+    include_refinst : bool
+        Include reference/active pixel instabilities?
+    include_colnoise : bool
+        Add in column noise per integration?
+    col_noise : ndarray or None
+        Option to explicitly specify column noise distribution in
+        order to shift by one for subsequent integrations
+    amp_crosstalk : bool
+        Crosstalk between amplifiers?
+    add_crs : bool
+        Add cosmic ray events? See Robberto et al 2010 (JWST-STScI-001928).
+    cr_model: str
+        Cosmic ray model to use: 'SUNMAX', 'SUNMIN', or 'FLARES'.
+    cr_scale: float
+        Scale factor for probabilities.
+    latents : None
+        Apply persistence.
+    apply_nonlinearity : bool
+        Apply non-linearity?
+    random_nonlin : bool
+        Add randomness to the linearity coefficients?
+    prog_bar : bool
+        Show a progress bar for this ramp generation?
+    """
+    
+    nrc = nircam_obj
+    siaf_ap = obs_params['siaf_ap']
+    det = obs_params['det_obj']
+
+    # Get oversampling
+    if hdul_psfs is not None: # First check hdul_psfs
+        osamp = hdul_psfs[0].header['OSAMP']
+        if ('osamp' in kwargs.keys()) and (kwargs['osamp']!=osamp):
+            osamp2 = kwargs['osamp']
+            print('Conflict between osamp () in kwargs and osamp in PSF header. Using header.')
+        kwargs['osamp'] = osamp
+    elif 'osamp' in kwargs.keys():
+        osamp = kwargs['osamp']
+    else:
+        osamp = 1
+        kwargs['osamp'] = osamp
+    
+    ###############################
+    # Generate unconvolved image
+    
+    # RA and Dec of all objects in field
+    ra_deg, dec_deg = (source_table['ra'], source_table['dec'])
+    # Vega magnitude values
+    filt = obs_params['filter']
+    mags = source_table[filt].data
+    expnum = int(obs_params['obs_id_info']['exposure_number'])
+    hdul_sci_image = gen_unconvolved_point_source_image(nrc, tel_pointing, ra_deg, dec_deg, mags, 
+                                                        expnum=expnum, **kwargs)
+    
+    ###############################
+    # Convolve full image with PSFs
+
+    if hdul_psfs is None:
+        hdul_psfs = nrc.gen_psfs_over_fov(return_coords=None, **kwargs)
+        
+    # Perform convolution
+    hdul_sci_conv = convolve_image(hdul_sci_image, hdul_psfs, output_sampling=1, return_hdul=True)
+    im_conv = hdul_sci_conv[0].data
+    ny, nx = im_conv.shape
+    xsci = np.arange(nx) + hdul_sci_conv[0].header['XSCI0']
+    ysci = np.arange(ny) + hdul_sci_conv[0].header['YSCI0']
+
+    # Crop out relevant region
+    xind = (xsci>=0) & (xsci<siaf_ap.XSciSize)
+    yind = (ysci>=0) & (ysci<siaf_ap.YSciSize)
+    im_slope = im_conv[yind,:][:,xind]
+    
+    ###############################
+    # Add zodiacal background
+
+    # Get Zodiacal background emission.
+    # Can be reused for all ints in same observation.
+    if im_bg is None:
+        date_str = obs_params['date-obs']
+        date_arg = (int(s) for s in date_str.split('-'))
+        day_of_year = datetime(*date_arg).timetuple().tm_yday
+        ra, dec = tel_pointing.ap_radec()
+        im_bg = nrc.bg_zodi_image(ra=ra, dec=dec, thisday=day_of_year)
+        
+    # Add background
+    im_slope = im_slope + im_bg
+    kwargs['cframe'] = 'sci'
+    
+    slope_to_level1b(im_slope, obs_params, cal_obj=cal_obj, save_dir=save_dir, **kwargs)
+    
 
 def slope_to_ramps(det, dark_cal_obj, im_slope=None, filter=None, pupil=None, 
                    targ_name=None, obs_time=None, file_out=None, 
@@ -47,9 +326,9 @@ def slope_to_ramps(det, dark_cal_obj, im_slope=None, filter=None, pupil=None,
     ==========
     det : Detector Class
         Desired detector class output
-    dark_cal_obj: nircam_dark class
-        NIRCam Dark class that holds the necessary calibration info to
-        simulate a dark ramp.
+    dark_cal_obj: nircam_cal class
+        NIRCam calibration class that holds the necessary calibration 
+        info to simulate a ramp.
     im_slope : ndarray
         Input slope image of observed scene. Assumed to be in detector
         coordinates. If an image cube, then number of images must match 
@@ -117,9 +396,6 @@ def slope_to_ramps(det, dark_cal_obj, im_slope=None, filter=None, pupil=None,
     linearity_map : ndarray
         Add non-linearity.
     """
-    import os
-    import datetime
-    import multiprocessing as mp
         
     # Number of saved frames in a ramp
     ma   = det.multiaccum
@@ -243,8 +519,6 @@ def add_ipc(im, alpha_min=0.0065, alpha_max=None, kernel=None):
         >>> im_ipc = add_ipc(im, alpha_min=0.0065, alpha_max=0.0145)
 
     """
-
-    from astropy.convolution import convolve
     
     sh = im.shape
     ndim = len(sh)
@@ -373,7 +647,6 @@ def add_ppc(im, ppc_frac=0.002, nchans=4, kernel=None,
     return res.squeeze()
 
 
-
 def gen_col_noise(ramp_column_varations, prob_bad, nz=108, nx=2048):
     """ Generate RTN Column Noise
 
@@ -421,7 +694,7 @@ def gen_col_noise(ramp_column_varations, prob_bad, nz=108, nx=2048):
 
     # Add a random phase shift to each of those template column
     tshifts = np.random.randint(0, high=nz0, size=nbad_random)
-    for i in np.arange(nbad_random):
+    for i in range(nbad_random):
         cols_rand[:,i] = np.roll(cols_rand[:,i], tshifts[i])
 
     # Add to columns variable
@@ -467,7 +740,8 @@ def add_col_noise(super_dark_ramp, ramp_column_varations, prob_bad):
     
     return data
 
-def gen_ramp_biases(ref_dict, nchan=None, data_shape=(2,2048,2048), ref_border=[4,4,4,4]):
+def gen_ramp_biases(ref_dict, nchan=None, data_shape=(2,2048,2048), 
+                    include_refinst=True, ref_border=[4,4,4,4]):
     """ Generate a ramp of bias offsets
 
     Parameters
@@ -481,6 +755,8 @@ def gen_ramp_biases(ref_dict, nchan=None, data_shape=(2,2048,2048), ref_border=[
         info provided in `ref_dict`.
     data_shape : array like
         Shape of output (nz,ny,nx) 
+    include_refinst : bool
+        Include instabilities in the offsets?
     ref_border: list
         Number of references pixels [lower, upper, left, right]
     """
@@ -519,22 +795,24 @@ def gen_ramp_biases(ref_dict, nchan=None, data_shape=(2,2048,2048), ref_border=[
     # Add some reference pixel instability relative to active pixels
     ######################
 
-    # Mask of active pixels
-    mask_act = np.zeros([ny,nx]).astype('bool')
-    rb, rt, rl, rr = ref_border
-    mask_act[rb:-rt,rl:-rr] = True
-
-    # Mask of all reference pixels
-    mask_ref = ~mask_act
+    # Mask of all reference pixels in detector coordiantes
+    # Active and reference pixel masks
+    lower, upper, left, right = ref_border
+    mask_ref = np.zeros([ny,nx], dtype='bool')
+    if lower>0: mask_ref[0:lower,:] = True
+    if upper>0: mask_ref[-upper:,:] = True
+    if left>0:  mask_ref[:,0:left] = True
+    if right>0: mask_ref[:,-right:] = True
 
     # ref_inst = np.random.normal(scale=ref_dict['amp_ref_inst_f2f'], size=(nz,nchan))
-    for ch in range(nchan):
-        mask_ch = np.zeros([ny,nx]).astype('bool')
-        mask_ch[:,ch*chsize:(ch+1)*chsize] = True
+    if include_refinst:
+        for ch in range(nchan):
+            mask_ch = np.zeros([ny,nx]).astype('bool')
+            mask_ch[:,ch*chsize:(ch+1)*chsize] = True
 
-        std = ref_dict['amp_ref_inst_f2f'][ch]
-        ref_noise = std * pink_noise(nz)
-        cube[:, mask_ref & mask_ch] += ref_noise.reshape([-1,1])
+            std = ref_dict['amp_ref_inst_f2f'][ch]
+            ref_noise = std * pink_noise(nz)
+            cube[:, mask_ref & mask_ch] += ref_noise.reshape([-1,1])
 
     # Set even/odd offsets
     ######################
@@ -753,8 +1031,7 @@ def pink_noise(nstep_out, pow_spec=None, f=None, fmin=None, alpha=-1, **kwargs):
     return res
 
 def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
-    acn=0, same_scan_direction=False, reverse_scan_direction=False,
-    pow_spec_corr=None, corr_scales=None, fcorr_lim=[1,10],
+    acn=0, pow_spec_corr=None, corr_scales=None, fcorr_lim=[1,10],
     ref_ratio=0.8, **kwargs):
     
     """ Simulate Noise Ramp
@@ -789,12 +1066,6 @@ def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
         The first element of `corr_scales` is applied to those frequencies
         below `fcorr_lim[0]`, while the second element corresponds to frequencies
         above `fcorr_lim[1]`.
-    same_scan_direction : bool
-        Are all the output channels read in the same direction?
-        By default fast-scan readout direction is ``[-->,<--,-->,<--]``
-        If ``same_scan_direction``, then all ``-->``
-    reverse_scan_direction : bool
-        If ``reverse_scan_direction``, then ``[<--,-->,<--,-->]`` or all ``<--``
 
     """
     
@@ -816,6 +1087,9 @@ def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
 
     nroh = det._line_overhead
     nfoh = det._extra_lines
+
+    same_scan_direction = det.same_scan_direction
+    reverse_scan_direction = det.reverse_scan_direction
     
     result = np.zeros([nz,ny,nx])
                             
@@ -914,9 +1188,7 @@ def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
             x1 = ch*chsize
             x2 = x1 + chsize
             
-            if same_scan_direction:
-                flip = True if reverse_scan_direction else False
-            elif np.mod(ch,2)==0:
+            if (same_scan_direction) or (np.mod(ch,2)==0):
                 flip = True if reverse_scan_direction else False
             else:
                 flip = False if reverse_scan_direction else True
@@ -943,7 +1215,7 @@ def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
         if np.any(u_pink):
             _log.info('Adding uncorrelated pink noise...')
             
-            for ch in trange(nchan, leave=False):
+            for ch in trange(nchan, desc='Uncorr 1/f', leave=False):
                 x1 = ch*chsize
                 x2 = x1 + chsize
 
@@ -952,9 +1224,7 @@ def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
                 _log.debug('  Ch{} Pink Noise (input, output): {:.2f}, {:.2f}'
                       .format(ch, u_pink[ch], np.std(tt)))
 
-                if same_scan_direction:
-                    flip = True if reverse_scan_direction else False
-                elif np.mod(ch,2)==0:
+                if (same_scan_direction) or (np.mod(ch,2)==0):
                     flip = True if reverse_scan_direction else False
                 else:
                     flip = False if reverse_scan_direction else True
@@ -976,7 +1246,7 @@ def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
         pf_acn = np.sqrt(facn**alpha)
         pf_acn[0] = 0.
 
-        for ch in trange(nchan):
+        for ch in trange(nchan, desc='ACN', leave=False):
             x1 = ch*chsize
             x2 = x1 + chsize
 
@@ -990,9 +1260,7 @@ def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
             tt = np.reshape(np.transpose(np.vstack((a, b))),
                             (nz, ny_poh, ch_poh))[:, 0:ny, 0:chsize]
 
-            if same_scan_direction:
-                flip = True if reverse_scan_direction else False
-            elif np.mod(ch,2)==0:
+            if (same_scan_direction) or (np.mod(ch,2)==0):
                 flip = True if reverse_scan_direction else False
             else:
                 flip = False if reverse_scan_direction else True
@@ -1198,25 +1466,27 @@ def sim_image_ramp(det, im_slope, verbose=False, **kwargs):
     det : Detector Class
         Desired detector class output
     im_slope : ndarray
-        Input slope image (DN/sec)
+        Input slope image (e-/sec). 
+        *NOTE* - This is different than sim_dark_ramp, which assumed DN/sec.
     
     Keyword Args
     ------------
     out_ADU : bool
-        Divide by gain to get value in ADU (float).
+        Divides by gain to get output value in ADU (float).
     verbose : bool
         Print some messages.
     """
     if verbose:
         _log.info('Generating image acquisition ramp...')
 
-    return sim_dark_ramp(det, im_slope, ramp_avg_ch=None, verbose=False, **kwargs)
+    # Convert to DN/sec
+    return sim_dark_ramp(det, im_slope/det.gain, ramp_avg_ch=None, verbose=False, **kwargs)
 
-def apply_nonlin(cube, cf_arr, sat_vals, well_depth,
-                 use_legendre=True, lxmap=[0,1e5]):
-    """
+def apply_nonlin(cube, det, coeff_dict, randomize=True):
+    """Apply pixel non-linearity to ideal ramp
+
     Given a simulated cube of data in electrons, apply non-linearity 
-    coefficients to obtain values in DN (ADU).
+    coefficients to obtain values in DN (ADU). This 
 
     Parameters
     ----------
@@ -1224,39 +1494,44 @@ def apply_nonlin(cube, cf_arr, sat_vals, well_depth,
         Simulated ramp data in e-. These should be intrinsic
         flux values with Poisson noise, but prior to read noise,
         kTC, IPC, etc. Size (nz,ny,nx).
-    cf_arr : ndarray
-        Set of polynomial coefficients that convert intrinsic
-        flux values to detector values DN (ADU) of size (ncf,ny,nx).
-    sat_vals : ndarray
-        An image indicating that saturation levels in DN for each
-        pixel of size (ny,nx). 
     well_depth : float
         Assumed well depth in e-. Values in `cube` above this
-        are considerds saturated and will be truncated. 
+        are considered saturated and will be truncated. 
+    sat_vals : ndarray
+        An image indicating what saturation levels in DN for each
+        pixel of size (ny,nx). 
+    coeff_dict : ndarray
+        Dictionary holding coefficient information:
+
+            - 'cf_nonlin'    : Set of polynomial coefficients of size (ncf,ny,nx).
+            - 'use_legendre' : Coefficients use Legendre polynomials?
+            - 'lxmap'        : Legendre polynomial normalization range, usually [0,1e5]
+            - 'sat_vals'     : An image indicating what saturation levels in DN for each pixel
+
+        Possible to separately fit lower flux values:
+
+             - 'counts_cut'    : Flux cut-off value in electrons
+             - 'cf_nonlin_low' : Coefficients for flux values below counts_cut
+
+        To include randomization in line with observed variation:
+
+            - 'cflin0_mean'    : Average 0th-order coefficient
+            - 'cflin0_std'     : Measured standard deviation of 0th-order coefficent
+            - 'corr_slope'     : Slope of linear correlation between 0th-order and higher orders
+            - 'corr_intercept' : Intercept of linear Correaltion between 0th-order and higher orders
     
     Keyword Args
     ------------
-    use_legendre : bool
-        Were the derived coefficients fit using Legendre polynomials?
-    lxmap : 2-element array
-        Legendre polynomials are normally mapped to xvals of [-1,+1].
-        `lxmap` gives the option to supply the values for xval that
-        should get mapped to [-1,+1]. If set to None, then assumes 
-        [xvals.min(),xvals.max()].
+    randomize : bool
+        Add variation to the non-linearity coefficients  
     """
 
-    from numpy.polynomial import legendre
-    nz, ny, nx = cube.shape
-    
-    res = np.zeros_like(cube)
-    for i in trange(nz):
-        # Values higher than well depth
-        ind_high = cube[i] > well_depth
+    # from numpy.polynomial import legendre
+    from scipy.special import eval_legendre
 
-        xvals = cube[i].reshape([1,-1])
-    
-        ncf = cf_arr.shape[0]
-
+    def get_pixel_gains(frame, coeff_arr, use_legendre, lxmap):
+        ncf = coeff_arr.shape[0]
+        xvals = frame.reshape([1,-1])
         if use_legendre:
             # Values to map to [-1,+1]
             if lxmap is None:
@@ -1265,38 +1540,246 @@ def apply_nonlin(cube, cf_arr, sat_vals, well_depth,
             # Remap xvals -> lxvals
             dx = lxmap[1] - lxmap[0]
             lxvals = 2 * (xvals - (lxmap[0] + dx/2)) / dx
-
-            # Use Identity matrix to evaluate each polynomial component
-            xfan = legendre.legval(lxvals, np.identity(ncf))
+            xfan = np.array([eval_legendre(n, lxvals) for n in range(ncf)])
         else:
             # Create an array of exponent values
             parr = np.arange(ncf, dtype='float')
-            # If 3D, this reshapes xfan to 2D
             xfan = xvals**parr.reshape([-1,1]) # Array broadcasting
-            xfan = xfan.reshape([ncf,1,-1])
 
-        # Reshape coeffs to 2D array
-        cf = cf_arr.reshape([ncf,-1])
+        gain = np.sum(xfan.reshape([ncf,-1]) * coeff_arr.reshape([ncf,-1]), axis=0)
+        return gain 
 
-        gain = np.sum(xfan * cf.reshape([ncf,1,-1]), axis=0)
-        gain = gain.reshape([-1,ny,nx]).squeeze()
+    nz, ny, nx = cube.shape
+    # Need to crop input coefficients in the event of subarrays
+    x1, x2 = (det.x0, det.x0 + nx)
+    y1, y2 = (det.y0, det.y0 + ny)
+
+    # Nominal coefficient array
+    cf_arr         = coeff_dict.get('cf_nonlin')[:,y1:y2,x1:x2]
+    use_legendre   = coeff_dict.get('use_legendre', False)
+    lxmap          = coeff_dict.get('lxmap')
+
+    # Mean and standard deviation of first coefficients
+    cflin0_mean    = coeff_dict.get('cflin0_mean', cf_arr[0])[y1:y2,x1:x2]
+    cflin0_std     = coeff_dict.get('cflin0_std')[y1:y2,x1:x2]
+    # The rest of the coefficents have a direct correlation to the first
+    corr_slope     = coeff_dict.get('corr_slope')[:,y1:y2,x1:x2]
+    corr_intercept = coeff_dict.get('corr_intercept')[:,y1:y2,x1:x2]
+
+    # Information for lower flux values
+    counts_cut     = coeff_dict.get('counts_cut')
+    cf_low         = coeff_dict.get('cf_nonlin_low')[:,y1:y2,x1:x2]
+
+    sat_vals = coeff_dict.get('sat_vals')[y1:y2,x1:x2] # Saturation in DN
+    well_depth = det.well_level # Full well in e- corresponding to sat in DN
+
+    if randomize:
+        cf0_rand = np.random.normal(loc=cflin0_mean, scale=cflin0_std)
+        cf_arr = np.concatenate(([cf0_rand], corr_slope * cf0_rand + corr_intercept))
+
+    res = np.zeros_like(cube)
+    for i in trange(nz, desc='Frames', leave=False):
+        frame = cube[i]
+
+        # Values higher than well depth
+        ind_high = frame > well_depth
+
+        if counts_cut is None:
+            gain = get_pixel_gains(frame, cf_arr, use_legendre, lxmap)
+        else:
+            ind1 = (frame >= counts_cut)
+            ind2 = ~ind1
+
+            gain = np.zeros_like(frame)
+            if ind1.sum()>0: # Upper values
+                gain[ind1] = get_pixel_gains(frame[ind1], cf_arr[:,ind1], use_legendre, lxmap)
+            if ind2.sum()>0: # Lower values
+                gain[ind2] = get_pixel_gains(frame[ind2], cf_low[:,ind2], use_legendre, lxmap)
+
+        gain = gain.reshape([ny,nx])
+        # Avoid NaNs
         igood = gain!=0
-        res[i,igood] = cube[i,igood] / gain[igood]
+        # Convert from electrons to ADU
+        res[i,igood] = frame[igood] / gain[igood]
+        del gain
 
         # Correct any pixels that are above saturation DN
-        # res[i,ind_high] = sat_vals[ind_high]
         ind_over = (res[i]>sat_vals) | ind_high
         res[i,ind_over] = sat_vals[ind_over]
 
-    
     return res
 
-def simulate_detector_ramp(det, dark_cal_obj, im_slope=None, out_ADU=False,
+def add_cosmic_rays(data, scenario='SUNMAX', scale=1, tframe=10.73677, ref_info=[4,4,4,4]):
+
+    import json
+
+    # Load from JSON file
+    file = 'cosmic_rays.json'
+    file_path = os.path.join(conf.PYNRC_PATH, 'sim_params', file)
+    with open(file_path, 'r') as fp:
+        cr_dict = json.load(fp)
+    # Only care about input scenario
+    type_dict = cr_dict[scenario]
+
+    sh = data.shape
+    if len(sh)==2:
+        ny, nx = sh
+        nz = 1
+        data = data.reshape([nz,ny,nx])
+    else:
+        nz, ny, nx = sh
+
+    # Number of reference pixels [bottom, top, left, right]
+    rb, rt, rl, rr = ref_info
+
+    # Active detector area
+    npix = (ny - rb - rt) * (nx - rl - rr)
+    area_cm = npix * (18e-4)**2
+
+    # For each ion type, add random events
+    ion_keys = type_dict.keys()
+    rng = np.random.default_rng()
+    for k in ion_keys:
+        rate   = type_dict[k]['rates'] # events / cm^2 / sec
+        # How many event per frame on average?
+        nhits = rate * area_cm * tframe * scale
+
+        # Want to sample this distribution for each frame
+        counts = np.asarray(type_dict[k]['counts'])
+
+        for ii in range(nz):
+            # Assume Poisson statistics on the hits
+            nhits_i = rng.poisson(nhits)
+
+            # Do a random sample
+            counts_rand = rng.choice(counts, nhits_i)
+
+            # Random position for each hit
+            xpos_rand = rng.uniform(low=rl, high=nx-rr, size=nhits_i)
+            ypos_rand = rng.uniform(low=rb, high=ny-rt, size=nhits_i)
+
+            # Add CRs jump to current frame and all sequentional
+            # separate into an integers and fractions
+            intx = xpos_rand.astype(np.int)
+            inty = ypos_rand.astype(np.int)
+            fracx = xpos_rand - intx
+            fracy = ypos_rand - inty
+            
+            # flip negative shift values
+            ind = fracx < 0
+            fracx[ind] += 1
+            intx[ind] -= 1
+            ind = fracy<0
+            fracy[ind] += 1
+            inty[ind] -= 1
+
+            # Bilinear interpolation of all sources
+            val1 = counts_rand * ((1-fracx)*(1-fracy))
+            val2 = counts_rand * ((1-fracx)*fracy)
+            val3 = counts_rand * ((1-fracy)*fracx)
+            val4 = counts_rand * (fracx*fracy)
+
+            # Add source-by-source in case of overlapped indices
+            for i, (iy, ix) in enumerate(zip(inty,intx)):
+                data[ii:, iy,   ix]   += val1[i]
+                data[ii:, iy+1, ix]   += val2[i]
+                data[ii:, iy,   ix+1] += val3[i]
+                data[ii:, iy+1, ix+1] += val4[i]
+
+    return data.reshape(sh)
+
+def xtalk_image(frame, det, coeffs=None):
+    """Create image of crosstalk signal
+
+    Add amplifier crosstalk to each frame in data cube
+    
+    Parameters
+    ----------
+    frame : ndarray
+        An image to calculate and add crosstalk to.
+    det : :class:`pynrc.DetectorOps`
+        Detector class corresponding to data.
+    coeffs : None or Table
+        Table of coefficients corresponding to detector
+        crosstalk behavior.
+
+    """
+    
+    im_xtalk = np.zeros_like(frame)
+    # Pixel shifts for each sub-channel
+    subch_shift = {"0": 1, "1": -1, "2": 1, "3": -1}
+    
+    if coeffs is None:
+        coeffs = det.xtalk()
+    nchans = det.nout
+    chsize = det.chsize
+    
+    ssd = det.same_scan_direction
+    
+    for ch in range(nchans):
+        ix1, ix2 = int(ch*chsize), int((ch+1)*chsize)
+        
+        im_ch = frame[:,ix1:ix2]
+        receivers = [i for i in range(nchans) if i != ch]
+        
+        for subch in receivers:
+            jx1, jx2 = int(subch*chsize), int((subch+1)*chsize)
+
+            # Reverse if amplifiers are not both even or both odd
+            flip = False if ssd or (np.mod(ch-subch,2)==0) else True
+            
+            # Primary cross talk coefficients
+            index = 'xt'+str(ch+1)+str(subch+1)
+            corr_amp = im_ch[:,::-1] * coeffs[index] if flip else im_ch * coeffs[index]
+            im_xtalk[:, jx1:jx2] += corr_amp
+            
+            # Post-pixel crosstalk coeffs require shift
+            index = 'xt'+str(ch+1)+str(subch+1)+'post'
+            corr_amp = im_ch[:,::-1] * coeffs[index] if flip else im_ch * coeffs[index]
+            corr_amp = np.roll(corr_amp, subch_shift[str(subch)], axis=1)
+            im_xtalk[:, jx1:jx2] += corr_amp
+
+    return im_xtalk
+
+def add_xtalk(data, det, coeffs=None):
+    """Add amplifier crosstalk to each frame in data cube
+    
+    Parameters
+    ----------
+    data : ndarray
+        2D or 3D data cube
+    det : :class:`pynrc.DetectorOps`
+        Detector class corresponding to data.
+    coeffs : None or Table
+        Table of coefficients corresponding to detector
+        crosstalk behavior.
+    """
+
+    sh = data.shape
+    if len(sh)==2:
+        ny, nx = sh
+        nz = 1
+        data = data.reshape([nz,ny,nx])
+    else:
+        nz, ny, nx = sh
+
+    if coeffs is None:
+        coeffs = det.xtalk()
+
+    for frame in data:
+        frame += xtalk_image(frame, det, coeffs=coeffs)
+
+    return data.reshape(sh)
+
+
+def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=False,
                            include_dark=True, include_bias=True, include_ktc=True, 
                            include_rn=True, include_cpink=True, include_upink=True, 
                            include_acn=True, apply_ipc=True, apply_ppc=True, 
-                           include_refinst=True, include_colnoise=True, col_noise=None,
-                           amp_crosstalk=True, add_crs=True, latents=None, linearity_map=None, 
+                           include_refoffsets=True, include_refinst=True, 
+                           include_colnoise=True, col_noise=None,
+                           add_crs=True, cr_model='SUNMAX', cr_scale=1, amp_crosstalk=True,
+                           latents=None, apply_nonlinearity=True, random_nonlin=False,
                            return_zero_frame=None, return_full_ramp=False, prog_bar=True, **kwargs):
     
     """ Return a single simulated ramp
@@ -1307,12 +1790,14 @@ def simulate_detector_ramp(det, dark_cal_obj, im_slope=None, out_ADU=False,
     ==========
     det : Detector Class
         Desired detector class output
-    dark_cal_obj: nircam_dark class
-        NIRCam Dark class that holds the necessary calibration info to
-        simulate a dark ramp.
+    cal_obj: nircam_cal class
+        NIRCam calibration class that holds the necessary calibration 
+        info to simulate a ramp.
     im_slope : ndarray
-        Input slope image of observed scene. Assumed to be in detector
-        coordinates.
+        Input slope image of observed scene. 
+    cframe : str
+        Coordinate frame of input image, 'sci' or 'det'.
+        Output will be in same coordinates.
 
     Keyword Args
     ============
@@ -1343,6 +1828,8 @@ def simulate_detector_ramp(det, dark_cal_obj, im_slope=None, out_ADU=False,
         Include interpixel capacitance?
     apply_ppc : bool
         Apply post-pixel coupling to linear analog signal?
+    include_refoffsets : bool
+        Include reference offsts between amplifiers and odd/even columns?
     include_refinst : bool
         Include reference/active pixel instabilities?
     include_colnoise : bool
@@ -1353,18 +1840,24 @@ def simulate_detector_ramp(det, dark_cal_obj, im_slope=None, out_ADU=False,
     amp_crosstalk : bool
         Crosstalk between amplifiers?
     add_crs : bool
-        Add cosmic ray events?
+        Add cosmic ray events? See Robberto et al 2010 (JWST-STScI-001928).
+    cr_model: str
+        Cosmic ray model to use: 'SUNMAX', 'SUNMIN', or 'FLARES'.
+    cr_scale: float
+        Scale factor for probabilities.
     latents : None
         Apply persistence.
-    linearity_map : ndarray
-        Add non-linearity.
+    apply_nonlinearity : bool
+        Apply non-linearity?
+    random_nonlin : bool
+        Add randomness to the linearity coefficients?
     prog_bar : bool
         Show a progress bar for this ramp generation?
     """
     
     ################################
     # Dark calibration properties
-    dco = dark_cal_obj
+    dco = cal_obj
 
     # Super bias and darks
     super_bias = dco.super_bias_deconv # DN
@@ -1419,19 +1912,22 @@ def simulate_detector_ramp(det, dark_cal_obj, im_slope=None, out_ADU=False,
     ngroup = ma.ngroup
     nz     = nd1 + ngroup*nf + (ngroup-1)*nd2
 
+    tframe = det.time_frame
+
     # Scan direction info
     ssd = det.same_scan_direction
     rsd = det.reverse_scan_direction
 
     # Number of reference pixels (lower, upper, left, right)
     ref_info = det.ref_info
-
     
     ################################
     # Begin...
     ################################
     if prog_bar: 
         pbar = tqdm(total=13, leave=False)
+
+    # Init data cube
     data = np.zeros([nz,ny,nx])
 
     ####################
@@ -1448,14 +1944,17 @@ def simulate_detector_ramp(det, dark_cal_obj, im_slope=None, out_ADU=False,
     # Add on-sky source image
     if prog_bar: pbar.set_description("Sky Image")
     if im_slope is not None:
+        # Work in detector coordinates
+        if cframe=='sci':
+            im_slope = sci_to_det(im_slope, det.detid)
         data += sim_image_ramp(det, im_slope, verbose=False)
     if prog_bar: pbar.update(1)
 
     ####################
-    # TODO: Add cosmic rays
+    # Add cosmic rays
     if prog_bar: pbar.set_description("Cosmic Rays")
     if add_crs:
-        pass
+        data = add_cosmic_rays(data, scenario=cr_model, scale=cr_scale, tframe=tframe, ref_info=ref_info)
     if prog_bar: pbar.update(1)
     
     ####################
@@ -1466,21 +1965,19 @@ def simulate_detector_ramp(det, dark_cal_obj, im_slope=None, out_ADU=False,
     if prog_bar: pbar.update(1)
     
     ####################
-    # Apply IPC (before or after non-linearity??)
+    # Apply IPC 
+    # TODO: Before or after non-linearity??
     if prog_bar: pbar.set_description("Include IPC")
     if apply_ipc:
         data = add_ipc(data, kernel=k_ipc)
     if prog_bar: pbar.update(1)
 
     ####################
-    # TODO: Add non-linearity
+    # Add non-linearity
     if prog_bar: pbar.set_description("Non-Linearity")
-    # Truncate anything above well level
-    # This will be part of non-linearity after full implementation
-    if linearity_map is not None:
-        pass
-    well_max = det.well_level
-    data[data>well_max] = well_max
+    # The apply_nonlin function goes from e- to DN
+    if apply_nonlinearity:
+        data = gain * apply_nonlin(data, det, dco.nonlinear_dict, randomize=random_nonlin)
     if prog_bar: pbar.update(1)
     
     ####################
@@ -1507,15 +2004,15 @@ def simulate_detector_ramp(det, dark_cal_obj, im_slope=None, out_ADU=False,
     if prog_bar: pbar.update(1)
     
     ####################
-    # TODO: Add amplifier channel crosstalk
+    # Add amplifier channel crosstalk
     if prog_bar: pbar.set_description("Amplifier Crosstalk")
     if amp_crosstalk:
-        pass
+        data = add_xtalk(data, det, coeffs=None)
     if prog_bar: pbar.update(1)
 
     ####################
     # Add read and 1/f noise
-    if prog_bar: pbar.set_description("Detector and ASIC Noise")
+    if prog_bar: pbar.set_description("Detector & ASIC Noise")
     if nchan==1:
         rn, up = (rn[0], up[0])
     rn  = None if (not include_rn)    else rn
@@ -1523,16 +2020,15 @@ def simulate_detector_ramp(det, dark_cal_obj, im_slope=None, out_ADU=False,
     cp  = None if (not include_cpink) else cp*1.2
     acn = None if (not include_acn)   else acn
     data += gain * sim_noise_data(det, rd_noise=rn, u_pink=up, c_pink=cp,
-                                  acn=acn, corr_scales=scales, ref_ratio=ref_ratio,
-                                  same_scan_direction=ssd, reverse_scan_direction=rsd)
+                                  acn=acn, corr_scales=scales, ref_ratio=ref_ratio)
     if prog_bar: pbar.update(1)
 
     ####################
     # Add reference offsets
     if prog_bar: pbar.set_description("Ref Pixel Offsets")
-    if include_refinst:
-        data += gain * gen_ramp_biases(dco.ref_pixel_dict, nchan=nchan, 
-                                       data_shape=data.shape, ref_border=det.ref_info)
+    if include_refoffsets:
+        data += gain * gen_ramp_biases(dco.ref_pixel_dict, nchan=nchan, include_refinst=include_refinst,
+                                        data_shape=data.shape, ref_border=ref_info)
     if prog_bar: pbar.update(1)
 
     ####################
@@ -1559,10 +2055,14 @@ def simulate_detector_ramp(det, dark_cal_obj, im_slope=None, out_ADU=False,
 
     if prog_bar: pbar.close()
     
-    # return_zero_frame not set, the True if not RAPID (what about BRIGHT1??)
+    # return_zero_frame not set, True if not RAPID (what about BRIGHT1??)
     if return_zero_frame is None:
         return_zero_frame = False if 'RAPID' in det.multiaccum.read_mode else True
-        
+    
+    # Return to sci coordinates
+    if cframe=='sci':
+        data = det_to_sci(data, det.detid)
+
     if return_full_ramp:
         if return_zero_frame:
             return data, data[0].copy()
@@ -1570,4 +2070,95 @@ def simulate_detector_ramp(det, dark_cal_obj, im_slope=None, out_ADU=False,
             return data
     else:
         return ramp_resample(data, det, return_zero_frame=return_zero_frame)
+
+def make_ramp_poisson(im_slope, det, out_ADU=True, zero_data=False):
+    """
+    Create a ramp with only photon noise. Useful for quick 
+    
+    im_slope : Slope image (detector coordinates) in e-/sec
+    det      : Detector information class
+    out_ADU  : Convert to 16-bit UINT?
+    zero_data: Return the so-called "zero frame"?
+    """
+
+    # from copy import deepcopy
+    # xpix = det.xpix
+    # ypix = det.ypix
+    
+    ma  = det.multiaccum
+
+    nd1     = ma.nd1
+    nd2     = ma.nd2
+    nf      = ma.nf
+    ngroup  = ma.ngroup
+    t_frame = det.time_frame
+
+    # Number of total frames up the ramp (including drops)
+    naxis3 = nd1 + ngroup*nf + (ngroup-1)*nd2
+
+    # Set reference pixels' slopes equal to 0
+    w = det.ref_info
+    if w[0] > 0: # lower
+        im_slope[:w[0],:] = 0
+    if w[1] > 0: # upper
+        im_slope[-w[1]:,:] = 0
+    if w[2] > 0: # left
+        im_slope[:,:w[2]] = 0
+    if w[3] > 0: # right
+        im_slope[:,-w[3]:] = 0
+        
+    # Remove any negative values
+    im_slope[im_slope<0] = 0
+
+    # Count accumulation for a single frame
+    frame = im_slope * t_frame
+    # Add Poisson noise at each frame step
+    sh0, sh1 = im_slope.shape
+    new_shape = (naxis3, sh0, sh1)
+    ramp = np.random.poisson(lam=frame, size=new_shape).astype(np.float64)
+    # Perform cumulative sum in place
+    data = np.cumsum(ramp, axis=0)
+
+    # Convert to ADU (16-bit UINT)
+    # return data
+    if out_ADU:
+        gain = det.gain
+        data /= gain
+        data[data < 0] = 0
+        data[data >= 2**16] = 2**16 - 1
+        data = data.astype('uint16')
+        
+    # # Save the first frame (so-called ZERO frame) for the zero frame extension
+    # zeroData = deepcopy(data[0,:,:])
+
+    # # Remove drops and average grouped data
+    # if nf>1 or nd2>0:
+    #     # Trailing drop frames already excluded, so need to pull off last group of avg'ed frames
+    #     data_end = data[-nf:,:,:].mean(axis=0) if nf>1 else data[-1:,:,:]
+    #     data_end = data_end.reshape([1,ypix,xpix])
+
+    #     # Only care about first (n-1) groups
+    #     # Last group is handled separately
+    #     data = data[:-nf,:,:]
+
+    #     # Reshape for easy group manipulation
+    #     data = data.reshape([-1,nf+nd2,ypix,xpix])
+
+    #     # Trim off the dropped frames (nd2)
+    #     if nd2>0: data = data[:,:nf,:,:]
+
+    #     # Average the frames within groups
+    #     # In reality, the 16-bit data is bit-shifted
+    #     data = data.reshape([-1,ypix,xpix]) if nf==1 else data.mean(axis=1)
+
+    #     # Add back the last group (already averaged)
+    #     data = np.append(data,data_end,axis=0)
+
+        
+    # if zero_data==True:
+    #     return (data, zeroData)
+    # else:
+    #     return data
+
+    return ramp_resample(data, det, return_zero_frame=zero_data)
 

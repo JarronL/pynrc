@@ -1,6 +1,7 @@
 import copy
 import os
 import logging
+from pickle import NONE
 import re
 import argparse
 import pkg_resources
@@ -14,6 +15,8 @@ import yaml, json
 
 import pysiaf
 from pysiaf import JWST_PRD_VERSION, rotations, Siaf
+
+# Create this once since it takes time
 siaf_nrc = Siaf('NIRCam')
 siaf_nrc.generate_toc()
 
@@ -23,6 +26,10 @@ from astropy.time import Time, TimeDelta
 from astropy import units as u
 
 from tqdm.auto import tqdm, trange
+
+from .. import conf
+from ..nrc_utils import get_detname
+from ..maths.coords import jwst_point
 
 import logging
 _log = logging.getLogger('pynrc')
@@ -392,7 +399,8 @@ class AptInput:
 
         # Read in tables of aperture information
         nircam_subarray_file = 'NIRCam_subarray_definitions.list'
-        nircam_apertures = read_subarray_definition_file(nircam_subarray_file)
+        file = os.path.join(conf.PYNRC_PATH, 'sim_params', nircam_subarray_file)
+        nircam_apertures = read_subarray_definition_file(file)
 
         for index, instrument in enumerate(input_dictionary['Instrument']):
             instrument = instrument.lower()
@@ -4175,8 +4183,10 @@ def make_start_times(obs_info):
             elif instrument.lower() == 'nircam':
                 readout_pattern_file = 'nircam_read_pattern_definitions.list'
                 subarray_def_file = 'NIRCam_subarray_definitions.list'
-            readpatt_def = ascii.read(readout_pattern_file)
-            subarray_def = ascii.read(subarray_def_file)
+            file = os.path.join(conf.PYNRC_PATH, 'sim_params', readout_pattern_file)
+            readpatt_def = ascii.read(file)
+            file = os.path.join(conf.PYNRC_PATH, 'sim_params', subarray_def_file)
+            subarray_def = ascii.read(file)
 
             match2 = readpatt == readpatt_def['name']
             if np.sum(match2) == 0:
@@ -4423,7 +4433,7 @@ def calc_frame_time(instrument, aperture, xdim, ydim, amps):
 
 
 
-###  Copied and modified from MIRAGE
+###  Modified from MIRAGE
 def get_pointing_info(pointing_files, propid=0, verbose=False):
     """Read in information from APT's pointing file.
 
@@ -4724,7 +4734,7 @@ def get_readmodes(xml_file, verbose=False):
         'ReadoutPattern' : 'readout',
         'Integrations'   : 'nints',
         'Groups'         : 'ngroups',
-        'NumOutputs'     : 'nouputs',
+        'NumOutputs'     : 'noutputs',
     }
 
     res = build_dict_from_xml(xml_file, key_update.keys(), verbose=verbose)
@@ -4820,8 +4830,10 @@ def gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file):
     Read in APT output files and return a dictionary that holds all
     necessary visit information to create an observation in DMS
     format. Each visit is placed in an ordered dictionary according
-    to Smart Accounting file structure.
+    to that within the Smart Accounting file.
     """
+
+    rng = np.random.default_rng()
 
     timing_info = get_timing_info(json_file, sm_acct_file)
     pointing_info = get_pointing_info(pointing_file)
@@ -4853,6 +4865,9 @@ def gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file):
                 pass
             else:
                 d[k] = dith_info[k][ind][0]
+
+        # Add a random seed for random dither offsets
+        d['dith_rand_seed'] = rng.integers(0, 2**32-1)
             
         # Pointing, Filter, and Readout information
         for dict_append in [pointing_info, filter_info, read_modes]:
@@ -4914,13 +4929,7 @@ def create_det_class(visit_dict, exp_id, detname):
     from ..pynrc_core import DetectorOps
 
     # Ensure standardized detector naming convention ("NRC[A/B][1-5]")
-    detname = detname.lower()
-    if 'nrc' in detname:
-        detname = detname[3:]
-    if 'long' in detname:
-        detname = detname[0] + '5'
-    det_id = 'nrc' + detname
-    det_id = det_id.upper()
+    det_id = get_detname(detname)
     
     # Grab indices for specified exposure number
     exp_ids_visit = np.array([int(d['exposure_number']) for d in visit_dict['obs_id_info']])
@@ -4940,7 +4949,7 @@ def create_det_class(visit_dict, exp_id, detname):
     xpix, ypix = np.array([siaf_ap.XSciSize, siaf_ap.YSciSize]).astype('int')
     x0, y0 = np.array(siaf_ap.dms_corner()) - 1
     # Check if number of amplifiers was specified in APT file (e.g., grism timeseries)
-    noutputs = visit_dict['nouputs'][ind_mask][0]
+    noutputs = visit_dict['noutputs'][ind_mask][0]
     if (noutputs is not None) and (noutputs==1):
         wind_mode = 'WINDOW'
     elif (xpix >= 2048) and (ypix>=2048):
@@ -4965,13 +4974,7 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs, pa_v3=0
     from .dms import DMS_filename, populate_group_table
 
     # Ensure standardized detector naming convention ("NRC[A/B][1-5]")
-    detname = detname.lower()
-    if 'nrc' in detname:
-        detname = detname[3:]
-    if 'long' in detname:
-        detname = detname[0] + '5'
-    det_id = 'nrc' + detname
-    det_id = det_id.upper()
+    det_id = get_detname(detname)
 
     # Build detector operations class
     if det is None:
@@ -5100,6 +5103,7 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs, pa_v3=0
         'time-obs'    : time_obs,
         
         # Instrument configuration
+        'det_obj' : det,
         'module'  : det.module,
         'channel' : 'LONG' if 'LW' in det.channel else 'SHORT', 
         'detector': det.detname,
@@ -5116,6 +5120,7 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs, pa_v3=0
         'ysize'    : det.ypix,   
         'fastaxis' : det.fastaxis,
         'slowaxis' : det.slowaxis,
+        'noutputs' : det.nout, 
         
         'subarray_name' : subarray_name,
         # subarray_bounds indexed to zero, but values in header should be indexed to 1.
@@ -5243,7 +5248,7 @@ class DMS_input():
         update_dms_headers(file_path, obs_params)
     """
 
-    def __init__(self, xml_file, pointing_file, json_file, sm_acct_file):
+    def __init__(self, xml_file, pointing_file, json_file, sm_acct_file, save_dir=None):
 
         self.proposal_info = get_proposal_info(xml_file)
         # Series of dictionaries, one per visit
@@ -5257,29 +5262,12 @@ class DMS_input():
         self.obs_time = '12:00:00'
         self.pa_v3 = 0
 
+        self.save_dir = save_dir
+
     def get_detname(self, det_id):
+        """Return NRC[A-B][1-5] for valid detector/SCA IDs"""
 
-        det_dict = {481:'A1', 482:'A2', 483:'A3', 484:'A4', 485:'A5',
-                    486:'B1', 487:'B2', 488:'B3', 489:'B4', 490:'B5'}
-        scaids = det_dict.keys()
-        detids = det_dict.values()
-        detnames = ['NRC' + idval for idval in detids]
-
-        # If already valid, then return
-        if det_id in detnames:
-            return det_id
-        elif det_id in scaids:
-            detname = 'NRC' + det_dict[det_id]
-        elif det_id in detids:
-            detname = 'NRC' + det_id
-        
-        # If NRCALONG or or NRCBLONG, change 'LONG' to '5' 
-        if 'LONG' in detname:
-            detname = detname[0:4] + '5'
-
-        if detname not in detnames:
-            raise ValueError("Invalid detector: {} \n\tValid names are: {}" \
-                      .format(detname, ', '.join(detnames)))
+        return get_detname(det_id)
         
     def gen_label(self, visit_id, exp_id, det_id):
 
@@ -5324,6 +5312,7 @@ class DMS_input():
         res = populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs, pa_v3=pa_v3, det=det,
                                   segNum=seg_num, segTot=seg_tot, int_range=int_range, **kwargs)
         res['visit_key'] = visit_id
+        res['save_dir'] = self.save_dir
 
         return res
     
@@ -5351,4 +5340,79 @@ class DMS_input():
                 obs_params_all.append(obspar)
                 
         return obs_params_all
+
+    def make_jwst_point(self, visit_id, detname, base_std=0, dith_std=0, rand_seed=None):
+        """Create jwst_point object
+        
+
+        Parameters
+        ==========
+        visit_id : str
+            obsnum:visitnum, for example: '007:001' 
+        detname : str
+            Name of detector, such as 'NRCA5'.
+
+        Keyword Args
+        ============
+
+        base_std : float or None
+            The 1-sigma pointing uncertainty per axis for telescope slew. 
+            If None, then standard deviation is chosen to be either 5 mas 
+            or 100 mas, depending on `use_ta` attribute (default: True).
+        dith_std : float or None
+            The 1-sigma pointing uncertainty per axis for dithers. If None,
+            then standard deviation is chosen to be either 2.5 or 5 mas, 
+            depending on `use_sgd` attribute (default: True).
+        rand_seed : None or int
+            Random seed to use for generating repeatable random offsets.
+        """
+
+        return gen_pointing_info(self, visit_id, detname, rand_seed=rand_seed, 
+                                 base_std=base_std, dith_std=dith_std)
+
+    
+def gen_pointing_info(obs_input, visit_id, detname, base_std=None, dith_std=None, rand_seed=None):
+    
+    """
+    Create telescope pointing information for a given visit
+    
+    visit_id : str
+        obsnum:visitnum, for example: '007:001' 
+    rand_seed : int
+        Random seed should be the same for all detectors in a given visit.
+        If not set, will grab pre-computed values for from obs_input's visit_dict.
+    """
+    
+    # Create a single observation parameter dictionary to grab SIAF aperture info
+    obs_params = obs_input.gen_obs_param(visit_id, 1, detname)
+    
+    # Reference aperture (e.g., NRCALL_FULL) for telescope pointing
+    ap_ref_name = obs_params['siaf_ap_ref'].AperName
+    # Observed aperture (e.g., NRCA5_FULL) for detector
+    ap_obs_name = obs_params['siaf_ap'].AperName
+    # Reference RA/Dec of aperture prior to offseting/dithering
+    ra_ref, dec_ref = (obs_params['ra'], obs_params['dec']) 
+    pos_ang = obs_params['pa_v3']
+
+    # Pointing offsets stored in visit_dict
+    visit_dict = obs_input.program_info[visit_id]
+    
+    detname = get_detname(detname)
+    if detname not in visit_dict['detectors'][0]:
+        raise ValueError(f'{detname} not valid for Visit {visit_id}.')
+
+    base_offset  = (visit_dict['basex'][0], visit_dict['basey'][0])
+    dith_offsets = list(zip(visit_dict['dithx'], visit_dict['dithy']))
+    if rand_seed is None:
+        rand_seed = visit_dict.get('rand_dith_seed')
+
+    tel_pointing = jwst_point(ap_obs_name, ap_ref_name, ra_ref, dec_ref, pos_ang=pos_ang, 
+                              base_offset=base_offset, dith_offsets=dith_offsets, 
+                              base_std=base_std, dith_std=dith_std, rand_seed=rand_seed)
+
+    # Standard SAM or SGD
+    subpix_type = visit_dict.get('SubpixelDitherType')
+    tel_pointing.use_sgd = True if subpix_type.upper()=='SMALL-GRID-DITHER' else False
+    
+    return tel_pointing
 

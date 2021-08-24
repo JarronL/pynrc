@@ -11,6 +11,8 @@ from pysiaf import rotations
 from jwst.datamodels import Level1bModel
 import warnings
 
+from .apt import DMS_input
+
 import logging
 _log = logging.getLogger('pynrc')
 
@@ -572,3 +574,5 @@ def _roll_angle_from_matrix(matrix, v2, v3):
     if new_roll < 0:
         new_roll += 360
     return new_roll
+
+

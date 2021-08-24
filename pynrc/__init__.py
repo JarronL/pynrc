@@ -81,18 +81,16 @@ from .nrc_utils import stellar_spectrum, source_spectrum, planets_sb12
 from .pynrc_core import DetectorOps, NIRCam
 
 from .obs_nircam import obs_hci, nrc_hci
-
 from .detops import multiaccum, det_timing, nrc_header
 
 #from .ngNRC import slope_to_ramp, nproc_use_ng
 
 from .maths import coords, robust, fast_poly, image_manip
-
-from .simul import ngNRC
-
 from .reduce import ref_pixels
 
-from .reduce.calib import nircam_dark
+from .reduce.calib import nircam_dark, nircam_cal
+from .simul.apt import DMS_input
+from .simul import ngNRC
 
 from .testing import perform_benchmarks
 
