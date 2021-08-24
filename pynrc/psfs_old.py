@@ -49,7 +49,7 @@ except ImportError:
 import webbpsf, poppy
 from webbpsf.opds import OTE_Linear_Model_WSS
 
-# Check that minimum required version meets requirements
+# Check that version meets minimum requirements
 on_rtd = os.environ.get('READTHEDOCS') == 'True'
 if not on_rtd:
     _webbpsf_version_min = (0,9,0)
