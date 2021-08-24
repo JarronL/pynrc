@@ -1,7 +1,5 @@
 """pyNRC utility functions"""
 
-from __future__ import absolute_import, division, print_function, unicode_literals
-
 # The six library is useful for string compatibility
 import six
 import os, re
@@ -155,704 +153,34 @@ def channel_select(bp):
     return (pix_scale, idark, pex)
 
 
+def get_detname(det_id):
+    """Return NRC[A-B][1-5] for valid detector/SCA IDs"""
 
-def get_SNR(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=None,
-    sp=None, tf=10.737, ngroup=2, nf=1, nd2=0, nint=1,
-    coeff=None, coeff_hdr=None, fov_pix=11, oversample=4, quiet=True, **kwargs):
-    """SNR per pixel
+    det_dict = {481:'A1', 482:'A2', 483:'A3', 484:'A4', 485:'A5',
+                486:'B1', 487:'B2', 488:'B3', 489:'B4', 490:'B5'}
+    scaids = det_dict.keys()
+    detids = det_dict.values()
+    detnames = ['NRC' + idval for idval in detids]
 
-    Obtain the SNR of an input source spectrum with specified instrument setup.
-    This is simply a wrapper for bg_sensitivity(forwardSNR=True).
-    """
-
-    return bg_sensitivity(filter_or_bp, \
-        pupil=pupil, mask=mask, module=module, pix_scale=pix_scale, \
-        sp=sp, tf=tf, ngroup=ngroup, nf=nf, nd2=ngroup, nint=nint, \
-        coeff=coeff, coeff_hdr=None, fov_pix=fov_pix, oversample=oversample, \
-        quiet=quiet, forwardSNR=True, **kwargs)
-
-def _mlim_helper(sub_im, mag_norm=10, mag_arr=np.arange(5,35,1),
-    nsig=5, nint=1, snr_fact=1, forwardSNR=False, **kwargs):
-    """Helper function for determining grism sensitivities"""
-
-    sub_im_sum = sub_im.sum()
-
-    # Just return the SNR for the input sub image
-    if forwardSNR:
-        im_var = pix_noise(fsrc=sub_im, **kwargs)**2
-        ns_sum = np.sqrt(np.sum(im_var) / nint)
-        return snr_fact * sub_im_sum / ns_sum
-
-    fact_arr = 10**((mag_arr-mag_norm)/2.5)
-    snr_arr = []
-
-    for f in fact_arr:
-        im = sub_im / f
-        im_var = pix_noise(fsrc=im, **kwargs)**2
-        im_sum = sub_im_sum / f
-        ns_sum = np.sqrt(np.sum(im_var) / nint)
-
-        snr_arr.append(im_sum / ns_sum)
-    snr_arr = snr_fact*np.asarray(snr_arr)
-    return np.interp(nsig, snr_arr[::-1], mag_arr[::-1])
-
-def bg_sensitivity(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=None,
-    sp=None, units=None, nsig=10, tf=10.737, ngroup=2, nf=1, nd2=0, nint=1,
-    coeff=None, coeff_hdr=None, fov_pix=11, oversample=4, quiet=True, forwardSNR=False,
-    offset_r=0, offset_theta=0, return_image=False, image=None,
-    cr_noise=True, dw_bin=None, ap_spec=None, rad_EE=None, **kwargs):
-    """Sensitivity Estimates
-
-    Estimates the sensitivity for a set of instrument parameters.
-    By default, a flat spectrum is convolved with the specified bandpass.
-    For imaging, this function also returns the surface brightness sensitivity.
-
-    The number of photo-electrons are computed for a source at some magnitude
-    as well as the noise from the detector readout and some average zodiacal
-    background flux. Detector readout noise follows an analytical form that
-    matches extensive long dark observations during cryo-vac testing.
-
-    This function returns the n-sigma background limit in units of uJy (unless
-    otherwise specified; valid units can be found on the Pysynphot webpage at
-    https://pysynphot.readthedocs.io/).
-
-    For imaging, a single value is given assuming aperture photometry with a
-    radius of ~1 FWHM rounded to the next highest integer pixel (or 2.5 pixels,
-    whichever is larger). For spectral observations, this function returns an
-    array of sensitivities at 0.1um intervals with apertures corresponding to
-    2 spectral pixels and a number of spatial pixels equivalent to 1 FWHM rounded
-    to the next highest integer (minimum of 5 spatial pixels).
-
-    Parameters
-    ==========
-
-    Instrument Settings
-    -------------------
-    filter_or_bp : Either the name of the filter or pre-computed Pysynphot bandpass.
-    pupil  : NIRCam pupil elements such as grisms or lyot stops
-    mask   : Specify the coronagraphic occulter (spots or bar)
-    module : 'A' or 'B'
-    pix_scale : Pixel scale in arcsec/pixel
-
-    Spectrum Settings
-    -------------------
-    sp         : A pysynphot spectral object to calculate sensitivity
-                 (default: Flat spectrum in photlam)
-    nsig       : Desired nsigma sensitivity
-    units      : Output units (defaults to uJy for grisms, nJy for imaging)
-    forwardSNR : Find the SNR of the input spectrum instead of determining sensitivity.
-
-    Ramp Settings
-    -------------------
-    tf     : Time per frame
-    ngroup : Number of groups per integration
-    nf     : Number of averaged frames per group
-    nd2    : Number of dropped frames per group
-    nint   : Number of integrations/ramps to consider
-
-    PSF Information
-    -------------------
-    coeff : A cube of polynomial coefficients for generating PSFs. This is
-            generally oversampled with a shape (fov_pix*oversamp, fov_pix*oversamp, deg).
-            If not set, this will be calculated using :func:`gen_psf_coeff`.
-    coeff_hdr    : Header associated with coeff cube.
-    fov_pix      : Number of detector pixels in the image coefficient and PSF.
-    oversample   : Factor of oversampling of detector pixels.
-    offset_r     : Radial offset of the target from center.
-    offset_theta : Position angle for that offset, in degrees CCW (+Y).
-
-    Misc.
-    -------------------
-    image        : Explicitly pass image data rather than calculating from coeff.
-    return_image : Instead of calculating sensitivity, return the image calced from coeff.
-                   Useful if needing to calculate sensitivities for many different settings.
-    rad_EE       : Extraction aperture radius (in pixels) for imaging mode.
-    dw_bin       : Delta wavelength to calculate spectral sensitivities (grisms & DHS).
-    ap_spec      : Instead of dw_bin, specify the spectral extraction aperture in pixels.
-                   Takes priority over dw_bin. Value will get rounded up to nearest int.
-    cr_noise     : Include noise from cosmic ray hits?
-
-    Keyword Args
-    -------------------
-    zodi_spec     - zfact, ra, dec, thisday, [locstr, year, day]
-    pix_noise     - rn, ktc, idark, and p_excess
-    gen_psf_coeff - npsf and ndeg
-    read_filter   - ND_acq
-    """
-
-    # PSF coefficients
-    from pynrc.psfs import gen_image_coeff
-
-    grism_obs = (pupil is not None) and ('GRISM' in pupil)
-    dhs_obs   = (pupil is not None) and ('DHS'   in pupil)
-    coron_obs = (pupil is not None) and ('LYOT'   in pupil)
-
-    # Get filter throughput and create bandpass
-    if isinstance(filter_or_bp, six.string_types):
-        filter = filter_or_bp
-        bp = read_filter(filter, pupil=pupil, mask=mask, module=module, **kwargs)
+    # If already valid, then return
+    if det_id in detnames:
+        return det_id
+    elif det_id in scaids:
+        detname = 'NRC' + det_dict[det_id]
+    elif det_id in detids:
+        detname = 'NRC' + det_id
     else:
-        bp = filter_or_bp
-        filter = bp.name
-    waveset = np.copy(bp.wave)
-
-    # If not set, select some settings based on filter (SW or LW)
-    args = channel_select(bp)
-    if pix_scale is None: pix_scale = args[0] # Pixel scale (arcsec/pixel)
-
-    # Spectrum and bandpass to report magnitude that saturates NIRCam band
-    if sp is None:
-        sp = S.ArraySpectrum(waveset, 0*waveset + 10.)
-        sp.name = 'Flat spectrum in photlam'
-
-    if forwardSNR:
-        sp_norm = sp
-    else:
-        # Renormalize to 10th magnitude star
-        mag_norm = 10
-        sp_norm = sp.renorm(mag_norm, 'vegamag', bp)
-        sp_norm.name = sp.name
-
-    # Zodiacal Light Stuff
-    sp_zodi = zodi_spec(**kwargs)
-    obs_zodi = S.Observation(sp_zodi, bp, binset=waveset)
-    fzodi_pix = obs_zodi.countrate() * (pix_scale/206265.0)**2  # e-/sec/pixel
-    # Collecting area gets reduced for coronagraphic observations
-    # This isn't accounted for later, because zodiacal light doesn't use PSF information
-    if coron_obs: fzodi_pix *= 0.19
-
-    # The number of pixels to span spatially for WebbPSF calculations
-    fov_pix = int(fov_pix)
-    oversample = int(oversample)
-
-    # Generate the PSF image for analysis.
-    # This process can take a while if being done over and over again.
-    # Let's provide the option to skip this with a pre-generated image.
-    # Skip image generation if `image` keyword is not None.
-    # Remember, this is for a very specific NORMALIZED spectrum
-    t0 = time.time()
-    if image is None:
-        image = gen_image_coeff(bp, pupil=pupil, mask=mask, module=module, 
-            sp_norm=sp_norm, coeff=coeff, coeff_hdr=coeff_hdr, 
-            fov_pix=fov_pix, oversample=oversample,
-            offset_r=offset_r, offset_theta=offset_theta, **kwargs)
-    t1 = time.time()
-    _log.debug('fov_pix={0}, oversample={1}'.format(fov_pix,oversample))
-    _log.debug('Took %.2f seconds to generate images' % (t1-t0))
-    if return_image:
-        return image
-
-    # Cosmic Ray Loss (JWST-STScI-001721)
-    # SNR with cosmic ray events depends directly on ramp integration time
-    if cr_noise:
-        tint = (ngroup*nf + (ngroup-1)*nd2) * tf
-        snr_fact = 1.0 - tint*6.7781e-5
-    else:
-        snr_fact = 1.0
-
-    # Central position (in pixel coords) of PSF
-    if offset_r==0:
-        center = None
-    else:
-        xp, yp = rtheta_to_xy(offset_r/pix_scale, offset_theta)
-        xp += image.shape[1] / 2.0 # x value in pixel position
-        yp += image.shape[0] / 2.0 # y value in pixel position
-        center = (xp, yp)
-
-    # If grism spectroscopy
-    if grism_obs:
-
-        if units is None: units = 'uJy'
-        wspec, spec = image
-
-        # Wavelengths to grab sensitivity values
-        #igood2 = bp.throughput > (bp.throughput.max()/4)
-        igood2 = bp_igood(bp, min_trans=bp.throughput.max()/3, fext=0)
-        wgood2 = waveset[igood2] / 1e4
-        wsen_arr = np.unique((wgood2*10 + 0.5).astype('int')) / 10
-
-        # Add an addition 0.1 on either side
-        dw = 0.1
-        wsen_arr = np.concatenate(([wsen_arr.min()-dw],wsen_arr,[wsen_arr.max()+dw]))
-
-        #wdel = wsen_arr[1] - wsen_arr[0]
-
-        # FWHM at each pixel position
-        #fwhm_pix_arr = np.ceil(wsen_arr * 0.206265 / 6.5 / pix_scale)
-        # Make sure there's at least 5 total pixels in spatial dimension
-        #temp = fwhm_pix_arr.repeat(2).reshape([fwhm_pix_arr.size,2])
-        #temp[:,0] = 2
-        #rad_arr = temp.max(axis=1)
-        # Ignore the above, let's always do a 5pix spatial aperture
-        rad_arr = np.zeros(wsen_arr.size) + 2 # (2*2+1)
-
-        # Spatial aperture size at each wavelength
-        ap_spat = (2*rad_arr+1).astype('int')
-        # Indices with spectral image
-        ispat1 = (fov_pix - ap_spat) // 2
-        ispat2 = ispat1 + ap_spat
-
-        # Get spectral indices on the spectral image
-        if (dw_bin is None) and (ap_spec is None):
-            ap_spec = 2
-        elif (dw_bin is not None) and (ap_spec is None):
-            ap_spec = wspec.size * dw_bin / (wspec.max() - wspec.min())
-            ap_spec = int(ap_spec+0.5)
-        else:
-            ap_spec = int(ap_spec+0.5)
-        diff = abs(wspec.reshape(wspec.size,1) - wsen_arr)
-        ind_wave = []
-        for i in np.arange(wsen_arr.size):
-            ind = (np.where(diff[:,i]==min(diff[:,i])))[0]
-            ind_wave.append(ind[0])
-        ispec1 = np.asarray(ind_wave) - ap_spec // 2
-        ispec2 = ispec1 + ap_spec
-
-        # At each wavelength, grab a sub image and find the limiting magnitude
-        bglim_arr = []
-        for i in np.arange(wsen_arr.size):
-            sub_im = spec[ispat1[i]:ispat2[i],ispec1[i]:ispec2[i]]
-
-            if forwardSNR:
-                snr = _mlim_helper(sub_im, nint=nint, forwardSNR=forwardSNR,
-                    ngroup=ngroup, nf=nf, nd2=nd2, tf=tf, fzodi=fzodi_pix,
-                    snr_fact=snr_fact, **kwargs)
-                bglim_arr.append(snr)
-
-            else:
-                # Interpolate over a coarse magnitude grid
-                mag_arr=np.arange(5,35,1)
-                mag_lim = _mlim_helper(sub_im, mag_norm, mag_arr, nsig=nsig, nint=nint,
-                    ngroup=ngroup, nf=nf, nd2=nd2, tf=tf, fzodi=fzodi_pix,
-                    snr_fact=snr_fact, **kwargs)
-
-                # Zoom in and interoplate over finer grid
-                mag_arr = np.arange(mag_lim-1,mag_lim+1,0.05)
-                mag_lim = _mlim_helper(sub_im, mag_norm, mag_arr, nsig=nsig, nint=nint,
-                    ngroup=ngroup, nf=nf, nd2=nd2, tf=tf, fzodi=fzodi_pix,
-                    snr_fact=snr_fact, **kwargs)
-
-                # Renormalize spectrum to magnitude limit and convert to desired units
-                sp_norm2 = sp.renorm(mag_lim, 'vegamag', bp)
-                sp_norm2.convert(units)
-                bglim = np.interp(wsen_arr[i],sp_norm2.wave/1e4, sp_norm2.flux)
-                bglim_arr.append(bglim)
-
-        bglim_arr = np.asarray(bglim_arr)
-
-        # Return sensitivity list along with corresponding wavelengths to dictionary
-        if forwardSNR:
-            sp_norm.convert(units)
-            fvals = np.interp(wsen_arr, sp_norm.wave/1e4, sp_norm.flux)
-            out = {'wave':wsen_arr.tolist(), 'snr':bglim_arr.tolist(),
-                   'flux_units':units, 'flux':fvals.tolist(), 'Spectrum':sp.name}
-
-            if quiet == False:
-                print('{0} SNR for {1} source'.format(bp.name,sp.name))
-                names = ('Wave','SNR','Flux ({})'.format(units))
-                tbl = Table([wsen_arr,bglim_arr, fvals], names=names)
-                for k in tbl.keys():
-                    tbl[k].format = '9.2f'
-                print(tbl)
-
-        else:
-            out = {'wave':wsen_arr.tolist(), 'sensitivity':bglim_arr.tolist(),
-                   'units':units, 'nsig':nsig, 'Spectrum':sp.name}
-
-            if quiet == False:
-                print('{} Background Sensitivity ({}-sigma) for {} source'.\
-                    format(bp.name,nsig,sp.name))
-
-                names = ('Wave','Limit ({})'.format(units))
-                tbl = Table([wsen_arr,bglim_arr], names=names)
-                for k in tbl.keys():
-                    tbl[k].format = '9.2f'
-                print(tbl)
-
-        return out
-
-    # DHS spectroscopy
-    elif dhs_obs:
-        raise NotImplementedError('DHS has yet to be fully included')
-
-    # Imaging (includes coronagraphy)
-    else:
-        if units is None: units = 'nJy'
-
-        # Wavelength to grab sensitivity values
-        obs = S.Observation(sp_norm, bp, binset=waveset)
-        efflam = obs.efflam()*1e-4 # microns
-
-        # Encircled energy
-        rho_pix = dist_image(image)
-        bins = np.arange(rho_pix.min(), rho_pix.max() + 1, 1)
-        # Groups indices for each radial bin
-        igroups, _, rad_pix = hist_indices(rho_pix, bins, True)
-        # Sum of each radial annulus
-        sums = binned_statistic(igroups, image, func=np.sum)
-        # Encircled energy within each radius
-        EE_flux = np.cumsum(sums)
-
-        # How many pixels do we want?
-        fwhm_pix = 1.2 * efflam * 0.206265 / 6.5 / pix_scale
-        if rad_EE is None:
-            rad_EE = np.max([fwhm_pix,2.5])
-        npix_EE = np.pi * rad_EE**2
-
-        # For surface brightness sensitivity (extended object)
-        # Assume the fiducial (sp_norm) to be in terms of mag/arcsec^2
-        # Multiply countrate() by pix_scale^2 to get in terms of per pixel (area)
-        # This is the count rate per pixel for the fiducial starting point
-        image_ext = obs.countrate() * pix_scale**2 # e-/sec/pixel
-        #print(image_ext)
-
-        if forwardSNR:
-            im_var = pix_noise(ngroup=ngroup, nf=nf, nd2=nd2, tf=tf,
-                fzodi=fzodi_pix, fsrc=image, **kwargs)**2
-
-            # root squared sum of noise within each radius
-            sums = binned_statistic(igroups, im_var, func=np.sum)
-            EE_var = np.cumsum(sums)
-            EE_sig = np.sqrt(EE_var / nint)
-
-            EE_snr = snr_fact * EE_flux / EE_sig
-            snr_rad = np.interp(rad_EE, rad_pix, EE_snr)
-            flux_val = obs.effstim(units)
-            out1 = {'type':'Point Source', 'snr':snr_rad, 'Spectrum':sp.name,
-                'flux':flux_val, 'flux_units':units}
-
-            # Extended object surfrace brightness
-            im_var = pix_noise(ngroup=ngroup, nf=nf, nd2=nd2, tf=tf,
-                fzodi=fzodi_pix, fsrc=image_ext, **kwargs)**2
-            im_sig = np.sqrt(im_var*npix_EE / nint)
-            # Total number of pixels within r=fwhm or 2.5 pixels
-            fsum2 = image_ext * npix_EE
-            snr2 = snr_fact * fsum2 / im_sig # SNR per "resolution element"ish
-            out2 = {'type':'Surface Brightness', 'snr':snr2, 'Spectrum':sp.name,
-                'flux':flux_val, 'flux_units':units+'/arcsec^2'}
-
-            if quiet == False:
-                for out in [out1,out2]:
-                    print('{} SNR ({:.2f} {}): {:.2f} sigma'.\
-                        format(out['type'], out['flux'], out['flux_units'], out['snr']))
-
-        else:
-            # Interpolate over a coarse magnitude grid to get SNR
-            # Then again over a finer grid
-            for ii in np.arange(2):
-                if ii==0: mag_arr = np.arange(5,35,1)
-                else: mag_arr = np.arange(mag_lim-1,mag_lim+1,0.05)
-
-                fact_arr = 10**((mag_arr-mag_norm)/2.5)
-                snr_arr = []
-                for f in fact_arr:
-                    #im_var = image/f/tint + var_const
-
-                    im_var = pix_noise(ngroup=ngroup, nf=nf, nd2=nd2, tf=tf,
-                        fzodi=fzodi_pix, fsrc=image/f, **kwargs)**2
-
-                    # root squared sum of noise within each radius
-                    sums = binned_statistic(igroups, im_var, func=np.sum)
-                    EE_var = np.cumsum(sums)
-                    EE_sig = np.sqrt(EE_var / nint)
-
-                    EE_snr = snr_fact * (EE_flux/f) / EE_sig
-                    snr_rad = np.interp(rad_EE, rad_pix, EE_snr)
-                    snr_arr.append(snr_rad)
-
-                snr_arr = np.asarray(snr_arr)
-                mag_lim = np.interp(nsig, snr_arr[::-1], mag_arr[::-1])
-
-                _log.debug('Mag Limits [{0:.2f},{1:.2f}]; {2:.0f}-sig: {3:.2f}'.\
-                    format(mag_arr.min(),mag_arr.max(),nsig,mag_lim))
-
-            # Renormalize spectrum at given magnitude limit
-            sp_norm2 = sp.renorm(mag_lim, 'vegamag', bp)
-            # Determine effective stimulus
-            obs2 = S.Observation(sp_norm2, bp, binset=waveset)
-            bglim = obs2.effstim(units)
-
-            out1 = {'sensitivity':bglim, 'units':units, 'nsig':nsig, 'Spectrum':sp.name}
-
-            # Same thing as above, but for surface brightness
-            for ii in np.arange(2):
-                if ii==0: mag_arr = np.arange(5,35,1)
-                else: mag_arr = np.arange(mag_lim-1,mag_lim+1,0.05)
-
-                fact_arr = 10**((mag_arr-mag_norm)/2.5)
-                snr_arr = []
-                for f in fact_arr:
-                    im_var = pix_noise(ngroup=ngroup, nf=nf, nd2=nd2, tf=tf,
-                        fzodi=fzodi_pix, fsrc=image_ext/f, **kwargs)**2
-
-                    im_sig = np.sqrt(im_var*npix_EE / nint)
-                    fsum2 = image_ext * npix_EE / f
-                    snr2 = snr_fact * fsum2 / im_sig
-                    #print('{:.5f} {:.5f} {:.2f}'.format(fsum2,im_sig,snr2))
-
-                    snr_arr.append(snr2)
-
-                snr_arr = np.asarray(snr_arr)
-                mag_lim = np.interp(nsig, snr_arr[::-1], mag_arr[::-1])
-
-                _log.debug('Mag Limits (mag/asec^2) [{0:.2f},{1:.2f}]; {2:.0f}-sig: {3:.2f}'.\
-                    format(mag_arr.min(),mag_arr.max(),nsig,mag_lim))
-
-            # mag_lim is in terms of mag/arcsec^2 (same as mag_norm)
-            sp_norm2 = sp.renorm(mag_lim, 'vegamag', bp)
-            obs2 = S.Observation(sp_norm2, bp, binset=waveset)
-            bglim2 = obs2.effstim(units) # units/arcsec**2
-
-            out2 = out1.copy()
-            out2['sensitivity'] = bglim2
-            out2['units'] = units+'/arcsec^2'
-
-            if quiet == False:
-                print('{} Sensitivity ({}-sigma): {:.2f} {}'.\
-                       format('Point Source', nsig, bglim, out1['units']))
-                print('{} Sensitivity ({}-sigma): {:.2f} {}'.\
-                       format('Surface Brightness', nsig, bglim2, out2['units']))
-
-        return out1, out2
-
-
-def sat_limit_webbpsf(filter_or_bp, pupil=None, mask=None, module='A', pix_scale=None,
-    sp=None, bp_lim=None, int_time=21.47354, full_well=81e3, well_frac=0.8,
-    coeff=None, coeff_hdr=None, fov_pix=11, oversample=4, quiet=True, units='vegamag',
-    offset_r=0, offset_theta=0, **kwargs):
-    """Saturation limits
-
-    Estimate the saturation limit of a point source for some bandpass.
-    By default, it outputs the max K-Band magnitude assuming a G2V star,
-    following the convention on the UA NIRCam webpage. This can be useful if
-    one doesn't know how bright a source is in the selected NIRCam filter
-    bandpass. However any user-defined bandpass (or user-defined spectrum)
-    can be specifed. These must follow the Pysynphot conventions found here:
-    http://pysynphot.readthedocs.org/en/latest/using_pysynphot.html
-
-    This function returns the saturation limit in Vega magnitudes by default,
-    however, any flux unit supported by Pysynphot is possible via the 'units'
-    keyword.
-
-    Parameters
-    ==========
-
-    Instrument Settings
-    -------------------
-    filter_or_bp : Either the name of the filter or pre-computed Pysynphot bandpass.
-    pupil : NIRCam pupil elements such as grisms or lyot stops
-    mask : Specify the coronagraphic occulter (spots or bar)
-    module : 'A' or 'B'
-
-    Spectrum Settings
-    -------------------
-    sp : A Pysynphot spectrum to calculate saturation (default: G2V star)
-    bp_lim : A Pysynphot bandpass at which we report the magnitude that will
-        saturate the NIRCam band assuming some spectrum sp
-    units : Output units for saturation limit
-
-    Detector Settings
-    -------------------
-    int_time : Integration time in seconds (default corresponds to 2 full frames)
-    full_well : Detector full well level in electrons.
-    well_frac : Fraction of full well to consider "saturated." 0.8 by default.
-
-    PSF Information
-    -------------------
-    coeff : A cube of polynomial coefficients for generating PSFs. This is
-        generally oversampled and has the shape:
-
-            [fov_pix*oversample, fov_pix*oversample, deg]
-
-        If not set, this this will be calculated from fov_pix, oversample,
-        and npsf by generating a number of webbPSF images within the bandpass
-        and fitting a high-order polynomial.
-    fov_pix      : Number of detector pixels in the image coefficient and PSF.
-    oversample   : Factor of oversampling of detector pixels.
-    offset_r     : Radial offset of the target from center.
-    offset_theta : Position angle for that offset, in degrees CCW (+Y).
-
-    Keyword Args
-    -------------------
-    gen_psf_coeff - npsf and ndeg
-    read_filter   - ND_acq
-    """
-
-    # PSF coefficients
-    from pynrc.psfs import gen_image_coeff
-
-    # Get filter throughput and create bandpass
-    if isinstance(filter_or_bp, six.string_types):
-        filter = filter_or_bp
-        bp = read_filter(filter, pupil=pupil, mask=mask, module=module, **kwargs)
-    else:
-        bp = filter_or_bp
-        filter = bp.name
-
-    if bp_lim is None:
-        bp_lim = S.ObsBandpass('johnson,k')
-        bp_lim.name = 'K-Band'
-
-    # If not set, select some settings based on filter (SW or LW)
-    args = channel_select(bp)
-    if pix_scale is None: 
-        pix_scale = args[0] # Pixel scale (arcsec/pixel)
-
-    # Spectrum and bandpass to report magnitude that saturates NIRCam band
-    if sp is None: 
-        sp = stellar_spectrum('G2V')
-
-    # Just for good measure, make sure we're all in the same wave units
-    bp_lim.convert(bp.waveunits)
-    sp.convert(bp.waveunits)
-
-    # Renormalize to 10th magnitude star (Vega mags)
-    mag_norm = 10.0
-    sp_norm = sp.renorm(mag_norm, 'vegamag', bp_lim)
-    sp_norm.name = sp.name
-
-    # Set up an observation of the spectrum using the specified bandpass
-    # Use the bandpass wavelengths to bin the fluxes
-    obs = S.Observation(sp_norm, bp, binset=bp.wave)
-    # Convert observation to counts (e/sec)
-    obs.convert('counts')
-
-    # The number of pixels to span spatially
-    fov_pix = int(fov_pix)
-    oversample = int(oversample)
-    # Generate the PSF image for analysis
-    t0 = time.time()
-    result = gen_image_coeff(bp, pupil=pupil, mask=mask, module=module, 
-        sp_norm=sp_norm, coeff=coeff, coeff_hdr=coeff_hdr,
-        fov_pix=fov_pix, oversample=oversample,
-        offset_r=offset_r, offset_theta=offset_theta, **kwargs)
-    t1 = time.time()
-    _log.debug('Took %.2f seconds to generate images' % (t1-t0))
-
-    # Total stellar flux and associated magnitude
-    star_flux = obs.countrate() # e/sec
-    mag_nrc = obs.effstim('vegamag')
-    _log.debug('Total Source Count Rate for {0} = {1:0.1f} mags: {2:.0f} e-/sec'.\
-        format(bp_lim.name, mag_norm, star_flux))
-    _log.debug('Magnitude in {0} band: {1:.2f}'.format(bp.name, mag_nrc))
-
-    # Saturation level (some fraction of full well) in electrons
-    sat_level = well_frac * full_well
-
-    # If grism spectroscopy
-    if (pupil is not None) and ('GRISM' in pupil):
-        wspec, spec = result
-
-         # Time to saturation for 10-mag source
-        sat_time = sat_level / spec
-        _log.debug('Approximate Time to {1:.2f} of Saturation: {0:.1f} sec'.\
-            format(sat_time.min(),well_frac))
-
-        # Magnitude necessary to saturate a given pixel
-        ratio = int_time/sat_time
-        ratio[ratio < __epsilon] = __epsilon
-        sat_mag = mag_norm + 2.5*np.log10(ratio)
-
-        # Wavelengths to grab saturation values
-        igood2 = bp.throughput > (bp.throughput.max()/4)
-        wgood2 = bp.wave[igood2] / 1e4
-        wsat_arr = np.unique((wgood2*10 + 0.5).astype('int')) / 10
-        wdel = wsat_arr[1] - wsat_arr[0]
-        msat_arr = []
-        for w in wsat_arr:
-            l1 = w-wdel/4
-            l2 = w+wdel/4
-            ind = ((wspec > l1) & (wspec <= l2))
-            msat = sat_mag[fov_pix//2-1:fov_pix//2+2,ind].max()
-            sp_temp = sp.renorm(msat, 'vegamag', bp_lim)
-            obs_temp = S.Observation(sp_temp, bp_lim, binset=bp_lim.wave)
-            msat_arr.append(obs_temp.effstim(units))
-
-        msat_arr = np.array(msat_arr)
-
-        # Print verbose information
-        if not quiet:
-            if bp_lim.name == bp.name:
-                print('{0} Saturation Limit assuming {1} source:'.\
-                    format(bp_lim.name,sp.name))
-            else:
-                print('{0} Saturation Limit for {1} assuming {2} source:'.\
-                    format(bp_lim.name,bp.name,sp.name))
-
-            names = ('Wave','Sat Limit ({})'.format(units))
-            tbl = Table([wsat_arr,msat_arr], names=names)
-            for k in tbl.keys():
-                tbl[k].format = '9.2f'
-            print(tbl)
-
-
-        # Return saturation list along with corresponding wavelengths to dictionary
-        return {'wave':wsat_arr.tolist(), 'satmag':msat_arr.tolist(),
-            'units':units, 'Spectrum':sp_norm.name, 'bp_lim':bp_lim.name}
-
-    # DHS spectroscopy
-    elif (pupil is not None) and ('DHS' in pupil):
-        raise NotImplementedError
-
-    # Imaging
-    else:
-        psf = result
-
-         # Time to saturation for 10-mag source
-         # Only need the maximum pixel value
-        sat_time = sat_level / psf.max()
-        _log.debug('Point source approximate Time to {1:.2f} of Saturation: {0:.2f} sec'.\
-            format(sat_time,well_frac))
-
-        # Magnitude necessary to saturate a given pixel
-        ratio = int_time/sat_time
-        sat_mag = mag_norm + 2.5*np.log10(ratio)
-
-        # Convert to desired unit
-        sp_temp = sp.renorm(sat_mag, 'vegamag', bp_lim)
-        obs_temp = S.Observation(sp_temp, bp_lim, binset=bp_lim.wave)
-        res1 = obs_temp.effstim(units)
+        detname = det_id
+
+    # If NRCALONG or or NRCBLONG, change 'LONG' to '5' 
+    if 'LONG' in detname:
+        detname = detname[0:4] + '5'
+
+    if detname not in detnames:
+        raise ValueError("Invalid detector: {} \n\tValid names are: {}" \
+                  .format(detname, ', '.join(detnames)))
         
-        out1 = {'satlim':res1, 'units':units, 'bp_lim':bp_lim.name, 'Spectrum':sp_norm.name}
-
-        # For surface brightness saturation (extended object)
-        # Assume the fiducial (sp_norm) to be in terms of mag/arcsec^2
-        # Multiply countrate() by pix_scale^2 to get in terms of per pixel (area)
-        # This is the count rate per pixel for the fiducial starting point
-        image_ext = obs.countrate() * pix_scale**2 # e-/sec/pixel
-        
-        sat_time = sat_level / image_ext
-        _log.debug('Extended object approximate Time to {1:.2f} of Saturation: {0:.2f} sec'.\
-            format(sat_time,well_frac))
-        
-        # Magnitude necessary to saturate a given pixel
-        ratio = int_time / sat_time
-        sat_mag_ext = mag_norm + 2.5*np.log10(ratio)
-
-        # Convert to desired unit
-        sp_temp = sp.renorm(sat_mag_ext, 'vegamag', bp_lim)
-        obs_temp = S.Observation(sp_temp, bp_lim, binset=bp_lim.wave)
-        res2 = obs_temp.effstim(units)
-
-        out2 = out1.copy()
-        out2['satlim'] = res2
-        out2['units'] = units+'/arcsec^2'
-
-        # Print verbose information
-        if not quiet:
-            if bp_lim.name == bp.name:
-                print('{} Saturation Limit assuming {} source (point source): {:.2f} {}'.\
-                    format(bp_lim.name, sp_norm.name, out1['satlim'], out1['units']) )
-                print('{} Saturation Limit assuming {} source (extended): {:.2f} {}'.\
-                    format(bp_lim.name, sp_norm.name, out2['satlim'], out2['units']) )
-            else:
-                print('{} Saturation Limit for {} assuming {} source (point source): {:.2f} {}'.\
-                    format(bp_lim.name, bp.name, sp_norm.name, out1['satlim'], out1['units']) )
-                print('{} Saturation Limit for {} assuming {} source (extended): {:.2f} {}'.\
-                    format(bp_lim.name, bp.name, sp_norm.name, out2['satlim'], out2['units']) )
-
-        return out1, out2
-
+    return detname
 
 def var_ex_model(ng, nf, params):
     """ Variance Excess Model
@@ -1145,31 +473,35 @@ def zodi_spec(zfact=None, ra=None, dec=None, thisday=None, **kwargs):
         else:
             # Wavelength for "bathtub plot" (not used here)
             wave_bath = 2.5
-            bkg = jbt.background(ra, dec, wave_bath)
-            # Get wavelength and flux values 
-            wvals = bkg.bkg_data['wave_array'] # Wavelength (um)
-            farr = bkg.bkg_data['total_bg'] # Total background (MJy/sr)
-
-            if thisday is None:
-                # Use average of visible calendar days
-                ftot = farr.mean(axis=0)
+            try:
+                bkg = jbt.background(ra, dec, wave_bath)
+            except:
+                _log.error('Cannot reach JWST Background servers. Reverting to `zfact` input.')
             else:
-                calendar = bkg.bkg_data['calendar']
-                if thisday in calendar:
-                    ind = np.where(calendar==thisday)[0][0]
-                    ftot = farr[ind]
+                # Get wavelength and flux values 
+                wvals = bkg.bkg_data['wave_array'] # Wavelength (um)
+                farr = bkg.bkg_data['total_bg'] # Total background (MJy/sr)
+
+                if thisday is None:
+                    # Use average of visible calendar days
+                    ftot = farr.mean(axis=0)
                 else:
-                    _log.warning("The input calendar day {}".format(thisday)+" is not available. \
-                                 Choosing closest visible day.")
-                    diff = np.abs(calendar-thisday)
-                    ind = np.argmin(diff)
-                    ftot = farr[ind]
+                    calendar = bkg.bkg_data['calendar']
+                    if thisday in calendar:
+                        ind = np.where(calendar==thisday)[0][0]
+                        ftot = farr[ind]
+                    else:
+                        _log.warning("The input calendar day {}".format(thisday)+" is not available. \
+                                    Choosing closest visible day.")
+                        diff = np.abs(calendar-thisday)
+                        ind = np.argmin(diff)
+                        ftot = farr[ind]
 
-            sp = S.ArraySpectrum(wave=wvals*1e4, flux=ftot*1e6, fluxunits='Jy')
-            sp.convert('flam')
-            sp.name = 'Total Background'
+                sp = S.ArraySpectrum(wave=wvals*1e4, flux=ftot*1e6, fluxunits='Jy')
+                sp.convert('flam')
+                sp.name = 'Total Background'
 
-            return sp
+                return sp
 
 
     if zfact is None: 
@@ -1813,7 +1145,7 @@ def pickoff_image(ap_obs, v2_obj, v3_obj, flux_obj, oversample=1):
     return xsci, ysci, oversized_image 
 
 
-def gen_unconvolved_point_source_image(nrc, tel_pointing, ra_deg, dec_deg, mags, expnum=1, osamp=1):
+def gen_unconvolved_point_source_image(nrc, tel_pointing, ra_deg, dec_deg, mags, expnum=1, osamp=1, **kwargs):
     
     from webbpsf_ext.spectra import mag_to_counts
     
@@ -1824,6 +1156,9 @@ def gen_unconvolved_point_source_image(nrc, tel_pointing, ra_deg, dec_deg, mags,
     # Get all source fluxes
     # mags = tbl[nrc.filter].data
     flux_obj = mag_to_counts(mags, nrc.bandpass)
+
+    if isinstance(expnum, str):
+        expnum = int(expnum)
     
     # Convert RA, Dec coordiantes into V2/V3 (arcsec)
     # ra_deg, dec_deg = (tbl['ra'], tbl['dec'])
