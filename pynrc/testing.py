@@ -3,7 +3,6 @@ import numpy as np
 from .nrc_utils import webbpsf, poppy, read_filter
 from .logging_utils import setup_logging
 from .pynrc_core import NIRCam
-from .psfs import gen_webbpsf_psf
 
 def perform_benchmarks(filter='F430M', pupil=None, mask=None, module='A',
                        fov_pix=33, oversample=4, include_si_wfe=True, 
@@ -68,16 +67,16 @@ def perform_benchmarks(filter='F430M', pupil=None, mask=None, module='A',
         time_string = 'Took {:.2f} seconds to init WebbPSF'.format(dt)
         print(time_string)    
 
-        # PSF Geneation
-        bp = read_filter(filter, **kwargs)
+        # PSF Generation
+        nrc = NIRCam(filter=filter, **kwargs)
         tarr = []
         for i in range(5):
             t0 = time.time()
-            hdul = gen_webbpsf_psf(bp, wfe_drift=5, **kwargs)
+            _ = nrc.calc_psf()
             t1 = time.time()
             dt = t1-t0
             tarr.append(dt)
-        tdict['webbpsf_psf'] = dt = np.mean(tarr) - tdict['webbpsf_init'] 
+        tdict['webbpsf_psf'] = dt = np.mean(tarr)
         time_string = 'Took {:.2f} seconds to generate WebbPSF PSF'.format(dt)
         print(time_string)    
 
