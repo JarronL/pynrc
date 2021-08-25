@@ -347,9 +347,8 @@ class NIRCam(NIRCam_ext):
     """
 
     def __init__(self, filter=None, pupil_mask=None, image_mask=None, 
-                 ND_acq=False, detector=None, apname=None, **kwargs):
+                 ND_acq=False, detector=None, apname=None, autogen_coeffs=True, **kwargs):
 
-        auto_gen_coeffs = kwargs.pop('auto_gen_coeffs', None)
         detector = kwargs.pop('detector', None)
 
         # Available Filters
@@ -411,13 +410,15 @@ class NIRCam(NIRCam_ext):
             self.update_from_SIAF(apname, pupil=pupil_mask, **kwargs)
 
         # Generate PSF coefficients
-        self.gen_psf_coeff(**kwargs)
+        if autogen_coeffs:
+            self.gen_psf_coeff(**kwargs)
 
         # Background fov pix is only for coronagraphic masks
         # Create a background reference class
         self._fov_pix_bg = 33
         self._fov_bg_match = False
-        self._update_bg_class(**kwargs)
+        if autogen_coeffs:
+            self._update_bg_class(**kwargs)
         
 
     def _update_bg_class(self, fov_bg_match=None, **kwargs):

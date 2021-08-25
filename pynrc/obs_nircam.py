@@ -43,14 +43,17 @@ class nrc_hci(NIRCam):
         disk space and memory while running.   
     """
 
-    def __init__(self, wind_mode='WINDOW', xpix=320, ypix=320, large_grid=False, bar_offset=None, **kwargs):
+    def __init__(self, wind_mode='WINDOW', xpix=320, ypix=320, large_grid=False, bar_offset=None, 
+                 autogen_coeffs=True, **kwargs):
 
-        super().__init__(wind_mode=wind_mode, xpix=xpix, ypix=ypix, fov_bg_match=True, **kwargs)
+        super().__init__(wind_mode=wind_mode, xpix=xpix, ypix=ypix, fov_bg_match=True, 
+                         autogen_coeffs=autogen_coeffs, **kwargs)
 
-        # Enable WFE drift
-        self.gen_wfedrift_coeff()
-        # Enable mask-dependent
-        self.gen_wfemask_coeff(large_grid=large_grid)
+        if autogen_coeffs:
+            # Enable WFE drift
+            self.gen_wfedrift_coeff()
+            # Enable mask-dependent
+            self.gen_wfemask_coeff(large_grid=large_grid)
 
         log_prev = conf.logging_level
         setup_logging('WARN', verbose=False)
@@ -728,7 +731,7 @@ class obs_hci(nrc_hci):
         PA_offset : float
             Rotate entire scene by some position angle.
             Positive values are counter-clockwise from +Y direction.
-            Corresponds to instrument aperture PA.
+            This should be -1 times telescope V3 PA.
         xyoff_asec : tuple
             Offsets (dx,dy) specified in arcsec. These are meant to be
             for minor shifts, use as SGD. Bar offsets are accounted
@@ -850,7 +853,7 @@ class obs_hci(nrc_hci):
         PA_offset : float
             Rotate entire scene by some position angle.
             Positive values are counter-clockwise from +Y direction.
-            Corresponds to instrument aperture PA.
+            This should be -1 times telescope V3 PA.
         xyoff_asec : tuple
             Offsets (dx,dy) specified in arcsec. These are meant to be
             for minor shifts, use as SGD. Bar offsets are accounted
@@ -886,6 +889,7 @@ class obs_hci(nrc_hci):
         dely_asec = offy_asec + dely_pix * self.pixelscale
 
         # Rotate and shift oversampled disk image
+        # Positive PA 
         hdul_rot_shift = rotate_shift_image(self.disk_hdulist, PA_offset=PA_offset, 
                                             delx_asec=delx_asec, dely_asec=dely_asec)
         disk_image = hdul_rot_shift[0].data
@@ -958,7 +962,8 @@ class obs_hci(nrc_hci):
         Parameters
         ----------
         PA : float
-            Position angle of roll position (clockwise, from East to West).
+            Position angle of roll position (counter-clockwise, from West to East).
+            Scence will rotate in opposite direction.
         xyoff_asec : 
             Positional offset of scene from reference location in 'idl' coords.
         do_ref : bool
@@ -1082,8 +1087,9 @@ class obs_hci(nrc_hci):
             no_planets = exclude_planets and exclude_noise
 
         # Make sure to include planets and disks for Poisson noise calculations
+        # Telescope PA is counter-clockwise, therefore image rotation is opposite direction
         kwargs2 = kwargs.copy()
-        kwargs2['PA_offset']  = PA
+        kwargs2['PA_offset']  = -1*PA
         kwargs2['xyoff_asec'] = xyoff_asec
         kwargs2['return_oversample'] = return_oversample
         kwargs2['use_coeff'] = True
@@ -1238,7 +1244,8 @@ class obs_hci(nrc_hci):
         Parameters
         ----------
         PA1 : float
-            Position angle of first roll position (clockwise, from East to West)
+            Position angle of first telescope roll position.
+            This is counter-clockwise (West to East).
         PA2 : float, None
             Position angle of second roll position. If set equal to PA1
             (or to None), then only one roll will be performed.
@@ -1421,8 +1428,8 @@ class obs_hci(nrc_hci):
             diff_r2 = -1 * diff_r1
 
             # De-rotate each image
-            diff_r1_rot = rotate_offset(diff_r1, PA1, cen=cen_over, reshape=True, cval=np.nan)
-            diff_r2_rot = rotate_offset(diff_r2, PA2, cen=cen_over, reshape=True, cval=np.nan)
+            diff_r1_rot = rotate_offset(diff_r1, -PA1, cen=cen_over, reshape=True, cval=np.nan)
+            diff_r2_rot = rotate_offset(diff_r2, -PA2, cen=cen_over, reshape=True, cval=np.nan)
 
             # Expand to the same size
             new_shape = tuple(np.max(np.array([diff_r1_rot.shape, diff_r2_rot.shape]), axis=0))
@@ -1602,11 +1609,10 @@ class obs_hci(nrc_hci):
             #im_diff_r2 = optimal_difference(im_roll2, im_ref, scale2)
 
             # De-rotate each image
-            # Convention for rotate() is opposite PA_offset
-            diff1_r1_rot = rotate_offset(im_diff1_r1, PA1, cen=cen_over, reshape=True, cval=np.nan)
-            diff2_r1_rot = rotate_offset(im_diff2_r1, PA1, cen=cen_over, reshape=True, cval=np.nan)
-            diff1_r2_rot = rotate_offset(im_diff1_r2, PA2, cen=cen_over, reshape=True, cval=np.nan)
-            diff2_r2_rot = rotate_offset(im_diff2_r2, PA2, cen=cen_over, reshape=True, cval=np.nan)
+            diff1_r1_rot = rotate_offset(im_diff1_r1, -PA1, cen=cen_over, reshape=True, cval=np.nan)
+            diff2_r1_rot = rotate_offset(im_diff2_r1, -PA1, cen=cen_over, reshape=True, cval=np.nan)
+            diff1_r2_rot = rotate_offset(im_diff1_r2, -PA2, cen=cen_over, reshape=True, cval=np.nan)
+            diff2_r2_rot = rotate_offset(im_diff2_r2, -PA2, cen=cen_over, reshape=True, cval=np.nan)
 
             # Expand all images to the same size
             new_shape = tuple(np.max(np.array([diff1_r1_rot.shape, diff1_r2_rot.shape]), axis=0))
@@ -1673,12 +1679,8 @@ class obs_hci(nrc_hci):
             else:
                 final = im_roll1_sh - im_ref_sh * scale1
 
-            final = rotate_offset(final, PA1, cen=cen_over, reshape=True, cval=np.nan)
+            final = rotate_offset(final, -PA1, cen=cen_over, reshape=True, cval=np.nan)
             texp_sci = self.multiaccum_times['t_exp']
-
-        # De-rotate PA1 to North
-        #if abs(PA1) > eps:
-        #    final = rotate(final, PA1, reshape=False)
 
         # Rebin if requesting detector sampled images 
         if not return_oversample:
