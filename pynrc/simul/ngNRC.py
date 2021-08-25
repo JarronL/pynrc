@@ -418,7 +418,7 @@ def slope_to_fitswriter(det, cal_obj, im_slope=None, cframe='det',
     data = simulate_detector_ramp(det, cal_obj, im_slope=im_slope, cframe='det',
                                   out_ADU=out_ADU, return_zero_frame=False, **kwargs)
     hdu = fits.PrimaryHDU(data)
-    hdu.header = det.make_header(filter, pupil, obs_time, targ_name=targ_name, DMS=DMS)
+    hdu.header = det.make_header(filter, pupil, obs_time, targ_name=targ_name, DMS=False)
 
     if file_out is not None:
         hdu.header['FILENAME'] = os.path.split(file_out)[1]
