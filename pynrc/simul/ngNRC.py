@@ -53,6 +53,8 @@ def slope_to_level1b(im_slope, obs_params, cal_obj=None, save_dir=None, **kwargs
 
     Look at keyword args to exclude specific detector effects.
 
+    Output is saved to disk and will not be returned by the function.
+
     Parameters
     ==========
     im_slope : ndarray
@@ -159,6 +161,8 @@ def sources_to_level1b(source_table, nircam_obj, obs_params, tel_pointing,
     populated with detector calibration information.
 
     Look at keyword args to exclude specific detector effects.
+
+    Output is saved to disk and will not be returned by the function.
 
     Parameters
     ==========
@@ -316,11 +320,15 @@ def sources_to_level1b(source_table, nircam_obj, obs_params, tel_pointing,
     slope_to_level1b(im_slope, obs_params, cal_obj=cal_obj, save_dir=save_dir, **kwargs)
     
 
-def slope_to_ramps(det, dark_cal_obj, im_slope=None, filter=None, pupil=None, 
-                   targ_name=None, obs_time=None, file_out=None, 
-                   out_ADU=True, DMS=True, return_results=True, **kwargs):
+def slope_to_fitswriter(det, cal_obj, im_slope=None, cframe='det',
+                        filter=None, pupil=None, 
+                        targ_name=None, obs_time=None, file_out=None, 
+                        out_ADU=True, return_results=True, **kwargs):
     
     """Simulate HDUList from slope image
+
+    FITSWriter-like output. DMS output has been depreceated and moved 
+    to `slope_to_level1b` and `sources_to_level1b`.
     
     Parameters
     ==========
@@ -333,6 +341,8 @@ def slope_to_ramps(det, dark_cal_obj, im_slope=None, filter=None, pupil=None,
         Input slope image of observed scene. Assumed to be in detector
         coordinates. If an image cube, then number of images must match 
         the number of integration (`nint`) in `det` class.
+    cframe : str
+        Orientation of im_slope. Either 'det' or 'sci' coordinate frame.
     filter : str
         Name of filter element for header
     pupil : str
@@ -351,10 +361,8 @@ def slope_to_ramps(det, dark_cal_obj, im_slope=None, filter=None, pupil=None,
         If None, then won't save; make sure to set return_results=True.
     out_ADU : bool
         If true, divide by gain and convert to 16-bit UINT.
-    DMS : bool
-        Package the data in the format used by DMS?
     return_results : bool
-        Return HDUList result?
+        Return HDUList result? Otherwise, 
 
     Keyword Args
     ============
@@ -396,79 +404,25 @@ def slope_to_ramps(det, dark_cal_obj, im_slope=None, filter=None, pupil=None,
     linearity_map : ndarray
         Add non-linearity.
     """
-        
-    # Number of saved frames in a ramp
-    ma   = det.multiaccum
-    nint = ma.nint
+
+    if kwargs.get('DMS') is not None:
+        raise ValueError("DMS keyword is not valid. Instead, see `slope_to_level1b` or `sources_to_level1b`.")
 
     if (file_out is None) and (not return_results):
         raise ValueError("Set either file_out or return_results=True")
-        
-    if DMS:
-        is_cube = True if (im_slope is not None) and (len(im_slope.shape)==3) else False
-        if is_cube:
-            assert im_slope.shape[0]==nint, "`im_slope` images must match nint"
-
-        # Save all ramps within an exposure
-        data_all = []
-        zframe_all = []
-
-        for i in trange(nint, desc='Ramps', leave=True):
-            im_slope_i = im_slope[i] if is_cube else im_slope
-
-            res = simulate_detector_ramp(det, dark_cal_obj, im_slope=im_slope_i, 
-                                         out_ADU=out_ADU, return_zero_frame=True, **kwargs)
-
-            # Convert from det to sci coords
-            data   = det_to_sci(res[0], det.detid)
-            zframe = det_to_sci(res[1], det.detid)
-            # Append to full array
-            data_all.append(data)
-            zframe_all.append(zframe)
-        
-        data_all = np.array(data_all)
-        zframe_all = np.array(zframe_all)
-
-        header = det.make_header(filter, pupil, obs_time, targ_name=targ_name, DMS=DMS)
-        if file_out is not None:
-            header['FILENAME'] = os.path.split(file_out)[1]
-            
-        # Primary extension just has most header information
-        # of telescope, instrument, target, visit, exposure, either, ephemeris,et
-        primHDU = fits.PrimaryHDU(header=header)
-        primHDU.name = 'PRIMARY'
-        
-        # Science extension includes exposure data
-        # Header has obs time, spacecraft pointing, WCS
-        sciHDU = fits.ImageHDU(data=data_all)
-        sciHDU.name = 'SCI'
-        sciHDU.header.comments['NAXIS1'] = 'length of first data axis (#columns)'
-        sciHDU.header.comments['NAXIS2'] = 'length of second data axis (#rows)'
-        if sciHDU.header['NAXIS'] > 2:
-            sciHDU.header.comments['NAXIS3'] = 'length of third data axis (#groups/integration '
-        if sciHDU.header['NAXIS'] > 3:
-            sciHDU.header.comments['NAXIS4'] = 'length of fourth data axis (#integrations)  '
-        sciHDU.header['BZERO'] = (32768, 'physical value for an array value of zero')
-        sciHDU.header['BUNIT'] = ('DN', 'physical units of the data array values')
-        
-        # Zeroframe extension
-        zerHDU = fits.ImageHDU(data=zframe_all)
-        zerHDU.name = 'ZEROFRAME'
-        zerHDU.header.comments['NAXIS1'] = 'length of first data axis (#columns)'
-        zerHDU.header.comments['NAXIS2'] = 'length of second data axis (#rows)'
-        
-        outHDUList = fits.HDUList([primHDU,sciHDU,zerHDU])
             
     # FITSWriter (ISIM format)
-    else:
-        data = simulate_detector_ramp(det, dark_cal_obj, im_slope=im_slope, 
-                                      out_ADU=out_ADU,  return_zero_frame=False, **kwargs)
-        hdu = fits.PrimaryHDU(data)
-        hdu.header = det.make_header(filter, pupil, obs_time, targ_name=targ_name, DMS=DMS)
+    if cframe=='sci':
+        im_slope = sci_to_det(im_slope)
 
-        if file_out is not None:
-            hdu.header['FILENAME'] = os.path.split(file_out)[1]
-        outHDUList = fits.HDUList([hdu])
+    data = simulate_detector_ramp(det, cal_obj, im_slope=im_slope, cframe='det',
+                                  out_ADU=out_ADU, return_zero_frame=False, **kwargs)
+    hdu = fits.PrimaryHDU(data)
+    hdu.header = det.make_header(filter, pupil, obs_time, targ_name=targ_name, DMS=DMS)
+
+    if file_out is not None:
+        hdu.header['FILENAME'] = os.path.split(file_out)[1]
+    outHDUList = fits.HDUList([hdu])
 
     # Write file to disk
     if file_out is not None:
@@ -1777,9 +1731,10 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
                            include_rn=True, include_cpink=True, include_upink=True, 
                            include_acn=True, apply_ipc=True, apply_ppc=True, 
                            include_refoffsets=True, include_refinst=True, 
-                           include_colnoise=True, col_noise=None,
-                           add_crs=True, cr_model='SUNMAX', cr_scale=1, amp_crosstalk=True,
-                           latents=None, apply_nonlinearity=True, random_nonlin=False,
+                           include_colnoise=True, col_noise=None, amp_crosstalk=True,
+                           add_crs=True, cr_model='SUNMAX', cr_scale=1,
+                           apply_nonlinearity=True, random_nonlin=False,
+                           apply_crosshatch=None, latents=None, 
                            return_zero_frame=None, return_full_ramp=False, prog_bar=True, **kwargs):
     
     """ Return a single simulated ramp
@@ -1845,12 +1800,14 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
         Cosmic ray model to use: 'SUNMAX', 'SUNMIN', or 'FLARES'.
     cr_scale: float
         Scale factor for probabilities.
-    latents : None
-        Apply persistence.
     apply_nonlinearity : bool
         Apply non-linearity?
     random_nonlin : bool
         Add randomness to the linearity coefficients?
+    apply_crosshatch: None
+        (TODO) Apply sub-pixel QE variations (crosshatching).
+    latents : None or ndarray
+        (TODO) Apply persistence from previous integration.
     prog_bar : bool
         Show a progress bar for this ramp generation?
     """
@@ -1925,7 +1882,7 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     # Begin...
     ################################
     if prog_bar: 
-        pbar = tqdm(total=13, leave=False)
+        pbar = tqdm(total=14, leave=False)
 
     # Init data cube
     data = np.zeros([nz,ny,nx])
@@ -1958,18 +1915,10 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     if prog_bar: pbar.update(1)
     
     ####################
-    # TODO: Apply persistence/latent image
-    if prog_bar: pbar.set_description("Persistence")
-    if latents is not None:
+    # TODO: Add sub-pixel QE varations (crosshatching)
+    if prog_bar: pbar.set_description("Sub-Pixel QE")
+    if apply_crosshatch:
         pass
-    if prog_bar: pbar.update(1)
-    
-    ####################
-    # Apply IPC 
-    # TODO: Before or after non-linearity??
-    if prog_bar: pbar.set_description("Include IPC")
-    if apply_ipc:
-        data = add_ipc(data, kernel=k_ipc)
     if prog_bar: pbar.update(1)
 
     ####################
@@ -1979,7 +1928,24 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     if apply_nonlinearity:
         data = gain * apply_nonlin(data, det, dco.nonlinear_dict, randomize=random_nonlin)
     if prog_bar: pbar.update(1)
-    
+
+    ####################
+    # TODO: Apply persistence/latent image
+    # Latent signals are anomylous signals
+    # Before or after non-linearity adjustments?
+    if prog_bar: pbar.set_description("Persistence")
+    if latents is not None:
+        pass
+    if prog_bar: pbar.update(1)
+
+    ####################
+    # Apply IPC 
+    # TODO: Before or after non-linearity??
+    if prog_bar: pbar.set_description("Include IPC")
+    if apply_ipc:
+        data = add_ipc(data, kernel=k_ipc)
+    if prog_bar: pbar.update(1)
+
     ####################
     # Add kTC noise:
     if prog_bar: pbar.set_description("kTC Noise")
