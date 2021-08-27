@@ -19,7 +19,7 @@ import multiprocessing as mp
 from tqdm.auto import trange, tqdm
 
 from webbpsf_ext import robust
-from webbpsf_ext.image_manip import pad_or_cut_to_size
+from webbpsf_ext.image_manip import fshift, pad_or_cut_to_size
 from webbpsf_ext.maths import hist_indices, jl_poly_fit, jl_poly
 
 # import pynrc
@@ -93,6 +93,10 @@ class nircam_dark(object):
 
         # Non-linearity coefficients
         self._nonlinear_dict = None
+
+        # Flat field info
+        self.lflats = None  # Low frequency spatial variations
+        self.pflats = None  # High frequency variations (cross hatch)
 
     # Directory and files
     @property
@@ -299,6 +303,7 @@ class nircam_dark(object):
             'power_spec_cds_pix'  : power_spec_dir + f'POWER_SPEC_CDS_PIX_{scaid}.npy',
             'power_spec_full_pix' : power_spec_dir + f'POWER_SPEC_FULL_PIX_{scaid}.npy',
             'nonlinear_coeffs'    : linearity_dir  + f'NONLINEAR_COEFFS_{scaid}.npz',
+            'super_flats'      : linearity_dir  + f'SUPER_FLATS_{scaid}.FITS',
         }
 
     def _create_pixel_masks(self):
@@ -1098,6 +1103,72 @@ class nircam_dark(object):
 
             self._pow_spec_dict['ps_corr_scale'] = scales
 
+    def get_super_flats(self, split_low_high=True, force=False, **kwargs):
+        """ Get low- and high-frequency QE variations"""
+
+        savename = self.paths_dict['super_flats']
+        file_exists = os.path.isfile(savename)
+
+
+        if file_exists and (not force):
+            # Grab Super Dark Ramp
+            super_flats = get_fits_data(savename)
+        else:
+            # Default ref pixel correction kw args
+            kwargs_def = {
+                'nchans': self.nchan, 'in_place': True, 'altcol': True,
+                'fixcol': True, 'avg_type': 'pixel', 'savgol': True, 'perint': False,
+            }
+            for k in kwargs_def.keys():
+                if k not in kwargs:
+                    kwargs[k] = kwargs_def[k]
+
+            # Get nominal non-linear coefficients
+            _log.info("  Calculating flat field information...")
+            allfiles = self.linfiles
+            data, _ = gen_super_ramp(allfiles, super_bias=self.super_bias, **kwargs)
+
+            # Perform fit to data in DN/sec
+            tarr = np.arange(1,len(data)+1)
+            cf_arr = cube_fit(tarr, data, deg=2, sat_frac=0.5, fit_zero=False)
+
+            # IPC and PPC kernels
+            kppc = self.kernel_ppc
+            kipc = self.kernel_ipc
+
+            # PPC corrections
+            if (kppc is not None) and kppc[1,2]>0:
+                im_slope = ppc_deconvolve(cf_arr[1], kppc)
+            # IPC correction
+            if kipc is not None:
+                im_slope = ipc_deconvolve(cf_arr[1], kipc)
+
+            # Header info from first file
+            hdr = fits.getheader(allfiles[0])
+            det = create_detops(hdr, DMS=self.DMS)
+
+            super_flats = get_flat_fields(im_slope, split_low_high=split_low_high, ref_info=det.ref_info)
+            super_flats = np.asarray(super_flats)
+
+            # Save superbias frame to directory
+            hdu = fits.PrimaryHDU(super_flats)
+            hdu.writeto(savename, overwrite=True)
+
+        sh = super_flats.shape
+        if len(sh)==3:
+            nz, ny, nx = sh
+            if nz==2:
+                lflats, pflats = super_flats
+            else:
+                lflats = None
+                pflats = super_flats
+        else:
+            lflats = None
+            pflats = super_flats
+
+        self.lflats = lflats
+        self.pflats = pflats
+
     def get_nonlinear_coeffs(self, deg=7, use_legendre=True, lxmap=[0,1e5], counts_cut=None,
                              force=False, DMS=None, super_bias=None, **kwargs):
         """ Determine non-linear coefficents
@@ -1140,9 +1211,9 @@ class nircam_dark(object):
         if file_exists and (not force):
             _log.info("Loading non-linearity coefficents")
             out = np.load(savename)
-            cf_nonlin   = out.get('cf_nonlin')
-            cflin0_mean = out.get('cflin0_mean')
-            cflin0_std  = out.get('cflin0_std')
+            cf_nonlin      = out.get('cf_nonlin')
+            cflin0_mean    = out.get('cflin0_mean')
+            cflin0_std     = out.get('cflin0_std')
             corr_slope     = out.get('corr_slope')
             corr_intercept = out.get('corr_intercept')
             use_legendre   = out.get('use_legendre').tolist()
@@ -1172,6 +1243,11 @@ class nircam_dark(object):
                 if k not in kwargs:
                     kwargs[k] = kwargs_def[k]
 
+            if self.pflats is None:
+                self.get_super_flats(**kwargs)
+            lflats = self.lflats
+            pflats = self.pflats
+
             # Get nominal non-linear coefficients
             _log.info("  Calculating average coefficients...")
             kppc = self.kernel_ppc
@@ -1179,7 +1255,7 @@ class nircam_dark(object):
             res, sat_vals = get_nonlinear_coeffs(allfiles, super_bias=super_bias, DMS=DMS, 
                                                  deg=deg, use_legendre=use_legendre, lxmap=lxmap,
                                                  counts_cut=counts_cut, return_satvals=True,
-                                                 kppc=kppc, kipc=kipc, **kwargs)
+                                                 kppc=kppc, kipc=kipc, qe_xhatch=pflats, **kwargs)
             # Two separate fits for low and high pixel values
             if counts_cut is None:
                 cf_nonlin = res
@@ -1189,7 +1265,7 @@ class nircam_dark(object):
 
             # Obtain coefficient variations
             _log.info("  Calculating coefficient variations...")
-            grp_max = find_group_sat(allfiles[-1], DMS=DMS, bias=super_bias, sat_vals=sat_vals, sat_calc=0.998)
+            grp_max = find_group_sat(allfiles[-1], DMS=DMS, bias=super_bias, sat_calc=0.998)
             grp_max = grp_max + 10
 
             # Solve for coefficients for all data sets
@@ -1198,7 +1274,7 @@ class nircam_dark(object):
             for file in tqdm(allfiles, desc='Variance', leave=False):
                 res = get_nonlinear_coeffs([file], super_bias=super_bias, DMS=DMS, counts_cut=counts_cut, 
                                            deg=deg, use_legendre=use_legendre, lxmap=lxmap,
-                                           grp_max=grp_max, sat_vals=sat_vals, **kwargs)
+                                           grp_max=grp_max, sat_vals=sat_vals, qe_xhatch=pflats, **kwargs)
                 if counts_cut is None:
                     cf = res
                 else: # Ignore variations to lower fits
@@ -1223,16 +1299,20 @@ class nircam_dark(object):
             cflin0_std  = np.std(cf_all[:,0,:,:], axis=0)
 
             savename = self.paths_dict['nonlinear_coeffs']
+            if counts_cut is None:
+                counts_cut = 0
             np.savez(savename, cf_nonlin=cf_nonlin, cflin0_mean=cflin0_mean, cflin0_std=cflin0_std, 
                     corr_slope=corr_slope, corr_intercept=corr_intercept, deg=deg, 
                     use_legendre=use_legendre, lxmap=lxmap, sat_vals=sat_vals,
                     counts_cut=counts_cut, cf_nonlin_low=cf_nonlin_low)
 
         # Store everything in dictionary
+        if counts_cut==0:
+            counts_cut = None
         self._nonlinear_dict = {
-            'cf_nonlin'   : cf_nonlin,
-            'cflin0_mean' : cflin0_mean,
-            'cflin0_std'  : cflin0_std,
+            'cf_nonlin'      : cf_nonlin,
+            'cflin0_mean'    : cflin0_mean,
+            'cflin0_std'     : cflin0_std,
             'corr_slope'     : corr_slope,
             'corr_intercept' : corr_intercept,
             'use_legendre'   : use_legendre,
@@ -2166,6 +2246,7 @@ class nircam_cal(nircam_dark):
         # Create dictionary of reference pixel behavior
         self.get_ref_pixel_noise()
 
+        self.get_super_flats()
         self.get_nonlinear_coeffs()
         
         setup_logging(prev_log, verbose=False)
@@ -3924,7 +4005,7 @@ def ipc_deconvolve(imarr, kernel, kfft=None, **kwargs):
         kfft = np.fft.fft2(ipc_big)
 
     im_final = np.zeros_like(imarr)
-    for i in trange(nz, leave=False, desc='IPC Frames'):
+    for i in trange(nz, leave=False, desc='Frames'):
         im_final[i] = deconv_single_image(imarr[i], kfft)
 
     return im_final.reshape(sh)
@@ -5034,7 +5115,8 @@ def calc_nonlin_coeff(data, sat_vals, well_depth, sat_calc=0.998, ref_info=[4,4,
 
 
 def get_nonlinear_coeffs(allfiles, super_bias=None, DMS=False, kppc=None, kipc=None,
-    counts_cut=None, deg=7, use_legendre=True, lxmap=[0,1e5], return_satvals=False, **kwargs):
+    counts_cut=None, deg=7, use_legendre=True, lxmap=[0,1e5], return_satvals=False, 
+    qe_xhatch=None, **kwargs):
 
 
     if super_bias is None:
@@ -5071,6 +5153,14 @@ def get_nonlinear_coeffs(allfiles, super_bias=None, DMS=False, kppc=None, kipc=N
     if kipc is not None:
         data_mn = ipc_deconvolve(data_mn, kipc)
 
+    # Perform fit to data in DN/sec
+    # tarr = np.arange(1,nz+1)   # Time array
+    # cf_arr = cube_fit(tarr, data_mn, deg=2, sat_frac=0.5, fit_zero=False)
+
+    # High frequency QE corrections (cross-hatch)
+    if qe_xhatch is not None:
+        data_mn /= qe_xhatch
+
     # Get saturation levels
     sat_vals = find_sat(data_mn)
 
@@ -5092,3 +5182,59 @@ def get_nonlinear_coeffs(allfiles, super_bias=None, DMS=False, kppc=None, kipc=N
 #         cf = get_nonlinear_coeffs(file, super_bias=super_bias, DMS=DMS, grp_max=grp_max, **kwargs)
 
 
+def get_flat_fields(im_slope, split_low_high=True, ref_info=[4,4,4,4]):
+    """ Calculate QE from flat field
+    """
+
+    
+    from astropy.convolution import convolve_fft, Gaussian2DKernel
+
+    ny, nx = im_slope.shape
+
+    # Crop out active pixel region
+    lower, upper, left, right = ref_info
+    iy1, iy2 = (lower, ny - upper)
+    ix1, ix2 = (left, nx - right)
+    im_act = im_slope[iy1:iy2,ix1:ix2]
+
+    # Assuming a uniformly illuminated field, get fractional QE variations
+    qe_frac = im_act / np.median(im_act)
+
+    ### Outlier removal
+
+    # Perform a quick median filter
+    imarr = []
+    xysh = 3
+    for xsh in np.arange(-xysh, xysh):
+        for ysh in np.arange(-xysh, xysh):
+            if not xsh==ysh==0:
+                im_shift = fshift(qe_frac, delx=xsh, dely=ysh, pad=True, cval=1)
+                imarr.append(im_shift)
+                
+    imarr = np.asarray(imarr)
+    im_med = np.median(imarr, axis=0)
+
+    del imarr
+
+    # Replace outliers with their median values
+    diff = qe_frac - im_med
+    mask_good = robust.mean(diff, return_mask=True)
+    mask_bad = ~mask_good
+    qe_frac[mask_bad] = im_med[mask_bad]
+
+    if split_low_high:
+
+        # Perform a Gaussian smooth to get low frequency flat field info
+        kernel = Gaussian2DKernel(30)
+        qe_frac_pad = np.pad(qe_frac, pad_width=100, mode='reflect')
+        im_smth = convolve_fft(qe_frac_pad, kernel, allow_huge=True, boundary='fill')
+
+        lflats = pad_or_cut_to_size(im_smth, qe_frac.shape)
+        pflats = qe_frac / lflats
+        # Set QE variations of ref pixels to 1 (fill_val=1)
+        lflats = pad_or_cut_to_size(lflats, (ny,nx), fill_val=1)
+        pflats = pad_or_cut_to_size(pflats, (ny,nx), fill_val=1)
+
+        return lflats, pflats
+    else:
+        return pad_or_cut_to_size(qe_frac, (ny,nx), fill_val=1)
