@@ -1288,7 +1288,8 @@ def channel_smooth_savgol(im_arr, winsize=31, order=3, per_line=False,
     mask : bool image or None
         An image mask of pixels to ignore. Should be same size as im_arr.
         This can be used to mask pixels that the filter should ignore, 
-        such as stellar sources or pixel outliers.
+        such as stellar sources or pixel outliers. A value of True indicates
+        that pixel should be ignored.
     mode : str
         Must be 'mirror', 'constant', 'nearest', 'wrap' or 'interp'.  This
         determines the type of extension to use for the padded signal to
