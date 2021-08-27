@@ -1436,6 +1436,35 @@ def sim_image_ramp(det, im_slope, verbose=False, **kwargs):
     # Convert to DN/sec
     return sim_dark_ramp(det, im_slope/det.gain, ramp_avg_ch=None, verbose=False, **kwargs)
 
+
+def apply_flat(cube, det, imflat_full):
+    """ Apply flat field
+
+    Includes pixel-to-pixel QE variations or instrument's optical
+    flatfield (e.g., throughput variations across the field).
+
+    Parameters
+    ==========
+    cube : ndarray
+        Simulated ramp data in e-. These should be intrinsic
+        flux values with Poisson noise, but prior to read noise,
+        kTC, IPC, etc. Size (nz,ny,nx). In det coords.
+    det : Detector Class
+        Desired detector class output
+    imflat_full : ndarray
+        Full field image of flat field in det coords. Will get trimmed
+        if necessary.
+    """
+
+    nz, ny, nx = cube.shape
+    # Need to crop input coefficients in the event of subarrays
+    x1, x2 = (det.x0, det.x0 + nx)
+    y1, y2 = (det.y0, det.y0 + ny)
+
+    cube *= imflat_full[y1:y2, x1:x2]
+    return cube
+
+
 def apply_nonlin(cube, det, coeff_dict, randomize=True):
     """Apply pixel non-linearity to ideal ramp
 
@@ -1448,12 +1477,8 @@ def apply_nonlin(cube, det, coeff_dict, randomize=True):
         Simulated ramp data in e-. These should be intrinsic
         flux values with Poisson noise, but prior to read noise,
         kTC, IPC, etc. Size (nz,ny,nx).
-    well_depth : float
-        Assumed well depth in e-. Values in `cube` above this
-        are considered saturated and will be truncated. 
-    sat_vals : ndarray
-        An image indicating what saturation levels in DN for each
-        pixel of size (ny,nx). 
+    det : Detector Class
+        Desired detector class output
     coeff_dict : ndarray
         Dictionary holding coefficient information:
 
@@ -1564,6 +1589,7 @@ def apply_nonlin(cube, det, coeff_dict, randomize=True):
     return res
 
 def add_cosmic_rays(data, scenario='SUNMAX', scale=1, tframe=10.73677, ref_info=[4,4,4,4]):
+    """ Add random cosmic rays to data cube"""
 
     import json
 
@@ -1915,18 +1941,19 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     if prog_bar: pbar.update(1)
     
     ####################
-    # TODO: Add sub-pixel QE varations (crosshatching)
-    if prog_bar: pbar.set_description("Sub-Pixel QE")
-    if apply_crosshatch:
-        pass
-    if prog_bar: pbar.update(1)
-
-    ####################
     # Add non-linearity
     if prog_bar: pbar.set_description("Non-Linearity")
     # The apply_nonlin function goes from e- to DN
     if apply_nonlinearity:
         data = gain * apply_nonlin(data, det, dco.nonlinear_dict, randomize=random_nonlin)
+    if prog_bar: pbar.update(1)
+
+    ####################
+    # Flat field QE variations (crosshatching)
+    # TODO: Add sub-pixel QE varations 
+    if prog_bar: pbar.set_description("Crosshatching")
+    if apply_crosshatch and (dco.pflats is not None):
+        data = apply_flat(data, det, dco.pflats)
     if prog_bar: pbar.update(1)
 
     ####################
