@@ -1465,129 +1465,6 @@ def apply_flat(cube, det, imflat_full):
     return cube
 
 
-def apply_nonlin(cube, det, coeff_dict, randomize=True):
-    """Apply pixel non-linearity to ideal ramp
-
-    Given a simulated cube of data in electrons, apply non-linearity 
-    coefficients to obtain values in DN (ADU). This 
-
-    Parameters
-    ----------
-    cube : ndarray
-        Simulated ramp data in e-. These should be intrinsic
-        flux values with Poisson noise, but prior to read noise,
-        kTC, IPC, etc. Size (nz,ny,nx).
-    det : Detector Class
-        Desired detector class output
-    coeff_dict : ndarray
-        Dictionary holding coefficient information:
-
-            - 'cf_nonlin'    : Set of polynomial coefficients of size (ncf,ny,nx).
-            - 'use_legendre' : Coefficients use Legendre polynomials?
-            - 'lxmap'        : Legendre polynomial normalization range, usually [0,1e5]
-            - 'sat_vals'     : An image indicating what saturation levels in DN for each pixel
-
-        Possible to separately fit lower flux values:
-
-             - 'counts_cut'    : Flux cut-off value in electrons
-             - 'cf_nonlin_low' : Coefficients for flux values below counts_cut
-
-        To include randomization in line with observed variation:
-
-            - 'cflin0_mean'    : Average 0th-order coefficient
-            - 'cflin0_std'     : Measured standard deviation of 0th-order coefficent
-            - 'corr_slope'     : Slope of linear correlation between 0th-order and higher orders
-            - 'corr_intercept' : Intercept of linear Correaltion between 0th-order and higher orders
-    
-    Keyword Args
-    ------------
-    randomize : bool
-        Add variation to the non-linearity coefficients  
-    """
-
-    # from numpy.polynomial import legendre
-    from scipy.special import eval_legendre
-
-    def get_pixel_gains(frame, coeff_arr, use_legendre, lxmap):
-        ncf = coeff_arr.shape[0]
-        xvals = frame.reshape([1,-1])
-        if use_legendre:
-            # Values to map to [-1,+1]
-            if lxmap is None:
-                lxmap = [np.min(xvals), np.max(xvals)]
-
-            # Remap xvals -> lxvals
-            dx = lxmap[1] - lxmap[0]
-            lxvals = 2 * (xvals - (lxmap[0] + dx/2)) / dx
-            xfan = np.array([eval_legendre(n, lxvals) for n in range(ncf)])
-        else:
-            # Create an array of exponent values
-            parr = np.arange(ncf, dtype='float')
-            xfan = xvals**parr.reshape([-1,1]) # Array broadcasting
-
-        gain = np.sum(xfan.reshape([ncf,-1]) * coeff_arr.reshape([ncf,-1]), axis=0)
-        return gain 
-
-    nz, ny, nx = cube.shape
-    # Need to crop input coefficients in the event of subarrays
-    x1, x2 = (det.x0, det.x0 + nx)
-    y1, y2 = (det.y0, det.y0 + ny)
-
-    # Nominal coefficient array
-    cf_arr         = coeff_dict.get('cf_nonlin')[:,y1:y2,x1:x2]
-    use_legendre   = coeff_dict.get('use_legendre', False)
-    lxmap          = coeff_dict.get('lxmap')
-
-    # Mean and standard deviation of first coefficients
-    cflin0_mean    = coeff_dict.get('cflin0_mean', cf_arr[0])[y1:y2,x1:x2]
-    cflin0_std     = coeff_dict.get('cflin0_std')[y1:y2,x1:x2]
-    # The rest of the coefficents have a direct correlation to the first
-    corr_slope     = coeff_dict.get('corr_slope')[:,y1:y2,x1:x2]
-    corr_intercept = coeff_dict.get('corr_intercept')[:,y1:y2,x1:x2]
-
-    # Information for lower flux values
-    counts_cut     = coeff_dict.get('counts_cut')
-    cf_low         = coeff_dict.get('cf_nonlin_low')[:,y1:y2,x1:x2]
-
-    sat_vals = coeff_dict.get('sat_vals')[y1:y2,x1:x2] # Saturation in DN
-    well_depth = det.well_level # Full well in e- corresponding to sat in DN
-
-    if randomize:
-        cf0_rand = np.random.normal(loc=cflin0_mean, scale=cflin0_std)
-        cf_arr = np.concatenate(([cf0_rand], corr_slope * cf0_rand + corr_intercept))
-
-    res = np.zeros_like(cube)
-    for i in trange(nz, desc='Frames', leave=False):
-        frame = cube[i]
-
-        # Values higher than well depth
-        ind_high = frame > well_depth
-
-        if counts_cut is None:
-            gain = get_pixel_gains(frame, cf_arr, use_legendre, lxmap)
-        else:
-            ind1 = (frame >= counts_cut)
-            ind2 = ~ind1
-
-            gain = np.zeros_like(frame)
-            if ind1.sum()>0: # Upper values
-                gain[ind1] = get_pixel_gains(frame[ind1], cf_arr[:,ind1], use_legendre, lxmap)
-            if ind2.sum()>0: # Lower values
-                gain[ind2] = get_pixel_gains(frame[ind2], cf_low[:,ind2], use_legendre, lxmap)
-
-        gain = gain.reshape([ny,nx])
-        # Avoid NaNs
-        igood = gain!=0
-        # Convert from electrons to ADU
-        res[i,igood] = frame[igood] / gain[igood]
-        del gain
-
-        # Correct any pixels that are above saturation DN
-        ind_over = (res[i]>sat_vals) | ind_high
-        res[i,ind_over] = sat_vals[ind_over]
-
-    return res
-
 def add_cosmic_rays(data, scenario='SUNMAX', scale=1, tframe=10.73677, ref_info=[4,4,4,4]):
     """ Add random cosmic rays to data cube"""
 
@@ -1758,9 +1635,8 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
                            include_acn=True, apply_ipc=True, apply_ppc=True, 
                            include_refoffsets=True, include_refinst=True, 
                            include_colnoise=True, col_noise=None, amp_crosstalk=True,
-                           add_crs=True, cr_model='SUNMAX', cr_scale=1,
-                           apply_nonlinearity=True, random_nonlin=False,
-                           apply_crosshatch=None, latents=None, 
+                           add_crs=True, cr_model='SUNMAX', cr_scale=1, apply_flats=None, 
+                           apply_nonlinearity=True, random_nonlin=False, latents=None,
                            return_zero_frame=None, return_full_ramp=False, prog_bar=True, **kwargs):
     
     """ Return a single simulated ramp
@@ -1830,14 +1706,16 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
         Apply non-linearity?
     random_nonlin : bool
         Add randomness to the linearity coefficients?
-    apply_crosshatch: None
-        (TODO) Apply sub-pixel QE variations (crosshatching).
+    apply_flats: None
+        Apply sub-pixel QE variations (crosshatching).
     latents : None or ndarray
         (TODO) Apply persistence from previous integration.
     prog_bar : bool
         Show a progress bar for this ramp generation?
     """
     
+    from ..reduce.calib import apply_nonlin
+
     ################################
     # Dark calibration properties
     dco = cal_obj
@@ -1913,6 +1791,10 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     # Init data cube
     data = np.zeros([nz,ny,nx])
 
+    # Work in detector coordinates
+    if (im_slope is not None) and (cframe=='sci'):
+        im_slope = sci_to_det(im_slope, det.detid)
+
     ####################
     # Create a super dark ramp (Units of e-)
     # Average shape of ramp
@@ -1924,12 +1806,20 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     if prog_bar: pbar.update(1)
 
     ####################
+    # Flat field QE variations (crosshatching)
+    # TODO: Add sub-pixel QE varations 
+    if prog_bar: pbar.set_description("Flat fields")
+    if im_slope is not None:
+        if apply_flats and (dco.pflats is not None):
+            im_slope = apply_flat(im_slope, det, dco.pflats)
+        if apply_flats and (dco.lflats is not None):
+            im_slope = apply_flat(im_slope, det, dco.lflats)
+    if prog_bar: pbar.update(1)
+
+    ####################
     # Add on-sky source image
     if prog_bar: pbar.set_description("Sky Image")
     if im_slope is not None:
-        # Work in detector coordinates
-        if cframe=='sci':
-            im_slope = sci_to_det(im_slope, det.detid)
         data += sim_image_ramp(det, im_slope, verbose=False)
     if prog_bar: pbar.update(1)
 
@@ -1946,14 +1836,6 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     # The apply_nonlin function goes from e- to DN
     if apply_nonlinearity:
         data = gain * apply_nonlin(data, det, dco.nonlinear_dict, randomize=random_nonlin)
-    if prog_bar: pbar.update(1)
-
-    ####################
-    # Flat field QE variations (crosshatching)
-    # TODO: Add sub-pixel QE varations 
-    if prog_bar: pbar.set_description("Crosshatching")
-    if apply_crosshatch and (dco.pflats is not None):
-        data = apply_flat(data, det, dco.pflats)
     if prog_bar: pbar.update(1)
 
     ####################

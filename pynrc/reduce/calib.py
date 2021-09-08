@@ -92,7 +92,8 @@ class nircam_dark(object):
         self._column_prob_bad   = None
 
         # Non-linearity coefficients
-        self._nonlinear_dict = None
+        self.linear_dict = None
+        self.nonlinear_dict = None
 
         # Flat field info
         self.lflats = None  # Low frequency spatial variations
@@ -230,14 +231,16 @@ class nircam_dark(object):
     def pow_spec_dict(self):
         return self._pow_spec_dict
 
-    @property
-    def nonlinear_dict(self):
-        return self._nonlinear_dict
-
     def _create_dir_structure(self, datadir, outdir, lindir=None):
         """ Directories and files"""
 
         scaid = self.scaid
+        # Add SCA ID to output directory path
+        outbase = outdir
+        if str(scaid) in outbase:
+            outdir = outbase
+        else:
+            outdir = os.path.join(outbase, str(scaid)) + '/'        
 
         # Directory information
         if datadir is None:
@@ -262,7 +265,8 @@ class nircam_dark(object):
             linfiles = [indir + f for f in linfits]
 
         # Directory to save figures for analysis
-        figdir = os.path.join(outdir, str(scaid)) + '/'        
+        figdir = os.path.join(outdir, 'FIGURES') + '/'
+        # figdir = os.path.join(outdir, str(scaid)) + '/'        
 
         # Directories to save super bias and super dark info
         super_bias_dir = os.path.join(outdir, 'SUPER_BIAS') + '/'
@@ -272,7 +276,7 @@ class nircam_dark(object):
 
 
         # Make sure directories exist for writing
-        for path in [outdir, figdir, super_bias_dir, super_dark_dir, power_spec_dir, linearity_dir]:
+        for path in [outbase, outdir, figdir, super_bias_dir, super_dark_dir, power_spec_dir, linearity_dir]:
             if not os.path.exists(path):
                 os.mkdir(path)
 
@@ -288,6 +292,7 @@ class nircam_dark(object):
             'super_bias'          : super_bias_dir + f'SUPER_BIAS_{scaid}.FITS',
             'super_dark_ramp'     : super_dark_dir + f'SUPER_DARK_RAMP_{scaid}.FITS',
             'super_dark'          : super_dark_dir + f'SUPER_DARK_{scaid}.FITS',
+            'super_dark_ramp_avgs': super_dark_dir + f'SUPER_DARK_RAMP_AVGS_{scaid}.npz',
             'kernel_ipc'          : super_dark_dir + f'KERNEL_IPC_{scaid}.FITS',
             'kernel_ppc'          : super_dark_dir + f'KERNEL_PPC_{scaid}.FITS',
             'pixel_masks'         : super_dark_dir + f'PIXEL_MASKS_{scaid}.FITS.gz',
@@ -302,8 +307,9 @@ class nircam_dark(object):
             'power_spec_full_oh'  : power_spec_dir + f'POWER_SPEC_FULL_OH_{scaid}.npy',
             'power_spec_cds_pix'  : power_spec_dir + f'POWER_SPEC_CDS_PIX_{scaid}.npy',
             'power_spec_full_pix' : power_spec_dir + f'POWER_SPEC_FULL_PIX_{scaid}.npy',
+            'linear_coeffs'       : linearity_dir  + f'LINEAR_COEFFS_{scaid}.npz',
             'nonlinear_coeffs'    : linearity_dir  + f'NONLINEAR_COEFFS_{scaid}.npz',
-            'super_flats'      : linearity_dir  + f'SUPER_FLATS_{scaid}.FITS',
+            'super_flats'         : linearity_dir  + f'SUPER_FLATS_{scaid}.FITS',
         }
 
     def _create_pixel_masks(self):
@@ -491,33 +497,41 @@ class nircam_dark(object):
 
         self._super_dark = super_dark
 
-    def get_pixel_slope_averages(self, deg=1):
+    def get_pixel_slope_averages(self, deg=1, force=False):
         """Get average pixel ramp"""
 
-        if self._super_dark_ramp is None:
-            _log.error("`super_dark_ramp` is not defined. Please run get_super_dark_ramp().")
-            return
-            # self.get_super_dark_ramp()
-
         _log.info('Calculating average pixel ramps...')
+        fname = self.paths_dict['super_dark_ramp_avgs']
 
-        nz = self.dark_shape[0]
-        nchan = self.nchan
-        chsize = self.chsize
+        file_exists = os.path.isfile(fname)
+        if file_exists and (not force):
+            out = np.load(fname)
+            ramp_avg_ch  = out.get('ramp_avg_ch')
+            ramp_avg_all = out.get('ramp_avg_all')
+        else:
+            if self._super_dark_ramp is None:
+                _log.error("`super_dark_ramp` is not defined. Please run self.get_super_dark_ramp().")
+                return
 
-        # Average slope in each channel
-        ramp_avg_ch = []
-        for ch in range(nchan):
-            ramp_ch = self.super_dark_ramp[:,:,ch*chsize:(ch+1)*chsize]
-            avg = np.median(ramp_ch.reshape([nz,-1]), axis=1)
-            ramp_avg_ch.append(avg)
-        ramp_avg_ch = np.array(ramp_avg_ch)
+            nz = self.dark_shape[0]
+            nchan = self.nchan
+            chsize = self.chsize
 
-        # Average ramp for all pixels
-        ramp_avg_all = np.mean(ramp_avg_ch, axis=0)
+            # Average slope in each channel
+            ramp_avg_ch = []
+            for ch in range(nchan):
+                ramp_ch = self.super_dark_ramp[:,:,ch*chsize:(ch+1)*chsize]
+                avg = np.median(ramp_ch.reshape([nz,-1]), axis=1)
+                ramp_avg_ch.append(avg)
+            ramp_avg_ch = np.array(ramp_avg_ch)
+
+            # Average ramp for all pixels
+            ramp_avg_all = np.mean(ramp_avg_ch, axis=0)
+
+            np.savez(fname, ramp_avg_ch=ramp_avg_ch, ramp_avg_all=ramp_avg_all)
 
         self._dark_ramp_dict = {
-            'ramp_avg_ch' : ramp_avg_ch,
+            'ramp_avg_ch'  : ramp_avg_ch,
             'ramp_avg_all' : ramp_avg_all
         }
 
@@ -756,7 +770,7 @@ class nircam_dark(object):
             ng_all_list = []
             en_spat_list = []
             #en_temp_list = []
-            for patt in tqdm(patterns, leave=False):
+            for patt in tqdm(patterns, leave=False, desc='Patterns'):
                 res = calc_eff_noise(allfiles, superbias=superbias, read_pattern=patt, temporal=False)
                 # ng_all, eff_noise_temp, eff_noise_spa = res
                 ng_all, eff_noise_spat = res
@@ -1103,8 +1117,11 @@ class nircam_dark(object):
 
             self._pow_spec_dict['ps_corr_scale'] = scales
 
-    def get_super_flats(self, split_low_high=True, force=False, **kwargs):
-        """ Get low- and high-frequency QE variations"""
+    def get_super_flats(self, split_low_high=True, smth_sig=10, force=False, **kwargs):
+        """Get flat field information
+        
+        Splits flat field into to lflats and pflats (low and high frequency).
+        """
 
         savename = self.paths_dict['super_flats']
         file_exists = os.path.isfile(savename)
@@ -1128,30 +1145,33 @@ class nircam_dark(object):
             allfiles = self.linfiles
             data, _ = gen_super_ramp(allfiles, super_bias=self.super_bias, **kwargs)
 
-            # Perform fit to data in DN/sec
-            tarr = np.arange(1,len(data)+1)
-            cf_arr = cube_fit(tarr, data, deg=2, sat_frac=0.5, fit_zero=False)
-
             # IPC and PPC kernels
             kppc = self.kernel_ppc
             kipc = self.kernel_ipc
-
             # PPC corrections
             if (kppc is not None) and kppc[1,2]>0:
-                im_slope = ppc_deconvolve(cf_arr[1], kppc)
+                data = ppc_deconvolve(data, kppc)
             # IPC correction
             if kipc is not None:
-                im_slope = ipc_deconvolve(cf_arr[1], kipc)
+                data = ipc_deconvolve(data, kipc)
 
-            # Header info from first file
+            # Linearity correction
             hdr = fits.getheader(allfiles[0])
             det = create_detops(hdr, DMS=self.DMS)
+            data = apply_linearity(data, det, self.linear_dict)
 
-            super_flats = get_flat_fields(im_slope, split_low_high=split_low_high, ref_info=det.ref_info)
+            # Perform fit to data in DN/sec
+            tarr = np.arange(1,len(data)+1)
+            cf_arr = cube_fit(tarr, data, deg=1, sat_vals=det.well_level, sat_frac=0.8, fit_zero=False)
+            im_slope = cf_arr[1]
+
+            super_flats = get_flat_fields(im_slope, split_low_high=split_low_high, 
+                                          smth_sig=smth_sig, ref_info=det.ref_info)
             super_flats = np.asarray(super_flats)
 
             # Save superbias frame to directory
             hdu = fits.PrimaryHDU(super_flats)
+            hdu.header['SMTH_SIG'] = smth_sig
             hdu.writeto(savename, overwrite=True)
 
         sh = super_flats.shape
@@ -1169,8 +1189,8 @@ class nircam_dark(object):
         self.lflats = lflats
         self.pflats = pflats
 
-    def get_nonlinear_coeffs(self, deg=7, use_legendre=True, lxmap=[0,1e5], counts_cut=None,
-                             force=False, DMS=None, super_bias=None, **kwargs):
+    def _get_linear_coeffs(self, deg=8, use_legendre=True, lxmap=[0,1e5], counts_cut=None,
+                           nonlin=False, force=False, DMS=None, super_bias=None, **kwargs):
         """ Determine non-linear coefficents
 
         These coefficients allow us to go from an ideal linear ramp to 
@@ -1203,31 +1223,38 @@ class nircam_dark(object):
             [xvals.min(),xvals.max()]. 
         """
 
-        savename = self.paths_dict['nonlinear_coeffs']
+        if nonlin:
+            savename = self.paths_dict['nonlinear_coeffs']
+        else:
+            savename = self.paths_dict['linear_coeffs']
+            
         file_exists = os.path.isfile(savename)
-
-        allfiles = self.linfiles
-
         if file_exists and (not force):
-            _log.info("Loading non-linearity coefficents")
+            if nonlin:
+                _log.info("Loading non-linearity coefficents")
+            else:
+                _log.info("Loading linearity coefficents")
+
             out = np.load(savename)
             cf_nonlin      = out.get('cf_nonlin')
-            cflin0_mean    = out.get('cflin0_mean')
-            cflin0_std     = out.get('cflin0_std')
-            corr_slope     = out.get('corr_slope')
-            corr_intercept = out.get('corr_intercept')
+            cf_nonlin_low  = out.get('cf_nonlin_low')
+            counts_cut     = out.get('counts_cut').tolist()
             use_legendre   = out.get('use_legendre').tolist()
             lxmap          = out.get('lxmap').tolist()
             deg            = out.get('deg').tolist()
-            counts_cut     = out.get('counts_cut').tolist()
-            cf_nonlin_low  = out.get('cf_nonlin_low')
-            sat_vals       = out.get('sat_vals')
+            if nonlin:
+                cflin0_mean    = out.get('cflin0_mean')
+                cflin0_std     = out.get('cflin0_std')
+                corr_slope     = out.get('corr_slope')
+                corr_intercept = out.get('corr_intercept')
+                sat_vals       = out.get('sat_vals')
         else:
             _log.info("Generating non-linearity coefficents")
+            allfiles = self.linfiles
 
             # Check if super bias exists
             if (self._super_bias is None) and (super_bias is None):
-                _log.warn('Super bias not loaded or specified. Proceeding without initial bias correction.')
+                _log.warn('Super bias not loaded or specified. Proceeding without bias correction.')
             elif super_bias is None:
                 super_bias = self.super_bias
 
@@ -1243,19 +1270,13 @@ class nircam_dark(object):
                 if k not in kwargs:
                     kwargs[k] = kwargs_def[k]
 
-            if self.pflats is None:
-                self.get_super_flats(**kwargs)
-            lflats = self.lflats
-            pflats = self.pflats
-
             # Get nominal non-linear coefficients
             _log.info("  Calculating average coefficients...")
             kppc = self.kernel_ppc
             kipc = self.kernel_ipc
-            res, sat_vals = get_nonlinear_coeffs(allfiles, super_bias=super_bias, DMS=DMS, 
-                                                 deg=deg, use_legendre=use_legendre, lxmap=lxmap,
-                                                 counts_cut=counts_cut, return_satvals=True,
-                                                 kppc=kppc, kipc=kipc, qe_xhatch=pflats, **kwargs)
+            res, sat_vals = get_linear_coeffs(allfiles, super_bias=super_bias, DMS=DMS, deg=deg, 
+                                              use_legendre=use_legendre, lxmap=lxmap, counts_cut=counts_cut, 
+                                              return_satvals=True, kppc=kppc, kipc=kipc, nonlin=nonlin, **kwargs)
             # Two separate fits for low and high pixel values
             if counts_cut is None:
                 cf_nonlin = res
@@ -1264,64 +1285,159 @@ class nircam_dark(object):
                 cf_nonlin, cf_nonlin_low = res
 
             # Obtain coefficient variations
-            _log.info("  Calculating coefficient variations...")
-            grp_max = find_group_sat(allfiles[-1], DMS=DMS, bias=super_bias, sat_calc=0.998)
-            grp_max = grp_max + 10
+            if nonlin:
+                _log.info("  Calculating coefficient variations...")
+                grp_max = find_group_sat(allfiles[-1], DMS=DMS, bias=super_bias, sat_calc=0.998)
+                grp_max = grp_max + 10
 
-            # Solve for coefficients for all data sets
-            # Probes random variations
-            cf_all = []
-            for file in tqdm(allfiles, desc='Variance', leave=False):
-                res = get_nonlinear_coeffs([file], super_bias=super_bias, DMS=DMS, counts_cut=counts_cut, 
-                                           deg=deg, use_legendre=use_legendre, lxmap=lxmap,
-                                           grp_max=grp_max, sat_vals=sat_vals, qe_xhatch=pflats, **kwargs)
+                # Solve for coefficients for all data sets
+                # Probes random variations
+                cf_all = []
+                for file in tqdm(allfiles, desc='Variance', leave=False):
+                    res = get_linear_coeffs([file], super_bias=super_bias, DMS=DMS, counts_cut=counts_cut, 
+                                            deg=deg, use_legendre=use_legendre, lxmap=lxmap, grp_max=grp_max, 
+                                            sat_vals=sat_vals, nonlin=True, **kwargs)
+                    if counts_cut is None:
+                        cf = res
+                    else: # Ignore variations to lower fits
+                        cf, _ = res
+                    cf_all.append(cf)
+                cf_all = np.array(cf_all)
+
+                # Coefficients are related to each
+                # Save the linear correlation for each pixel
+                cf_all_min = np.min(cf_all, axis=0)
+                cf_all_max = np.max(cf_all, axis=0)
+                cf_all_mean = np.mean(cf_all, axis=0)
+
+                corr_slope1 = (cf_all_max[1:] - cf_all_mean[1:]) / (cf_all_max[0] - cf_all_mean[0])
+                corr_slope2 = (cf_all_mean[1:] - cf_all_min[1:]) / (cf_all_mean[0] - cf_all_min[0])
+                corr_slope = 0.5 * (corr_slope1 + corr_slope2)
+                corr_intercept = cf_all_mean[1:] - corr_slope*cf_all_mean[0]
+                corr_slope[:, self.mask_ref] = 0
+                corr_intercept[:, self.mask_ref] = 0
+
+                cflin0_mean = cf_nonlin[0]
+                cflin0_std  = np.std(cf_all[:,0,:,:], axis=0)
+
                 if counts_cut is None:
-                    cf = res
-                else: # Ignore variations to lower fits
-                    cf, _ = res
-                cf_all.append(cf)
-            cf_all = np.array(cf_all)
+                    counts_cut = 0
+                np.savez(savename, cf_nonlin=cf_nonlin, cflin0_mean=cflin0_mean, cflin0_std=cflin0_std, 
+                        corr_slope=corr_slope, corr_intercept=corr_intercept, deg=deg, 
+                        use_legendre=use_legendre, lxmap=lxmap, sat_vals=sat_vals,
+                        counts_cut=counts_cut, cf_nonlin_low=cf_nonlin_low)
+            else:
+                if counts_cut is None:
+                    counts_cut = 0
+                np.savez(savename, cf_nonlin=cf_nonlin, cf_nonlin_low=cf_nonlin_low, counts_cut=counts_cut,
+                        deg=deg, use_legendre=use_legendre, lxmap=lxmap, sat_vals=sat_vals)
 
-            # Coefficients are related to each
-            # Save the linear correlation for each pixel
-            cf_all_min = np.min(cf_all, axis=0)
-            cf_all_max = np.max(cf_all, axis=0)
-            cf_all_mean = np.mean(cf_all, axis=0)
-
-            corr_slope1 = (cf_all_max[1:] - cf_all_mean[1:]) / (cf_all_max[0] - cf_all_mean[0])
-            corr_slope2 = (cf_all_mean[1:] - cf_all_min[1:]) / (cf_all_mean[0] - cf_all_min[0])
-            corr_slope = 0.5 * (corr_slope1 + corr_slope2)
-            corr_intercept = cf_all_mean[1:] - corr_slope*cf_all_mean[0]
-            corr_slope[:, self.mask_ref] = 0
-            corr_intercept[:, self.mask_ref] = 0
-
-            cflin0_mean = cf_nonlin[0]
-            cflin0_std  = np.std(cf_all[:,0,:,:], axis=0)
-
-            savename = self.paths_dict['nonlinear_coeffs']
-            if counts_cut is None:
-                counts_cut = 0
-            np.savez(savename, cf_nonlin=cf_nonlin, cflin0_mean=cflin0_mean, cflin0_std=cflin0_std, 
-                    corr_slope=corr_slope, corr_intercept=corr_intercept, deg=deg, 
-                    use_legendre=use_legendre, lxmap=lxmap, sat_vals=sat_vals,
-                    counts_cut=counts_cut, cf_nonlin_low=cf_nonlin_low)
 
         # Store everything in dictionary
         if counts_cut==0:
             counts_cut = None
-        self._nonlinear_dict = {
-            'cf_nonlin'      : cf_nonlin,
-            'cflin0_mean'    : cflin0_mean,
-            'cflin0_std'     : cflin0_std,
-            'corr_slope'     : corr_slope,
-            'corr_intercept' : corr_intercept,
-            'use_legendre'   : use_legendre,
-            'lxmap'          : lxmap,
-            'deg'            : deg,
-            'counts_cut'     : counts_cut,
-            'cf_nonlin_low'  : cf_nonlin_low,
-            'sat_vals'       : sat_vals,
-        }
+
+        if nonlin:
+            self.nonlinear_dict = {
+                'cf_nonlin'      : cf_nonlin,
+                'cflin0_mean'    : cflin0_mean,
+                'cflin0_std'     : cflin0_std,
+                'corr_slope'     : corr_slope,
+                'corr_intercept' : corr_intercept,
+                'use_legendre'   : use_legendre,
+                'lxmap'          : lxmap,
+                'deg'            : deg,
+                'counts_cut'     : counts_cut,
+                'cf_nonlin_low'  : cf_nonlin_low,
+                'sat_vals'       : sat_vals,
+            }
+        else:
+            self.linear_dict = {
+                'cf_nonlin'      : cf_nonlin,
+                'cf_nonlin_low'  : cf_nonlin_low,
+                'counts_cut'     : counts_cut,
+                'use_legendre'   : use_legendre,
+                'lxmap'          : lxmap,
+                'deg'            : deg,
+            }
+
+
+    def get_nonlinear_coeffs(self, deg=8, use_legendre=True, lxmap=[0,1e5], counts_cut=None,
+                             force=False, DMS=None, super_bias=None, **kwargs):
+        """ Determine non-linear coefficents
+
+        These coefficients allow us to go from an ideal linear ramp to 
+        some observed (simulated) non-linear ramp. Value are store in the 
+        self.nonlinear_dict dictionary.
+
+        Parameters
+        ==========
+        force : bool
+            Force calculation of coefficients.
+        DMS : None or bool
+            Option to specifiy if linearity files are DMS format.
+            If set to None, then uses self.DMS.
+        super_bias: None or ndarray
+            Option to specify an input super bias image. If not specified,
+            then defaults to self.super_bias.
+        counts_cut : None or float
+            Option to fit two sets of polynomial coefficients to lower and uppper
+            values. 'counts_cut' specifies the division in values of electrons.
+            Useful for pixels with different non-linear behavior at low flux levels.
+            Recommended values of 15000 e-.
+        deg : int
+            Degree of polynomial to fit. Default=8.
+        use_legendre : bool
+            Fit with Legendre polynomial, an orthonormal basis set.
+            Default=True.
+        lxmap : ndarray or None
+            Legendre polynomials are normaly mapped to xvals of [-1,+1].
+            `lxmap` gives the option to supply the values for xval that
+            should get mapped to [-1,+1]. If set to None, then assumes 
+            [xvals.min(),xvals.max()]. 
+        """
+        self._get_linear_coeffs(deg=deg, use_legendre=use_legendre, lxmap=lxmap, counts_cut=counts_cut,
+                                nonlin=True, force=force, DMS=DMS, super_bias=super_bias, **kwargs)
+
+    def get_linear_coeffs(self, deg=8, use_legendre=True, lxmap=[0,1e5], counts_cut=None,
+                          force=False, DMS=None, super_bias=None, **kwargs):
+        """ Determine linearity coefficents
+
+        These coefficients allow us to convert from an observed ramp (DN) to
+        an idealized linear ramp (in e-). Values are stored in the dictionary
+        self.linear_dict.
+
+        Parameters
+        ==========
+        force : bool
+            Force calculation of coefficients.
+        DMS : None or bool
+            Option to specifiy if linearity files are DMS format.
+            If set to None, then uses self.DMS.
+        super_bias: None or ndarray
+            Option to specify an input super bias image. If not specified,
+            then defaults to self.super_bias.
+        counts_cut : None or float
+            Option to fit two sets of polynomial coefficients to lower and uppper
+            values. 'counts_cut' specifies the division in values of electrons.
+            Useful for pixels with different non-linear behavior at low flux levels.
+            Recommended values of 15000 e-. 
+        deg : int
+            Degree of polynomial to fit. Default=8.
+        use_legendre : bool
+            Fit with Legendre polynomial, an orthonormal basis set.
+            Default=True.
+        lxmap : ndarray or None
+            Legendre polynomials are normaly mapped to xvals of [-1,+1].
+            `lxmap` gives the option to supply the values for xval that
+            should get mapped to [-1,+1]. If set to None, then assumes 
+            [xvals.min(),xvals.max()]. 
+        """
+        if counts_cut is not None:
+            counts_cut = counts_cut / self.det.gain
+        self._get_linear_coeffs(deg=deg, use_legendre=use_legendre, lxmap=lxmap, counts_cut=counts_cut,
+                                nonlin=False, force=force, DMS=DMS, super_bias=super_bias, **kwargs)
+
 
     def deconvolve_supers(self):
         """
@@ -2248,6 +2364,7 @@ class nircam_cal(nircam_dark):
 
         self.get_super_flats()
         self.get_nonlinear_coeffs()
+        self.get_linear_coeffs()
         
         setup_logging(prev_log, verbose=False)
 
@@ -2870,7 +2987,7 @@ def gen_super_ramp(allfiles, super_bias=None, DMS=False, grp_max=None, sat_vals=
     Average together all linearity ramps to create a super ramp.
     Subtracts a bias frame to determine more appropriate pixel
     by pixel average. Tries to decipher t=0 intercept for odd 
-    behaving pixels.
+    behaving pixels. Also returns bias offsets.
     """
 
     # Set logging to WARNING to suppress messages
@@ -3057,7 +3174,8 @@ def gen_col_variations(allfiles, super_bias=None, super_dark_ramp=None,
         # If DMS, then might be multiple integrations per FITS file
         nint = fits.getheader(f)['NINTS'] if DMS else 1
 
-        for i in trange(nint, leave=False, desc='Ramps'):
+        iter_range = trange(nint, desc='Ramps', leave=False) if nint>1 else range(nint)
+        for i in iter_range:
             # Subtract bias, but don't yet perform reffix
             data = get_fits_data(f, bias=super_bias, DMS=DMS, int_ind=i)
 
@@ -3296,7 +3414,8 @@ def gen_ref_dict(allfiles, super_bias, super_dark_ramp=None, DMS=False, **kwargs
         # If DMS, then might be multiple integrations per FITS file
         nint = fits.getheader(fname)['NINTS'] if DMS else 1
 
-        for i in trange(nint, leave=False, desc='Ramps'):
+        iter_range = trange(nint, desc='Ramps', leave=False) if nint>1 else range(nint)
+        for i in iter_range:
             # Relative to super bias and super dark ramp
             data = get_fits_data(fname, bias=super_bias, DMS=DMS, int_ind=i)
 
@@ -3540,7 +3659,8 @@ def gen_cds_dict(allfiles, DMS=False, superbias=None,
         # If DMS, then might be multiple integrations per FITS file
         nint = fits.getheader(fname)['NINTS'] if DMS else 1
 
-        for i in trange(nint, leave=False, desc='Ramps'):
+        iter_range = trange(nint, desc='Ramps', leave=False) if nint>1 else range(nint)
+        for i in iter_range:
             # Relative to super bias and super dark ramp
             data = get_fits_data(fname, bias=superbias, DMS=DMS, int_ind=i)
 
@@ -3789,7 +3909,8 @@ def calc_eff_noise(allfiles, superbias=None, temporal=True, spatial=True,
             for fname in tqdm(allfiles, leave=False, desc="Files"):
                 # If DMS, then might be multiple integrations per FITS file
                 nint = fits.getheader(fname)['NINTS'] if DMS else 1
-                for i in trange(nint, leave=False, desc='Ramps'):
+                iter_range = trange(nint, desc='Ramps', leave=False) if nint>1 else range(nint)
+                for i in iter_range:
                     data = get_fits_data(fname, bias=superbias, reffix=True, 
                                          DMS=DMS, int_ind=i, **kw_ref)
 
@@ -3844,7 +3965,8 @@ def calc_eff_noise(allfiles, superbias=None, temporal=True, spatial=True,
         for f in tqdm(allfiles, desc="Spatial", leave=False):
             # If DMS, then might be multiple integrations per FITS file
             nint = fits.getheader(fname)['NINTS'] if DMS else 1
-            for i in trange(nint, leave=False, desc='Ramps'):
+            iter_range = trange(nint, desc='Ramps', leave=False) if nint>1 else range(nint)
+            for i in iter_range:
                 data = get_fits_data(f, bias=superbias, reffix=True, 
                                      DMS=DMS, ind_int=i, **kw_ref)
 
@@ -4718,7 +4840,8 @@ def get_power_spec_all(allfiles, super_bias=None, det=None, DMS=False, include_o
         # If DMS, then might be multiple integrations per FITS file
         nint = fits.getheader(fname)['NINTS'] if DMS else 1
 
-        for i in trange(nint, leave=False, desc='Ramps'):
+        iter_range = trange(nint, desc='Ramps', leave=False) if nint>1 else range(nint)
+        for i in iter_range:
             data = get_fits_data(fname, bias=super_bias, reffix=True, 
                                 DMS=DMS, int_ind=i, **kw_reffix)
 
@@ -5012,7 +5135,7 @@ def find_group_sat(file, DMS=False, bias=None, sat_vals=None, sat_calc=0.998):
     return imax
 
 def calc_nonlin_coeff(data, sat_vals, well_depth, sat_calc=0.998, ref_info=[4,4,4,4],
-                      counts_cut=None, deg=7, use_legendre=True, lxmap=[0,1e5]):
+                      counts_cut=None, deg=8, use_legendre=True, lxmap=[0,1e5]):
     
     """
     
@@ -5050,7 +5173,7 @@ def calc_nonlin_coeff(data, sat_vals, well_depth, sat_calc=0.998, ref_info=[4,4,
     
     # Simultaneously fit pixels that have the same ideal ramps 
     vals = tfin
-    bsize = 1
+    bsize = 0.1
     bins = np.arange(vals.min(), vals.max()+bsize, bsize)
     ig, vg, cv = hist_indices(vals, bins=bins, return_more=True)
 
@@ -5114,16 +5237,113 @@ def calc_nonlin_coeff(data, sat_vals, well_depth, sat_calc=0.998, ref_info=[4,4,
         return cf_arr1, cf_arr2
 
 
-def get_nonlinear_coeffs(allfiles, super_bias=None, DMS=False, kppc=None, kipc=None,
-    counts_cut=None, deg=7, use_legendre=True, lxmap=[0,1e5], return_satvals=False, 
-    qe_xhatch=None, **kwargs):
+def calc_linearity_coeff(data, sat_vals, well_depth, sat_calc=0.998, ref_info=[4,4,4,4],
+                         counts_cut=None, deg=8, use_legendre=True, lxmap=[0,1e5], nonlin=False):
+    
+    """
+    
+    counts_cut : None or float
+        Option to fit two sets of polynomial coefficients to lower and uppper
+        values. 'counts_cut' specifies the division in values of electrons.
+        Useful for pixels with different non-linear behavior at low flux levels.
+        Recommended values of 15000 e-.
+    """
+
+    if nonlin:
+        return calc_nonlin_coeff(data, sat_vals, well_depth, sat_calc=sat_calc, ref_info=ref_info,
+                                 counts_cut=counts_cut, deg=deg, use_legendre=use_legendre, lxmap=lxmap)
+
+    nz, ny, nx = data.shape
+
+    # Time array
+    tarr = np.arange(1,nz+1)
+    
+    # Active and reference pixel masks
+    lower, upper, left, right = ref_info
+    mask_ref = np.zeros([ny,nx], dtype='bool')
+    if lower>0: mask_ref[0:lower,:] = True
+    if upper>0: mask_ref[-upper:,:] = True
+    if left>0:  mask_ref[:,0:left] = True
+    if right>0: mask_ref[:,-right:] = True
+    
+    # Find time where data reaches 99% of saturation
+    mask99 = data < sat_calc*sat_vals
+    tfin = time_to_sat(data, sat_vals, sat_calc=sat_calc, ref_info=ref_info)
+
+    # Get rid of 0s and NaN's
+    ind_bad = (np.isnan(tfin)) | (tfin==0)
+    tfin[ind_bad] = np.median(tfin[~ind_bad])
+    
+    # Create ideal pixel ramps in e-
+    ramp = well_depth * tarr.reshape([-1,1,1]) / tfin.reshape([1,ny,nx])
+    ramp[ramp>well_depth] = well_depth
+    
+    # Reshape to put all pixels in single dimension
+    data_flat = data.reshape([data.shape[0], -1])
+    ramp_flat = ramp.reshape([ramp.shape[0], -1])
+
+    gain_flat = ramp_flat / data_flat
+    
+    mask99_flat = mask99.reshape([mask99.shape[0], -1])
+    
+    if counts_cut is None:
+        cf_arr = np.zeros([deg+1,nx*ny])
+    else:
+        cf_arr1 = np.zeros([deg+1,nx*ny])
+        cf_arr2 = np.zeros([deg+1,nx*ny])
+        
+        
+    for i in trange(nx*ny, leave=False, desc='Linearity Fitting'):
+        # Grab values less than well depth
+        ind = mask99_flat[:,i]
+        indz = np.where(ind==False)[0]
+        if len(indz)>0:
+            ind[indz[0]] = True  # Set next element true
+            
+        pix_dn = data_flat[:,i]
+        pix_e  = ramp_flat[:,i]
+        gain   = gain_flat[:,i]
+        
+        # Linearity or non-linearity coefficients
+        vals = pix_e if nonlin else pix_dn
+        
+        if counts_cut is None:
+            cf_arr[:,i] = jl_poly_fit(vals[ind], gain[ind], deg=deg, 
+                                      use_legendre=use_legendre, lxmap=lxmap)
+        else:
+            # Fit high pixel values
+            ifit1 = (pix_dn >= counts_cut)
+            if ifit1.sum() > 0:
+                cf_arr1[:,i] = jl_poly_fit(vals[ifit1], gain[ifit1], deg=deg, 
+                                                use_legendre=use_legendre, lxmap=lxmap)
+
+            # Fit low pixel values
+            ifit2 = ~ifit1
+            if ifit2.sum() > 0:
+                cf_arr2[:,i] = jl_poly_fit(vals[ifit2], gain[ifit2], deg=deg, 
+                                                use_legendre=use_legendre, lxmap=lxmap)
+
+    # Reshape and set reference masks to 0
+    if counts_cut is None:
+        cf_arr = cf_arr.reshape([deg+1,ny,nx])
+        cf_arr[:,mask_ref] = 0
+        return cf_arr
+    else:
+        cf_arr1 = cf_arr1.reshape([deg+1,ny,nx])
+        cf_arr1[:,mask_ref] = 0
+        cf_arr2 = cf_arr2.reshape([deg+1,ny,nx])
+        cf_arr2[:,mask_ref] = 0
+        return cf_arr1, cf_arr2
+
+
+def get_linear_coeffs(allfiles, super_bias=None, DMS=False, kppc=None, kipc=None,
+    counts_cut=None, deg=8, use_legendre=True, lxmap=[0,1e5], return_satvals=False, 
+    nonlin=False, **kwargs):
 
 
     if super_bias is None:
         super_bias = 0
         
-    nfiles = len(allfiles)
-    
     # Set logging to WARNING to suppress messages
     log_prev = conf.logging_level
     setup_logging('WARN', verbose=False)
@@ -5153,38 +5373,212 @@ def get_nonlinear_coeffs(allfiles, super_bias=None, DMS=False, kppc=None, kipc=N
     if kipc is not None:
         data_mn = ipc_deconvolve(data_mn, kipc)
 
-    # Perform fit to data in DN/sec
-    # tarr = np.arange(1,nz+1)   # Time array
-    # cf_arr = cube_fit(tarr, data_mn, deg=2, sat_frac=0.5, fit_zero=False)
-
-    # High frequency QE corrections (cross-hatch)
-    if qe_xhatch is not None:
-        data_mn /= qe_xhatch
-
     # Get saturation levels
     sat_vals = find_sat(data_mn)
 
     # Get coefficients to obtain non-linear ramp
-    res = calc_nonlin_coeff(data_mn, sat_vals, well_depth, deg=deg, counts_cut=counts_cut, 
-                            use_legendre=use_legendre, lxmap=lxmap)
+    res = calc_linearity_coeff(data_mn, sat_vals, well_depth, deg=deg, counts_cut=counts_cut, 
+                               use_legendre=use_legendre, lxmap=lxmap, nonlin=nonlin)
 
     if return_satvals:
         return res, sat_vals
     else:
         return res
 
-# def get_all_nonlinear_coeffs_variations(allfiles, super_bias=None, DMS=False, 
-#     kppc=None, kipc=None, grp_max=None, **kwargs):
-
-#     # Perform non-linear
-#     cf_all = []
-#     for file in tqdm(allfiles, desc=''):
-#         cf = get_nonlinear_coeffs(file, super_bias=super_bias, DMS=DMS, grp_max=grp_max, **kwargs)
-
-
-def get_flat_fields(im_slope, split_low_high=True, ref_info=[4,4,4,4]):
-    """ Calculate QE from flat field
+def pixel_linearity_gains(frame, coeff_arr, use_legendre=True, lxmap=[0,1e5]):
     """
+    Given some image data and coefficient
+    """
+
+    # from numpy.polynomial import legendre
+    from scipy.special import eval_legendre
+
+    ncf = coeff_arr.shape[0]
+    xvals = frame.reshape([1,-1])
+    if use_legendre:
+        # Values to map to [-1,+1]
+        if lxmap is None:
+            lxmap = [np.min(xvals), np.max(xvals)]
+
+        # Remap xvals -> lxvals
+        dx = lxmap[1] - lxmap[0]
+        lxvals = 2 * (xvals - (lxmap[0] + dx/2)) / dx
+        xfan = np.array([eval_legendre(n, lxvals) for n in range(ncf)])
+    else:
+        # Create an array of exponent values
+        parr = np.arange(ncf, dtype='float')
+        xfan = xvals**parr.reshape([-1,1]) # Array broadcasting
+
+    gain = np.sum(xfan.reshape([ncf,-1]) * coeff_arr.reshape([ncf,-1]), axis=0)
+    return gain 
+
+def apply_linearity(cube, det, coeff_dict):
+    """Apply pixel non-linearity to ideal ramp
+
+    Given a simulated cube of data in electrons, apply non-linearity 
+    coefficients to obtain values in DN (ADU). This 
+
+    Parameters
+    ----------
+    cube : ndarray
+        Simulated ramp data in e-. These should be intrinsic
+        flux values with Poisson noise, but prior to read noise,
+        kTC, IPC, etc. Size (nz,ny,nx).
+    det : Detector Class
+        Desired detector class output
+    coeff_dict : ndarray
+        Dictionary holding coefficient information:
+
+            - 'cf_nonlin'    : Set of polynomial coefficients of size (ncf,ny,nx).
+            - 'use_legendre' : Coefficients use Legendre polynomials?
+            - 'lxmap'        : Legendre polynomial normalization range, usually [0,1e5]
+
+        Possible to separately fit lower flux values:
+
+             - 'counts_cut'    : Flux cut-off value in electrons
+             - 'cf_nonlin_low' : Coefficients for flux values below counts_cut
+
+    """
+
+    nz, ny, nx = cube.shape
+    # Need to crop input coefficients in the event of subarrays
+    x1, x2 = (det.x0, det.x0 + nx)
+    y1, y2 = (det.y0, det.y0 + ny)
+
+    # Nominal coefficient array
+    cf_arr         = coeff_dict.get('cf_nonlin')[:,y1:y2,x1:x2]
+    use_legendre   = coeff_dict.get('use_legendre', False)
+    lxmap          = coeff_dict.get('lxmap')
+
+    # Information for lower flux values
+    counts_cut     = coeff_dict.get('counts_cut')
+    cf_low         = coeff_dict.get('cf_nonlin_low')[:,y1:y2,x1:x2]
+
+    res = np.zeros_like(cube)
+    for i in trange(nz, desc='Linearity', leave=False):
+        frame = cube[i]
+
+        if counts_cut is None:
+            gain = pixel_linearity_gains(frame, cf_arr, use_legendre=use_legendre, lxmap=lxmap)
+        else:
+            ind1 = (frame >= counts_cut)
+            ind2 = ~ind1
+
+            gain = np.zeros_like(frame)
+            if ind1.sum()>0: # Upper values
+                gain[ind1] = pixel_linearity_gains(frame[ind1], cf_arr[:,ind1], use_legendre=use_legendre, lxmap=lxmap)
+            if ind2.sum()>0: # Lower values
+                gain[ind2] = pixel_linearity_gains(frame[ind2], cf_low[:,ind2], use_legendre=use_legendre, lxmap=lxmap)
+
+        gain = gain.reshape([ny,nx])
+        # Convert from DN to electrons
+        res[i,:] = frame * gain
+        del gain
+
+    return res
+
+def apply_nonlin(cube, det, coeff_dict, randomize=True):
+    """Apply pixel non-linearity to ideal ramp
+
+    Given a simulated cube of data in electrons, apply non-linearity 
+    coefficients to obtain values in DN (ADU). This 
+
+    Parameters
+    ----------
+    cube : ndarray
+        Simulated ramp data in e-. These should be intrinsic
+        flux values with Poisson noise, but prior to read noise,
+        kTC, IPC, etc. Size (nz,ny,nx).
+    det : Detector Class
+        Desired detector class output
+    coeff_dict : ndarray
+        Dictionary holding coefficient information:
+
+            - 'cf_nonlin'    : Set of polynomial coefficients of size (ncf,ny,nx).
+            - 'use_legendre' : Coefficients use Legendre polynomials?
+            - 'lxmap'        : Legendre polynomial normalization range, usually [0,1e5]
+            - 'sat_vals'     : An image indicating what saturation levels in DN for each pixel
+
+        Possible to separately fit lower flux values:
+
+             - 'counts_cut'    : Flux cut-off value in electrons
+             - 'cf_nonlin_low' : Coefficients for flux values below counts_cut
+
+        To include randomization in line with observed variation:
+
+            - 'cflin0_mean'    : Average 0th-order coefficient
+            - 'cflin0_std'     : Measured standard deviation of 0th-order coefficent
+            - 'corr_slope'     : Slope of linear correlation between 0th-order and higher orders
+            - 'corr_intercept' : Intercept of linear Correaltion between 0th-order and higher orders
+    
+    Keyword Args
+    ------------
+    randomize : bool
+        Add variation to the non-linearity coefficients  
+    """
+
+    nz, ny, nx = cube.shape
+    # Need to crop input coefficients in the event of subarrays
+    x1, x2 = (det.x0, det.x0 + nx)
+    y1, y2 = (det.y0, det.y0 + ny)
+
+    # Nominal coefficient array
+    cf_arr         = coeff_dict.get('cf_nonlin')[:,y1:y2,x1:x2]
+    use_legendre   = coeff_dict.get('use_legendre', False)
+    lxmap          = coeff_dict.get('lxmap')
+
+    # Mean and standard deviation of first coefficients
+    cflin0_mean    = coeff_dict.get('cflin0_mean', cf_arr[0])[y1:y2,x1:x2]
+    cflin0_std     = coeff_dict.get('cflin0_std')[y1:y2,x1:x2]
+    # The rest of the coefficents have a direct correlation to the first
+    corr_slope     = coeff_dict.get('corr_slope')[:,y1:y2,x1:x2]
+    corr_intercept = coeff_dict.get('corr_intercept')[:,y1:y2,x1:x2]
+
+    # Information for lower flux values
+    counts_cut     = coeff_dict.get('counts_cut')
+    cf_low         = coeff_dict.get('cf_nonlin_low')[:,y1:y2,x1:x2]
+
+    sat_vals = coeff_dict.get('sat_vals')[y1:y2,x1:x2] # Saturation in DN
+    well_depth = det.well_level # Full well in e- corresponding to sat in DN
+
+    if randomize:
+        cf0_rand = np.random.normal(loc=cflin0_mean, scale=cflin0_std)
+        cf_arr = np.concatenate(([cf0_rand], corr_slope * cf0_rand + corr_intercept))
+
+    res = np.zeros_like(cube)
+    for i in trange(nz, desc='Non-Linearity', leave=False):
+        frame = cube[i]
+
+        # Values higher than well depth
+        ind_high = frame > well_depth
+
+        if counts_cut is None:
+            gain = pixel_linearity_gains(frame, cf_arr, use_legendre=use_legendre, lxmap=lxmap)
+        else:
+            ind1 = (frame >= counts_cut)
+            ind2 = ~ind1
+
+            gain = np.zeros_like(frame)
+            if ind1.sum()>0: # Upper values
+                gain[ind1] = pixel_linearity_gains(frame[ind1], cf_arr[:,ind1], use_legendre=use_legendre, lxmap=lxmap)
+            if ind2.sum()>0: # Lower values
+                gain[ind2] = pixel_linearity_gains(frame[ind2], cf_low[:,ind2], use_legendre=use_legendre, lxmap=lxmap)
+
+        gain = gain.reshape([ny,nx])
+        # Avoid NaNs
+        igood = gain!=0
+        # Convert from electrons to ADU
+        res[i,igood] = frame[igood] / gain[igood]
+        del gain
+
+        # Correct any pixels that are above saturation DN
+        ind_over = (res[i]>sat_vals) | ind_high
+        res[i,ind_over] = sat_vals[ind_over]
+
+    return res
+
+def get_flat_fields(im_slope, split_low_high=True, smth_sig=10, ref_info=[4,4,4,4]):
+    """ Calculate QE variations in flat field"""
 
     
     from astropy.convolution import convolve_fft, Gaussian2DKernel
@@ -5225,7 +5619,7 @@ def get_flat_fields(im_slope, split_low_high=True, ref_info=[4,4,4,4]):
     if split_low_high:
 
         # Perform a Gaussian smooth to get low frequency flat field info
-        kernel = Gaussian2DKernel(30)
+        kernel = Gaussian2DKernel(smth_sig)
         qe_frac_pad = np.pad(qe_frac, pad_width=100, mode='reflect')
         im_smth = convolve_fft(qe_frac_pad, kernel, allow_huge=True, boundary='fill')
 
