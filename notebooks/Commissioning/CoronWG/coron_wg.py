@@ -111,13 +111,15 @@ def run_obs(filt, mask, pupil, imode=0, imode_tacq=None, imode_jitt=None,
                         wind_mode=wind_mode, xpix=subsize, ypix=subsize, 
                         fov_pix=fov_pix, oversample=oversample)
 
+    nint_sci = nint_ref = 50
+
     # Shooting for ~3600 sec of acquisition time
     if 'LW' in channel:
-        nrc_sci.update_detectors(read_mode='MEDIUM8', ngroup=7, nint=50, verbose=verbose)
-        nrc_ref.update_detectors(read_mode='MEDIUM8', ngroup=7, nint=50, verbose=False)
+        nrc_sci.update_detectors(read_mode='MEDIUM8', ngroup=7, nint=nint_sci, verbose=verbose)
+        nrc_ref.update_detectors(read_mode='MEDIUM8', ngroup=7, nint=nint_ref, verbose=False)
     else:
-        nrc_sci.update_detectors(read_mode='BRIGHT1', ngroup=9, nint=50, verbose=verbose)
-        nrc_ref.update_detectors(read_mode='BRIGHT1', ngroup=9, nint=50, verbose=False)
+        nrc_sci.update_detectors(read_mode='BRIGHT1', ngroup=9, nint=nint_sci, verbose=verbose)
+        nrc_ref.update_detectors(read_mode='BRIGHT1', ngroup=9, nint=nint_ref, verbose=False)
 
     # Turn off jitter estimation
     for nrc in [nrc_sci, nrc_ref]:
@@ -141,40 +143,46 @@ def run_obs(filt, mask, pupil, imode=0, imode_tacq=None, imode_jitt=None,
 
     # Time step of integration (average)
     tint_all = np.mean(tg_all, axis=1)
+    tint_sci = tint_all
+    tint_ref = tint_sci.max() + tint_all
 
     # Print configuration(s) info
     print('WFE Drift: ', scenarios[imode])
     print('Jitter:    ', jitter_modes[imode_jitt])
     if imode_tacq is None:
-        ta_iter = np.arange(3)
+        ta_iter = np.arange(4)
+        # ta_iter = np.arange(3)
     else:
-        ta_iter = imode_tacq
+        ta_iter = [imode_tacq]
     print('Target Aq: ', tacq_ref[ta_iter,0])
 
     # Create drifted OPDs for each integration
     # Interpolate OPDS for each integration
-    dopds = np.zeros([nint,1024,1024])
-    dopds_ref = np.zeros([nint,1024,1024])
-    for hdul in tqdm([hdul_opds_thermal, hdul_opds_frill, hdul_opds_iec], leave=False):
-        # Flip along y-axis for correct orientation
-        opds = hdul[imode].data[:,::-1,:]
+    dopds_sci = create_delta_opds(imode, tint_sci, ref_opds=False)
+    dopds_ref = create_delta_opds(imode, tint_ref, ref_opds=True)
 
-        # Interpolate science dOPDs
-        func = interp1d(tvals_sec, opds, axis=0, kind='linear', bounds_error=True)
-        opds_interp = func(tint_all)
-        dopds += frebin(opds_interp, dimensions=1024, total=False)
+    # dopds = np.zeros([nint,1024,1024])
+    # dopds_ref = np.zeros([nint,1024,1024])
+    # for hdul in tqdm([hdul_opds_thermal, hdul_opds_frill, hdul_opds_iec], leave=False):
+    #     # Flip along y-axis for correct orientation
+    #     opds = hdul[imode].data[:,::-1,:]
 
-        # Interpolate reference dOPDs
-        if hdul is hdul_opds_iec:
-            # For IEC, start 3600 sec later
-            opds_interp = func(tint_all + nrc_sci.Detector.time_total)
-        else:
-            # Flip sign for thermal and frill for reference obs
-            opds_interp = func(tint_all)
-            opds_interp *= -1
-        dopds_ref += frebin(opds_interp, dimensions=1024, total=False)
+    #     # Interpolate science dOPDs
+    #     func = interp1d(tvals_sec, opds, axis=0, kind='linear', bounds_error=True)
+    #     opds_interp = func(tint_all)
+    #     dopds += frebin(opds_interp, dimensions=1024, total=False)
+
+    #     # Interpolate reference dOPDs
+    #     if hdul is hdul_opds_iec:
+    #         # For IEC, start 3600 sec later
+    #         opds_interp = func(tint_all + nrc_sci.Detector.time_total)
+    #     else:
+    #         # Flip sign for thermal and frill for reference obs
+    #         opds_interp = func(tint_all)
+    #         opds_interp *= -1
+    #     dopds_ref += frebin(opds_interp, dimensions=1024, total=False)
     
-    test1 = np.mean(dopds_ref + dopds[-1], axis=0) - np.mean(dopds, axis=0)
+    test1 = np.mean(dopds_ref + dopds_sci[-1], axis=0) - np.mean(dopds_sci, axis=0)
     print(calc_rms(test1) * 1000)
 
     # Create random jitter realizations for each group timestep [nint, ngroup, 2]
@@ -187,7 +195,7 @@ def run_obs(filt, mask, pupil, imode=0, imode_tacq=None, imode_jitt=None,
     for i in trange(nint, desc='Sci INT'):
         # Create copy of OPD and add delta
         opd_int = deepcopy(hdul_opds_static)
-        opd_int[0].data += dopds[i]
+        opd_int[0].data += dopds_sci[i]
 
         # Initial TA Offsets
         if tacq_sci==0:
@@ -203,7 +211,8 @@ def run_obs(filt, mask, pupil, imode=0, imode_tacq=None, imode_jitt=None,
                                    sp=sp_sci, jitt_groups=jitt_groups)
         im_slope_sci.append(im_slope)
         
-    im_slope_sci = np.array(im_slope_sci)
+    im_slope_sci = np.asarray(im_slope_sci)
+    im_sci = np.mean(im_slope_sci, axis=0)
 
     # Save final OPD for input into reference
     opd_sci_last = deepcopy(opd_int)
@@ -227,18 +236,89 @@ def run_obs(filt, mask, pupil, imode=0, imode_tacq=None, imode_jitt=None,
         tay_pix = ta_y / nrc_ref.pixelscale
         im_slope_ref_sh = fourier_imshift(im_slope_ref, -tax_pix, -tay_pix, pad=False)
 
-        im_sci = np.mean(im_slope_sci, axis=0)
         im_ref = np.mean(im_slope_ref, axis=0)
         im_ref_sh = np.mean(im_slope_ref_sh, axis=0)
 
         diff1 = im_sci - im_ref
         diff2 = im_sci - im_ref_sh
 
-        plot_images(nrc_sci, im_sci, diff1, diff2,
-                    imode, jitter_sig, i_ta, save=save)
+        plot_images(nrc_sci, im_sci, diff1, diff2, imode, jitter_sig, i_ta, save=save)
 
-        calc_contrast(diff2, im_sci, nrc_sci, imode, jitter_sig, i_ta, 
-                  nsig=5, save=save, plot=False)
+        make_contrast_map(diff2, nrc_sci, imode, jitter_sig, i_ta, im_sci=im_sci, save=save)
+
+        calc_contrast(diff2, nrc_sci, imode, jitter_sig, i_ta, im_sci=im_sci,
+                      nsig=5, save=save, plot=False)
+
+
+def make_map(filt, mask, pupil, imode=0, imode_tacq=None, imode_jitt=None, 
+             save=True, verbose=False):
+
+    if imode_jitt is None:
+        imode_jitt = imode
+
+    # Define detector configuration and PSF simulation
+    bp = pynrc.read_filter(filt)
+
+    channel = 'SW' if bp.avgwave()/1e4 < 2.4 else 'LW'
+    if 'LW' in channel:
+        wind_mode, subsize = ('WINDOW', 320)
+        fov_pix, oversample = (160, 2)
+    else:
+        wind_mode, subsize = ('WINDOW', 640)
+        fov_pix, oversample = (320, 2)
+
+    # Science configuration
+    nrc_sci = pynrc.NIRCam(filter=filt, image_mask=mask, pupil_mask=pupil,
+                           wind_mode=wind_mode, xpix=subsize, ypix=subsize, 
+                           fov_pix=fov_pix, oversample=oversample)
+
+    # Shooting for ~3600 sec of acquisition time
+    if 'LW' in channel:
+        nrc_sci.update_detectors(read_mode='MEDIUM8', ngroup=7, nint=50, verbose=verbose)
+    else:
+        nrc_sci.update_detectors(read_mode='BRIGHT1', ngroup=9, nint=50, verbose=verbose)
+
+    # Turn off jitter estimation
+    nrc_sci.options['jitter'] = None
+    nrc_sci.options['jitter_sigma'] = 0
+    nrc_sci.options['source_offset_r'] = 0
+    nrc_sci.options['source_offset_theta'] = 0
+
+    det = nrc_sci.Detector
+    nint = det.multiaccum.nint
+    ngroup = det.multiaccum.ngroup
+
+    jitter_vals = np.zeros([ngroup,2])
+    im_sci = gen_slope_image(nrc_sci, hdul_opds_static, jitter_vals)
+
+    # Print configuration(s) info
+    # print('WFE Drift: ', scenarios[imode])
+    # print('Jitter:    ', jitter_modes[imode_jitt])
+    # if imode_tacq is None:
+    #     ta_iter = np.arange(4)
+    #     # ta_iter = np.arange(3)
+    # else:
+    #     ta_iter = [imode_tacq]
+    # print('Target Aq: ', tacq_ref[ta_iter])
+
+    # Jitter sigma
+    jitter_sig = jitter_modes[imode_jitt]
+        
+    if imode_tacq is None:
+        ta_iter = trange(4, desc='Ref TA', leave=False)
+    else:
+        ta_iter = [imode_tacq]
+
+    for i_ta in ta_iter:
+        fname1 = fname_part(nrc_sci, imode, jitter_sig, i_ta)
+
+        # Get saved file
+        fname = f'{fname1}_diff2.fits'
+        hdul = fits.open('output/' + fname)
+        make_contrast_map(hdul[0].data, nrc_sci, imode, jitter_sig, i_ta, im_sci=im_sci, save=save)
+        hdul.close()
+
+
 
 
 def get_ref_slopes(nrc_ref, opd_sci_last, dopds_ref, jitter_rand_ref, jitt_groups=False):
@@ -347,9 +427,7 @@ def plot_images(nrc_sci, im_sci, diff1, diff2,
     fig.tight_layout()
 
     if save:
-        fname0 = f'{nrc_sci.filter}_{nrc_sci.image_mask}'
-        fname1 = f'{fname0}_{scenarios[imode]}_jit{jitter_sig:.1f}mas_tacq{ta_val:.1f}mas'
-        fname1 = fname1.replace(' ','')
+        fname1 = fname_part(nrc_sci, imode, jitter_sig, imode_tacq)
 
         fname = f'{fname1}_images.pdf'
         fig.savefig('output/'+fname)
@@ -363,7 +441,7 @@ def plot_images(nrc_sci, im_sci, diff1, diff2,
         hdul_diff1.writeto('output/' + f2, overwrite=True)
         hdul_diff2.writeto('output/' + f3, overwrite=True)
 
-def calc_contrast(diff2, im_sci, nrc_sci, imode, jitter_sig, imode_tacq, 
+def calc_contrast(diff2, nrc_sci, imode, jitter_sig, imode_tacq, im_sci=None,
                   nsig=5, save=True, plot=False):
     
     pixscale = nrc_sci.pixelscale
@@ -389,7 +467,11 @@ def calc_contrast(diff2, im_sci, nrc_sci, imode, jitter_sig, imode_tacq,
     star_flux = spec_flux(sp_sci, nrc_sci.filter, units='counts')
     star_mag = spec_flux(sp_sci, nrc_sci.filter, units='vegamag')
         
-    psf_cen = pad_or_cut_to_size(im_sci / star_flux, 20)
+    if im_sci is None:
+        im_sci = gen_slope_image(nrc_sci, hdul_opds_static, 0)
+    else:
+        im_sci = im_sci / star_flux
+    psf_cen = pad_or_cut_to_size(im_sci, 20)
     psf_off = nrc_sci.calc_psf_from_coeff(use_bg_psf=True, 
                                           return_oversample=False, 
                                           return_hdul=False)
@@ -427,10 +509,9 @@ def calc_contrast(diff2, im_sci, nrc_sci, imode, jitter_sig, imode_tacq,
     ta_val = np.sqrt(ta_ref**2 + ta_sci**2)
 
     if save:
-        fname0 = f'{nrc_sci.filter}_{nrc_sci.image_mask}'
-        fname = f'{fname0}_{scenarios[imode]}_jit{jitter_sig:.1f}mas_tacq{ta_val:.1f}mas_contrast.npz'
-        fname = fname.replace(' ','')
-        np.savez('output/' + fname, rr=rr, contrast=contrast, sen_mag=sen_mag, bg_sen_arr=bg_sen_arr)
+        fname1 = fname_part(nrc_sci, imode, jitter_sig, imode_tacq)
+        fname = f'{fname1}_contrast.npz'
+        np.savez('output/' + fname, rr=rr, contrast=contrast, sen_mag=sen_mag, bg_sen_arr=bg_sen_arr, nsig=nsig)
 
     if plot:
         fig, ax = plt.subplots(1,1, figsize=(6,4))
@@ -444,6 +525,81 @@ def calc_contrast(diff2, im_sci, nrc_sci, imode, jitter_sig, imode_tacq,
     #   rr = res['rr']
     
     # return rr, contrast, sen_mag, bg_sen_arr
+
+def make_contrast_map(diff2, nrc_sci, imode, jitter_sig, imode_tacq, im_sci=None, save=True):
+
+
+    from astropy.convolution import convolve, Gaussian1DKernel
+    from pynrc.nrc_utils import hist_indices, binned_statistic
+
+    pixscale = nrc_sci.pixelscale
+
+    # Get stellar source
+    star_flux = spec_flux(sp_sci, nrc_sci.filter, units='counts')
+    # On-axis PSF
+    if im_sci is None:
+        im_sci = gen_slope_image(nrc_sci, hdul_opds_static, 0)
+    else:
+        im_sci = im_sci / star_flux
+    psf_cen = pad_or_cut_to_size(im_sci, 20)
+
+    # Get off-axis PSFs
+    trans = nrc_sci.gen_mask_image(npix=160, nd_squares=False)
+
+    avals = trans**2
+    bvals = 1 - avals
+
+    hdul_off = nrc_sci.calc_psf_from_coeff(use_bg_psf=True, return_oversample=False, 
+                                           return_hdul=True)
+    psf_off = hdul_off[0].data
+
+    psf_cen_max = psf_cen.max()
+    psf_off_max = psf_off.max()
+
+    # Linear combination of off-axis and on-axis PSFs
+    # Results in max PSF value as a function of positon
+    psf_max = avals * psf_off_max + bvals * psf_cen_max
+
+    # rho = dist_image(diff2, pixscale=1)
+    # bins = np.arange(rho.min(), rho.max() + 1, 1)
+    # igroups, _, rr = hist_indices(rho, bins, True)
+    # stds = binned_statistic(igroups, diff2, func=np.std)
+    # stds = convolve(stds, Gaussian1DKernel(1))
+
+    # im_stds = np.zeros_like(rho).flatten()
+    # for i, ig in enumerate(igroups):
+    #     im_stds[ig] = stds[i]
+        
+    # im_stds = im_stds.reshape(rho.shape)
+
+    im_cont = diff2 / (psf_max * star_flux)
+
+    # Save arrays to disk
+    ta_ref = tacq_ref[imode_tacq][0]
+    ta_sci = tacq_sci
+    ta_val = np.sqrt(ta_ref**2 + ta_sci**2)
+
+    copy_keys = [
+        'PIXELSCL','INSTRUME', 'FILTER', 'PUPIL',
+        'MODULE', 'CHANNEL', 'DET_NAME'
+    ]
+
+    if save:
+        # Save files
+        fname1 = fname_part(nrc_sci, imode, jitter_sig, imode_tacq)
+        fname = f'{fname1}_contrast.fits'
+
+        hdul = fits.HDUList(fits.PrimaryHDU(im_cont))
+        header = hdul[0].header
+        for k in copy_keys:
+            header[k] = hdul_off[0].header[k]
+        case = scenarios[imode].split(' ')[0]
+        header['CASE']   = (case, f'{scenarios[imode]} WFE Drift')
+        header['JITTER'] = (jitter_sig, 'Jitter sigma (mas)')
+        header['TACQ']   = (ta_val, 'Target Acquisition offset (mas)')
+
+        hdul.writeto('contrast_maps/' + fname, overwrite=True)
+
 
 def gen_slope_image(nrc, opd, jitter_vals, sp=None, jitt_groups=False):
     """
@@ -511,3 +667,77 @@ def spec_flux(sp, filter, units='counts'):
     bp = pynrc.read_filter(filter)
     obs = nrc_utils.S.Observation(sp, bp, binset=bp.wave)
     return obs.effstim(units)
+
+
+def fname_part(nrc_sci, imode, jitter_sig, imode_tacq):
+
+    ta_ref = tacq_ref[imode_tacq][0]
+    ta_sci = tacq_sci
+    ta_val = np.sqrt(ta_ref**2 + ta_sci**2)
+
+    fname0 = f'{nrc_sci.filter}_{nrc_sci.image_mask}'
+    fname1 = f'{fname0}_{scenarios[imode]}_jit{jitter_sig:.1f}mas_tacq{ta_val:.1f}mas'
+    fname1 = fname1.replace(' ','')
+
+    return fname1
+
+
+def create_delta_opds(imode, tint, ref_opds=False):
+    """
+    Generate a series of delta OPDs at given time steps.
+    Uses the hdul_opds_thermal, hdul_opds_frill, hdul_opds_iec files.
+    """
+
+    tvals_sec = fits.getdata(opd_dir + 'time_vector.fits') * 60
+
+    nint = len(tint)
+
+    # Create drifted OPDs for each integration
+    # Interpolate OPDS for each integration
+    dopds = np.zeros([nint,1024,1024])
+    for hdul in tqdm([hdul_opds_thermal, hdul_opds_frill, hdul_opds_iec], leave=False):
+        # Flip along y-axis for correct orientation
+        opds = hdul[imode].data[:,::-1,:]
+
+        # Interpolation function for dOPDs w.r.t. time
+        func = interp1d(tvals_sec, opds, axis=0, kind='linear', bounds_error=True)
+
+        # Interpolate dOPDs
+        # For reference thermal and frill, start at t=0, but flip sign
+        if ref_opds and ((hdul is hdul_opds_thermal) or (hdul is hdul_opds_frill)):
+            tint0 = tint - tint.min()
+            tint0 += (tint[1]-tint[0]) / 2
+            opds_interp = -1 * func(tint0)
+        else:
+            opds_interp = func(tint)
+
+        # Rebin and add to output array
+        dopds += frebin(opds_interp, dimensions=1024, total=False)
+
+    return dopds
+
+def create_drifted_opds(imode, tint, ref_opds=False):
+
+    nint = len(tint)
+    dopds = create_delta_opds(imode, tint, ref_opds=ref_opds)
+
+
+    # If reference, initial OPD is last science OPD
+    hdul_opds0 = deepcopy(hdul_opds_static)
+    if ref_opds:
+        # delta time between integrations
+        dt = tint[1] - tint[0]
+        tint_sci = np.array([tint.min()-dt])
+        dopds_sci = create_delta_opds(imode, tint_sci, ref_opds=False)
+        hdul_opds0[0].data += dopds_sci[0]
+
+    # Create copy of OPD and add delta
+    res = []
+    desc='Ref INTs' if ref_opds else 'Sci INTs'
+    for i in trange(nint, desc=desc, leave=False):
+        hdul_int = deepcopy(hdul_opds0)
+        hdul_int[0].data += dopds[i]
+
+        res.append(hdul_int)
+
+    return res
