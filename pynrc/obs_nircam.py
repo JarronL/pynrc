@@ -1881,7 +1881,7 @@ class obs_hci(nrc_hci):
             yv = (np.arange(ny) - ny/2) * pixscale
             xv = np.zeros_like(yv)
 
-            # Get mask transmission
+            # Get mask transmission at selected points
             trans = nrc_mask_trans(self.image_mask, xv, yv)
             # Linear combination of min/max to determine PSF max value at given distance
             # Get a and b values for each position
