@@ -31,6 +31,8 @@ from ..detops import create_detops
 
 from ..logging_utils import setup_logging
 import logging
+
+from pynrc import logging_utils
 _log = logging.getLogger('pynrc')
 
 class nircam_dark(object):
@@ -45,7 +47,7 @@ class nircam_dark(object):
         self._create_dir_structure(datadir, outdir, lindir=lindir)
 
         # Get header information and create a NIRCam detector timing instance
-        hdr = fits.getheader(self.allfiles[0])
+        hdr = self._grab_single_header()
         self.det = create_detops(hdr, DMS=DMS)
         self.det.same_scan_direction = same_scan_direction
         self.det.reverse_scan_direction = reverse_scan_direction
@@ -271,12 +273,13 @@ class nircam_dark(object):
         # Directories to save super bias and super dark info
         super_bias_dir = os.path.join(outdir, 'SUPER_BIAS') + '/'
         super_dark_dir = os.path.join(outdir, 'SUPER_DARK') + '/'
+        noise_dir      = os.path.join(outdir, 'NOISE') + '/'
         power_spec_dir = os.path.join(outdir, 'POWER_SPEC') + '/'
         linearity_dir  = os.path.join(outdir, 'LINEARITY') + '/'
 
 
         # Make sure directories exist for writing
-        for path in [outbase, outdir, figdir, super_bias_dir, super_dark_dir, power_spec_dir, linearity_dir]:
+        for path in [outbase, outdir, figdir, super_bias_dir, super_dark_dir, noise_dir, linearity_dir]:
             if not os.path.exists(path):
                 os.mkdir(path)
 
@@ -286,6 +289,8 @@ class nircam_dark(object):
             'linfiles' : linfiles,
             'outdir'   : outdir,
             'figdir'   : figdir,
+            'header_file'         : outdir + f'HEADER_{scaid}.TXT',
+            'temperatures_file'   : outdir + f'TEMPERATURES_{scaid}.JSON',
             'super_bias_dir'      : super_bias_dir,
             'super_dark_dir'      : super_dark_dir,
             'super_bias_init'     : super_bias_dir + f'SUPER_BIAS_INIT_{scaid}.FITS',
@@ -298,15 +303,15 @@ class nircam_dark(object):
             'pixel_masks'         : super_dark_dir + f'PIXEL_MASKS_{scaid}.FITS.gz',
             'column_variations'   : super_dark_dir + f'SUPER_DARK_COLVAR_{scaid}.FITS',
             'ref_pix_variations'  : super_bias_dir + f'BIAS_BEHAVIOR_{scaid}.JSON',
-            'cds_act_dict'        : super_dark_dir + f'CDS_NOISE_ACTIVE_{scaid}.JSON',
-            'cds_ref_dict'        : super_dark_dir + f'CDS_NOISE_REF_{scaid}.JSON',
-            'eff_noise_dict'      : super_dark_dir + f'EFF_NOISE_{scaid}.JSON',
-            'power_spec_cds'      : power_spec_dir + f'POWER_SPEC_CDS_{scaid}.npy',
-            'power_spec_full'     : power_spec_dir + f'POWER_SPEC_FULL_{scaid}.npy',
-            'power_spec_cds_oh'   : power_spec_dir + f'POWER_SPEC_CDS_OH_{scaid}.npy',
-            'power_spec_full_oh'  : power_spec_dir + f'POWER_SPEC_FULL_OH_{scaid}.npy',
-            'power_spec_cds_pix'  : power_spec_dir + f'POWER_SPEC_CDS_PIX_{scaid}.npy',
-            'power_spec_full_pix' : power_spec_dir + f'POWER_SPEC_FULL_PIX_{scaid}.npy',
+            'cds_act_dict'        : noise_dir      + f'CDS_NOISE_ACTIVE_{scaid}.JSON',
+            'cds_ref_dict'        : noise_dir      + f'CDS_NOISE_REF_{scaid}.JSON',
+            'eff_noise_dict'      : noise_dir      + f'EFF_NOISE_{scaid}.JSON',
+            'power_spec_cds'      : noise_dir      + f'POWER_SPEC_CDS_{scaid}.npy',
+            'power_spec_full'     : noise_dir      + f'POWER_SPEC_FULL_{scaid}.npy',
+            'power_spec_cds_oh'   : noise_dir      + f'POWER_SPEC_CDS_OH_{scaid}.npy',
+            'power_spec_full_oh'  : noise_dir      + f'POWER_SPEC_FULL_OH_{scaid}.npy',
+            'power_spec_cds_pix'  : noise_dir      + f'POWER_SPEC_CDS_PIX_{scaid}.npy',
+            'power_spec_full_pix' : noise_dir      + f'POWER_SPEC_FULL_PIX_{scaid}.npy',
             'linear_coeffs'       : linearity_dir  + f'LINEAR_COEFFS_{scaid}.npz',
             'nonlinear_coeffs'    : linearity_dir  + f'NONLINEAR_COEFFS_{scaid}.npz',
             'super_flats'         : linearity_dir  + f'SUPER_FLATS_{scaid}.FITS',
@@ -319,6 +324,43 @@ class nircam_dark(object):
         self._mask_ref = self.det.mask_ref
         self._mask_channels = self.det.mask_channels
 
+    def _dict_to_json(self, in_dict, savename):
+        # Save reference pixel dictionary
+        dtemp = deepcopy(in_dict)
+        # Convert any ndarrays to lists
+        for k in dtemp.keys():
+            if isinstance(dtemp[k], (np.ndarray)):
+                dtemp[k] = dtemp[k].tolist()
+        with open(savename, 'w') as fp:
+            json.dump(dtemp, fp, sort_keys=False, indent=4)
+
+    def _json_to_dict(self, savename):
+        # Load from JSON files
+        with open(savename, 'r') as fp:
+            d = json.load(fp)
+
+        # Convert any lists to np.array
+        for k in d.keys():
+            if isinstance(d[k], (list)):
+                d[k] = np.array(d[k])
+
+        return d
+
+    def _grab_single_header(self):
+        """Read/save or Open header of first FITS file"""
+        from astropy.io.fits import Header
+
+        savename = self.paths_dict['header_file']
+        file_exists = os.path.isfile(savename)
+
+        if file_exists:
+            hdr = Header.fromtextfile(savename)
+        else:
+            hdr = fits.getheader(self.allfiles[0])
+            hdr.totextfile(savename, overwrite=True)
+
+        return hdr
+
     def _grab_temperature_data(self):
         """ Grab temperature data from headers
         
@@ -329,11 +371,18 @@ class nircam_dark(object):
         # TODO: Add DMS support for temperature
         if self.DMS:
             self._temperature_dict = None
-            _log.error("DMS data not yet supported obtaining array temperatures")
+            _log.error("DMS data not yet supported obtaining FPA temperatures")
+            return
         
+        savename = self.paths_dict['temperatures_file']
+        file_exists = os.path.isfile(savename)
+
+        if file_exists:
+            # Load from JSON files
+            temperature_dict = self._json_to_dict(savename)
         else:
-            # Get intial temperature keys
-            hdr = fits.getheader(self.allfiles[0])
+            # Get initial temperature keys
+            hdr = self._grab_single_header()
 
             tkeys = [k for k in list(hdr.keys()) if k[0:2]=='T_'] + ['ASICTEMP']
 
@@ -349,7 +398,10 @@ class nircam_dark(object):
                     temperature_dict[k].append(float(hdr[k]))
                 hdul.close()
 
-            self._temperature_dict = temperature_dict
+            # Save temperature dictionary
+            self._dict_to_json(temperature_dict, savename)
+
+        self._temperature_dict = temperature_dict
 
     def get_super_bias_init(self, deg=1, nsplit=2, force=False, **kwargs):
 
@@ -497,7 +549,7 @@ class nircam_dark(object):
 
         self._super_dark = super_dark
 
-    def get_pixel_slope_averages(self, deg=1, force=False):
+    def get_pixel_slope_averages(self, force=False):
         """Get average pixel ramp"""
 
         _log.info('Calculating average pixel ramps...')
@@ -696,15 +748,7 @@ class nircam_dark(object):
         outname1 = self.paths_dict['cds_act_dict']
         outname2 = self.paths_dict['cds_ref_dict']
         both_exist = os.path.exists(outname1) and os.path.exists(outname2)
-        if both_exist and (not force):
-
-            # Load from JSON files
-            with open(outname1, 'r') as fp:
-                cds_act_dict = json.load(fp)
-            with open(outname2, 'r') as fp:
-                cds_ref_dict = json.load(fp)
-
-        else:
+        if (not both_exist) or force:
             # Create CDS dictionaries
             cds_act_dict, cds_ref_dict = gen_cds_dict(
                 self.allfiles, superbias=self.super_bias,
@@ -712,30 +756,13 @@ class nircam_dark(object):
                 same_scan_direction=ssd, DMS=self.DMS)
 
             # Save active pixel dictionary
-            dtemp = deepcopy(cds_act_dict)
-            for k in dtemp.keys():
-                if isinstance(dtemp[k], (np.ndarray)):
-                    dtemp[k] = dtemp[k].tolist()
-            with open(outname1, 'w') as fp:
-                json.dump(dtemp, fp, sort_keys=False, indent=4)
-
+            self._dict_to_json(cds_act_dict, outname1)
             # Save reference pixel dictionary
-            dtemp = deepcopy(cds_ref_dict)
-            for k in dtemp.keys():
-                if isinstance(dtemp[k], (np.ndarray)):
-                    dtemp[k] = dtemp[k].tolist()
-            with open(outname2, 'w') as fp:
-                json.dump(dtemp, fp, sort_keys=False, indent=4)
+            self._dict_to_json(cds_ref_dict, outname2)
 
-        # Convert any lists to np.array
-        dlist = [cds_act_dict, cds_ref_dict]
-        for d in dlist:
-            for k in d.keys():
-                if isinstance(d[k], (list)):
-                    d[k] = np.array(d[k])
-
-        self._cds_act_dict = cds_act_dict
-        self._cds_ref_dict = cds_ref_dict
+        # Load dictionaries
+        self._cds_act_dict = self._json_to_dict(outname1)
+        self._cds_ref_dict = self._json_to_dict(outname2)
 
     def get_effective_noise(self, ideal_Poisson=False, force=False):
         "Calculate effective noise curves for each readout pattern"
@@ -838,7 +865,7 @@ class nircam_dark(object):
         cds_var = (en_dn_list[0][0] * det.time_group * gain)**2 - (idark_avg * det.time_group)
         read_noise = np.sqrt(cds_var / 2)
 
-        p0 = [1.5,10]
+        p0 = [1.5,10]  # Initial guess
         args=(det, patterns, ng_all_list, en_dn_list)
         kwargs = {'idark':idark_avg, 'read_noise':read_noise, 'ideal_Poisson':ideal_Poisson}
         res_lsq = least_squares(fit_func_var_ex, p0, args=args, kwargs=kwargs)
@@ -997,16 +1024,7 @@ class nircam_dark(object):
         outname = self.paths_dict['ref_pix_variations']
         file_exists = os.path.isfile(outname)
 
-        if file_exists and (not force):
-            # Load from JSON file
-            with open(outname, 'r') as fp:
-                ref_dict = json.load(fp)
-
-            # Convert lists to np.array
-            for k in ref_dict.keys():
-                if isinstance(ref_dict[k], (list)):
-                    ref_dict[k] = np.array(ref_dict[k])
-        else:
+        if (not file_exists) or force:
             kwargs_def = {
                 'nchans': self.nchan, 'altcol': True, 'in_place': True,    
                 'fixcol': True, 'avg_type': 'pixel', 'savgol': True, 'perint': False    
@@ -1018,19 +1036,29 @@ class nircam_dark(object):
             ref_dict = gen_ref_dict(allfiles, self.super_bias, DMS=self.DMS, **kwargs)
             
             # Save to JSON file
-            # Make a deepcopy of dict to convert np.array to lists
-            dtemp = deepcopy(ref_dict)
-            for k in dtemp.keys():
-                if isinstance(dtemp[k], (np.ndarray)):
-                    dtemp[k] = dtemp[k].tolist()
+            self._dict_to_json(ref_dict, outname)
 
-            with open(outname, 'w') as fp:
-                json.dump(dtemp, fp, sort_keys=False, indent=4)
+        # Load from JSON file
+        self._ref_pixel_dict = self._json_to_dict(outname)
 
-        self._ref_pixel_dict = ref_dict
-
-    def get_power_spectrum(self, include_oh=False, return_corr=False, return_ucorr=False,
-                           force=False, save=True, calc_cds=True, per_pixel=False, mn_func=np.mean):
+    def get_power_spectrum(self, include_oh=False, calc_cds=True, per_pixel=False, 
+                           return_corr=False, return_ucorr=False, mn_func=np.mean,
+                           force=False, save=True):
+        """
+        Keyword Args
+        ============
+        include_oh : bool
+            Zero-pad the data to insert line and frame overhead pixels? 
+        calc_cds : bool
+            Power spectrum of CDS pairs or individual frames?
+        return_corr : bool
+            Return power spectrum of channel correlated 1/f noise?
+        return_ucorr : bool
+            Return power spectra of channel-dependent (uncorrelated) 1/f noise?
+        per_pixel : bool
+            Calculate average power spectrum of each pixel along ramp (frame timescales)?
+            If False, samples pixels within a frame (pixel read timescales).
+        """
 
         _log.info("Building noise power spectrum dictionary...")
 
@@ -1189,7 +1217,7 @@ class nircam_dark(object):
         self.lflats = lflats
         self.pflats = pflats
 
-    def _get_linear_coeffs(self, deg=8, use_legendre=True, lxmap=[0,1e5], counts_cut=None,
+    def _get_linear_coeffs(self, deg=8, use_legendre=True, lxmap=[0,1e5], counts_cut=None, sat_calc=0.98,
                            nonlin=False, force=False, DMS=None, super_bias=None, **kwargs):
         """ Determine non-linear coefficents
 
@@ -1237,8 +1265,12 @@ class nircam_dark(object):
 
             out = np.load(savename)
             cf_nonlin      = out.get('cf_nonlin')
-            cf_nonlin_low  = out.get('cf_nonlin_low')
             counts_cut     = out.get('counts_cut').tolist()
+            if counts_cut == 0:
+                counts_cut = None
+                cf_nonlin_low = None
+            else:
+                cf_nonlin_low  = out.get('cf_nonlin_low')
             use_legendre   = out.get('use_legendre').tolist()
             lxmap          = out.get('lxmap').tolist()
             deg            = out.get('deg').tolist()
@@ -1249,7 +1281,10 @@ class nircam_dark(object):
                 corr_intercept = out.get('corr_intercept')
                 sat_vals       = out.get('sat_vals')
         else:
-            _log.info("Generating non-linearity coefficents")
+            if nonlin:
+                _log.info("Generating non-linearity coefficents")
+            else:
+                _log.info("Generating linearity coefficents")
             allfiles = self.linfiles
 
             # Check if super bias exists
@@ -1270,13 +1305,17 @@ class nircam_dark(object):
                 if k not in kwargs:
                     kwargs[k] = kwargs_def[k]
 
+            grp_max = find_group_sat(allfiles[-1], DMS=DMS, bias=super_bias, sat_calc=0.998)
+            grp_max = grp_max + 10
+
             # Get nominal non-linear coefficients
             _log.info("  Calculating average coefficients...")
             kppc = self.kernel_ppc
             kipc = self.kernel_ipc
-            res, sat_vals = get_linear_coeffs(allfiles, super_bias=super_bias, DMS=DMS, deg=deg, 
+            res, sat_vals = get_linear_coeffs(allfiles, super_bias=super_bias, DMS=DMS, grp_max=grp_max, deg=deg, 
                                               use_legendre=use_legendre, lxmap=lxmap, counts_cut=counts_cut, 
-                                              return_satvals=True, kppc=kppc, kipc=kipc, nonlin=nonlin, **kwargs)
+                                              return_satvals=True, kppc=kppc, kipc=kipc, nonlin=nonlin, sat_calc=sat_calc, 
+                                              **kwargs)
             # Two separate fits for low and high pixel values
             if counts_cut is None:
                 cf_nonlin = res
@@ -1287,8 +1326,6 @@ class nircam_dark(object):
             # Obtain coefficient variations
             if nonlin:
                 _log.info("  Calculating coefficient variations...")
-                grp_max = find_group_sat(allfiles[-1], DMS=DMS, bias=super_bias, sat_calc=0.998)
-                grp_max = grp_max + 10
 
                 # Solve for coefficients for all data sets
                 # Probes random variations
@@ -1296,7 +1333,7 @@ class nircam_dark(object):
                 for file in tqdm(allfiles, desc='Variance', leave=False):
                     res = get_linear_coeffs([file], super_bias=super_bias, DMS=DMS, counts_cut=counts_cut, 
                                             deg=deg, use_legendre=use_legendre, lxmap=lxmap, grp_max=grp_max, 
-                                            sat_vals=sat_vals, nonlin=True, **kwargs)
+                                            sat_vals=sat_vals, nonlin=True, sat_calc=sat_calc, **kwargs)
                     if counts_cut is None:
                         cf = res
                     else: # Ignore variations to lower fits
@@ -1322,6 +1359,7 @@ class nircam_dark(object):
 
                 if counts_cut is None:
                     counts_cut = 0
+                    cf_nonlin_low = 0
                 np.savez(savename, cf_nonlin=cf_nonlin, cflin0_mean=cflin0_mean, cflin0_std=cflin0_std, 
                         corr_slope=corr_slope, corr_intercept=corr_intercept, deg=deg, 
                         use_legendre=use_legendre, lxmap=lxmap, sat_vals=sat_vals,
@@ -1329,14 +1367,16 @@ class nircam_dark(object):
             else:
                 if counts_cut is None:
                     counts_cut = 0
+                    cf_nonlin_low = 0
                 np.savez(savename, cf_nonlin=cf_nonlin, cf_nonlin_low=cf_nonlin_low, counts_cut=counts_cut,
                         deg=deg, use_legendre=use_legendre, lxmap=lxmap, sat_vals=sat_vals)
 
+        # Additional check on fitting of lower values 
+        if (counts_cut==0) or (counts_cut is None):
+            counts_cut = None
+            cf_nonlin_low = None
 
         # Store everything in dictionary
-        if counts_cut==0:
-            counts_cut = None
-
         if nonlin:
             self.nonlinear_dict = {
                 'cf_nonlin'      : cf_nonlin,
@@ -1362,8 +1402,8 @@ class nircam_dark(object):
             }
 
 
-    def get_nonlinear_coeffs(self, deg=8, use_legendre=True, lxmap=[0,1e5], counts_cut=None,
-                             force=False, DMS=None, super_bias=None, **kwargs):
+    def get_nonlinear_coeffs(self, deg=8, use_legendre=True, lxmap=[0,1e5], counts_cut=15000, 
+                             sat_calc=0.998, force=False, DMS=None, super_bias=None, **kwargs):
         """ Determine non-linear coefficents
 
         These coefficients allow us to go from an ideal linear ramp to 
@@ -1396,11 +1436,12 @@ class nircam_dark(object):
             should get mapped to [-1,+1]. If set to None, then assumes 
             [xvals.min(),xvals.max()]. 
         """
-        self._get_linear_coeffs(deg=deg, use_legendre=use_legendre, lxmap=lxmap, counts_cut=counts_cut,
-                                nonlin=True, force=force, DMS=DMS, super_bias=super_bias, **kwargs)
+        self._get_linear_coeffs(deg=deg, use_legendre=use_legendre, lxmap=lxmap, 
+                                counts_cut=counts_cut, sat_calc=sat_calc, nonlin=True, 
+                                force=force, DMS=DMS, super_bias=super_bias, **kwargs)
 
-    def get_linear_coeffs(self, deg=8, use_legendre=True, lxmap=[0,1e5], counts_cut=None,
-                          force=False, DMS=None, super_bias=None, **kwargs):
+    def get_linear_coeffs(self, deg=8, use_legendre=True, lxmap=[0,1e5], counts_cut=None, 
+                          sat_calc=0.98, force=False, DMS=None, super_bias=None, **kwargs):
         """ Determine linearity coefficents
 
         These coefficients allow us to convert from an observed ramp (DN) to
@@ -1435,8 +1476,9 @@ class nircam_dark(object):
         """
         if counts_cut is not None:
             counts_cut = counts_cut / self.det.gain
-        self._get_linear_coeffs(deg=deg, use_legendre=use_legendre, lxmap=lxmap, counts_cut=counts_cut,
-                                nonlin=False, force=force, DMS=DMS, super_bias=super_bias, **kwargs)
+        self._get_linear_coeffs(deg=deg, use_legendre=use_legendre, lxmap=lxmap, 
+                                counts_cut=counts_cut, sat_calc=sat_calc, nonlin=False, 
+                                force=force, DMS=DMS, super_bias=super_bias, **kwargs)
 
 
     def deconvolve_supers(self):
@@ -2101,7 +2143,8 @@ class nircam_dark(object):
             return fig, axes
 
 
-    def plot_eff_noise_patterns(self, ideal_Poisson=False, save=False, return_figax=False):
+    def plot_eff_noise_patterns(self, ideal_Poisson=False, save=False, 
+        ylim=None, return_figax=False):
         """Plot effective noise of slope fits for variety of read patterns"""
 
         det = self.det
@@ -2140,6 +2183,8 @@ class nircam_dark(object):
         fig, axes = plt.subplots(3,3, figsize=(14,9), sharey=True)
         axes = axes.flatten()
 
+        log_prev = conf.logging_level
+        setup_logging('WARN', verbose=False)
         for i, ax in enumerate(axes):
             tvals = tarr_all[i]
             yvals = (en_dn_list[i] * tvals)
@@ -2170,7 +2215,7 @@ class nircam_dark(object):
             if i==0:
                 xr = [ax.get_xlim()[0],1200]
                 ymax = 5*(int(ax.get_ylim()[1] / 5) + 1)
-                yr = [0,ymax]
+                yr = [0,ymax] if ylim is None else ylim
                 
             ax.set_xlim(xr)
             ax.set_ylim(yr)
@@ -2187,6 +2232,8 @@ class nircam_dark(object):
         fig.suptitle(f'Noise of Slope Fits (SCA {self.scaid})', fontsize=16)
         fig.tight_layout()
         fig.subplots_adjust(top=0.9, wspace=0.03)
+
+        setup_logging(log_prev, verbose=False)
 
         if save:
             fname = f'{self.scaid}_eff_noise_patterns.pdf'
@@ -2298,13 +2345,10 @@ class nircam_cal(nircam_dark):
     def __init__(self, scaid, outdir, same_scan_direction=False, reverse_scan_direction=False,
                  verbose=True):
                         
+
         # Directory information
         self.scaid = scaid
         self._create_dir_structure(None, outdir)
-        
-        self.det = DetectorOps(detector=scaid)
-        self.det.same_scan_direction = same_scan_direction
-        self.det.reverse_scan_direction = reverse_scan_direction
 
         prev_log = conf.logging_level
         if verbose:
@@ -2312,6 +2356,24 @@ class nircam_cal(nircam_dark):
         else:
             setup_logging('WARN', verbose=False)
 
+        # Set up detector information
+        self.det = DetectorOps(detector=scaid)
+        self.det.same_scan_direction = same_scan_direction
+        self.det.reverse_scan_direction = reverse_scan_direction
+
+        hdr = self._grab_single_header()
+
+        # Detector size
+        try:
+            nx, ny, nz = (hdr['SUBSIZE1'], hdr['SUBSIZE2'], hdr['NGROUPS'])
+        except:
+            nx = hdr['NAXIS1']
+            ny = hdr['NAXIS2']
+            nz = hdr['NGROUP']
+
+        self.det.multiaccum.ngroup = nz
+        self.det.ypix = ny
+        self.det.xpix = nx
 
         # Create masks for ref pixels, active pixels, and channels
         self._create_pixel_masks()
@@ -2321,12 +2383,8 @@ class nircam_cal(nircam_dark):
         # Dark ramp/slope info
 
         # Get Super dark ramp (cube)
-        self.get_super_dark_ramp()
-        
-        nz, ny, nx = self.super_dark_ramp.shape
-        self.det.multiaccum.ngroup = nz
-        self.det.ypix = ny
-        self.det.xpix = nx
+        # self.get_super_dark_ramp()
+        # nz, ny, nx = self.super_dark_ramp.shape
         
         # Calculate dark slope image
         self.get_dark_slope_image()
@@ -2335,8 +2393,8 @@ class nircam_cal(nircam_dark):
         self.get_pixel_slope_averages()
 
         # Delete super dark ramp to save memory
-        del self._super_dark_ramp
-        self._super_dark_ramp = None
+        # del self._super_dark_ramp
+        # self._super_dark_ramp = None
         
         # Calculate CDS Noise for various component 
         # white noise, 1/f noise (correlated and independent), temporal and spatial
@@ -2598,13 +2656,15 @@ def gen_super_bias(allfiles, DMS=False, mn_func=np.median, std_func=robust.std,
             if bias_all[0] is None:
                 raise RuntimeError('Returned None values. Issue with multiprocess??')
         except Exception as e:
-            print('Caught an exception during multiprocess.')
-            print('Closing multiprocess pool.')
+            _log.error('Caught an exception during multiprocess.')
+            _log.error('Closing multiprocess pool.')
             pool.terminate()
             pool.close()
             raise e
         else:
-            print('Closing multiprocess pool.')
+            # Set back to previous logging level
+            setup_logging(log_prev, verbose=False)
+            _log.info('Closing multiprocess pool.')
             # pool.close()
 
         bias_all = np.array(bias_all)
@@ -4783,7 +4843,7 @@ def get_power_spec_all(allfiles, super_bias=None, det=None, DMS=False, include_o
         Power spectrum of CDS pairs or individual frames?
     per_pixel : bool
         Calculate average power spectrum of each pixel along ramp (frame timescales)?
-        If False, samples pixels within a frame (pixel read timescales)
+        If False, samples pixels within a frame (pixel read timescales).
     return_corr : bool
         Return power spectrum of channel correlated 1/f noise?
     return_ucorr : bool
@@ -5134,8 +5194,8 @@ def find_group_sat(file, DMS=False, bias=None, sat_vals=None, sat_calc=0.998):
     
     return imax
 
-def calc_nonlin_coeff(data, sat_vals, well_depth, sat_calc=0.998, ref_info=[4,4,4,4],
-                      counts_cut=None, deg=8, use_legendre=True, lxmap=[0,1e5]):
+def calc_nonlin_coeff(data, sat_vals, well_depth, sat_calc=0.98, ref_info=[4,4,4,4],
+                      counts_cut=None, deg=8, use_legendre=True, lxmap=[0,1e5], **kwargs):
     
     """
     
@@ -5161,7 +5221,7 @@ def calc_nonlin_coeff(data, sat_vals, well_depth, sat_calc=0.998, ref_info=[4,4,
     
     # Find time where data reaches 99% of saturation
     mask99 = data < sat_calc*sat_vals
-    tfin = time_to_sat(data, sat_vals, sat_calc=sat_calc, ref_info=ref_info)
+    tfin = time_to_sat(data, sat_vals, sat_calc=0.998, ref_info=ref_info)
 
     # Get rid of 0s and NaN's
     ind_bad = (np.isnan(tfin)) | (tfin==0)
@@ -5172,10 +5232,9 @@ def calc_nonlin_coeff(data, sat_vals, well_depth, sat_calc=0.998, ref_info=[4,4,
     ramp[ramp>well_depth] = well_depth
     
     # Simultaneously fit pixels that have the same ideal ramps 
-    vals = tfin
-    bsize = 0.1
-    bins = np.arange(vals.min(), vals.max()+bsize, bsize)
-    ig, vg, cv = hist_indices(vals, bins=bins, return_more=True)
+    bsize = 0.05
+    bins = np.arange(tfin.min(), tfin.max()+bsize, bsize)
+    ig, vg, cv = hist_indices(tfin, bins=bins, return_more=True)
 
     # Select only indices with len>0
     nvals = np.array([len(i) for i in ig])
@@ -5237,8 +5296,9 @@ def calc_nonlin_coeff(data, sat_vals, well_depth, sat_calc=0.998, ref_info=[4,4,
         return cf_arr1, cf_arr2
 
 
-def calc_linearity_coeff(data, sat_vals, well_depth, sat_calc=0.998, ref_info=[4,4,4,4],
-                         counts_cut=None, deg=8, use_legendre=True, lxmap=[0,1e5], nonlin=False):
+def calc_linearity_coeff(data, sat_vals, well_depth, sat_calc=0.98, ref_info=[4,4,4,4],
+                         counts_cut=None, deg=8, use_legendre=True, lxmap=[0,1e5], 
+                         nonlin=False, **kwargs):
     
     """
     
@@ -5268,7 +5328,7 @@ def calc_linearity_coeff(data, sat_vals, well_depth, sat_calc=0.998, ref_info=[4
     
     # Find time where data reaches 99% of saturation
     mask99 = data < sat_calc*sat_vals
-    tfin = time_to_sat(data, sat_vals, sat_calc=sat_calc, ref_info=ref_info)
+    tfin = time_to_sat(data, sat_vals, sat_calc=0.998, ref_info=ref_info)
 
     # Get rid of 0s and NaN's
     ind_bad = (np.isnan(tfin)) | (tfin==0)
@@ -5338,7 +5398,7 @@ def calc_linearity_coeff(data, sat_vals, well_depth, sat_calc=0.998, ref_info=[4
 
 def get_linear_coeffs(allfiles, super_bias=None, DMS=False, kppc=None, kipc=None,
     counts_cut=None, deg=8, use_legendre=True, lxmap=[0,1e5], return_satvals=False, 
-    nonlin=False, **kwargs):
+    nonlin=False, sat_calc=0.98, **kwargs):
 
 
     if super_bias is None:
@@ -5361,9 +5421,9 @@ def get_linear_coeffs(allfiles, super_bias=None, DMS=False, kppc=None, kipc=None
     data_mn, _ = gen_super_ramp(allfiles, super_bias=super_bias, DMS=DMS, **kwargs)
 
     # Update number of read frames
-    nz, ny, nx = data_mn.shape
-    det.multiaccum.ngroup = nz
-    tarr = det.times_group_avg
+    # nz, ny, nx = data_mn.shape
+    # det.multiaccum.ngroup = nz
+    # tarr = det.times_group_avg
 
     # IPC and PPC kernels
     # PPC corrections
@@ -5378,7 +5438,7 @@ def get_linear_coeffs(allfiles, super_bias=None, DMS=False, kppc=None, kipc=None
 
     # Get coefficients to obtain non-linear ramp
     res = calc_linearity_coeff(data_mn, sat_vals, well_depth, deg=deg, counts_cut=counts_cut, 
-                               use_legendre=use_legendre, lxmap=lxmap, nonlin=nonlin)
+                               use_legendre=use_legendre, lxmap=lxmap, nonlin=nonlin, sat_calc=sat_calc)
 
     if return_satvals:
         return res, sat_vals
@@ -5451,8 +5511,11 @@ def apply_linearity(cube, det, coeff_dict):
     lxmap          = coeff_dict.get('lxmap')
 
     # Information for lower flux values
-    counts_cut     = coeff_dict.get('counts_cut')
-    cf_low         = coeff_dict.get('cf_nonlin_low')[:,y1:y2,x1:x2]
+    counts_cut = coeff_dict.get('counts_cut')
+    if counts_cut is None:
+        cf_low = None
+    else:
+        cf_low = coeff_dict.get('cf_nonlin_low')[:,y1:y2,x1:x2]
 
     res = np.zeros_like(cube)
     for i in trange(nz, desc='Linearity', leave=False):
@@ -5535,8 +5598,11 @@ def apply_nonlin(cube, det, coeff_dict, randomize=True):
     corr_intercept = coeff_dict.get('corr_intercept')[:,y1:y2,x1:x2]
 
     # Information for lower flux values
-    counts_cut     = coeff_dict.get('counts_cut')
-    cf_low         = coeff_dict.get('cf_nonlin_low')[:,y1:y2,x1:x2]
+    counts_cut = coeff_dict.get('counts_cut')
+    if counts_cut is None:
+        cf_low = None
+    else:
+        cf_low = coeff_dict.get('cf_nonlin_low')[:,y1:y2,x1:x2]
 
     sat_vals = coeff_dict.get('sat_vals')[y1:y2,x1:x2] # Saturation in DN
     well_depth = det.well_level # Full well in e- corresponding to sat in DN
