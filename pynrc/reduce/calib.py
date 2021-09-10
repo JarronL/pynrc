@@ -1156,6 +1156,7 @@ class nircam_dark(object):
 
 
         if file_exists and (not force):
+            _log.info("  Loading flat field information...")
             # Grab Super Dark Ramp
             super_flats = get_fits_data(savename)
         else:
@@ -1172,6 +1173,9 @@ class nircam_dark(object):
             _log.info("  Calculating flat field information...")
             allfiles = self.linfiles
             data, _ = gen_super_ramp(allfiles, super_bias=self.super_bias, **kwargs)
+
+            if self.linear_dict is None:
+                self.get_linear_coeffs()
 
             # IPC and PPC kernels
             kppc = self.kernel_ppc
@@ -1192,6 +1196,8 @@ class nircam_dark(object):
             tarr = np.arange(1,len(data)+1)
             cf_arr = cube_fit(tarr, data, deg=1, sat_vals=det.well_level, sat_frac=0.8, fit_zero=False)
             im_slope = cf_arr[1]
+
+            del data
 
             super_flats = get_flat_fields(im_slope, split_low_high=split_low_high, 
                                           smth_sig=smth_sig, ref_info=det.ref_info)
@@ -1295,7 +1301,23 @@ class nircam_dark(object):
 
             if DMS is None:
                 DMS = self.DMS
-            
+
+            # Set logging to WARNING to suppress messages
+            log_prev = conf.logging_level
+            setup_logging('WARN', verbose=False)
+
+            f = allfiles[-1]
+            hdr = fits.getheader(f)
+            det = create_detops(hdr, DMS=DMS)
+
+            setup_logging(log_prev, verbose=False)
+
+            grp_max = find_group_sat(f, DMS=DMS, bias=super_bias, sat_calc=0.998)
+            grp_max = grp_max + 10
+
+            if grp_max > det.multiaccum.ngroup:
+                grp_max = det.multiaccum.ngroup
+
             # Default ref pixel correction kw args
             kwargs_def = {
                 'nchans': self.nchan, 'in_place': True, 'altcol': True,
@@ -1304,9 +1326,6 @@ class nircam_dark(object):
             for k in kwargs_def.keys():
                 if k not in kwargs:
                     kwargs[k] = kwargs_def[k]
-
-            grp_max = find_group_sat(allfiles[-1], DMS=DMS, bias=super_bias, sat_calc=0.998)
-            grp_max = grp_max + 10
 
             # Get nominal non-linear coefficients
             _log.info("  Calculating average coefficients...")
@@ -3089,14 +3108,14 @@ def gen_super_ramp(allfiles, super_bias=None, DMS=False, grp_max=None, sat_vals=
     # Create a super dark ramp
     ramp_sum = np.zeros([nz,ny,nx])
     bias_off_all = []
-    nint_tot = 0
+    nint_tot = np.zeros([nz])
     nfiles = len(allfiles)
     iter_files = tqdm(allfiles, desc='Super Ramp', leave=False) if nfiles>1 else allfiles
     for fname in iter_files:
 
         # If DMS, then might be multiple integrations per FITS file
         nint = fits.getheader(fname)['NINTS'] if DMS else 1
-        nint_tot += nint  # Accounts for multiple ints FITS
+        # nint_tot += nint  # Accounts for multiple ints FITS
 
         iter_range = trange(nint, desc='Ramps', leave=False) if nint>1 else range(nint)
         for i in iter_range:
@@ -3115,11 +3134,14 @@ def gen_super_ramp(allfiles, super_bias=None, DMS=False, grp_max=None, sat_vals=
 
             for j, im in enumerate(data):
                 ramp_sum[j] += im
+                # Increment total frames here
+                # Catches data where ramp is truncated (incomplete data)
+                nint_tot[j] += 1
 
             del data
 
     # Take averages
-    ramp_sum /= nint_tot
+    ramp_sum /= nint_tot.reshape([-1,1,1])
     ramp_avg = ramp_sum
     
     # Get average of bias offsets
