@@ -1456,7 +1456,12 @@ def apply_flat(cube, det, imflat_full):
         if necessary.
     """
 
-    nz, ny, nx = cube.shape
+    sh = cube.shape
+    if len(sh)==2:
+        ny, nx = sh
+    else:
+        _, ny, nx = sh
+        
     # Need to crop input coefficients in the event of subarrays
     x1, x2 = (det.x0, det.x0 + nx)
     y1, y2 = (det.y0, det.y0 + ny)
