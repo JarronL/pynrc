@@ -2,43 +2,12 @@ import numpy as np
 import logging
 _log = logging.getLogger('pynrc')
 
-# The six library is useful for Python 2 and 3 compatibility
-#import six
-
 # Import libraries
 import numpy as np
 import pynrc
 from pynrc.maths import robust
 from pynrc import DetectorOps, setup_logging, conf
 from scipy.signal import savgol_filter
-
-
-### # import matplotlib
-### # import matplotlib.pyplot as plt
-### matplotlib.rcParams['image.origin'] = 'lower'
-### matplotlib.rcParams['image.interpolation'] = 'none'
-### #matplotlib.rcParams['image.cmap'] = 'gist_heat'
-### 
-### from astropy.io import fits
-### 
-### dir = '/Volumes/NIRData/NIRCam/Char_Darks/CV3/FITS/489/'
-### f = dir + 'NRCNRCB4-DARK-60091316411_1_489_SE_2016-01-09T14h23m38.fits'
-### hdulist = fits.open(f)
-### cube = np.ndarray.astype(hdulist[0].data,np.float)
-### hdulist.close()
-### del hdulist[0].data
-### 
-### fbias = '/Volumes/NIRData/NIRCam/Char_Darks/CV3/489/SUPER_BIAS_489.FITS'
-### hdulist = fits.open(fbias)
-### bias = hdulist[0].data
-### 
-### # We need a better superbias frame.
-### # These ones did not correctly determine the intrinsic values
-### # of the reference pixels.
-### for im in cube:
-###     im -= bias
-### 
-### cube = reffix_amps(cube)
 
 class NRC_refs(object):
 

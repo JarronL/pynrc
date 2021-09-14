@@ -3,4 +3,4 @@
 # import numpy as np
 # from numpy.polynomial import legendre
 
-from webbpsf_ext.maths import jl_poly, jl_poly_fit
+from webbpsf_ext.maths import jl_poly, jl_poly_fit, fit_bootstrap
