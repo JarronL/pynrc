@@ -13,7 +13,10 @@ from .nrc_utils import *
 from .detops import det_timing, multiaccum, nrc_header
 from webbpsf_ext.webbpsf_ext_core import _check_list
 
+from tqdm.auto import trange, tqdm
+
 import pysiaf
+from pysiaf import rotations
 
 from . import conf
 from .logging_utils import setup_logging
@@ -1999,33 +2002,84 @@ class NIRCam(NIRCam_ext):
                                   return_coords=return_coords, use_coeff=use_coeff,
                                   npsf_per_full_fov=npsf_per_full_fov, **kwargs)
         return res
-        
 
-    def gen_exposures(self, sp=None, im_slope=None, file_out=None, return_results=None,
-                      targ_name=None, timeFileNames=False, DMS=True, 
-                      include_dark=True, include_bias=True, nproc=None, **kwargs):
-        """Generate raw mock data.
-        
-        Create a series of ramp integration saved to FITS files based on
-        the current NIRCam settings. This method calls the :func:`gen_fits`
-        function, which in turn calls the detector noise generator 
-        :mod:`~pynrc.simul.ngNRC`.
+    def gen_obs_params(self, target_name, ra, dec, date_obs, time_obs, pa_v3=0, 
+        siaf_ap_ref=None, xyoff_idl=(0,0), visit_type='SCIENCE', time_series=False,
+        time_exp_offset=0, segNum=None, segTot=None, int_range=None, filename=None, **kwargs):
 
-        Only works on one detector at a time.
+        """ Generate a simple obs_params dictionary
 
-        Currently, this image simulator does NOT take into account:
-        
-            - QE variations across a pixel's surface
-            - Intrapixel Capacitance (IPC)
-            - Post-pixel Coupling (PPC) due to ADC "smearing"
-            - Pixel non-linearity
-            - Persistence/latent image
-            - Optical distortions
-            - Zodiacal background roll off for grism edges
-            - Cosmic Rays
-            
-        TODO: Double-check the output for grism data w.r.t sci_to_det().
+        An obs_params dictionary is used to create a jwst data model (e.g., Level1bModel).
+        Additional **kwargs will add/update elements to the final output dictionary.
 
+        Parameters
+        ==========
+        ra : float
+            RA in degrees associated with observation pointing
+        dec : float
+            RA in degrees associated with observation pointing
+        data_obs : str
+            YYYY-MM-DD
+        time_obs : str
+            HH:MM:SS
+
+        Keyword Arg
+        ===========
+        pa_v3 : float
+            Telescope V3 position angle.
+        siaf_ap_ref : pysiaf Aperture
+            SIAF aperture class used for telescope pointing (if different than self.siaf_ap)
+        xyoff_idl : tuple, list
+            (x,y) offset in arcsec ('idl' coords) to dither observation
+        visit_type : str
+            'T_ACQ', 'CONFIRM', or 'SCIENCE'
+        time_series : bool
+            Is this a time series observation?
+        time_exp_offset : float
+            Exposure start time (in seconds) relative to beginning of observation execution. 
+        segNum : int
+            The segment number of the current product. Only for TSO.
+        segTot : int
+            The total number of segments. Only for TSO.
+        int_range : list
+            Integration indices to use 
+        filename : str or None  
+            Name of output filename. If set to None, then auto generates a dummy name.
+        """
+        from .simul.apt import create_obs_params
+        from .simul.dms import DMS_filename
+
+        filt = self.filter
+        pupil = 'CLEAR' if self.pupil_mask is None else self.pupil_mask
+        det = self.Detector
+        siaf_ap_obs = self.siaf_ap
+        if siaf_ap_ref is None:
+            siaf_ap_ref = self.siaf_ap
+        ra_dec = (ra, dec)
+
+        kwargs['target_name'] = target_name
+
+        obs_params = create_obs_params(filt, pupil, det, siaf_ap_ref, ra_dec, date_obs, time_obs,
+            pa_v3=pa_v3, siaf_ap_obs=siaf_ap_obs, xyoff_idl=xyoff_idl, time_exp_offset=time_exp_offset, 
+            visit_type=visit_type, time_series=time_series, segNum=segNum, segTot=segTot, int_range=int_range,
+            filename=filename, **kwargs)
+
+        if filename is None:
+            obs_id_info = obs_params['obs_id_info']
+            detname = det.detid
+            filename = DMS_filename(obs_id_info, detname, segNum=segNum, prodType='uncal')
+            obs_params['filename'] = filename
+
+        return obs_params
+
+
+    def simulate_ramps(self, sp=None, im_slope=None, cframe='sci', nint=None, 
+        do_dark=False, **kwargs):
+        """ Simulate Ramp Data
+
+        Create a series of ramp data based on the current NIRCam settings. 
+        This method calls the :func:`gen_ramp` function, which in turn calls 
+        the detector noise generator :func:`~pynrc.simul.simulate_detector_ramp`.
 
         Parameters
         ----------
@@ -2037,38 +2091,6 @@ class NIRCam(NIRCam_ext):
         sp : :mod:`pysynphot.spectrum`, None
             A pysynphot spectral object. If not specified, then it is
             assumed that we're looking at blank sky.
-        targ_name : str, None
-            A target name for the exposure file's header.
-        file_out : str, None
-            Path and name of output FITs files. Time stamps will
-            be automatically inserted for unique file names if
-            ``timeFileNames=True``.
-        timeFileNames : bool
-            Save the exposure times in the file name? This is useful to see 
-            the timing, but also makes it a little harder to combine INTs 
-            later for DMS simulations.
-        DMS : bool
-            Create DMS data file and header format? Otherwise, the output is
-            more similar to ISIM CV2/3 and OTIS campaigns.
-        return_results : bool, None
-            By default, we return results if file_out is not set and
-            the results are not returned if file_out is set. This decision
-            is based on the large amount of data and memory usage this 
-            method may incur if the results were always returned by default.
-            Instead, it's better to save the FITs to disk, especially if 
-            NINTs is large. We include the return_results keyword if the 
-            user would like to do both (or neither).
-        include_dark : bool
-            Include the dark current?
-        include_bias : bool
-            Include the bias frame?
-        nproc : int
-            Advanced usage to explicitly specify the number of processors to use. 
-            Otherwise, a function is called to determine the optimum number of 
-            processes based on available memory and number of ramps being generated.
-        det_noise: bool
-            Include detector noise components? If set to False, then only 
-            perform Poisson noise. Darks and biases are also excluded.
 
         Keyword Args
         ------------
@@ -2082,24 +2104,86 @@ class NIRCam(NIRCam_ext):
             Calendar day to use for background calculation.  If not given, will use the
             average of visible calendar days.
 
+        return_full_ramp : bool
+            By default, we average groups and drop frames as specified in the
+            `det` input. If this keyword is set to True, then return all raw
+            frames within the ramp. The last set of `nd2` frames will be omitted.
+        out_ADU : bool
+            If true, divide by gain and convert to 16-bit UINT.
+        include_dark : bool
+            Add dark current?
+        include_bias : bool
+            Add detector bias?
+        include_ktc : bool
+            Add kTC noise?
+        include_rn : bool
+            Add readout noise per frame?
+        include_cpink : bool
+            Add correlated 1/f noise to all amplifiers?
+        include_upink : bool
+            Add uncorrelated 1/f noise to each amplifier?
+        include_acn : bool
+            Add alternating column noise?
+        apply_ipc : bool
+            Include interpixel capacitance?
+        apply_ppc : bool
+            Apply post-pixel coupling to linear analog signal?
+        include_refoffsets : bool
+            Include reference offsts between amplifiers and odd/even columns?
+        include_refinst : bool
+            Include reference/active pixel instabilities?
+        include_colnoise : bool
+            Add in column noise per integration?
+        col_noise : ndarray or None
+            Option to explicitly specifiy column noise distribution in
+            order to shift by one for subsequent integrations
+        amp_crosstalk : bool
+            Crosstalk between amplifiers?
+        add_crs : bool
+            Add cosmic ray events? See Robberto et al 2010 (JWST-STScI-001928).
+        cr_model: str
+            Cosmic ray model to use: 'SUNMAX', 'SUNMIN', or 'FLARES'.
+        cr_scale: float
+            Scale factor for probabilities.
+        apply_nonlinearity : bool
+            Apply non-linearity?
+        random_nonlin : bool
+            Add randomness to the linearity coefficients?
+        apply_flats: None
+            Apply sub-pixel QE variations (crosshatching).
+        latents : None or ndarray
+            (TODO) Apply persistence from previous integration.
+
         """
+        from .reduce.calib import nircam_cal
 
         det = self.Detector
+        nint = det.multiaccum.nint if nint is None else nint
 
-        filter = self.filter
-        pupil = self.pupil_mask
+        pupil = 'FLAT' if do_dark else self.pupil_mask
         xpix = self.det_info['xpix']
         ypix = self.det_info['ypix']
 
+        # Set logging to WARNING to suppress messages
+        log_prev = conf.logging_level
+        setup_logging('WARN', verbose=False)
 
+        det_cal_obj = nircam_cal(self.scaid, verbose=False)
+
+        # If requesting dark images
+        if do_dark:
+            im_slope = np.zeros([ypix,xpix])
         # If slope image is not specified
-        if im_slope is None:
+        elif im_slope is None:
             # Detector sampled images
             gen_psf = self.calc_psf_from_coeff
             kw_gen_psf = {'return_oversample': False,'return_hdul': False}
 
+            # Imaging+Coronagraphy
+            if pupil is None:
+                im_slope = gen_psf(sp=sp, **kw_gen_psf)
             # No visible source
-            if ('FLAT' in pupil) or (sp is None):
+            elif ('FLAT' in pupil) or (sp is None):
                 im_slope = np.zeros([ypix,xpix])
             # Grism spec
             elif ('GRISM' in pupil):
@@ -2110,18 +2194,14 @@ class NIRCam(NIRCam_ext):
             # Imaging+Coronagraphy
             else:
                 im_slope = gen_psf(sp=sp, **kw_gen_psf)
-    
+
+            # Expand or cut to detector size
+            im_slope = pad_or_cut_to_size(im_slope, (ypix,xpix))
+
             # Add in Zodi emission
             # Returns 0 if self.pupil='FLAT'
             im_slope += self.bg_zodi_image(**kwargs)
             
-            targ_name = sp.name if targ_name is None else targ_name
-            
-            # Image coordinates have +V3 up and +V2 to left
-            # Want to convert to detector coordinates
-            # Need to double-check the output for grism data.
-            #im_slope = sci_to_det(im_slope, det.detid)
-
         # Minimum value of slope
         im_min = im_slope[im_slope>=0].min()
         # Expand or cut to detector size
@@ -2129,69 +2209,45 @@ class NIRCam(NIRCam_ext):
         # Make sure there are no negative numbers
         im_slope[im_slope<=0] = im_min
 
-        # Create times indicating start of new ramp
-        t0 = datetime.datetime.now()
-        time_list = [t0] # First ramp time start
-        nint = self.multiaccum.nint
-        if nint>1: # Second ramp time start
-            dt = self.multiaccum_times['t_int_tot1'] if timeFileNames == True else 0
-            time_list.append(time_list[0] + datetime.timedelta(seconds=dt))
-        if nint>2: # Successive ramp time starts
-            dt = self.multiaccum_times['t_int_tot2'] if timeFileNames == True else 0
-            for i in range(2, nint):
-                time_list.append(time_list[i-1] + datetime.timedelta(seconds=i*dt))
-        
-
-        # Create list of file names for each INT
-        if file_out is None:
-            if return_results is None: return_results=True
-            file_list = [None]*nint
-        else:
-            if return_results is None: return_results=False
-            file_list = []
-            #file_out = '/Volumes/NIRData/grism_sim/grism_sim.fits'
-            if file_out.lower()[-5:] == '.fits':
-                file_out = file_out[:-5]
-            if file_out[-1:] == '_':
-                file_out = file_out[:-1]
-
-            for fileInd, t in enumerate(time_list):
-                file_time = t.isoformat()[:-7]
-                file_time = file_time.replace(':', 'h', 1)
-                file_time = file_time.replace(':', 'm', 1)
-                file_list.append(file_out + '_' + file_time + "_{0:04d}".format(fileInd) + '.fits')
-
         # Create a list of arguments to pass
-        # TODO: Update to slope_to_ramps 
         worker_arguments = []
-        for fout, otime in zip(file_list, time_list):
-            kw = {
-                'im_slope': im_slope, 'filter': filter, 'pupil':pupil,
-                'targ_name': targ_name, 'obs_time': otime, 'fil_out': fout,
-                'include_dark': include_dark, 'include_bias': include_bias,
-                'DMS': DMS, 'return_results': return_results
-            }
+        for i in range(nint):
+            kw = {'im_slope': im_slope, 'cframe': cframe, 'return_zero_frame': True}
             kws = merge_dicts(kw, kwargs)
 
             args = (det, det_cal_obj)
             worker_arguments.append((args, kws))
 
-        nproc = nproc_use_ng(det) if nproc is None else nproc
-        if nproc<=1:
-            #map(gen_fits, worker_arguments)
-            res = [gen_fits(wa) for wa in worker_arguments]
-        else:
-            pool = mp.Pool(nproc)
-            try:
-                res = pool.map(gen_fits, worker_arguments)
-            except Exception as e:
-                print('Caught an exception during multiprocess:')
-                raise e
-            finally:
-                pool.close()
+        res_zeros = []
+        res_ramps = []
+        for wa in tqdm(worker_arguments, desc='Ramps', leave=False):
+            out = gen_ramps(wa)
+            res_ramps.append(out[0])
+            res_zeros.append(out[1])
         
-        if return_results: 
-            return res
+        setup_logging(log_prev, verbose=False)
+
+        return res_ramps, res_zeros
+
+    def simulate_level1b(self, target_name, ra, dec, date_obs, time_obs, 
+        sp=None, im_slope=None, cframe='sci', nint=None, do_dark=False, 
+        save_dir=None, return_model=False, **kwargs):
+
+        """ Simulate and save a Level 1b data model """
+
+        from .simul.dms import level1b_data_model, save_level1b_fits
+
+        sci_data, zero_data = self.simulate_ramps(sp=sp, im_slope=im_slope, cframe=cframe, nint=nint, 
+            do_dark=do_dark, **kwargs)
+
+        obs_params = self.gen_obs_params(target_name, ra, dec, date_obs, time_obs, **kwargs)
+        obs_params['save_dir'] = save_dir
+
+        outModel = level1b_data_model(obs_params, sci_data=sci_data, zero_data=zero_data)
+        save_level1b_fits(outModel, obs_params, save_dir=save_dir)
+
+        if return_model:
+            return outModel
 
 
 def table_filter(t, topn=None, **kwargs):
@@ -2271,11 +2327,11 @@ def merge_dicts(*dict_args):
     return result
 
 
-def gen_fits(args):
+def gen_ramps(args):
     """
     Helper function for generating FITs integrations from a slope image
     """
-    from .simul.ngNRC import slope_to_ramps
+    from .simul.ngNRC import simulate_detector_ramp
 
     args_orig, kwargs = args
     # det, dark_cal_obj = args_orig
@@ -2284,7 +2340,7 @@ def gen_fits(args):
     # random numbers for parallel processes start in the same seed state!
     np.random.seed()
     try:
-        res = slope_to_ramps(*args_orig, **kwargs)
+        res = simulate_detector_ramp(*args_orig, **kwargs)
     except Exception as e:
         print('Caught exception in worker thread:')
         # This prints the type, value, and stack trace of the
@@ -2296,7 +2352,7 @@ def gen_fits(args):
 
     return res
 
-def nproc_use_ng(det):
+def nproc_use_ng(det, nint=None):
     """Optimize processor usage.
     
     Attempt to estimate a reasonable number of processes to use for multiple 
@@ -2326,7 +2382,7 @@ def nproc_use_ng(det):
     nd2     = ma.nd2
     nf      = ma.nf
     ngroup  = ma.ngroup
-    nint    = ma.nint
+    nint    = ma.nint if nint is None else nint
     naxis3  = nd1 + ngroup*nf + (ngroup-1)*nd2
 
     # Compute the number of time steps per integration, per output
