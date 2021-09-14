@@ -1,4 +1,5 @@
 import numpy as np
+import os
 
 from astropy.io import fits
 from astropy.table import Table
@@ -65,7 +66,7 @@ def jw_obs_id(pid, obs_num, visit_num, visit_gp, seq_id, act_id, exp_num):
     res['activity_id']        = '{:0>2}'.format(act_id_b36)     # Activity number (base 36)
     res['exposure_number']    = '{:05d}'.format(int(exp_num))   # Exposure Number
     
-    # Visit identifer
+    # Visit identifier
     visit_id = res['program_number'] + res['observation_number'] + res['visit_number']
     # Parallel program info
     par_pid    = '{:05d}'.format(0)
@@ -275,8 +276,15 @@ def populate_group_table(starttime, grouptime, ramptime, numint, numgroup, ny, n
     grouptable = grouptable[1:]
     return grouptable
 
-def create_DMS_HDUList(sci_data, zero_data, obs_params):
+
+def level1b_data_model(obs_params, sci_data=None, zero_data=None):
     
+    if sci_data is None:
+        sci_shape = (obs_params['nints'], obs_params['ngroups'], obs_params['ysize'], obs_params['xsize'])
+        zero_shape = (obs_params['nints'], obs_params['ysize'], obs_params['xsize'])
+        sci_data  = np.empty(sci_shape, dtype='uint16')
+        zero_data = np.empty(zero_shape, dtype='uint16')
+
     # Make sure data is a 4D array
     if len(sci_data.shape)<4:
         nz, ny, nx = sci_data.shape
@@ -284,6 +292,8 @@ def create_DMS_HDUList(sci_data, zero_data, obs_params):
         zero_data = zero_data.reshape([1,ny,nx])
 
     outModel = Level1bModel(data=sci_data, zeroframe=zero_data)
+    # Update from 'Level1bModel' to 'RampModel'
+    # TODO: Is this correct??
     outModel.meta.model_type = 'RampModel'
     
     outModel.meta.origin = 'STScI'
@@ -312,9 +322,10 @@ def create_DMS_HDUList(sci_data, zero_data, obs_params):
     
     # Exposure Type
     # Possible types:
-    #   NRC_DARK, NRC_FLAT, NRC_LED, NRC_GRISM
-    #   NRC_TACQ, NRC_TACONFIRM, NRC_FOCUS
-    #   NRC_IMAGE, NRC_CORON, NRC_TSIMAGE, NRC_TSGRISM, NRC_WFSS
+    #   NRC_DARK, NRC_FLAT, NRC_LED, NRC_FOCUS, 
+    #   NRC_TACQ, NRC_TACONFIRM
+    #   NRC_IMAGE, NRC_CORON, NRC_GRISM
+    #   NRC_WFSS, NRC_TSIMAGE, NRC_TSGRISM
     outModel.meta.exposure.type = obs_params['exp_type']
     # Specify whether the exposure is part of a TSO observation
     if outModel.meta.exposure.type.lower() in ['nrc_tsimage', 'nrc_tsgrism']:
@@ -373,7 +384,10 @@ def create_DMS_HDUList(sci_data, zero_data, obs_params):
     # Total time to complete an integration (including reset fraems)
     tint_tot = obs_params['tint_plus_overhead']
     texp_tot = obs_params['texp_plus_overhead']
-    start_time = Time(start_time_string) + obs_params['texp_start_relative']*u.second
+    try:
+        start_time = Time(start_time_string) + obs_params['texp_start_relative']*u.second
+    except AttributeError:
+        start_time = Time(start_time_string) 
 
     # set the exposure start time
     outModel.meta.exposure.start_time = start_time.mjd 
@@ -382,25 +396,29 @@ def create_DMS_HDUList(sci_data, zero_data, obs_params):
     outModel.meta.exposure.duration   = texp_tot
 
     # populate the GROUP extension table
-    n_int, n_group, n_y, n_x = outModel.data.shape
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        outModel.group = populate_group_table(start_time, obs_params['group_time'], obs_params['integration_time'],
-                                              n_int, n_group, n_y, n_x)
-
+    # n_int, n_group, n_y, n_x = outModel.data.shape
+    # with warnings.catch_warnings():
+    #     warnings.simplefilter("ignore")
+    #     outModel.group = populate_group_table(start_time, obs_params['group_time'], obs_params['integration_time'],
+    #                                           n_int, n_group, n_y, n_x)
+    outModel.group = obs_params['group_times']
 
     # Observation/program ID information
-    outModel.meta.observation.observation_label = obs_params['obs_label']
-    obs_id_info = obs_params['obs_id_info']
-    outModel.meta.observation.program_number     = obs_id_info['program_number']
-    outModel.meta.observation.observation_number = obs_id_info['observation_number']
-    outModel.meta.observation.visit_number       = obs_id_info['visit_number']
-    outModel.meta.observation.visit_group        = obs_id_info['visit_group']
-    outModel.meta.observation.sequence_id        = obs_id_info['sequence_id']
-    outModel.meta.observation.activity_id        = obs_id_info['activity_id']
-    outModel.meta.observation.exposure_number    = obs_id_info['exposure_number']
-    outModel.meta.observation.visit_id           = obs_id_info['visit_id']
-    outModel.meta.observation.obs_id             = obs_id_info['obs_id']
+    outModel.meta.observation.observation_label = obs_params.get('obs_label')
+    try:
+        obs_id_dict = obs_params['obs_id_info']
+    except KeyError:
+        _log.warn("'obs_id_info' is not a valid key in obs_params")
+    else:
+        outModel.meta.observation.program_number     = obs_id_dict['program_number']
+        outModel.meta.observation.observation_number = obs_id_dict['observation_number']
+        outModel.meta.observation.visit_number       = obs_id_dict['visit_number']
+        outModel.meta.observation.visit_group        = obs_id_dict['visit_group']
+        outModel.meta.observation.sequence_id        = obs_id_dict['sequence_id']
+        outModel.meta.observation.activity_id        = obs_id_dict['activity_id']
+        outModel.meta.observation.exposure_number    = obs_id_dict['exposure_number']
+        outModel.meta.observation.visit_id           = obs_id_dict['visit_id']
+        outModel.meta.observation.obs_id             = obs_id_dict['obs_id']
 
     # Telescope pointing
     siaf_ap = obs_params['siaf_ap']
@@ -410,30 +428,28 @@ def create_DMS_HDUList(sci_data, zero_data, obs_params):
     ra_obs, dec_obs = (obs_params['ra_obs'], obs_params['dec_obs'])
     attitude_matrix = rotations.attitude(siaf_ap.V2Ref, siaf_ap.V3Ref, ra_obs, dec_obs, pa_v3)
     pointing_ra_v1, pointing_dec_v1 = rotations.pointing(attitude_matrix, 0., 0.)
-    outModel.meta.pointing.ra_v1 = pointing_ra_v1
+    outModel.meta.pointing.ra_v1  = pointing_ra_v1
     outModel.meta.pointing.dec_v1 = pointing_dec_v1
-    outModel.meta.pointing.pa_v3 = pa_v3
+    outModel.meta.pointing.pa_v3  = pa_v3
     
     # Dither information
-    outModel.meta.dither.primary_type    = obs_params['primary_type']
-    outModel.meta.dither.position_number = obs_params['position_number']
-    outModel.meta.dither.total_points    = obs_params['total_points']
-    outModel.meta.dither.pattern_size    = obs_params['pattern_size']
-    outModel.meta.dither.subpixel_type   = obs_params['subpixel_type']
-    outModel.meta.dither.subpixel_number = obs_params['subpixel_number']
-    outModel.meta.dither.subpixel_total_points = obs_params['subpixel_total_points']
-    outModel.meta.dither.x_offset = obs_params['x_offset']
-    outModel.meta.dither.y_offset = obs_params['y_offset']
+    outModel.meta.dither.primary_type    = obs_params.get('primary_type')
+    outModel.meta.dither.position_number = obs_params.get('position_number')
+    outModel.meta.dither.total_points    = obs_params.get('total_points')
+    outModel.meta.dither.pattern_size    = obs_params.get('pattern_size')
+    outModel.meta.dither.subpixel_type   = obs_params.get('subpixel_type')
+    outModel.meta.dither.subpixel_number = obs_params.get('subpixel_number')
+    outModel.meta.dither.subpixel_total_points = obs_params.get('subpixel_total_points')
+    outModel.meta.dither.x_offset = obs_params.get('x_offset')
+    outModel.meta.dither.y_offset = obs_params.get('y_offset')
 
     # WCS Info
     outModel.meta.aperture.name = siaf_ap.AperName
     outModel.meta.wcsinfo.wcsaxes = 2
-    outModel.meta.wcsinfo.crval1 = obs_params['ra_obs']
-    outModel.meta.wcsinfo.crval2 = obs_params['dec_obs']
+    outModel.meta.wcsinfo.crval1 = ra_obs
+    outModel.meta.wcsinfo.crval2 = dec_obs
     outModel.meta.wcsinfo.crpix1 = siaf_ap.XSciRef
     outModel.meta.wcsinfo.crpix2 = siaf_ap.YSciRef
-    # outModel.meta.wcsinfo.crpix1 = int(siaf_ap.XSciRef)
-    # outModel.meta.wcsinfo.crpix2 = int(siaf_ap.YSciRef)
     outModel.meta.wcsinfo.ctype1 = 'RA---TAN'
     outModel.meta.wcsinfo.ctype2 = 'DEC--TAN'
     outModel.meta.wcsinfo.cunit1 = 'deg'
@@ -455,12 +471,36 @@ def create_DMS_HDUList(sci_data, zero_data, obs_params):
         outModel.meta.wcsinfo.siaf_yref_sci = siaf_ap.YSciRef
 
     # V3 roll angle at the ref point
-    roll_ref = compute_local_roll(pa_v3, obs_params['ra_obs'], obs_params['dec_obs'], siaf_ap.V2Ref, siaf_ap.V3Ref)
+    roll_ref = compute_local_roll(pa_v3, ra_obs, dec_obs, siaf_ap.V2Ref, siaf_ap.V3Ref)
     outModel.meta.wcsinfo.roll_ref = roll_ref
     
     outModel.meta.filename = obs_params['filename']
     
     return outModel
+
+def save_level1b_fits(outModel, obs_params, save_dir=None):
+    """Save Level1bModel to FITS and update headers"""
+
+    # Check if save directory specified in obs_params
+    if save_dir is None:
+        save_dir = obs_params.get('save_dir')
+
+    file_path = outModel.meta.filename
+    if save_dir is not None:
+        file_path = os.path.join(save_dir, file_path)
+        
+    # Save model to DMS FITS file and update header information
+    print(f'Saving: {file_path}')
+    outModel.save(file_path)
+    update_dms_headers(file_path, obs_params)
+
+
+def create_DMS_HDUList(sci_data, zero_data, obs_params, save_dir=None):
+    """Save Level 1b to FITS file"""
+    
+    outModel = level1b_data_model(obs_params, sci_data=sci_data, zero_data=zero_data)
+    save_level1b_fits(outModel, obs_params, save_dir=save_dir)
+
 
 def update_dms_headers(filename, obs_params):
     """
@@ -518,9 +558,10 @@ def update_dms_headers(filename, obs_params):
     if obs_params['EXSEGTOT'] is not None:
         pheader['EXSEGTOT'] = obs_params['EXSEGTOT']
     
-    # Now we need to adjust the datamodl header keyword
+    # Now we need to adjust the data model header keyword
     # If we leave it as Level1bModel, the pipeline doesn't
     # work properly
+    # TODO: Check if this is actually the case
     if '1b' in pheader['DATAMODL']:
         pheader['DATAMODL'] = 'RampModel'
 

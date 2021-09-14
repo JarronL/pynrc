@@ -29,7 +29,7 @@ from astropy.convolution import convolve
 
 from datetime import datetime
 
-from .dms import create_DMS_HDUList, update_dms_headers
+from .dms import create_DMS_HDUList
 from ..nrc_utils import pad_or_cut_to_size, jl_poly, gen_unconvolved_point_source_image
 from ..reduce.calib import ramp_resample, nircam_cal
 from ..maths.coords import det_to_sci, sci_to_det
@@ -41,6 +41,7 @@ from tqdm.auto import trange, tqdm
 
 import logging
 _log = logging.getLogger('pynrc')
+
 
 def slope_to_level1b(im_slope, obs_params, cal_obj=None, save_dir=None, **kwargs):
     """Simulate DMS HDUList from slope image
@@ -62,8 +63,8 @@ def slope_to_level1b(im_slope, obs_params, cal_obj=None, save_dir=None, **kwargs
         Zodiacal background. Should exclude dark current background,
         which is handled separately from calib directory.
     obs_params : dict
-        Dictionary of parameters to populate DMS header. See
-        `create_DMS_HDUList` in dms.py.
+        Dictionary of parameters to populate DMS header. 
+        See `create_DMS_HDUList` in dms.py.
     cal_obj : :class:`pynrc.nircam_cal`
         DMS object built from exported APT files. See `DMS_input`
         in apt.py.
@@ -120,33 +121,29 @@ def slope_to_level1b(im_slope, obs_params, cal_obj=None, save_dir=None, **kwargs
     """
     
     det = obs_params['det_obj']
+    nint = det.multiaccum.nint
     
     if cal_obj is None:
         caldir = os.path.join(conf.PYNRC_PATH, 'calib', str(det.scaid))
         cal_obj = nircam_cal(det.scaid, caldir)
         
-    # Simulate ramp data
-    res = simulate_detector_ramp(det, cal_obj, im_slope=im_slope, return_zero_frame=True,
-                                 return_full_ramp=False, **kwargs)
-    sci_data, zero_data = res
+    # Simulate data for a single ramp
+    sci_data = []
+    zero_data = []
+    for i in trange(nint, desc='Ramps', leave=False):
+        res = simulate_detector_ramp(det, cal_obj, im_slope=im_slope, return_zero_frame=True,
+                                     return_full_ramp=False, **kwargs)
+        # Append to lists
+        sci_data.append(res[0])
+        zero_data.append(res[1])
     
-    # Create Level 1b data model
-    out_model = create_DMS_HDUList(sci_data, zero_data, obs_params)
-    
-    # First check if save_dir was passed through kwargs
-    save_dir = kwargs.get('save_dir')
-    # Next check if specified in obs_params
-    if save_dir is None:
-        save_dir = obs_params.get('save_dir')
-    # file_path = obs_params['filename']
-    file_path = 'pynrc_' + obs_params['filename']
-    if save_dir is not None:
-        file_path = os.path.join(save_dir, file_path)
-        
-    # Save model to DMS FITS file and update header information
-    print(f'Saving: {file_path}')
-    out_model.save(file_path)
-    update_dms_headers(file_path, obs_params)
+    # Convert to single np.array
+    sci_data = np.asarray(sci_data)
+    zero_data = np.asarray(zero_data)
+
+    # Create and save Level 1b data model to disk
+    # This also updates header information
+    create_DMS_HDUList(sci_data, zero_data, obs_params, save_dir=save_dir)
 
 
 def sources_to_level1b(source_table, nircam_obj, obs_params, tel_pointing, 
@@ -173,8 +170,8 @@ def sources_to_level1b(source_table, nircam_obj, obs_params, tel_pointing,
     nircam_obj : :class:`pynrc.NIRCam`
         NIRCam instrument class for PSF generation.
     obs_params : dict
-        Dictionary of parameters to populate DMS header. See
-        `create_DMS_HDUList` in dms.py.
+        Dictionary of parameters to populate DMS header. 
+        See `create_obs_params` in apt.py and `level1b_data_model` in dms.py.
     tel_pointing : :class:`webbpsf_ext.jwst_point`
         JWST telescope pointing information. Holds pointing coordinates 
         and dither information for a given telescope visit.
@@ -263,7 +260,7 @@ def sources_to_level1b(source_table, nircam_obj, obs_params, tel_pointing,
         osamp = hdul_psfs[0].header['OSAMP']
         if ('osamp' in kwargs.keys()) and (kwargs['osamp']!=osamp):
             osamp2 = kwargs['osamp']
-            print('Conflict between osamp () in kwargs and osamp in PSF header. Using header.')
+            _log.warn(f'Conflict between osamp in kwargs ({osamp2}) and osamp in PSF header ({osamp}). Using header.')
         kwargs['osamp'] = osamp
     elif 'osamp' in kwargs.keys():
         osamp = kwargs['osamp']
@@ -533,7 +530,10 @@ def add_ipc(im, alpha_min=0.0065, alpha_max=None, kernel=None):
         del alpha_arr
 
     # Trim excess
-    return im_ipc[:,yp:-yp,xp:-xp].squeeze()
+    im_ipc = im_ipc[:,yp:-yp,xp:-xp]
+    if ndim==2:
+        im_ipc = im_ipc.squeeze()
+    return im_ipc
     
     
 def add_ppc(im, ppc_frac=0.002, nchans=4, kernel=None,
@@ -598,7 +598,9 @@ def add_ppc(im, ppc_frac=0.002, nchans=4, kernel=None,
         x2 = x1 + chsize
         res[:,:,x1:x2] = add_ipc(im[:,:,x1:x2], kernel=k)
     
-    return res.squeeze()
+    if ndim==2:
+        res = res.squeeze()
+    return res
 
 
 def gen_col_noise(ramp_column_varations, prob_bad, nz=108, nx=2048):
@@ -1461,7 +1463,7 @@ def apply_flat(cube, det, imflat_full):
         ny, nx = sh
     else:
         _, ny, nx = sh
-        
+
     # Need to crop input coefficients in the event of subarrays
     x1, x2 = (det.x0, det.x0 + nx)
     y1, y2 = (det.y0, det.y0 + ny)
@@ -1669,7 +1671,7 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     return_full_ramp : bool
         By default, we average groups and drop frames as specified in the
         `det` input. If this keyword is set to True, then return all raw
-        frames within the ramp. The last set of `nd2` frames will be omitted.
+        frames within the ramp. The last set of `nd2` drop frames are omitted.
     out_ADU : bool
         If true, divide by gain and convert to 16-bit UINT.
     include_dark : bool
@@ -1951,9 +1953,10 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     else:
         return ramp_resample(data, det, return_zero_frame=return_zero_frame)
 
+
 def make_ramp_poisson(im_slope, det, out_ADU=True, zero_data=False):
     """
-    Create a ramp with only photon noise. Useful for quick 
+    Create a ramp with only photon noise. Useful for quick simulations.
     
     im_slope : Slope image (detector coordinates) in e-/sec
     det      : Detector information class
@@ -2008,37 +2011,5 @@ def make_ramp_poisson(im_slope, det, out_ADU=True, zero_data=False):
         data[data >= 2**16] = 2**16 - 1
         data = data.astype('uint16')
         
-    # # Save the first frame (so-called ZERO frame) for the zero frame extension
-    # zeroData = deepcopy(data[0,:,:])
-
-    # # Remove drops and average grouped data
-    # if nf>1 or nd2>0:
-    #     # Trailing drop frames already excluded, so need to pull off last group of avg'ed frames
-    #     data_end = data[-nf:,:,:].mean(axis=0) if nf>1 else data[-1:,:,:]
-    #     data_end = data_end.reshape([1,ypix,xpix])
-
-    #     # Only care about first (n-1) groups
-    #     # Last group is handled separately
-    #     data = data[:-nf,:,:]
-
-    #     # Reshape for easy group manipulation
-    #     data = data.reshape([-1,nf+nd2,ypix,xpix])
-
-    #     # Trim off the dropped frames (nd2)
-    #     if nd2>0: data = data[:,:nf,:,:]
-
-    #     # Average the frames within groups
-    #     # In reality, the 16-bit data is bit-shifted
-    #     data = data.reshape([-1,ypix,xpix]) if nf==1 else data.mean(axis=1)
-
-    #     # Add back the last group (already averaged)
-    #     data = np.append(data,data_end,axis=0)
-
-        
-    # if zero_data==True:
-    #     return (data, zeroData)
-    # else:
-    #     return data
-
     return ramp_resample(data, det, return_zero_frame=zero_data)
 

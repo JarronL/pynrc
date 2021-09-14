@@ -15,8 +15,7 @@ import yaml, json
 
 import pysiaf
 from pysiaf import JWST_PRD_VERSION, rotations, Siaf
-
-# Create this once since it takes time
+# Create this once since it takes time to call multiple times
 siaf_nrc = Siaf('NIRCam')
 siaf_nrc.generate_toc()
 
@@ -4890,28 +4889,34 @@ def gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file):
 def get_exp_type(visit_type, visit_mode, pupil):
     """
     Possible Exposure Types:
-      NRC_DARK, NRC_FLAT, NRC_LED,
+      NRC_DARK, NRC_FLAT, NRC_LED, NRC_FOCUS, 
       NRC_TACQ, NRC_TACONFIRM, 
       NRC_IMAGE, NRC_GRISM, NRC_CORON,
-      NRC_TSIMAGE, NRC_TSGRISM, 
-      NRC_FOCUS, NRC_WFSS
+      NRC_WFSS, NRC_TSIMAGE, NRC_TSGRISM
     """
 
-    EXPTYPES = {"imaging": "NRC_IMAGE", "wfss": "NRC_WFSS", 
-                "ts_imaging": "NRC_TSIMAGE", "ts_grism": "NRC_TSGRISM"}
+    types_dict = {
+        "imaging"    : "NRC_IMAGE", 
+        "wfss"       : "NRC_WFSS", 
+        "ts_imaging" : "NRC_TSIMAGE", 
+        "ts_grism"   : "NRC_TSGRISM",
+    }
 
-    type_val = visit_type
+    visit_type = visit_type.upper()
+    visit_mode = visit_mode.lower()
+    pupil = pupil.upper()
+
     if pupil == 'FLAT':
         exp_type = 'NRC_DARK'
-    elif 'T_ACQ' in type_val:
+    elif 'T_ACQ' in visit_type:
         exp_type = 'NRC_TACQ'
-    elif 'CONFIRM' in type_val:
+    elif 'CONFIRM' in visit_type:
         exp_type = 'NRC_TACONFIRM'
     elif ('RND' in pupil) or ('BAR' in pupil):
         exp_type = 'NRC_CORON'
-    elif 'SCIENCE' in type_val:
+    elif 'SCIENCE' in visit_type:
         try:
-            exp_type = EXPTYPES[visit_mode]
+            exp_type = types_dict[visit_mode]
         except:
             if 'GRISM' in pupil:
                 exp_type = 'NRC_GRISM'
@@ -4968,45 +4973,94 @@ def create_det_class(visit_dict, exp_id, detname):
     return det
 
 
-def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs, pa_v3=0, 
-                        segNum=None, segTot=None, int_range=None, det=None, **kwargs):
+def create_obs_params(filt, pupil, det, siaf_ap, ra_dec, date_obs, time_obs, pa_v3=0, 
+    siaf_ap_obs=None, xyoff_idl=(0,0), visit_type='SCIENCE', time_series=False,
+    time_exp_offset=0, segNum=None, segTot=None, int_range=None, filename=None, **kwargs):
 
-    from .dms import DMS_filename, populate_group_table
+    """ Generate obs_params dictionary
+
+    An obs_params dictionary is used to create a jwst data model (e.g., Level1bModel).
+    Additional **kwargs will add/update elements to the final output dictionary.
+    
+    Parameters
+    ==========
+    filt : str
+        Observed filter
+    pupil : str
+        Observed pupil mask (e.g., GRISMR, GRISMC, CIRCLYOT, etc)
+    det : DetectorOps
+        NIRCam detector operations class
+    siaf_ap : pysiaf Aperture
+        SIAF aperture class used for telescope pointing
+    ra_dec : tuple, list
+        RA and Dec in degrees associated with observation pointing
+    data_obs : str
+        YYYY-MM-DD
+    time_obs : str
+        HH:MM:SS
+
+    Keyword Arg
+    ===========
+    pa_v3 : float
+        Telescope V3 position angle.
+    siaf_ap_obs : pysiaf Aperture
+        SIAF aperture class used for to observe (if different from `siaf_ap`)
+    xyoff_idl : tuple, list
+        (x,y) offset in arcsec ('idl' coords) to dither observation
+    visit_type : str
+        'T_ACQ', 'CONFIRM', or 'SCIENCE'
+    time_series : bool
+        Is this a time series observation?
+    time_exp_offset : float
+        Exposure start time (in seconds) relative to beginning of observation execution. 
+    segNum : int
+        The segment number of the current product. Only for TSO.
+    segTot : int
+        The total number of segments. Only for TSO.
+    int_range : list
+        Integration indices to use 
+    filename : str or None  
+        Name of output filename. 
+    """
+
+    from .dms import populate_group_table, jw_obs_id
+
+    pupil = 'CLEAR' if pupil is None else pupil
 
     # Ensure standardized detector naming convention ("NRC[A/B][1-5]")
-    det_id = get_detname(detname)
-
-    # Build detector operations class
-    if det is None:
-        det = create_det_class(visit_dict, exp_id, det_id)
+    det_id = get_detname(det.detname)
     # Multiaccum class
     ma = det.multiaccum
-    
-    # Grab indices for specified exposure number
-    exp_ids_visit = np.array([int(d['exposure_number']) for d in visit_dict['obs_id_info']])
-    ind_mask      = (exp_ids_visit == int(exp_id))
-    
-    # Dictionary info of observation, visit, exposure, etc
-    obs_id_info   = visit_dict['obs_id_info'][ind_mask][0]
-    obs_label     = visit_dict['obs_label'][ind_mask][0]
 
-    # Get siaf aperture names
-    apname = visit_dict['aperture'][ind_mask][0]
-    siaf_ap_ref = siaf_nrc[apname]
-    subarray_name = visit_dict['subarray_name'][ind_mask][0]
-    if ('NRCAS' in apname) or ('NRCBS' in apname) or ('NRCALL' in apname):
-        apname = det_id + '_FULL'
-    # pysiaf aperture
-    siaf_ap = siaf_nrc[apname]
+    siaf_ap_ref = siaf_ap
+    ra, dec = ra_dec
 
-    # Make sure det_id exists in exposure
-    detectors_all = visit_dict['detectors'][ind_mask][0]
-    if det_id not in detectors_all:
-        raise ValueError(f'{det_id} ({det.detname}) not a requested observation ({detectors_all})')
-    
-    target_name = visit_dict['targ2'][ind_mask][0]
-    ra          = visit_dict['ra'][ind_mask][0]
-    dec         = visit_dict['dec'][ind_mask][0]
+    if siaf_ap_obs is None:
+        apname = siaf_ap_ref.AperName
+        if ('NRCAS' in apname) or ('NRCBS' in apname) or ('NRCALL' in apname):
+            apname = det_id + '_FULL'
+        siaf_ap_obs = siaf_nrc[apname]
+
+    xoff_idl, yoff_idl = xyoff_idl
+    v2_ref, v3_ref = siaf_ap_ref.convert(xoff_idl, yoff_idl, 'idl', 'tel')
+    att = rotations.attitude(v2_ref, v3_ref, ra, dec, pa_v3)
+    # Set attitude correction matrices for each aperture
+    siaf_ap_ref.set_attitude_matrix(att)
+    siaf_ap_obs.set_attitude_matrix(att)
+    # Calculate their ra/dec reference locations
+    ra_ref, dec_ref = siaf_ap_ref.reference_point('sky')
+    ra_obs, dec_obs = siaf_ap_obs.reference_point('sky')
+
+    # Possible Exposure Types:
+    #   NRC_DARK, NRC_FLAT, NRC_LED, NRC_FOCUS, 
+    #   NRC_TACQ, NRC_TACONFIRM
+    #   NRC_IMAGE, NRC_CORON, NRC_GRISM
+    #   NRC_WFSS, NRC_TSIMAGE, NRC_TSGRISM
+    if time_series:
+        visit_mode = 'ts_grism' if 'GRISM' in pupil else 'ts_imaging'
+    else:
+        visit_mode = 'wfss' if 'GRISM' in pupil else 'imaging'
+    exp_type = get_exp_type(visit_type, visit_mode, pupil)
 
     if int_range is None:
         integration_start = 1
@@ -5015,66 +5069,29 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs, pa_v3=0
     else:
         integration_start = int_range[0] + 1
         integration_end   = int_range[1]
-        nint_seg = integration_end - integration_start + 1
-        
+        nint_seg = int_range[1] - int_range[0]
+
     # Start time for integrations considered in this segment
     start_time_string = date_obs + 'T' + time_obs
     # Time offset of exposure start relative to beginning of program execution
-    time_exp_offset = visit_dict['exp_start_times'][ind_mask][0]
-    t_offset_sec = det.time_total_int1 + time_exp_offset
-    if integration_start>1:
-        t_offset_sec += (integration_start-2) * det.time_total_int2
+    # t_offset_sec = det.time_total_int1 + time_exp_offset
+    # if integration_start>1:
+    #     t_offset_sec += (integration_start-2) * det.time_total_int2
+    # t_offset_sec = (integration_start-1) * det.time_total_int1 + time_exp_offset
 
-    t_offset_sec = (integration_start-1) * det.time_total_int1 + time_exp_offset
+    if integration_start==1:
+        t_offset_sec = det.time_total_int1 + (nint_seg-1) * det.time_total_int2 + time_exp_offset
+    else:
+        t_offset_sec = nint_seg * det.time_total_int2 + time_exp_offset
     start_time_int = Time(start_time_string) + t_offset_sec*u.second
 
-    ramptime1 = det.time_total_int1
-    ramptime2 = det.time_total_int1 if det.time_total_int2==0 else det.time_total_int2
-    group_times = populate_group_table(start_time_int, det.time_group, ramptime2, 
+    ramptime = det.time_total_int1 if det.time_total_int2==0 else det.time_total_int2
+    group_times = populate_group_table(start_time_int, det.time_group, ramptime, 
                                        nint_seg, det.multiaccum.ngroup, det.xpix, det.ypix)
 
-    # Instrument config
-    filt_key = f'{det.channel.lower()}_filters' 
-    pupil_key = f'{det.channel.lower()}_pupils' 
-    filt  = visit_dict[filt_key][ind_mask][0]
-    pupil = visit_dict[pupil_key][ind_mask][0]
-    
-    # Possible Exposure Types:
-    #   NRC_DARK, NRC_FLAT, NRC_LED,
-    #   NRC_TACQ, NRC_TACONFIRM, 
-    #   NRC_IMAGE, NRC_GRISM, NRC_CORON,
-    #   NRC_TSIMAGE, NRC_TSGRISM, 
-    #   NRC_FOCUS, NRC_WFSS
-    type_val = visit_dict['type'][ind_mask][0]
-    mode_val = visit_dict['mode'][ind_mask][0]
-    exp_type = get_exp_type(type_val, mode_val, pupil)
-                            
-    # Dither offset position
-    xoffset = visit_dict['idlx'][ind_mask][0]
-    yoffset = visit_dict['idly'][ind_mask][0]
+    # Create a dummy observation ID
+    obs_id_info = jw_obs_id(1337, 1, 1, 1, 1, 1, 1)
 
-    try:
-        npri_dith = int(visit_dict['PrimaryDithers'])
-    except ValueError:
-        npri_dith = 1
-    try:
-        nsub_dith = int(visit_dict['SubpixelPositions'])
-    except ValueError:
-        nsub_dith = 1
-    pri_pos_num = int(visit_dict['pri_dith'][ind_mask][0])
-    sub_pos_num = int(visit_dict['sub_dith'][ind_mask][0])
-    
-    # V2/V3 reference location aligned with RA/Dec reference
-    # and offset by (x_off, y_off) in 'idl' coords
-    v2_ref, v3_ref = siaf_ap_ref.convert(xoffset, yoffset, 'idl', 'tel')
-    att = rotations.attitude(v2_ref, v3_ref, ra, dec, pa_v3)
-    # Set attitude correction matrices for each aperture
-    siaf_ap_ref.set_attitude_matrix(att)
-    siaf_ap.set_attitude_matrix(att)
-    # Calculate their ra/dec reference locations
-    ra_ref, dec_ref = siaf_ap_ref.reference_point('sky')
-    ra_obs, dec_obs = siaf_ap.reference_point('sky')
-    
     obs_params = {
         # Proposal info
         'pi_name'          : 'UNKNOWN',
@@ -5084,12 +5101,12 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs, pa_v3=0
         'science_category' : 'UNKNOWN',
 
         # Target info
-        'target_name'  : target_name,
+        'target_name'  : 'UNKNOWN',
         'catalog_name' : 'UNKNOWN',
-        'ra'           : ra, 
-        'dec'          : dec,
-        'pa_v3'        : pa_v3,
-        'siaf_ap'      : siaf_ap,       # Observed SIAF aperture
+        'ra'           : ra,            # Target RA
+        'dec'          : dec,           # Target Dec
+        'pa_v3'        : pa_v3,         # Telescope position angle relative to V3
+        'siaf_ap'      : siaf_ap_obs,   # Observed SIAF aperture
         'ra_obs'       : ra_obs,        # RA of observered SIAF aperture ref location
         'dec_obs'      : dec_obs,       # Dec of observed SIAF aperture ref location
         'siaf_ap_ref'  : siaf_ap_ref,   # Reference SIAF aperture
@@ -5097,11 +5114,11 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs, pa_v3=0
         'dec_ref'      : dec_ref,       # Dec of reference SIAF aperture ref location
 
         # Observation info
-        'obs_id_info' : obs_id_info,
-        'obs_label'   : obs_label,
-        'date-obs'    : date_obs,
-        'time-obs'    : time_obs,
-        
+        'date-obs'      : date_obs,
+        'time-obs'      : time_obs,
+        'obs_id_info'   : obs_id_info,
+        'obs_label'     : 'UNKNOWN',
+
         # Instrument configuration
         'det_obj' : det,
         'module'  : det.module,
@@ -5111,8 +5128,9 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs, pa_v3=0
         'pupil'   : pupil,
         # Observation Type
         'exp_type' : exp_type,
+        # Subarray
+        'subarray_name' : 'UNKNOWN',
 
-        'subarray_name' : apname,
         # subarray_bounds indexed to zero, but values in header should be indexed to 1.
         'xstart'   : det.x0+1,
         'ystart'   : det.y0+1,
@@ -5121,15 +5139,6 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs, pa_v3=0
         'fastaxis' : det.fastaxis,
         'slowaxis' : det.slowaxis,
         'noutputs' : det.nout, 
-        
-        'subarray_name' : subarray_name,
-        # subarray_bounds indexed to zero, but values in header should be indexed to 1.
-        'xstart'   : det.x0+1,
-        'ystart'   : det.y0+1,
-        'xsize'    : det.xpix,
-        'ysize'    : det.ypix,   
-        'fastaxis' : det.fastaxis,
-        'slowaxis' : det.slowaxis,
 
         # MULTIACCUM
         'readpatt'           : det.multiaccum.read_mode,
@@ -5146,7 +5155,7 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs, pa_v3=0
         'exposure_time'      : det.time_exp,
         'tint_plus_overhead' : det.time_total_int1,
         'texp_plus_overhead' : det.time_total,
-        
+
         # Exposure Start time relative to TIME-OBS (seconds)
         'texp_start_relative' : time_exp_offset,
         # Create INT_TIMES table, to be saved in INT_TIMES extension
@@ -5156,6 +5165,170 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs, pa_v3=0
         'integration_end'   : integration_end,
         # Group times only populate for the current 
         'group_times'       : group_times,
+
+        # Dither information defaults (update later)
+        'primary_type'          : 'NONE',    # Primary dither pattern name
+        'position_number'       : 1,            # Primary dither position number
+        'total_points'          : 1,            # Total number of pri dither positions??
+        'pattern_size'          : 'DEFAULT',    # Primary dither pattern size 
+        'subpixel_type'         : 'STANDARD',   # Subpixel dither pattern name
+        'subpixel_number'       : 1,            # Subpixel dither position number
+        'subpixel_total_points' : 1,            # Total number of subpixel dither positions
+        'x_offset'              : xoff_idl,     # Dither pointing offset from starting position in x (arcsec)
+        'y_offset'              : yoff_idl,     # Dither pointing offset from starting position in y (arcsec)
+    }
+
+    if segNum is not None:
+        obs_params['EXSEGNUM'] = segNum
+        obs_params['EXSEGTOT'] = segTot
+    else:
+        obs_params['EXSEGNUM'] = None
+        obs_params['EXSEGTOT'] = None
+    
+    # Add file path parameters
+    obs_params['filename'] = filename
+    obs_params['save_dir'] = None
+
+    # Add any kwargs to final dictionary output
+    res = {**obs_params, **kwargs}
+    return res
+
+def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs, pa_v3=0, 
+                        segNum=None, segTot=None, int_range=None, det=None, 
+                        obs_params=None, **kwargs):
+
+    """ Create obs_params from visit dictionary
+
+    An obs_params dictionary is used to create a jwst data model (e.g., Level1bModel).
+    If passing `obs_params` parameter, this gets updated based on the input arguments.
+    Additional **kwargs will add/update elements to the final output dictionary
+    
+    Parameters
+    ==========
+    visit_dict : dict
+        Uses gen_all_apt_visits() to create a dictionary of visit information.
+        Each visit has a series of exposure IDs.
+    exp_id : int
+        Unique exposure ID generate observations
+    detname : str
+        Options NRC[A/B][1-5]
+    data_obs : str
+        YYYY-MM-DD
+    time_obs : str
+        HH:MM:SS
+
+    Keyword Arg
+    ===========
+    pa_v3 : float
+        Telescope V3 position angle.
+    segNum : int
+        The segment number of the current product. Only for TSO.
+    segTot : int
+        The total number of segments. Only for TSO.
+    int_range : list
+        Integration indices to use 
+    """
+
+    from .dms import DMS_filename
+
+    # Ensure standardized detector naming convention ("NRC[A/B][1-5]")
+    det_id = get_detname(detname)
+
+    # Build detector operations class
+    if det is None:
+        det = create_det_class(visit_dict, exp_id, det_id)
+    
+    # Grab indices for specified exposure number
+    exp_ids_visit = np.array([int(d['exposure_number']) for d in visit_dict['obs_id_info']])
+    ind_mask      = (exp_ids_visit == int(exp_id))
+    
+    # Dictionary info of observation, visit, exposure, etc
+    obs_id_info   = visit_dict['obs_id_info'][ind_mask][0]
+    obs_label     = visit_dict['obs_label'][ind_mask][0]
+
+    # Get siaf aperture names
+    apname = visit_dict['aperture'][ind_mask][0]
+    siaf_ap_ref = siaf_nrc[apname]
+    if ('NRCAS' in apname) or ('NRCBS' in apname) or ('NRCALL' in apname):
+        apname = det_id + '_FULL'
+    # pysiaf aperture
+    siaf_ap = siaf_nrc[apname]
+
+    # Subarray name
+    subarray_name = visit_dict['subarray_name'][ind_mask][0]
+
+    # Make sure det_id exists in exposure
+    detectors_all = visit_dict['detectors'][ind_mask][0]
+    if det_id not in detectors_all:
+        raise ValueError(f'{det_id} ({det.detname}) not a requested observation ({detectors_all})')
+    
+    target_name = visit_dict['targ2'][ind_mask][0]
+    ra          = visit_dict['ra'][ind_mask][0]
+    dec         = visit_dict['dec'][ind_mask][0]
+
+    # Instrument config
+    filt_key = f'{det.channel.lower()}_filters' 
+    pupil_key = f'{det.channel.lower()}_pupils' 
+    filt  = visit_dict[filt_key][ind_mask][0]
+    pupil = visit_dict[pupil_key][ind_mask][0]
+    
+    # Possible Exposure Types:
+    #   NRC_DARK, NRC_FLAT, NRC_LED,
+    #   NRC_TACQ, NRC_TACONFIRM, 
+    #   NRC_IMAGE, NRC_GRISM, NRC_CORON,
+    #   NRC_TSIMAGE, NRC_TSGRISM, 
+    #   NRC_FOCUS, NRC_WFSS
+    type_val = visit_dict['type'][ind_mask][0]
+    mode_val = visit_dict['mode'][ind_mask][0]
+    time_series = True if 'ts' in mode_val.lower() else False
+    exp_type = get_exp_type(type_val, mode_val, pupil)
+                            
+    # Dither offset position
+    xoffset = visit_dict['idlx'][ind_mask][0]
+    yoffset = visit_dict['idly'][ind_mask][0]
+
+    # Exposure start times offset
+    time_exp_offset = visit_dict['exp_start_times'][ind_mask][0]
+
+    try:
+        npri_dith = int(visit_dict['PrimaryDithers'])
+    except ValueError:
+        npri_dith = 1
+    try:
+        nsub_dith = int(visit_dict['SubpixelPositions'])
+    except ValueError:
+        nsub_dith = 1
+    pri_pos_num = int(visit_dict['pri_dith'][ind_mask][0])
+    sub_pos_num = int(visit_dict['sub_dith'][ind_mask][0])
+
+    # Create output filename
+    filename = DMS_filename(obs_id_info, det.detname, segNum=segNum, prodType='uncal')
+
+    time_exp_offset = visit_dict['exp_start_times'][ind_mask][0]
+
+    # Create intial obs_params dictionary
+    obs_params_init = create_obs_params(filt, pupil, det, siaf_ap_ref, (ra, dec), 
+        date_obs, time_obs, pa_v3=pa_v3, siaf_ap_obs=siaf_ap, xyoff_idl=(xoffset,yoffset), 
+        visit_type=type_val, time_series=time_series, time_exp_offset=time_exp_offset, 
+        segNum=segNum, segTot=segTot, int_range=int_range, filename=filename)
+    
+    obs_params_temp = {
+        # Proposal info
+        'pi_name'          : 'UNKNOWN',
+        'title'            : 'UNKNOWN',
+        'category'         : 'UNKNOWN',
+        'sub_category'     : 'UNKNOWN',
+        'science_category' : 'UNKNOWN',
+
+        # Target info
+        'target_name'  : target_name,
+        'catalog_name' : 'UNKNOWN',
+
+        # Observation info
+        'obs_id_info'   : obs_id_info,
+        'obs_label'     : obs_label,
+        'exp_type'      : exp_type,
+        'subarray_name' : subarray_name,
         
         # Dither information defaults (update later)
         'primary_type'          : visit_dict['PrimaryDitherType'],    # Primary dither pattern name
@@ -5169,21 +5342,16 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs, pa_v3=0
         'x_offset'              : xoffset,      # Dither pointing offset from starting position in x (arcsec)
         'y_offset'              : yoffset,      # Dither pointing offset from starting position in y (arcsec)
     }
-    
-    if segNum is not None:
-        obs_params['EXSEGNUM'] = segNum
-        obs_params['EXSEGTOT'] = segTot
-    else:
-        obs_params['EXSEGNUM'] = None
-        obs_params['EXSEGTOT'] = None
 
-    for key in kwargs:
-        obs_params[key] = kwargs[key]
-    
-    # Create output filename
-    obs_params['filename'] = DMS_filename(obs_id_info, det.detname, segNum=segNum, prodType='uncal')
+    obs_params_temp = {**obs_params_init, **obs_params_temp}
 
-    return obs_params
+    # Merge dictionaries
+    # obs_params => obs_params_temp => kwargs
+    if obs_params is None:
+        obs_params = {}
+    res = {**obs_params, **obs_params_temp, **kwargs}
+
+    return res
 
 def file_segmenting(det, max_size_MB=320):
 
@@ -5239,13 +5407,11 @@ class DMS_input():
 
         # Create a series of science data based on observation params
         # that results in sci_data and zero_data 16-bit numpy arrays
-        out_model = create_DMS_HDUList(sci_data, zero_data, obs_params)
+        out_model = level1b_data_model(obs_params, sci_data, zero_data)
 
         # Save to FITS file
-        file_path = os.path.join(save_dir, obs_params['filename'])
-        out_model.save(file_path)
-        # Minor updates to the saved FITS file
-        update_dms_headers(file_path, obs_params)
+        # Performs minor updates to the saved FITS file
+        save_level1b_fits(out_model, obs_params, save_dir)
     """
 
     def __init__(self, xml_file, pointing_file, json_file, sm_acct_file, save_dir=None):
@@ -5316,6 +5482,14 @@ class DMS_input():
 
         return res
     
+    def gen_obs_params(self, visit_id, exp_id, det_id, det=None, 
+                       seg_num=None, seg_tot=None, int_range=None):
+        """Generate a single set of observation parameters for a given exposure"""
+
+        args = (visit_id, exp_id, det_id)
+        kwargs = {'det': det, 'seg_num': seg_num, 'seg_tot': seg_tot, 'int_range': int_range}
+        return self.gen_obs_param(*args, **kwargs)
+
     def gen_all_obs_params(self):
         """Generate a full set of parameters for all exposures"""
         
