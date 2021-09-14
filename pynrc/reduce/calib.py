@@ -1156,7 +1156,7 @@ class nircam_dark(object):
 
 
         if file_exists and (not force):
-            _log.info("  Loading flat field information...")
+            _log.info("Loading flat field information...")
             # Grab Super Dark Ramp
             super_flats = get_fits_data(savename)
         else:
@@ -1170,7 +1170,7 @@ class nircam_dark(object):
                     kwargs[k] = kwargs_def[k]
 
             # Get nominal non-linear coefficients
-            _log.info("  Calculating flat field information...")
+            _log.info("Calculating flat field information...")
             allfiles = self.linfiles
             data, _ = gen_super_ramp(allfiles, super_bias=self.super_bias, **kwargs)
 
@@ -2361,13 +2361,20 @@ class nircam_dark(object):
 
 class nircam_cal(nircam_dark):
     
-    def __init__(self, scaid, outdir, same_scan_direction=False, reverse_scan_direction=False,
+    """ NIRCam Calibration class
+    
+
+    Assumes that all cal files exist in the outdir
+    """
+
+    def __init__(self, scaid, same_scan_direction=False, reverse_scan_direction=False,
                  verbose=True):
                         
 
         # Directory information
         self.scaid = scaid
-        self._create_dir_structure(None, outdir)
+        caldir = os.path.join(conf.PYNRC_PATH, 'calib') + '/'
+        self._create_dir_structure(None, caldir)
 
         prev_log = conf.logging_level
         if verbose:
@@ -2400,10 +2407,6 @@ class nircam_cal(nircam_dark):
         self._init_attributes()
         
         # Dark ramp/slope info
-
-        # Get Super dark ramp (cube)
-        # self.get_super_dark_ramp()
-        # nz, ny, nx = self.super_dark_ramp.shape
         
         # Calculate dark slope image
         self.get_dark_slope_image()
@@ -2411,10 +2414,6 @@ class nircam_cal(nircam_dark):
         # Calculate pixel slope averages
         self.get_pixel_slope_averages()
 
-        # Delete super dark ramp to save memory
-        # del self._super_dark_ramp
-        # self._super_dark_ramp = None
-        
         # Calculate CDS Noise for various component 
         # white noise, 1/f noise (correlated and independent), temporal and spatial
         self.get_cds_dict()
@@ -2439,9 +2438,9 @@ class nircam_cal(nircam_dark):
         # Create dictionary of reference pixel behavior
         self.get_ref_pixel_noise()
 
-        self.get_super_flats()
         self.get_nonlinear_coeffs()
         self.get_linear_coeffs()
+        self.get_super_flats()
         
         setup_logging(prev_log, verbose=False)
 
@@ -2561,7 +2560,6 @@ def ramp_resample(data, det_new, return_zero_frame=False):
     x2 = x1 + xpix
     y2 = y1 + ypix
     
-    
     ma  = det_new.multiaccum
     nd1     = ma.nd1
     nd2     = ma.nd2
@@ -2669,7 +2667,7 @@ def gen_super_bias(allfiles, DMS=False, mn_func=np.median, std_func=robust.std,
             with mp.Pool(nsplit) as pool:
                 for res in tqdm(pool.imap_unordered(_wrap_super_bias_for_mp, worker_args), total=nfiles):
                     bias_all.append(res)
-                pool.close()
+                pool.close()  # TODO: not sure if this is necessary?
 
             # bias_all = pool.map(_wrap_super_bias_for_mp, worker_args)
             if bias_all[0] is None:
