@@ -5,6 +5,10 @@ _log = logging.getLogger('pynrc')
 __epsilon = np.finfo(float).eps
 
 import pysiaf
+from pysiaf import JWST_PRD_VERSION, rotations, Siaf
+# Create this once since it takes time to call multiple times
+siaf_nrc = Siaf('NIRCam')
+siaf_nrc.generate_toc()
 
 # Functions transferred to webbpsf_ext
 from webbpsf_ext.coords import dist_image
@@ -66,12 +70,10 @@ def Tel2Sci_info(channel, coords, pupil=None, output='sci', return_apname=False,
         detnames = swa + swb if 'SW' in channel else lwa + lwb
         apnames = ['NRC'+det+'_FULL' for det in detnames]
 
-    mysiaf = pysiaf.Siaf('NIRCam')
-
     # Find center positions for each apname
     cens = []
     for apname in apnames:
-        ap = mysiaf[apname]
+        ap = siaf_nrc[apname]
         try:
             vals = ap.tel_to_sci(V2, V3)
         except AttributeError:
@@ -86,7 +88,7 @@ def Tel2Sci_info(channel, coords, pupil=None, output='sci', return_apname=False,
     # Find detector "science" coordinates
     detector = 'NRC'+detnames[ind]
     apname = apnames[ind]
-    ap = mysiaf[apname]
+    ap = siaf_nrc[apname]
     try:
         detector_position = ap.convert(V2, V3, 'tel', output.lower())
     except TypeError:

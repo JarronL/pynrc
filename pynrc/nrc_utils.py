@@ -1,7 +1,4 @@
 """pyNRC utility functions"""
-
-# The six library is useful for string compatibility
-import six
 import os, re
 
 # Import libraries
@@ -100,6 +97,17 @@ if not on_rtd:
         _log.info("  jwst_backgrounds is not installed and will not be used for bg estimates.")
         _jbt_exists = False
 
+
+###########################################################################
+#    pysiaf
+###########################################################################
+
+import pysiaf
+from pysiaf import JWST_PRD_VERSION, rotations, Siaf
+
+# Create this once since it takes time to call multiple times
+siaf_nrc = Siaf('NIRCam')
+siaf_nrc.generate_toc()
 
 
 #__location__ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
@@ -1028,14 +1036,13 @@ def pickoff_xy(ap_obs):
     ap_obs : Aperture to create observation (e.g., 'NRCA5_FULL')
     """
 
-    siaf = pysiaf.Siaf('NIRCAM')
-    ap_siaf = siaf[ap_obs]
+    ap_siaf = siaf_nrc[ap_obs]
     module = ap_obs[3:4]
 
     # Determine pick-off mirror FoV from 
-    ap1 = siaf['NRC{}5_GRISMC_WFSS'.format(module)]
-    ap2 = siaf['NRC{}5_GRISMR_WFSS'.format(module)]
-    ap3 = siaf['NRCA5_FULL_MASK335R']
+    ap1 = siaf_nrc['NRC{}5_GRISMC_WFSS'.format(module)]
+    ap2 = siaf_nrc['NRC{}5_GRISMR_WFSS'.format(module)]
+    ap3 = siaf_nrc['NRCA5_FULL_MASK335R']
 
     # V2/V3 coordinates of pick-off FoV
     v2_1, v3_1 = ap1.corners('tel', False)
@@ -1087,8 +1094,7 @@ def pickoff_image(ap_obs, v2_obj, v3_obj, flux_obj, oversample=1):
     from scipy.interpolate import interp2d
 
     # xpix and ypix locations in science orientation
-    siaf = pysiaf.Siaf('NIRCAM')
-    ap_siaf = siaf[ap_obs]
+    ap_siaf = siaf_nrc[ap_obs]
 
     xpix, ypix = ap_siaf.tel_to_sci(v2_obj, v3_obj)
     x1, x2, y1, y2 = pickoff_xy(ap_obs)
