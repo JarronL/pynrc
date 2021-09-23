@@ -28,7 +28,10 @@ from tqdm.auto import tqdm, trange
 # Disable informational messages and only include warnings and higher
 pynrc.setup_logging(level='WARN')
 
-opd_dir = 'NIRCAM_OPDS/'
+base_dir = '/Users/jarron/NIRCam/Data/Sim_CoronWG/'
+opd_dir = base_dir + 'NIRCAM_OPDS/'
+fig_dir = base_dir + 'output_M335R/'
+contrast_maps_dir = base_dir + 'contrast_maps_M335R/'
 
 # Scenario to consider [best, nominal, requirements]
 scenarios = ['Best Case', 'Nominal', 'Requirements']
@@ -300,7 +303,7 @@ def make_map(filt, mask, pupil, imode=0, imode_iec=None, imode_tacq=None, imode_
 
         # Get saved file
         fname = f'{fname1}_diff2.fits'
-        hdul = fits.open('output/' + fname)
+        hdul = fits.open(fig_dir + fname)
         make_contrast_map(hdul[0].data, nrc_sci, imode, jitter_sig, i_ta, imode_iec=imode_iec, im_sci=im_sci, save=save)
         hdul.close()
 
@@ -360,7 +363,7 @@ def plot_spec(filt, pupil=None, mask=None, save=False):
     fig.tight_layout()
 
     if save:
-        fig.savefig('output/' + f'spectra_{filt}.pdf')
+        fig.savefig(fig_dir + f'spectra_{filt}.pdf')
 
 
 def plot_images(nrc_sci, im_sci, diff1, diff2, imode, jitter_sig, imode_tacq, imode_iec=None, save=True):
@@ -419,16 +422,16 @@ def plot_images(nrc_sci, im_sci, diff1, diff2, imode, jitter_sig, imode_tacq, im
         fname1 = fname_part(nrc_sci, imode, jitter_sig, imode_tacq, imode_iec=imode_iec)
 
         fname = f'{fname1}_images.pdf'
-        fig.savefig('output/'+fname)
+        fig.savefig(fig_dir+fname)
 
         # Save files
         f1 = f'{fname1}_psf.fits'
         f2 = f'{fname1}_diff1.fits'
         f3 = f'{fname1}_diff2.fits'
 
-        hdul_sci.writeto('output/' + f1, overwrite=True)
-        hdul_diff1.writeto('output/' + f2, overwrite=True)
-        hdul_diff2.writeto('output/' + f3, overwrite=True)
+        hdul_sci.writeto(fig_dir + f1, overwrite=True)
+        hdul_diff1.writeto(fig_dir + f2, overwrite=True)
+        hdul_diff2.writeto(fig_dir + f3, overwrite=True)
 
 def calc_contrast(diff2, nrc_sci, imode, jitter_sig, imode_tacq, imode_iec=None, im_sci=None,
                   nsig=5, save=True, plot=False):
@@ -503,7 +506,7 @@ def calc_contrast(diff2, nrc_sci, imode, jitter_sig, imode_tacq, imode_iec=None,
     if save:
         fname1 = fname_part(nrc_sci, imode, jitter_sig, imode_tacq, imode_iec=imode_iec)
         fname = f'{fname1}_contrast.npz'
-        np.savez('output/' + fname, rr=rr, contrast=contrast, sen_mag=sen_mag, bg_sen_arr=bg_sen_arr, nsig=nsig)
+        np.savez(fig_dir + fname, rr=rr, contrast=contrast, sen_mag=sen_mag, bg_sen_arr=bg_sen_arr, nsig=nsig)
 
     if plot:
         fig, ax = plt.subplots(1,1, figsize=(6,4))
@@ -512,7 +515,7 @@ def calc_contrast(diff2, nrc_sci, imode, jitter_sig, imode_tacq, imode_iec=None,
         fig.tight_layout()
 
     # Load by:
-    #   res = np.load('output/' + fout)
+    #   res = np.load(fig_dir + fout)
     # Then access:
     #   rr = res['rr']
     
@@ -595,7 +598,7 @@ def make_contrast_map(diff2, nrc_sci, imode, jitter_sig, imode_tacq, imode_iec=N
         header['JITTER']   = (jitter_sig, 'Jitter sigma (mas)')
         header['TACQ']     = (ta_val, 'Target Acquisition offset (mas)')
 
-        hdul.writeto('contrast_maps/' + fname, overwrite=True)
+        hdul.writeto(contrast_maps_dir + fname, overwrite=True)
 
 
 def gen_slope_image(nrc, opd, jitter_vals, sp=None, jitt_groups=False):
