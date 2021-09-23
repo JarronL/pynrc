@@ -278,7 +278,13 @@ def populate_group_table(starttime, grouptime, ramptime, numint, numgroup, ny, n
 
 
 def level1b_data_model(obs_params, sci_data=None, zero_data=None):
-    
+
+    """
+    obs_params : dict
+        Dictionary of parameters to populate DMS header. 
+        See `create_DMS_HDUList` in dms.py.
+    """
+
     if sci_data is None:
         sci_shape = (obs_params['nints'], obs_params['ngroups'], obs_params['ysize'], obs_params['xsize'])
         zero_shape = (obs_params['nints'], obs_params['ysize'], obs_params['xsize'])
@@ -345,12 +351,19 @@ def level1b_data_model(obs_params, sci_data=None, zero_data=None):
     pupil = obs_params['pupil']
     if 'GRISM0' in pupil:
         pupil = 'GRISMR'
-    if 'GRISM90' in pupil:
+    elif 'GRISM90' in pupil:
         pupil = 'GRISMC'
+    elif 'CIRC' in pupil:
+        pupil = 'MASKRND'
+    elif 'WEDGE' in pupil:
+        pupil = 'MASKBAR'
     filt  = 'UNKNOWN' if filt  is None else filt
     pupil = 'UNKNOWN' if pupil is None else pupil
     outModel.meta.instrument.filter = filt
     outModel.meta.instrument.pupil  = pupil
+
+    if 'MASK' in obs_params['coron_mask'].upper():
+        outModel.meta.instrument.coronagraph = obs_params['coron_mask'].upper()
 
     # Detector information 
     outModel.meta.subarray.name     = obs_params['subarray_name']
@@ -515,7 +528,9 @@ def update_dms_headers(filename, obs_params):
     ----------
     filename : str
         file name
-
+    obs_params : dict
+        Dictionary of parameters to populate DMS header. 
+        See `create_DMS_HDUList` in dms.py.
     """
     hdulist = fits.open(filename, mode='update')
     pheader = hdulist[0].header

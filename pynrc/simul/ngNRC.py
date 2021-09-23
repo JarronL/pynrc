@@ -20,6 +20,9 @@ Modification History:
 17 Apr 2021
     - Deprecate nghxrg, SCANoise, and slope_to_ramp
     - Instead use slope_to_ramps
+20 Sept 2021
+    - Major refactor, splitting out slope_to_level1b and slope_to_fitswriter
+    - Added linearity
 """
 import numpy as np
 import os
@@ -29,12 +32,16 @@ from astropy.convolution import convolve
 
 from datetime import datetime
 
-from .dms import create_DMS_HDUList
-from ..nrc_utils import pad_or_cut_to_size, jl_poly, gen_unconvolved_point_source_image
+from .dms import create_DMS_HDUList, level1b_data_model, update_dms_headers
+from .apt import DMS_input, gen_pointing_info
+from ..nrc_utils import pad_or_cut_to_size, jl_poly, get_detname
+from ..nrc_utils import gen_unconvolved_point_source_image
 from ..reduce.calib import ramp_resample, nircam_cal
 from ..maths.coords import det_to_sci, sci_to_det
 from ..maths.image_manip import convolve_image
 from .. import conf
+
+from stdatamodels import fits_support
 
 # Program bar
 from tqdm.auto import trange, tqdm
@@ -42,8 +49,280 @@ from tqdm.auto import trange, tqdm
 import logging
 _log = logging.getLogger('pynrc')
 
+def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visit_id=None):
 
-def slope_to_level1b(im_slope, obs_params, cal_obj=None, save_dir=None, **kwargs):
+    """
+    TODO
+    kwargs_det = {
+        'latents': None, 
+        'include_colnoise': False, 
+        'col_noise': None,
+        'out_ADU': True,
+    }
+    """
+
+    from ..pynrc_core import DetectorOps, NIRCam
+
+    # Files and output directory
+    json_file     = sim_config['json_file']
+    sm_acct_file  = sim_config['sm_acct_file']
+    pointing_file = sim_config['pointing_file']
+    xml_file      = sim_config['xml_file']
+    save_dir      = sim_config['save_dir']
+
+    # Source information
+    src_tbl   = sim_config['src_tbl']
+    disk_hdul = sim_config['disk_hdul']
+
+    # PSF information
+    kwargs_nrc = sim_config['params_webbpsf']
+    kwargs_psf = sim_config['params_psfconv']
+    enable_wfedrift = sim_config['enable_wfedrift']
+    kwargs_det = sim_config['params_noise']
+
+    large_slew_uncert = sim_config['large_slew']
+    ta_sam_uncert     = sim_config['ta_sam']
+    std_sam_uncert    = sim_config['std_sam']
+    sgd_sam_uncert    = sim_config['sgd_sam']
+
+    save_slope = sim_config['save_slope']
+    save_dms = sim_config['save_dms']
+    dry_run = sim_config['dry_run']
+
+    #################################################
+    # Create DMS Input class
+    obs_input = DMS_input(xml_file, pointing_file, json_file, sm_acct_file, save_dir=save_dir)
+
+    # Update observing start date/time and V3 PA
+    obs_input.obs_date = sim_config['obs_date']
+    obs_input.obs_time = sim_config['obs_time']
+    obs_input.pa_v3    = sim_config['pa_v3']
+
+    # Generate all observation parameters for every visit, exposure, detector, etc
+    obs_params_all = obs_input.gen_all_obs_params()
+    obs_params_all = np.asarray(obs_params_all)
+    
+    obs_detnames = np.array([get_detname(par['detector']) for par in obs_params_all])
+    obs_filters  = np.array([par['filter']                for par in obs_params_all])
+    obs_apnames  = np.array([par['siaf_ap'].AperName      for par in obs_params_all])
+    obs_visitids = np.array([par['visit_key']             for par in obs_params_all])
+
+    # Unique labels for sorting
+    obs_labels  = np.array([f'{a}_{f}' for a, f in zip(obs_apnames, obs_filters)])
+
+    # Select only a specific detector to generate simulations?
+    if detname is None:
+        udetnames = np.unique(obs_detnames)
+    else:
+        udetnames =[get_detname(detname)]
+        # udetnames = ['NRCA5']
+        
+    for detname in udetnames:
+
+        ind = (obs_detnames == detname)
+        if ind.sum()==0:
+            _log.warn(f'Detector {detname} is not a valid detector for these observations.')
+            continue
+
+        # Create calibration object
+        det = DetectorOps(detector=detname)
+        caldir = os.path.join(conf.PYNRC_PATH, 'calib', str(det.scaid))
+        if not dry_run:
+            cal_obj = nircam_cal(det.scaid, caldir, verbose=False)
+
+        ulabels= np.unique(obs_labels[ind])
+        if (apname is not None) and (filter is not None):
+            ind_mask1 = np.array([apname in a for a in ulabels])
+            ind_mask2 = np.array([filter in a for a in ulabels])
+            ind_mask = ind_mask1 & ind_mask2
+            ulabels = ulabels[ind_mask]
+        elif (apname is not None) and (filter is None):
+            ind_mask = np.array([apname in a for a in ulabels])
+            ulabels = ulabels[ind_mask]
+        elif (apname is None) and (filter is not None):
+            ind_mask = np.array([filter in a for a in ulabels])
+            ulabels = ulabels[ind_mask]
+
+        if len(ulabels)==0:
+            _log.warn('No valid observations for specified parameters:')
+            _log.warn(f'  SCA: {detname}, SIAF: {apname}, Filter: {filter}')
+            continue
+
+        # ulabels = ['NRCA5_FULL_F277W']
+        for label in ulabels:
+            ind2 = (obs_labels == label)
+            
+            if ind2.sum()==0:
+                aname = '_'.join(label.split('_')[0:-1])
+                fname = label.split('_')[-1]
+                _log.warn(f'Skipping {aname} + {fname} for {detname}...')
+                continue
+
+            # Select visit ids that have current obs config
+            # Make sure we're not sorting
+            _, uind = np.unique(obs_visitids[ind2], return_index=True)
+            visit_ids = obs_visitids[ind2][np.sort(uind)]
+            if visit_id is not None:
+                ind_mask = (visit_ids == visit_id)
+                visit_ids = visit_ids[ind_mask]
+
+            if len(visit_ids)==0:
+                _log.warn('No valid Visit IDs for specified parameters:')
+                _log.warn(f'  SCA: {detname}, SIAF: {apname}, Filter: {filter}, Visit: {visit_id}')
+                continue
+
+            # Create NIRCam instrument object
+            obs_params = obs_params_all[ind2][0]
+            filt  = obs_params['filter']
+            pupil = None if obs_params['pupil']=='CLEAR'     else obs_params['pupil']
+            mask  = None if obs_params['coron_mask']=='None' else obs_params['coron_mask']
+            ap_obs_name = obs_params['siaf_ap'].AperName
+
+            if 'TAMASK' in ap_obs_name:
+                # For TA observations, instead specify the coronagraphic equivalent
+                # to generate PSFs that will then be attenuated by image mask
+                name_arr = ap_obs_name.split('_')
+                name_arr[-1] = name_arr[-1][4:] if 'FS' in name_arr[-1] else name_arr[-1][2:]
+                ap_nrc_name = '_'.join(name_arr)
+            else:
+                ap_nrc_name = ap_obs_name
+
+            if not dry_run:
+                nrc = NIRCam(filter=filt, pupil_mask=pupil, image_mask=mask,
+                             detector=detname, apname=ap_nrc_name,
+                             autogen_coeffs=False, **kwargs_nrc)      
+
+                nrc.gen_psf_coeff()
+                nrc.gen_wfefield_coeff()
+                nrc.gen_wfemask_coeff()
+                if enable_wfedrift:
+                    nrc.gen_wfedrift_coeff()
+
+                # Create grid of PSFs
+                if (src_tbl is not None) or (disk_hdul is not None):
+                    hdul_psfs = nrc.gen_psfs_over_fov(**kwargs_psf)
+
+                # Get Zodiacal background emission.
+                ra_ref, dec_ref = (obs_params['ra_ref'], obs_params['dec_ref'])
+                date_str = obs_params['date-obs']
+                date_arg = (int(s) for s in date_str.split('-'))
+                day_of_year = datetime(*date_arg).timetuple().tm_yday
+                im_bg = nrc.bg_zodi_image(ra=ra_ref, dec=dec_ref, thisday=day_of_year)
+
+            # Cycle through each of the visits
+            for vid in visit_ids:
+                visit_dict = obs_input.program_info[vid]
+
+                # Get exposure IDs
+                obs_dict_arr = visit_dict['obs_id_info']
+                exp_ids   = np.array([d['exposure_number'] for d in obs_dict_arr])
+
+                # Get type of observations (T-ACQ, CONFIRM, SCIENCE, ETC?)
+                type_arr = visit_dict['type']
+                type_vals = np.array(['T_ACQ', 'CONFIRM', 'SCIENCE'])
+                do_sci_pointing = True
+                # Cycle through each exposure in visit
+                for j in trange(len(exp_ids)):
+
+                    # Create the observation parameters dictionary for selected exposure
+                    exp_num = exp_ids[j]
+                    obs_params = obs_input.gen_obs_param(vid, exp_num, detname)
+
+                    # Random seed for dither uncertainties
+                    rand_seed = visit_dict['dith_rand_seed'] + j
+
+                    tup = type_arr[j].upper()
+                    ra_ref, dec_ref = (obs_params['ra_ref'], obs_params['dec_ref'])
+                    if tup not in type_vals:
+                        _log.warn(f'Exposure type {tup} not recognized in Visit {vid}, Exp {exp_num}')
+                        continue
+                    elif tup=='T_ACQ' or tup=='CONFIRM':
+                        # First slew has large uncertainty
+                        base_std = large_slew_uncert if int(exp_num)==1 else ta_sam_uncert
+                        # There are no dithers
+                        dith_std = 0
+                        tel_pointing = gen_pointing_info(visit_dict, obs_params, rand_seed=rand_seed,
+                                                         base_std=base_std, dith_std=dith_std)
+                    elif do_sci_pointing:
+                        # First science exposure
+                        #   Exposure #1 is the "slew" position
+                        if int(exp_num)==1:
+                            base_std = large_slew_uncert
+                        elif obs_params['ddist']==0:
+                            # If not #1 and confirmation image occurred before, then no SAM
+                            base_std = ta_sam_uncert
+                            # Need to subtract 1 from random seed to get same 
+                            # random offset as previous confirmation image
+                            rand_seed -= 1
+                        else:
+                            # If not #1 and no confirm image, then TA SAM
+                            base_std = ta_sam_uncert
+
+                        # Create jwst_pointing class
+                        tel_pointing = gen_pointing_info(visit_dict, obs_params, base_std=base_std)
+                        # Update standard and SGD uncertainties and regenerage random pointings
+                        tel_pointing._std_sig = std_sam_uncert
+                        tel_pointing._sgd_sig = sgd_sam_uncert
+                        tel_pointing.gen_random_offsets(rand_seed=rand_seed)
+                        tel_pointing.exp_nums = np.arange(tel_pointing.ndith) + 1 + j
+
+                        # Set to False so this is only performed once per visit
+                        do_sci_pointing = False
+
+                    # Save random seed in obs_params
+                    obs_params['dith_rand_seed'] = rand_seed
+
+                    # Skip slope creation if obs_label doesn't match NIRCam class
+                    a = obs_params['siaf_ap'].AperName
+                    f = obs_params['filter']
+                    if label != f'{a}_{f}':
+                        continue
+
+                    if not dry_run:
+                        if src_tbl is not None:
+                            # Create slope image
+                            im_slope = sources_to_slope(src_tbl, nrc, obs_params, tel_pointing,
+                                                        hdul_psfs=hdul_psfs, im_bg=im_bg)
+
+                        # Save slope image
+                        if save_slope:
+                            save_slope_image(im_slope, obs_params, save_dir=save_dir)
+
+                        # Simulate ramp and stuff into a level1b file
+                        if save_dms:
+                            obs_params['filename'] = 'pynrc_' + obs_params['filename']
+                            slope_to_level1b(im_slope, obs_params, cal_obj=cal_obj, save_dir=save_dir, **kwargs_det)
+
+                    else:
+                        print(detname, label, vid, exp_num)
+
+
+def save_slope_image(im_slope, obs_params, save_dir=None):
+
+        # Create data model for headers
+        outModel = level1b_data_model(obs_params)
+        hdul_temp, _ = fits_support.to_fits(outModel._instance, outModel._schema)
+
+        # Create a new HDUList for the slope image
+        hdu1 = fits.PrimaryHDU(header=hdul_temp[0].header.copy())
+        hdu2 = fits.ImageHDU(data=im_slope, header=hdul_temp[1].header.copy(strip=True))
+        hdul_slope = fits.HDUList([hdu1, hdu2])
+
+        # Save slope FITS file
+        file_slope = 'slope_' + obs_params['filename']
+        if save_dir is not None:
+            file_slope = os.path.join(save_dir, file_slope)
+        hdul_slope.writeto(file_slope, overwrite=True)
+
+        hdul_temp.close()
+        hdul_slope.close()
+
+        # Update some WCS and segment info
+        update_dms_headers(file_slope, obs_params)
+
+
+def slope_to_level1b(im_slope, obs_params, cal_obj=None, save_dir=None, 
+                     cframe='sci', out_ADU=True, **kwargs):
     """Simulate DMS HDUList from slope image
     
     Requires input of obs_params input dictionary as generated from
@@ -72,6 +351,8 @@ def slope_to_level1b(im_slope, obs_params, cal_obj=None, save_dir=None, **kwargs
         Option to override output directory as specified in `obs_params` dictionary.
         If not specified as either a function keyword or in `obs_params`, then files 
         are saved in current working directory.
+    cframe : str
+        Coordinate frame of input slope, 'sci' or 'det'.
 
     Keyword Args
     ============
@@ -113,7 +394,7 @@ def slope_to_level1b(im_slope, obs_params, cal_obj=None, save_dir=None, **kwargs
     latents : None
         Apply persistence.
     apply_nonlinearity : bool
-        Apply non-linearity?
+        Apply non-linearity?  
     random_nonlin : bool
         Add randomness to the linearity coefficients?
     prog_bar : bool
@@ -122,6 +403,10 @@ def slope_to_level1b(im_slope, obs_params, cal_obj=None, save_dir=None, **kwargs
     
     det = obs_params['det_obj']
     nint = det.multiaccum.nint
+
+    # Put into 'sci' coords
+    if cframe=='det':
+        im_slope = det_to_sci(im_slope)
     
     if cal_obj is None:
         caldir = os.path.join(conf.PYNRC_PATH, 'calib', str(det.scaid))
@@ -132,7 +417,7 @@ def slope_to_level1b(im_slope, obs_params, cal_obj=None, save_dir=None, **kwargs
     zero_data = []
     for i in trange(nint, desc='Ramps', leave=False):
         res = simulate_detector_ramp(det, cal_obj, im_slope=im_slope, return_zero_frame=True,
-                                     return_full_ramp=False, **kwargs)
+                                     return_full_ramp=False, cframe='sci', out_ADU=out_ADU, **kwargs)
         # Append to lists
         sci_data.append(res[0])
         zero_data.append(res[1])
@@ -141,14 +426,131 @@ def slope_to_level1b(im_slope, obs_params, cal_obj=None, save_dir=None, **kwargs
     sci_data = np.asarray(sci_data)
     zero_data = np.asarray(zero_data)
 
+    # hdu = fits.PrimaryHDU(sci_data)
+    # hdu.writeto(save_dir + obs_params['filename'], overwrite=True)
+
     # Create and save Level 1b data model to disk
     # This also updates header information
     create_DMS_HDUList(sci_data, zero_data, obs_params, save_dir=save_dir)
 
+def sources_to_slope(source_table, nircam_obj, obs_params, tel_pointing, 
+                     hdul_psfs=None, im_bg=None, cframe_out='sci', **kwargs):
+    
+    """ Create a slope image from a table or sources
+
+    Parameters
+    ==========
+    source_table : astropy Table
+        Table of objects in across the region, including headers
+        'ra', 'dec', and object fluxes in NIRCam filter in vega mags where
+        headers are labeled the filter name (e.g, 'F444W').
+    nircam_obj : :class:`pynrc.NIRCam`
+        NIRCam instrument class for PSF generation.
+    obs_params : dict
+        Dictionary of parameters to populate DMS header. 
+        See `create_obs_params` in apt.py and `level1b_data_model` in dms.py.
+    tel_pointing : :class:`webbpsf_ext.jwst_point`
+        JWST telescope pointing information. Holds pointing coordinates 
+        and dither information for a given telescope visit.
+    hdul_psfs : HDUList
+        Option to pass a pre-generated HDUList of PSFs across the field of view.
+        If set to None, then generated automatically.
+    im_bg : None or ndarray
+        Option to specify a pre-generated image (or single value) of the
+        Zodiacal background emission. If not specified, then gets
+        automatically generating.
+    cframe_out : str
+        Desired output coordinate frame, either 'sci' or 'det'
+
+    Keyword Args
+    ============
+    npsf_per_full_fov : int
+        Number of PSFs across one dimension of the instrument's field of 
+        view. If a coronagraphic observation, then this is for the nominal
+        coronagrahic field of view.
+    sptype : str
+        Spectral type, such as 'A0V' or 'K2III'.
+    wfe_drift : float
+        Desired WFE drift value relative to default OPD.
+    osamp : int
+        Sampling of output PSF relative to detector sampling. If `hdul_psfs` is 
+        specified, then the 'OSAMP' header keyword takes precedence.
+    use_coeff : bool
+        If True, uses `calc_psf_from_coeff`, other WebbPSF's built-in `calc_psf`.
+        Coefficients are much faster
+    """
+
+    nrc = nircam_obj
+    siaf_ap = obs_params['siaf_ap']
+    det = obs_params['det_obj']
+
+    # Get oversampling
+    if hdul_psfs is not None: # First check hdul_psfs
+        osamp = hdul_psfs[0].header['OSAMP']
+        if ('osamp' in kwargs.keys()) and (kwargs['osamp']!=osamp):
+            osamp2 = kwargs['osamp']
+            _log.warn(f'Conflict between osamp in kwargs ({osamp2}) and osamp in PSF header ({osamp}). Using header.')
+        kwargs['osamp'] = osamp
+    elif 'osamp' in kwargs.keys():
+        osamp = kwargs['osamp']
+    else:
+        osamp = 1
+        kwargs['osamp'] = osamp
+        
+    ###############################
+    # Generate unconvolved image
+    
+    # RA and Dec of all objects in field
+    ra_deg, dec_deg = (source_table['ra'], source_table['dec'])
+    # Vega magnitude values
+    filt = obs_params['filter']
+    mags = source_table[filt].data
+    expnum = int(obs_params['obs_id_info']['exposure_number'])
+    hdul_sci_image = gen_unconvolved_point_source_image(nrc, tel_pointing, ra_deg, dec_deg, mags, 
+                                                        expnum=expnum, **kwargs)
+    
+    ###############################
+    # Convolve full image with PSFs
+
+    if hdul_psfs is None:
+        hdul_psfs = nrc.gen_psfs_over_fov(return_coords=None, **kwargs)
+        
+    # Perform convolution
+    hdul_sci_conv = convolve_image(hdul_sci_image, hdul_psfs, output_sampling=1, return_hdul=True)
+    im_conv = hdul_sci_conv[0].data
+    ny, nx = im_conv.shape
+    xsci = np.arange(nx) + hdul_sci_conv[0].header['XSCI0']
+    ysci = np.arange(ny) + hdul_sci_conv[0].header['YSCI0']
+
+    # Crop out relevant region
+    xind = (xsci>=0) & (xsci<siaf_ap.XSciSize)
+    yind = (ysci>=0) & (ysci<siaf_ap.YSciSize)
+    im_slope = im_conv[yind,:][:,xind]
+    
+    ###############################
+    # Add zodiacal background
+
+    # Get Zodiacal background emission.
+    # Can be reused for all ints in same observation.
+    if im_bg is None:
+        date_str = obs_params['date-obs']
+        date_arg = (int(s) for s in date_str.split('-'))
+        day_of_year = datetime(*date_arg).timetuple().tm_yday
+        ra, dec = tel_pointing.ap_radec()
+        # ra, dec = (obs_params['ra_ref'], obs_params['dec_ref'])
+        im_bg = nrc.bg_zodi_image(ra=ra, dec=dec, thisday=day_of_year)
+        
+    # Add background
+    im_slope = im_slope + im_bg
+
+    if cframe_out=='det':
+        im_slope = sci_to_det(im_slope)
+
+    return im_slope
 
 def sources_to_level1b(source_table, nircam_obj, obs_params, tel_pointing, 
                        hdul_psfs=None, cal_obj=None, im_bg=None, 
-                       save_dir=None, **kwargs):
+                       out_ADU=True, save_dir=None, **kwargs):
     """Simulate DMS HDUList from slope image
     
     Requires input of obs_params input dictionary as generated from
@@ -250,72 +652,15 @@ def sources_to_level1b(source_table, nircam_obj, obs_params, tel_pointing,
     prog_bar : bool
         Show a progress bar for this ramp generation?
     """
-    
-    nrc = nircam_obj
-    siaf_ap = obs_params['siaf_ap']
-    det = obs_params['det_obj']
 
-    # Get oversampling
-    if hdul_psfs is not None: # First check hdul_psfs
-        osamp = hdul_psfs[0].header['OSAMP']
-        if ('osamp' in kwargs.keys()) and (kwargs['osamp']!=osamp):
-            osamp2 = kwargs['osamp']
-            _log.warn(f'Conflict between osamp in kwargs ({osamp2}) and osamp in PSF header ({osamp}). Using header.')
-        kwargs['osamp'] = osamp
-    elif 'osamp' in kwargs.keys():
-        osamp = kwargs['osamp']
-    else:
-        osamp = 1
-        kwargs['osamp'] = osamp
-    
-    ###############################
-    # Generate unconvolved image
-    
-    # RA and Dec of all objects in field
-    ra_deg, dec_deg = (source_table['ra'], source_table['dec'])
-    # Vega magnitude values
-    filt = obs_params['filter']
-    mags = source_table[filt].data
-    expnum = int(obs_params['obs_id_info']['exposure_number'])
-    hdul_sci_image = gen_unconvolved_point_source_image(nrc, tel_pointing, ra_deg, dec_deg, mags, 
-                                                        expnum=expnum, **kwargs)
-    
-    ###############################
-    # Convolve full image with PSFs
+    # Create a slope image in 'sci' coords
+    im_slope = sources_to_slope(source_table, nircam_obj, obs_params, tel_pointing, 
+                                hdul_psfs=hdul_psfs, im_bg=im_bg, **kwargs)
 
-    if hdul_psfs is None:
-        hdul_psfs = nrc.gen_psfs_over_fov(return_coords=None, **kwargs)
-        
-    # Perform convolution
-    hdul_sci_conv = convolve_image(hdul_sci_image, hdul_psfs, output_sampling=1, return_hdul=True)
-    im_conv = hdul_sci_conv[0].data
-    ny, nx = im_conv.shape
-    xsci = np.arange(nx) + hdul_sci_conv[0].header['XSCI0']
-    ysci = np.arange(ny) + hdul_sci_conv[0].header['YSCI0']
+    kwargs['cframe'] = kwargs.get('cframe_out', 'sci')   
+    slope_to_level1b(im_slope, obs_params, cal_obj=cal_obj, save_dir=save_dir, 
+                     out_ADU=out_ADU, **kwargs)
 
-    # Crop out relevant region
-    xind = (xsci>=0) & (xsci<siaf_ap.XSciSize)
-    yind = (ysci>=0) & (ysci<siaf_ap.YSciSize)
-    im_slope = im_conv[yind,:][:,xind]
-    
-    ###############################
-    # Add zodiacal background
-
-    # Get Zodiacal background emission.
-    # Can be reused for all ints in same observation.
-    if im_bg is None:
-        date_str = obs_params['date-obs']
-        date_arg = (int(s) for s in date_str.split('-'))
-        day_of_year = datetime(*date_arg).timetuple().tm_yday
-        ra, dec = tel_pointing.ap_radec()
-        im_bg = nrc.bg_zodi_image(ra=ra, dec=dec, thisday=day_of_year)
-        
-    # Add background
-    im_slope = im_slope + im_bg
-    kwargs['cframe'] = 'sci'
-    
-    slope_to_level1b(im_slope, obs_params, cal_obj=cal_obj, save_dir=save_dir, **kwargs)
-    
 
 def slope_to_fitswriter(det, cal_obj, im_slope=None, cframe='det',
                         filter=None, pupil=None, 
@@ -1710,7 +2055,7 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     cr_scale: float
         Scale factor for probabilities.
     apply_nonlinearity : bool
-        Apply non-linearity?
+        Apply non-linearity? If False, then warning if out_ADU=True
     random_nonlin : bool
         Add randomness to the linearity coefficients?
     apply_flats: None
@@ -1843,6 +2188,8 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     # The apply_nonlin function goes from e- to DN
     if apply_nonlinearity:
         data = gain * apply_nonlin(data, det, dco.nonlinear_dict, randomize=random_nonlin)
+    elif out_ADU:
+        _log.warn("Assuming perfectly linear ramp, but convert to 16-bit UINT (out_ADU=True)")
     if prog_bar: pbar.update(1)
 
     ####################

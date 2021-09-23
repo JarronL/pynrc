@@ -145,6 +145,7 @@ class nrc_hci(NIRCam):
         coron_rescale : bool
             Rescale off-axis coronagraphic PSF to better match analytic prediction
             when source overlaps coronagraphic occulting mask.
+            Primarily used for planetary companion PSFs.
         """
 
         coords = rtheta_to_xy(offset_r, offset_theta)

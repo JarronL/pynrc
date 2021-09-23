@@ -1029,15 +1029,15 @@ def place_grismr_tso(waves, imarr, siaf_ap, wref=None, im_coords='sci'):
 #
 ###########################################################################
 
-def pickoff_xy(ap_obs):
+def pickoff_xy(ap_obs_name):
     """
     Return pickoff mirror FoV x/y limits in terms of science pixel coordinates
     
     ap_obs : Aperture to create observation (e.g., 'NRCA5_FULL')
     """
 
-    ap_siaf = siaf_nrc[ap_obs]
-    module = ap_obs[3:4]
+    ap_siaf = siaf_nrc[ap_obs_name]
+    module = ap_obs_name[3:4]
 
     # Determine pick-off mirror FoV from 
     ap1 = siaf_nrc['NRC{}5_GRISMC_WFSS'.format(module)]
@@ -1151,24 +1151,30 @@ def pickoff_image(ap_obs, v2_obj, v3_obj, flux_obj, oversample=1):
     return xsci, ysci, oversized_image 
 
 
-def gen_unconvolved_point_source_image(nrc, tel_pointing, ra_deg, dec_deg, mags, expnum=1, osamp=1, **kwargs):
+def gen_unconvolved_point_source_image(nrc, tel_pointing, ra_deg, dec_deg, mags, 
+                                       expnum=1, osamp=1, siaf_ap_obs=None, **kwargs):
+    """ Create an unconvolved image with sub-pixel shifts
+    
+    """
     
     from webbpsf_ext.spectra import mag_to_counts
     
     # Observation aperture
-    siaf_ap_obs = nrc.siaf_ap
-    ap_obs_name = nrc.aperturename
+    siaf_ap_obs = nrc.siaf_ap if siaf_ap_obs is None else siaf_ap_obs
+    ap_obs_name = siaf_ap_obs.AperName
     
     # Get all source fluxes
     # mags = tbl[nrc.filter].data
-    flux_obj = mag_to_counts(mags, nrc.bandpass)
+    flux_obj = mag_to_counts(mags, nrc.bandpass, **kwargs)
 
     if isinstance(expnum, str):
         expnum = int(expnum)
     
+    ind = np.where(tel_pointing.exp_nums == expnum)[0][0]
+
     # Convert RA, Dec coordiantes into V2/V3 (arcsec)
     # ra_deg, dec_deg = (tbl['ra'], tbl['dec'])
-    idl_off = [tel_pointing.position_offsets_act[expnum-1]]
+    idl_off = [tel_pointing.position_offsets_act[ind]]
     v2_obj, v3_obj = tel_pointing.radec_to_frame((ra_deg, dec_deg), frame_out='tel', idl_offsets=idl_off)
     
     # Create initial POM image, then contract to reasonable size

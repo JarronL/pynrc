@@ -1116,6 +1116,7 @@ class NIRCam(NIRCam_ext):
             pupil = 'GRISMR' if pupil is None else pupil
 
         # ND Square
+        # _FSTAMASK is faint star ==> not on ND square
         if '_TAMASK' in apname:
             ND_acq = True
             if pupil is None:
@@ -1586,7 +1587,7 @@ class NIRCam(NIRCam_ext):
             im_bg = im_bg[y0:y0+ypix, x0:x0+xpix]
             # Back to sci coords
             im_bg = det_to_sci(im_bg, detid)
-        elif self.is_coron:
+        elif self.is_coron or self.coron_substrate:
             # Create full image, then crop based on detector configuration
             im_bg = build_mask_detid(detid, oversample=1, pupil=pupil)
             if im_bg is None:
@@ -2051,6 +2052,7 @@ class NIRCam(NIRCam_ext):
 
         filt = self.filter
         pupil = 'CLEAR' if self.pupil_mask is None else self.pupil_mask
+        mask = 'None' if self.image_mask is None else self. image_mask
         det = self.Detector
         siaf_ap_obs = self.siaf_ap
         if siaf_ap_ref is None:
@@ -2059,7 +2061,7 @@ class NIRCam(NIRCam_ext):
 
         kwargs['target_name'] = target_name
 
-        obs_params = create_obs_params(filt, pupil, det, siaf_ap_ref, ra_dec, date_obs, time_obs,
+        obs_params = create_obs_params(filt, pupil, mask, det, siaf_ap_ref, ra_dec, date_obs, time_obs,
             pa_v3=pa_v3, siaf_ap_obs=siaf_ap_obs, xyoff_idl=xyoff_idl, time_exp_offset=time_exp_offset, 
             visit_type=visit_type, time_series=time_series, segNum=segNum, segTot=segTot, int_range=int_range,
             filename=filename, **kwargs)
