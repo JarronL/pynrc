@@ -142,6 +142,9 @@ def setup_logging(level='INFO', filename=None, verbose=True):
     # do the actual work.
     level = str(level).upper()
 
+    if level=='WARNING':
+        level = 'WARN'
+
     # The astropy config system will enforce the limited set of values for the logging_level
     # parameter by raising a TypeError on this next line if we feed in an invalid string.
     conf.logging_level = level
