@@ -106,7 +106,7 @@ def siafap_sci_coords(inst, coord_vals=None, coord_frame='tel'):
     """
 
     self = inst
-    # Get a refernece point if coord_vals not set
+    # Get a reference point if coord_vals not set
     if coord_vals is None:
         try:
             coord_vals = self.siaf_ap.reference_point(coord_frame)
@@ -118,7 +118,7 @@ def siafap_sci_coords(inst, coord_vals=None, coord_frame='tel'):
                 return None, None, None
             else:
                 _log.warning('`self.siaf_ap` not defined; assuming {}'.format(apname))
-                ap = self.siaf_nrc[apname]
+                ap = self.siaf[apname]
                 coord_vals = ap.reference_point(coord_frame)
 
     # Determine V2/V3 coordinates
@@ -137,7 +137,7 @@ def siafap_sci_coords(inst, coord_vals=None, coord_frame='tel'):
                 _log.warning('No suitable aperture name defined to determine V2/V3 coordinates')
             else:
                 _log.warning('`self.siaf_ap` not defined; assuming {}'.format(apname))
-                ap = self.siaf_nrc[apname]
+                ap = self.siaf[apname]
                 v2, v3 = ap.convert(x,y,cframe, 'tel')
             _log.warning('Update `self.siaf_ap` for more specific conversions to V2/V3.')
     else:
