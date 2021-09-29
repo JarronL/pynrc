@@ -40,6 +40,8 @@ from numpy.polynomial import legendre
 from . import conf
 from .logging_utils import setup_logging
 
+from webbpsf_ext.bandpasses import nircam_com_th, nircam_com_nd
+
 from .maths import robust
 from .maths.fast_poly import *
 from .maths.image_manip import *
@@ -890,7 +892,7 @@ def grism_background_com(filter, pupil='GRISM90', module='A', sp_bg=None,
     sp_bg = zodi_spec(**kwargs) if sp_bg is None else sp_bg
         
     # Coronagraphic mask image
-    im_com = build_mask_detid(module+'5')
+    im_com = build_mask_detid(module+'5', filter=filter)
     # Crop to mask holder
     # Remove anything that is 0 or max
     im_collapse = im_com.sum(axis=1)
@@ -1344,7 +1346,7 @@ def offset_bar(filt, mask):
 
 
 def coron_trans(name, module='A', pixelscale=None, npix=None, oversample=1, 
-    nd_squares=True, shift_x=None, shift_y=None):
+    nd_squares=True, shift_x=None, shift_y=None, filter=None):
     """
     Build a transmission image of a coronagraphic mask spanning
     the 20" coronagraphic FoV.
@@ -1360,24 +1362,24 @@ def coron_trans(name, module='A', pixelscale=None, npix=None, oversample=1,
     if name=='MASK210R':
         pixscale = pixscale_SW
         channel = 'short'
-        filter = 'F210M'
+        filter = 'F210M' if filter is None else filter
     elif name=='MASK335R':
         pixscale = pixscale_LW
         channel = 'long'
-        filter = 'F335M'
+        filter = 'F335M' if filter is None else filter
     elif name=='MASK430R':
         pixscale = pixscale_LW
         channel = 'long'
-        filter = 'F430M'
+        filter = 'F430M' if filter is None else filter
     elif name=='MASKSWB':
         pixscale = pixscale_SW
         channel = 'short'
-        filter = 'F210M'
+        filter = 'F210M' if filter is None else filter
         bar_offset = 0
     elif name=='MASKLWB':
         pixscale = pixscale_LW
         channel = 'long'
-        filter = 'F430M'
+        filter = 'F430M' if filter is None else filter
         bar_offset = 0
 
     if pixelscale is None:
@@ -1396,12 +1398,13 @@ def coron_trans(name, module='A', pixelscale=None, npix=None, oversample=1,
     bandpass = read_filter(filter)
     wavelength = bandpass.avgwave() / 1e10
     wave = poppy.Wavefront(wavelength=wavelength, npix=npix, pixelscale=pixelscale)
-    im = mask.get_transmission(wave)
+    # Square the amplitude transmission to get intensity transmission
+    im = mask.get_transmission(wave)**2    
 
     return im
 
 
-def build_mask(module='A', pixscale=pixscale_LW):
+def build_mask(module='A', pixscale=pixscale_LW, filter=None):
     """Create coronagraphic mask image
 
     Return a truncated image of the full coronagraphic mask layout
@@ -1416,10 +1419,23 @@ def build_mask(module='A', pixscale=pixscale_LW):
 
     npix = int(20 / pixscale + 0.5)
     allims = [coron_trans(name, module=module, pixelscale=pixscale, npix=npix) for name in names]
-    return np.concatenate(allims, axis=1)
+    im_out = np.concatenate(allims, axis=1)
+
+    # Multiply COM throughputs sampled at filter wavelength
+    if filter is not None:
+        bandpass = read_filter(filter)
+        w_um = bandpass.avgwave() / 1e4
+        com_th = nircam_com_th(wave_out=w_um)
+        com_nd = 10**(-1*nircam_com_nd(wave_out=w_um))
+
+        ind_nd = (im_out<0.0011) & (im_out>0.0009)
+        im_out[ind_nd] = com_nd
+        im_out *= com_th
+
+    return im_out
 
 
-def build_mask_detid(detid, oversample=1, ref_mask=None, pupil=None):
+def build_mask_detid(detid, oversample=1, ref_mask=None, pupil=None, filter=None):
     """Create mask image for a given detector
 
     Return a full coronagraphic mask image as seen by a given SCA.
@@ -1492,7 +1508,7 @@ def build_mask_detid(detid, oversample=1, ref_mask=None, pupil=None):
     # npix = int(ypix / len(cnames))
     npix = int(20.5 / pixscale_over + 0.5)
     npix_large = int(26 / pixscale_over + 0.5)
-    allims = [coron_trans(cname, module=module, pixelscale=pixscale_over, npix=npix_large) for cname in cnames]
+    allims = [coron_trans(cname, module=module, pixelscale=pixscale_over, npix=npix_large, filter=filter) for cname in cnames]
     
     if pupil is None:
         pupil = 'WEDGELYOT' if ('WB' in ref_mask) else 'CIRCLYOT'
@@ -1514,88 +1530,141 @@ def build_mask_detid(detid, oversample=1, ref_mask=None, pupil=None):
     # Remove offsets
     cmask[cmask>100] = cmask[cmask>100] - 1000
 
+    # Multiply COM throughputs sampled at filter wavelength
+    if filter is not None:
+        bandpass = read_filter(filter)
+        w_um = bandpass.avgwave() / 1e4
+        com_th = nircam_com_th(wave_out=w_um)
+        com_nd = 10**(-1*nircam_com_nd(wave_out=w_um))
+
+        ind_nd = (cmask<0.0011) & (cmask>0.0009)
+        cmask[ind_nd] = com_nd
+        cmask *= com_th
+
     # Place cmask in detector coords
     cmask = sci_to_det(cmask, detid)
 
     # Place blocked region from coronagraph holder
+    # Also ensure region outside of COM has throughput=1
     if detid=='A2':
         if 'CIRCLYOT' in pupil:
             i1, i2 = [int(920*oversample), int(390*oversample)]
-            cmask[0:i1,0:i2]=0
+            cmask[0:i1,0:i2] = 0
+            cmask[i1:,0:i2]  = 1
             i1 = int(220*oversample)
             cmask[0:i1,:] = 0
+            i2 = int(974*oversample)
+            cmask[i2:,:] = 1
         else:
             i1, i2 = [int(935*oversample), int(393*oversample)]
-            cmask[0:i1,0:i2]=0
+            cmask[0:i1,0:i2] = 0
+            cmask[i1:, 0:i2] = 1
             i1 = int(235*oversample)
             cmask[0:i1,:] = 0
+            i2 = int(985*oversample)
+            cmask[i2:,:] = 1
             
     elif detid=='A4':
         if 'CIRCLYOT' in pupil:
             i1, i2 = [int(920*oversample), int(1463*oversample)]
-            cmask[0:i1,i2:]=0
+            cmask[0:i1,i2:] = 0
+            cmask[i1:, i2:] = 1
             i1 = int(220*oversample)
             cmask[0:i1,:] = 0
+            i2 = int(974*oversample)
+            cmask[i2:,:] = 1
         else:
             i1, i2 = [int(935*oversample), int(1465*oversample)]
-            cmask[0:i1,i2:]=0
+            cmask[0:i1,i2:] = 0
+            cmask[i1:, i2:] = 1
             i1 = int(235*oversample)
             cmask[0:i1,:] = 0
+            i2 = int(985*oversample)
+            cmask[i2:,:] = 1
             
     elif detid=='A5':
         if 'CIRCLYOT' in pupil:
             i1, i2 = [int(1480*oversample), int(270*oversample)]
-            cmask[i1:,0:i2]=0
+            cmask[i1:,0:i2]  = 0
+            cmask[0:i1,0:i2] = 1
             i1, i2 = [int(1480*oversample), int(1880*oversample)]
-            cmask[i1:,i2:]=0
+            cmask[i1:,i2:]  = 0
+            cmask[0:i1,i2:] = 1
             i1 = int(1825*oversample)
             cmask[i1:,:] = 0
+            i2 = int(1452*oversample)
+            cmask[0:i2,:] = 1
         else:
             i1, i2 = [int(1485*oversample), int(275*oversample)]
-            cmask[i1:,0:i2]=0
+            cmask[i1:,0:i2]  = 0
+            cmask[0:i1,0:i2] = 1
             i1, i2 = [int(1485*oversample), int(1883*oversample)]
-            cmask[i1:,i2:]=0
+            cmask[i1:,i2:]  = 0
+            cmask[0:i1,i2:] = 1
             i1 = int(1830*oversample)
             cmask[i1:,:] = 0
+            i2 = int(1462*oversample)
+            cmask[0:i2,:] = 1
             
     elif detid=='B1':
         if 'CIRCLYOT' in pupil:
             i1, i2 = [int(910*oversample), int(1615*oversample)]
-            cmask[0:i1,i2:]=0
+            cmask[0:i1,i2:] = 0
+            cmask[i1:,i2:]  = 1
             i1 = int(210*oversample)
             cmask[0:i1,:] = 0
+            i2 = int(956*oversample)
+            cmask[i2:,:] = 1
         else:
             i1, i2 = [int(905*oversample), int(1609*oversample)]
-            cmask[0:i1,i2:]=0
+            cmask[0:i1,i2:] = 0
+            cmask[i1:,i2:]  = 1
             i1 = int(205*oversample)
             cmask[0:i1,:] = 0
+            i2 = int(951*oversample)
+            cmask[i2:,:] = 1
 
     elif detid=='B3':
         if 'CIRCLYOT' in pupil:
             i1, i2 = [int(920*oversample), int(551*oversample)]
-            cmask[0:i1,0:i2]=0
+            cmask[0:i1,0:i2] = 0
+            cmask[i1:,0:i2]  = 1
             i1 = int(210*oversample)
             cmask[0:i1,:] = 0
+            i2 = int(966*oversample)
+            cmask[i2:,:] = 1
         else:
             i1, i2 = [int(920*oversample), int(548*oversample)]
-            cmask[0:i1,0:i2]=0
+            cmask[0:i1,0:i2] = 0
+            cmask[i1:,0:i2]  = 1
             i1 = int(210*oversample)
             cmask[0:i1,:] = 0
+            i2 = int(963*oversample)
+            cmask[i2:,:] = 1
+
     elif detid=='B5':
         if 'CIRCLYOT' in pupil:
-            i1, i2 = [int(560*oversample), int(207*oversample)]
-            cmask[0:i1,0:i2]=0
-            i1, i2 = [int(550*oversample), int(1815*oversample)]
-            cmask[0:i1,i2:]=0
+            i1, i2 = [int(555*oversample), int(207*oversample)]
+            cmask[0:i1,0:i2] = 0
+            cmask[i1:, 0:i2] = 1
+            i1, i2 = [int(545*oversample), int(1815*oversample)]
+            cmask[0:i1,i2:] = 0
+            cmask[i1:, i2:] = 1
             i1 = int(215*oversample)
             cmask[0:i1,:] = 0
+            i2 = int(578*oversample)
+            cmask[i2:,:] = 1
         else:
-            i1, i2 = [int(560*oversample), int(211*oversample)]
-            cmask[0:i1,0:i2]=0
-            i1, i2 = [int(550*oversample), int(1819*oversample)]
-            cmask[0:i1,i2:]=0
+            i1, i2 = [int(555*oversample), int(211*oversample)]
+            cmask[0:i1,0:i2] = 0 
+            cmask[i1:, 0:i2] = 1
+            i1, i2 = [int(545*oversample), int(1819*oversample)]
+            cmask[0:i1,i2:] = 0
+            cmask[i1:, i2:] = 1
             i1 = int(215*oversample)
             cmask[0:i1,:] = 0
+            i2 = int(578*oversample)
+            cmask[i2:,:] = 1
 
     # Fix SW/LW wedge abuttment
     if detid=='A4':
