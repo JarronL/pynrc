@@ -12,7 +12,7 @@ from astropy.io import fits
 from webbpsf_ext.image_manip import pad_or_cut_to_size, fshift, fourier_imshift, frebin
 from webbpsf_ext.image_manip import rotate_offset, rotate_shift_image
 from webbpsf_ext.image_manip import image_rescale, model_to_hdulist
-from webbpsf_ext.image_manip import convolve_image
+from webbpsf_ext.image_manip import convolve_image, crop_zero_rows_cols
 from webbpsf_ext.maths import hist_indices, binned_statistic, fit_bootstrap
 
 def shift_subtract(params, reference, target, mask=None, pad=False, interp='cubic',

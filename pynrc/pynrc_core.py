@@ -409,6 +409,8 @@ class NIRCam(NIRCam_ext):
 
             self._validate_wheels()
             self.update_detectors(**kwargs)
+            ap_name_rec = self.get_siaf_apname()
+            self.update_from_SIAF(ap_name_rec, pupil=pupil_mask)
         else:
             self.update_from_SIAF(apname, pupil=pupil_mask, **kwargs)
 
@@ -420,8 +422,18 @@ class NIRCam(NIRCam_ext):
         # Create a background reference class
         self._fov_pix_bg = 33
         self._fov_bg_match = False
-        if autogen_coeffs:
-            self._update_bg_class(**kwargs)
+        # if autogen_coeffs:
+        self._update_bg_class(**kwargs)
+
+        # Check aperture info is consistent
+        ap_name_rec = self.get_siaf_apname()
+        if ((ap_name_rec != self.aperturename) and
+            not (('FULL' in self.aperturename) and ('TAMASK' in self.aperturename))):
+            # Warning strings
+            out_str1 = f'Current aperture {self.aperturename} does not match recommendation ({ap_name_rec}).'
+            out_str2 = f'Perhaps try self.aperturename = self.get_siaf_apname()'
+            _log.warn(out_str1)
+            _log.warn(out_str2)
         
 
     def _update_bg_class(self, fov_bg_match=None, **kwargs):
@@ -454,13 +466,14 @@ class NIRCam(NIRCam_ext):
         if fov_bg_match is not None:
             self._fov_bg_match = fov_bg_match
 
+
+        self._fov_pix_bg = self.fov_pix if self._fov_bg_match else self._fov_pix_bg
         if self._image_mask is None:
             self._nrc_bg = self
         else:
             log_prev = conf.logging_level
             setup_logging('WARN', verbose=False)
 
-            self._fov_pix_bg = self.fov_pix if self._fov_bg_match else self._fov_pix_bg
             nrc_bg = NIRCam_ext(filter=self.filter, pupil_mask=self.pupil_mask,
                                 fov_pix=self._fov_pix_bg, oversample=self._oversample)
 
@@ -534,7 +547,10 @@ class NIRCam(NIRCam_ext):
         filter  = self._filter
         pupil   = self._pupil_mask
         mask    = self._image_mask
-        channel = self.channel
+        if self.channel=='long' or self.channel=='LW':
+            channel = 'LW'
+        else:
+            channel = 'SW'
 
         if mask is None: 
             mask = ''
@@ -787,9 +803,14 @@ class NIRCam(NIRCam_ext):
         if (pupil_mask is not None) and (pupil_mask != self.pupil_mask):
             update_coeffs = True
             update_bg_coeffs = True
+            if (pupil_mask.upper()=="CLEAR") or (pupil_mask.upper()=="NONE"):
+                pupil_mask = None
             self.pupil_mask = pupil_mask
         if (image_mask is not None) and (image_mask != self.image_mask):
             update_coeffs = True
+            update_bg_coeffs = True
+            if (image_mask.upper()=="CLEAR") or (image_mask.upper()=="NONE"):
+                image_mask = None
             self.image_mask = image_mask
         if (fov_pix is not None) and (fov_pix != self.fov_pix):
             update_coeffs = True
@@ -935,6 +956,10 @@ class NIRCam(NIRCam_ext):
         is_grism = self.is_grism
 
         pupil_mask = self.pupil_mask
+        if self.channel=='long' or self.channel=='LW':
+            channel = 'LW'
+        else:
+            channel = 'SW'
 
         # Time series filters
         ts_filters = ['F277W','F356W','F444W','F322W2']
@@ -943,7 +968,7 @@ class NIRCam(NIRCam_ext):
         lwb_filters = [
             'F250M','F300M','F277W','F335M','F360M',
             'F356W','F410M','F430M','F460M','F480M','F444W'
-            ]
+        ]
 
         # Coronagraphy
         if is_coron:
@@ -957,13 +982,13 @@ class NIRCam(NIRCam_ext):
         elif is_lyot: #and self.ND_acq:
             tastr = 'TA' if self.ND_acq else 'FSTA'
             key = 'NRC{}_{}'.format(detid,tastr)
-            if ('CIRC' in pupil_mask) and ('SW' in self.channel):
+            if ('CIRC' in pupil_mask) and ('SW' in channel):
                 key = key + 'MASK210R'
-            elif ('CIRC' in pupil_mask) and ('LW' in self.channel):
-                key = key + 'MASK430R'
-            elif ('WEDGE' in pupil_mask) and ('SW' in self.channel):
+            elif ('CIRC' in pupil_mask) and ('LW' in channel):
+                key = key + 'MASK430R' if ('F4' in self.filter) else key + 'MASK335R'
+            elif ('WEDGE' in pupil_mask) and ('SW' in channel):
                 key = key + 'MASKSWB'
-            elif ('WEDGE' in pupil_mask) and ('LW' in self.channel):
+            elif ('WEDGE' in pupil_mask) and ('LW' in channel):
                 key = key + 'MASKLWB'
         # Time series grisms
         elif is_grism and ('GRISMR' in pupil_mask) and (self.filter in ts_filters):
@@ -1095,32 +1120,53 @@ class NIRCam(NIRCam_ext):
         mask = None
         ND_acq = False
         filter = None
-        if '_MASKSWB' in apname:
-            pupil = 'WEDGELYOT' if pupil is None else pupil
-            mask  = 'MASKSWB'
-        elif '_MASKLWB' in apname:
-            pupil = 'WEDGELYOT' if pupil is None else pupil
-            mask  = 'MASKLWB'            
-        elif '_MASK210R' in apname:
-            pupil = 'CIRCLYOT' if pupil is None else pupil
-            mask  = 'MASK210R'
-        elif '_MASK335R' in apname:
-            pupil = 'CIRCLYOT' if pupil is None else pupil
-            mask  = 'MASK335R'
-        elif '_MASK430R' in apname:
-            pupil = 'CIRCLYOT' if pupil is None else pupil
-            mask  = 'MASK430R'
-        elif '_GRISMC' in apname:
-            pupil = 'GRISMC' if pupil is None else pupil
-        elif '_GRISM' in apname:
-            pupil = 'GRISMR' if pupil is None else pupil
-
-        # ND Square
-        # _FSTAMASK is faint star ==> not on ND square
-        if '_TAMASK' in apname:
-            ND_acq = True
+        # Coronagraphic mask observations
+        if 'MASK' in apname:
+            # Set default pupil
             if pupil is None:
                 pupil = 'WEDGELYOT' if 'WB' in apname else 'CIRCLYOT'
+
+            # Set mask occulter for all full arrays (incl. TAs) and science subarrays
+            # Treats full array TAs like a full coronagraphic observation
+            if ('FULL' in apname) or ('_MASK' in apname):
+                if ('MASKSWB' in apname):
+                    mask  = 'MASKSWB'
+                elif ('MASKLWB' in apname):
+                    mask  = 'MASKLWB'            
+                elif ('MASK210R' in apname):
+                    mask  = 'MASK210R'
+                elif ('MASK335R' in apname):
+                    mask  = 'MASK335R'
+                elif ('MASK430R' in apname):
+                    mask  = 'MASK430R'
+                if 'TA' in apname:
+                    _log.warn('Full TA apertures are treated similar to coronagraphic observations.')
+                    _log.warn("To calculate SNR, self.update_psf_coeff(image_mask='CLEAR') and set self.ND_acq.")
+            elif '_TAMASK' in apname:
+                # For small TA subarray, turn off mask and enable ND square
+                mask = None
+                ND_acq = True
+            elif '_FSTAMASK in apname':
+                # Not really anything to do here
+                mask = None
+            else:
+                _log.warn(f'No mask setting for {apname}')
+
+        # Grism observations
+        elif 'GRISM' in apname:
+            if ('_GRISMC' in apname): # GRISMC WFSS
+                pupil = 'GRISMC' if pupil is None else pupil
+            elif ('_GRISMR' in apname): # GRISMR WFSS
+                pupil = 'GRISMR' if pupil is None else pupil
+            elif ('_GRISMTS' in apname): # SW apertures in parallel w/ LW GRISMTS
+                pupil = 'WLP8' if pupil is None else pupil
+            elif ('_TAGRISMTS' in apname): # GRISM TA have no pupil
+                pupil = None
+            elif ('_GRISM' in apname): # Everything else is GRISMR
+                pupil = 'GRISMR' if pupil is None else pupil
+            else:
+                _log.warn(f'No grism setting for {apname}')
+
 
         # Look for filter specified in aperture name
         if ('_F1' in apname) or ('_F2' in apname) or ('_F3' in apname) or ('_F4' in apname):
@@ -1508,7 +1554,7 @@ class NIRCam(NIRCam_ext):
             zf_rec = fzodi_pix / fzodi_pix_temp
             str1 = 'Using ra,dec,thisday keywords can be relatively slow. \n'
             str2 = '\tFor your specified loc and date, we recommend using zfact={:.1f}'.format(zf_rec)
-            _log.warning(str1 + str2)
+            _log.warn(str1 + str2)
 
         # Don't forget about Lyot mask attenuation (not in bandpass throughput)
         if self.is_lyot:
@@ -1589,7 +1635,7 @@ class NIRCam(NIRCam_ext):
             im_bg = det_to_sci(im_bg, detid)
         elif self.is_coron or self.coron_substrate:
             # Create full image, then crop based on detector configuration
-            im_bg = build_mask_detid(detid, oversample=1, pupil=pupil)
+            im_bg = build_mask_detid(detid, oversample=1, pupil=pupil, filter=self.filter)
             if im_bg is None:
                 # In the event the specified detid has no coronagraphic mask
                 # This includes ['A1', 'A3', 'B2', 'B4']
@@ -1973,8 +2019,14 @@ class NIRCam(NIRCam_ext):
                           return_coords=None, use_coeff=True, **kwargs):
         """Create PSF grid over full field of view
         
-        Wrapper around `calc_psf_grid` that returns normalized PSFs across the 
-        full field of view.
+        Wrapper around `calc_psf_grid` that returns normalized PSFs across 
+        the field of view. 
+        
+        Create a grid of PSFs across instrument aperture FoV. By default,
+        imaging observations will be for full detector FoV with regularly
+        spaced grid. Coronagraphic observations will cover nominal 
+        coronagraphic mask region (usually 10s of arcsec) and will have
+        logarithmically spaced values where appropriate.
 
         Parameters
         ==========
@@ -1993,16 +2045,26 @@ class NIRCam(NIRCam_ext):
             ('det', 'sci', 'tel', 'idl'). Output is then xvals, yvals, hdul_psfs.
         use_coeff : bool
             If True, uses `calc_psf_from_coeff`, other WebbPSF's built-in `calc_psf`.
+
+        Keyword Args
+        ============
+        xsci_vals: None or ndarray
+            Option to pass a custom grid values along x-axis in 'sci' coords.
+            If coronagraph, this instead corresponds to coronagraphic mask axis, 
+            which has a slight rotation in MIRI.
+        ysci_vals: None or ndarray
+            Option to pass a custom grid values along y-axis in 'sci' coords.
+            If coronagraph, this instead corresponds to coronagraphic mask axis, 
+            which has a slight rotation in MIRI.
         """
 
-        # Create input spectrum that is  star normalized by unit response
+        # Create input spectrum that is star normalized by unit response
         bp = self.bandpass
         sp = stellar_spectrum(sptype, bp.unit_response(), 'flam', bp)
 
-        res = self.calc_psfs_grid(sp=sp, wfe_drift=wfe_drift, osamp=osamp,
-                                  return_coords=return_coords, use_coeff=use_coeff,
-                                  npsf_per_full_fov=npsf_per_full_fov, **kwargs)
-        return res
+        return self.calc_psfs_grid(sp=sp, wfe_drift=wfe_drift, osamp=osamp,
+                                   return_coords=return_coords, use_coeff=use_coeff,
+                                   npsf_per_full_fov=npsf_per_full_fov, **kwargs)
 
     def gen_obs_params(self, target_name, ra, dec, date_obs, time_obs, pa_v3=0, 
         siaf_ap_ref=None, xyoff_idl=(0,0), visit_type='SCIENCE', time_series=False,

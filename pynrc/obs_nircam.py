@@ -5,12 +5,15 @@ from astropy.convolution import convolve_fft
 from scipy import fftpack
 from copy import deepcopy
 
-from webbpsf_ext.image_manip import convolve_image, make_disk_image
+from webbpsf_ext.image_manip import convolve_image, make_disk_image, distort_image
+from webbpsf_ext.bandpasses import nircam_com_th
 
 # Import libraries
 from .pynrc_core import NIRCam, DetectorOps, merge_dicts
 from .nrc_utils import *
 from .maths.coords import gen_sgd_offsets
+
+from tqdm.auto import tqdm, trange
 
 import logging
 _log = logging.getLogger('pynrc')
@@ -40,11 +43,16 @@ class nrc_hci(NIRCam):
         Use a large number (high-density) of grid points to create coefficients.
         If True, then produces a higher fidelity PSF variations across the FoV, 
         but will take much longer to genrate on the first pass and requires more
-        disk space and memory while running.   
+        disk space and memory while running.
+    use_ap_info : bool   
+        For subarray observations, the mask reference points are not
+        actually in the center of the array. Set this to true to 
+        shift the sources to actual aperture reference location. 
+        Default is to place in center of array.
     """
 
     def __init__(self, wind_mode='WINDOW', xpix=320, ypix=320, large_grid=False, bar_offset=None, 
-                 autogen_coeffs=True, **kwargs):
+                 use_ap_info=False, autogen_coeffs=True, sgd_type=None, slew_std=5, fsm_std=2.5, **kwargs):
 
         super().__init__(wind_mode=wind_mode, xpix=xpix, ypix=ypix, fov_bg_match=True, 
                          autogen_coeffs=autogen_coeffs, **kwargs)
@@ -58,12 +66,18 @@ class nrc_hci(NIRCam):
         log_prev = conf.logging_level
         setup_logging('WARN', verbose=False)
 
+        self._use_ap_info = use_ap_info
+
         # Set locations based on detector
         self._set_xypos()
         # Create mask throughput images seen by detector
         self._gen_cmask()
+
         # Create default SGD offsets
-        self.gen_pointing_offsets(sgd_type=None, slew_std=5, fsm_std=2.5)
+        self.sgd_type = sgd_type
+        self.slew_std = slew_std
+        self.fsm_std  = fsm_std
+        self.gen_pointing_offsets()
 
         setup_logging(log_prev, verbose=False)
 
@@ -97,27 +111,9 @@ class nrc_hci(NIRCam):
         else:
             self._bar_offset = 0
 
-    # def _gen_cached_psfs(self):
-    #     """Generate a set of cached PSF for disk convolutions."""
-    #     if self.image_mask is None:
-    #         # If no mask center and bg and off-axis PSFs are all the same
-    #         _, psf = self.gen_psf(return_oversample=True, use_bg_psf=False)
-    #         self.psf_center_over = psf
-    #         self.psf_offaxis_over = self.psf_center_over
-    #     elif self.image_mask[-1]=='R':
-    #         _, psf = self.gen_psf(return_oversample=True, use_bg_psf=False)
-    #         self.psf_center_over = psf
-    #         _, psf = self.gen_psf(return_oversample=True, use_bg_psf=True)
-    #         self.psf_offaxis_over = psf
-    #     elif self.image_mask[-1]=='B':
-    #         # Bar mask "central" PSFs are a list of PSFs along the mask
-    #         self._gen_psfbar_list()
-    #         _, psf = self.gen_psf(return_oversample=True, use_bg_psf=True)
-    #         self.psf_offaxis_over = psf
-
 
     def gen_offset_psf(self, offset_r, offset_theta, sp=None, return_oversample=False, 
-        wfe_drift=None, use_coeff=True, coron_rescale=False, **kwargs):
+        wfe_drift=None, use_coeff=True, coron_rescale=False, use_cmask=False, **kwargs):
         """Create a PSF offset from center FoV
 
         Generate some off-axis PSF at a given (r,theta) offset from center.
@@ -158,36 +154,47 @@ class nrc_hci(NIRCam):
             psf = self.calc_psf(sp=sp, return_hdul=False, return_oversample=return_oversample, 
                 wfe_drift=wfe_drift, coord_vals=coords, coord_frame='idl', **kwargs)
 
+        if ('FULL' in self.det_info['wind_mode']) and (self.image_mask is not None):
+            # cdict = coron_ap_locs(self.module, self.channel, self.image_mask, full=True)
+            # xref, yref = cdict['cen_sci']
+            xref, yref = self.siaf_ap.reference_point('sci')
+        elif self._use_ap_info:
+            # Use actual mask reference position within subarray?
+            xref, yref = self.siaf_ap.reference_point('sci')
+        else:
+            # Otherwise assumed mask is in center of subarray for simplicity
+            ypix, xpix = (self.det_info['ypix'], self.det_info['xpix'])
+            xref, yref = (xpix/2, ypix/2)
+
+        delx_asec, dely_asec = coords
+
+        # Determine if any throughput loss due to coronagraphic mask
+        # artifacts, such as the mask holder or ND squares.
+        # If ND_acq, then PSFs already included ND throughput in bandpass.
+        if use_cmask and self.is_coron and (not self.ND_acq):
+            cmask = self.mask_images['DETSAMP']
+            # First, anything in a rectangular region around the
+            # mask has already been correctly accounted for
+            if (( np.abs(delx_asec)<10 and np.abs(dely_asec)<5 ) and
+                not ('TAMASK' in self.aperturename)):
+                # Set transmission to 1
+                trans = 1
+            else:
+                xpos = int(xref + delx_asec / self.pixelscale)
+                ypos = int(yref + dely_asec / self.pixelscale)
+                cmask_sub = cmask[ypos-3:ypos+3,xpos-3:xpos+3]
+                trans = np.mean(cmask_sub)
+                # COM substrate already accounted for in filter throughput curve,
+                # so it will be double-counted here. Need to divide it out.
+                w_um = self.bandpass.avgwave() / 1e4
+                com_th = nircam_com_th(wave_out=w_um)
+                trans /= com_th
+        else:
+            trans = 1
+
+        psf *= trans
+
         return psf
-
-        # if sp is None:
-        #     # No spectral information, so use cached PSFs
-        #     # Let _psf_lin_comb() handle things
-        #     psf_center  = None 
-        #     psf_offaxis = None 
-        # else:
-        #     if self.mask is None:
-        #         # Direct imaging; both PSFs are the same
-        #         _, psf_center = self.gen_psf(sp, return_oversample=True, use_bg_psf=False,
-        #                                      wfe_drift=wfe_drift)
-        #         psf_offaxis = None
-        #     elif self.mask[-1]=='R': # Round masks
-        #         _, psf_center  = self.gen_psf(sp, return_oversample=True, use_bg_psf=False)
-        #         _, psf_offaxis = self.gen_psf(sp, return_oversample=True, use_bg_psf=True,
-        #                                       wfe_drift=wfe_drift)
-        #     elif self.mask[-1]=='B': # Bar masks
-        #         offx_asec, offy_asec = rtheta_to_xy(offset_r, offset_theta)
-        #         _, psf_center = self.gen_psf(sp, return_oversample=True, use_bg_psf=False, 
-        #                                      bar_offset=offx_asec)
-        #         _, psf_offaxis = self.gen_psf(sp, return_oversample=True, use_bg_psf=True,
-        #                                       wfe_drift=wfe_drift)
-
-        # psf = self._psf_lin_comb(offset_r, offset_theta, psf_center, psf_offaxis)
-        # if return_oversample:
-        #     return psf
-        # else:
-        #     fov_pix = self.fov_pix
-        #     return krebin(psf, (fov_pix,fov_pix))
 
     def _set_xypos(self, xy=None):
         """
@@ -196,10 +203,17 @@ class nrc_hci(NIRCam):
         wind_mode = self.det_info['wind_mode']
         if xy is not None:
             self.update_detectors(x0=xy[0], y0=xy[1])
+        elif self._use_ap_info:
+            xvert, yvert = self.siaf_ap.closed_polygon_points('det')
+            xy = (np.min(xvert).astype('int'), np.min(yvert).astype('int'))
+            self.update_detectors(x0=xy[0], y0=xy[1])
         elif self.is_coron:
             full = True if 'FULL' in wind_mode else False
-            cdict = coron_ap_locs(self.module, self.channel, self.image_mask, full=full)
-            xcen, ycen = cdict['cen']
+            if full:
+                xcen, ycen = self.siaf_ap.reference_point('det')
+            else:
+                cdict = coron_ap_locs(self.module, self.channel, self.image_mask, full=full)
+                xcen, ycen = cdict['cen']
 
             xpix, ypix = (self.det_info['xpix'], self.det_info['ypix'])
             if full: 
@@ -226,7 +240,7 @@ class nrc_hci(NIRCam):
         oversample = self.oversample
 
         mask_dict = {}
-        if mask is None:
+        if (not self.is_coron) and (not self.is_lyot):
             mask_dict['DETSAMP'] = None
             mask_dict['OVERSAMP'] = None
         else:
@@ -234,13 +248,14 @@ class nrc_hci(NIRCam):
             x0, y0 = (self.det_info['x0'], self.det_info['y0'])
             xpix, ypix = (self.det_info['xpix'], self.det_info['ypix'])
 
-            im_det  = build_mask_detid(detid, oversample=1, pupil=pupil)
-            # im_over = build_mask_detid(detid, oversample=oversample, pupil=pupil)
+            # im_det  = build_mask_detid(detid, oversample=1, pupil=pupil)
+            im_over = build_mask_detid(detid, oversample=oversample, 
+                                       pupil=pupil, filter=self.filter)
 
             # Convert to det coords and crop
-            im_det  = sci_to_det(im_det, detid)
-            # im_over = sci_to_det(im_over, detid)
-            im_over = frebin(im_det, scale=oversample)
+            # im_det  = sci_to_det(im_det, detid)
+            im_over = sci_to_det(im_over, detid)
+            im_det = frebin(im_over, scale=1/oversample, total=False)
 
             im_det = im_det[y0:y0+ypix, x0:x0+xpix]
             # Crop oversampled image
@@ -255,14 +270,16 @@ class nrc_hci(NIRCam):
 
         self.mask_images = mask_dict
 
-    def gen_pointing_offsets(self, sgd_type='auto', slew_std=5, fsm_std=2.5):
+    def gen_pointing_offsets(self, rand_seed=None):
         """
         Create a series of x and y position offsets for a SGD pattern.
         This includes the central position as the first in the series.
         By default, will also add random movement errors using the
         `slew_std` and `fsm_std` keywords. Returned values are in arcsec.
+
+        Uses the attributes `sgd_type`, `slew_std`, and `fsm_std`.
         
-        Parameters
+        Attributes
         ==========
         sgd_type : str or None
             Small grid dither pattern. Valid types are
@@ -282,7 +299,16 @@ class nrc_hci(NIRCam):
             to all positions and gives a baseline offset relative to the
             desired mask center. 
             Values should be in units of mas.
+
+        Parameters
+        ==========
+        rand_seed : int
+            Input a random seed in order to make reproduceable pseudo-random
+            numbers.
         """
+        sgd_type = self.sgd_type
+        slew_std = self.slew_std
+        fsm_std  = self.fsm_std
 
         if sgd_type == 'auto':
             if self.is_coron and self.image_mask[-1]=='R':
@@ -293,19 +319,14 @@ class nrc_hci(NIRCam):
                 sgd_type = '5diamond'
 
         if sgd_type is None:
-            xoff, yoff = np.random.normal(scale=slew_std, size=2) / 1000
+            rng = np.random.default_rng(seed=rand_seed)
+            xoff, yoff = rng.normal(scale=slew_std, size=2) / 1000
             fsm_std = None
         else:
-            xoff, yoff = gen_sgd_offsets(sgd_type, slew_std=slew_std, fsm_std=fsm_std)
+            xoff, yoff = gen_sgd_offsets(sgd_type, slew_std=slew_std, fsm_std=fsm_std, rand_seed=rand_seed)
 
         _log.info("Saving SGD position info to `self.pointing_info` dictionary attribute")
-        self.pointing_info = {
-            'sgd_type' : sgd_type,
-            'slew_std' : slew_std,
-            'fsm_std'  : fsm_std,
-            'xoff' : xoff, 'yoff' : yoff,
-        }
-
+        self.pointing_info = {'xoff' : xoff, 'yoff' : yoff,}
 
 
 class obs_hci(nrc_hci):
@@ -356,22 +377,21 @@ class obs_hci(nrc_hci):
             - 'wavelength' : Wavelength of observation in microns.
             - 'units'      : String of assumed flux units (ie., MJy/arcsec^2 or muJy/pixel)
             - 'cen_star'   : True/False. Is a star already placed in the central pixel? 
+    npsfs_per_axis
     """
 
     def __init__(self, sp_sci, distance, sp_ref=None, wfe_ref_drift=5, wfe_roll_drift=2,
-        wind_mode='WINDOW', xpix=320, ypix=320, disk_params=None, 
-        sgd_type=None, slew_std=5, fsm_std=2.5, **kwargs):
+        wind_mode='WINDOW', xpix=320, ypix=320, disk_params=None, npsfs_per_axis=9,
+        sgd_type=None, slew_std=5, fsm_std=2.5, autogen_coeffs=True, **kwargs):
 
         if 'FULL'   in wind_mode: xpix = ypix = 2048
         if 'STRIPE' in wind_mode: xpix = 2048
 
-        #super(NIRCam,self).__init__(**kwargs)
-        # Not sure if this works for both Python 2 and 3
-        # nrc_hci.__init__(self, wind_mode=wind_mode, xpix=xpix, ypix=ypix, wfe_drift=False,
-        #                  verbose=verbose, **kwargs)
-        super().__init__(wind_mode=wind_mode, xpix=xpix, ypix=ypix, wfe_drift=False, **kwargs)
+        super().__init__(wind_mode=wind_mode, xpix=xpix, ypix=ypix,  autogen_coeffs=autogen_coeffs, 
+                         sgd_type=sgd_type, slew_std=slew_std, fsm_std=fsm_std, **kwargs)
 
-        if (wind_mode=='FULL') and (self.channel=='SW'):
+        wind_mode = self.Detector.wind_mode
+        if (wind_mode=='FULL') and (self.channel=='short' or self.channel=='SW'):
             raise NotImplementedError('SW Full Frame not yet implemented.')
 
         # Spectral models
@@ -387,6 +407,8 @@ class obs_hci(nrc_hci):
         # Open and rescale input disk image to observation parameters
         self._disk_params = disk_params
         self.gen_disk_hdulist()
+        if autogen_coeffs:
+            self.gen_disk_psfs(npsfs_per_axis=npsfs_per_axis)
 
     @property
     def wfe_ref_drift(self):
@@ -406,7 +428,8 @@ class obs_hci(nrc_hci):
         """Set the WFE drift value between roll observations"""
         self._wfe_roll_drift = value
 
-    def gen_pointing_offsets(self, sgd_type=None, slew_std=5, fsm_std=2.5, verbose=False):
+    def gen_pointing_offsets(self, sgd_type=None, slew_std=5, fsm_std=2.5, 
+        rand_seed=None, verbose=False):
         """
         Create a series of x and y position offsets for a SGD pattern.
         This includes the central position as the first in the series.
@@ -437,6 +460,9 @@ class obs_hci(nrc_hci):
             desired mask center. 
             Values should be in units of mas.
         """
+        sgd_type = self.sgd_type
+        slew_std = self.slew_std
+        fsm_std  = self.fsm_std
 
         if sgd_type == 'auto':
             if self.is_coron and self.image_mask[-1]=='R':
@@ -447,14 +473,16 @@ class obs_hci(nrc_hci):
                 sgd_type = '5diamond'
 
         if sgd_type is None:
-            xyoff_ref = np.random.normal(scale=slew_std, size=2) / 1000
+            rng = np.random.default_rng(seed=rand_seed)
+            xyoff_ref = rng.normal(scale=slew_std, size=2) / 1000
             fsm_std = None
         else:
-            xoff_ref, yoff_ref = gen_sgd_offsets(sgd_type, slew_std=slew_std, fsm_std=fsm_std)
+            xoff_ref, yoff_ref = gen_sgd_offsets(sgd_type, slew_std=slew_std, 
+                                                 fsm_std=fsm_std, rand_seed=rand_seed)
             xyoff_ref = np.array([xoff_ref,yoff_ref]).transpose()
 
-        xyoff_roll1 = np.random.normal(scale=slew_std, size=2) / 1000
-        xyoff_roll2 = np.random.normal(scale=slew_std, size=2) / 1000
+        xyoff_roll1 = rng.normal(scale=slew_std, size=2) / 1000
+        xyoff_roll2 = rng.normal(scale=slew_std, size=2) / 1000
 
         _log.info("Saving SGD position info to `self.pointing_info` dictionary attribute")
         self.pointing_info = {
@@ -484,9 +512,6 @@ class obs_hci(nrc_hci):
         if self._disk_params is None:
             self.disk_hdulist = None
         else:
-            xpix = self.det_info['xpix']
-            ypix = self.det_info['ypix']
-            oversample = self.psf_info['oversample']
 
             if file is not None:
                 self._disk_params['file'] = file
@@ -501,34 +526,28 @@ class obs_hci(nrc_hci):
             if cen_star is not None:
                 self._disk_params['cen_star'] = cen_star
 
-            disk_hdul = make_disk_image(self, self.disk_params, sp_star=self.sp_sci, 
-                                        dist_out=self.distance, shape_out=shape_out)
+            file       = self._disk_params['file']
+            pixscale   = self._disk_params['pixscale']
+            dist       = self._disk_params['dist']
+            wavelength = self._disk_params['wavelength']
+            units      = self._disk_params['units']
+            cen_star   = self._disk_params['cen_star']
 
-            # Get rid of the central star flux
-            # and anything interior to a few pixels
-            image = disk_hdul[0].data
-            image_rho = dist_image(image)
-            ind_max = image == image.max()
-            inner_pix = 3 * oversample
-            if (image[image_rho<inner_pix].max() == image.max()) and (image.max()>1000*image[~ind_max].max()):
-                image[image_rho < inner_pix] = 0
-
-            # Expand to full observation size
-            if shape_out is None:
-                ydata, xdata = disk_hdul[0].data.shape
-                ynew = np.max([ypix, ydata])
-                xnew = np.max([xpix, xdata])
-                disk_hdul[0].data = pad_or_cut_to_size(disk_hdul[0].data, (ynew,xnew))
+            # TODO: Double-check 'APERNAME', 'DET_X', 'DET_Y', 'DET_V2', 'DET_V3'
+            # correspond to the desired observation
+            disk_hdul = _gen_disk_hdulist(self, file, pixscale, dist, wavelength, units, cen_star, 
+                                          sp_star=self.sp_sci, dist_out=self.distance, shape_out=shape_out)
             self.disk_hdulist = disk_hdul
 
-    # Any time update_detectors is called, also call _gen_ref
+
+    # Any time update_detectors is called, also call gen_ref_det()
     def update_detectors(self, verbose=False, **kwargs):
         super().update_detectors(verbose=verbose, **kwargs)
 
         # Updates ref detector window size
-        self.gen_ref()
+        self.gen_ref_det()
 
-    def gen_ref(self, **kwargs):
+    def gen_ref_det(self, **kwargs):
         """
         Function to generate and update Reference Detector class.
         Used to keep track of detector and multiaccum config,
@@ -567,25 +586,22 @@ class obs_hci(nrc_hci):
         self._det_info_ref = merge_dicts(kw1,kw2)
 
 
-    # def _gen_psf_list(self):
-    #     """
-    #     Save instances of NIRCam PSFs that are incrementally offset
-    #     from coronagraph center to convolve with a disk image.
-    #     """
+    def gen_disk_psfs(self, npsfs_per_axis=9, **kwargs):
+        """
+        Save instances of NIRCam PSFs that are incrementally offset
+        from coronagraph center to convolve with a disk image.
+        """
 
-    #     # If no mask, then the PSF looks the same at all radii
-    #     self.psf_list = []
-    #     if self.mask is None:
-    #         psf = self.gen_offset_psf(0, 0)
-    #         self.psf_list = [psf]
-    #     elif self.mask[-1]=='R': # Round masks
-    #         self.psf_list = [self.gen_offset_psf(offset, 0) for offset in self.offset_list]
-    #     elif self.mask[-1]=='B': # Bar masks
-    #         # Set bar offset to 0, for this part, then return to original value
-    #         # baroff_orig = self.bar_offset
-    #         # self.bar_offset = 0
-    #         self.psf_list = [self.gen_offset_psf(offset, 0) for offset in self.offset_list]
-    #         # self.bar_offset = baroff_orig
+        if self._disk_params is None:
+            # No need to generate if no disk
+            self.psf_list = None
+        elif self.image_mask is None:
+            # If no mask, then assume PSF looks the same at all radii
+            # This return a single ndarray
+            self.psf_list = self.gen_offset_psf(0,0, return_oversample=True, **kwargs)
+        else:
+            self.psf_list = self.calc_psfs_grid(npsf_per_full_fov=npsfs_per_axis, 
+                                                osamp=self.oversample, **kwargs)
 
     def planet_spec(self, **kwargs):
         """Exoplanet spectrum
@@ -622,7 +638,7 @@ class obs_hci(nrc_hci):
         Coordinate convention is for +N up and +E to left.
 
         Parameters
-        ----------
+        ==========
         model : str
             Exoplanet model to use ('sb12', 'bex', 'cond') or
             stellar spectrum model ('bosz', 'ck04models', 'phoenix').
@@ -683,8 +699,8 @@ class obs_hci(nrc_hci):
         loc = rtheta_to_xy(rtheta[0], rtheta[1]) if xy is None else xy
 
         # Define pixel location relative to the center of the subarray
-        au_per_pixel = self.distance*self.pixelscale
         if 'AU' in runits:
+            au_per_pixel = self.distance*self.pixelscale
             xoff, yoff = np.array(loc) / au_per_pixel
         elif ('asec' in runits) or ('arcsec' in runits):
             xoff, yoff = np.array(loc) / self.pixelscale
@@ -717,9 +733,9 @@ class obs_hci(nrc_hci):
         self._planets.append(d)
 
 
-    def gen_planets_image(self, PA_offset=0, xyoff_asec=(0,0), use_cmask=False, 
-        wfe_drift=None, use_coeff=True, return_oversample=False, 
-        coron_rescale=True, **kwargs):
+    def gen_planets_image(self, PA_offset=0, xyoff_asec=(0,0), use_cmask=True, 
+        wfe_drift=None, use_coeff=True, return_oversample=False, coron_rescale=True, 
+        **kwargs):
         """Create image of just planets.
 
         Use info stored in self.planets to create a noiseless slope image
@@ -743,11 +759,14 @@ class obs_hci(nrc_hci):
         wfe_drift : float
             WFE drift value (in nm RMS). Not usually a concern for companion
             PSFs, so default is 0.
-        return_oversample : bool
-            Return either the detector pixel-sampled or oversampled image.
         use_coeff : bool
             If True, uses `calc_psf_from_coeff`, other WebbPSF's built-in `calc_psf`
             for stellar sources.
+        return_oversample : bool
+            Return either the detector pixel-sampled or oversampled image.
+        coron_rescale : bool
+            Rescale off-axis coronagraphic PSF to better match analytic prediction
+            when source overlaps coronagraphic occulting mask. Default: True.
 
         """
         if len(self.planets)==0:
@@ -765,7 +784,7 @@ class obs_hci(nrc_hci):
 
         image_over = np.zeros([ypix_over, xpix_over])
         bar_offset = self.bar_offset
-        for pl in self.planets:
+        for pl in tqdm(self.planets, desc='Companions', leave=False):
 
             # Create slope image (postage stamp) of planet
             sp = self.planet_spec(**pl)
@@ -783,50 +802,62 @@ class obs_hci(nrc_hci):
             r, th = xy_to_rtheta(delx_asec, dely_asec)
             psf_planet = self.gen_offset_psf(r, th, sp=sp, return_oversample=True, 
                                              use_coeff=use_coeff, wfe_drift=wfe_drift, 
-                                             coron_rescale=coron_rescale, **kwargs)
+                                             coron_rescale=coron_rescale, use_cmask=use_cmask,
+                                             **kwargs)
 
             # Expand to full size
             psf_planet = pad_or_cut_to_size(psf_planet, (ypix_over, xpix_over))
 
             # Shift to position relative to center of image
-            delx, dely = np.array([delx_asec, dely_asec]) / self.pixelscale
+            # Convert delx and dely from 'idl' to 'sci' coords
+            xsci_ref, ysci_ref = self.siaf_ap.reference_point('sci')
+            xsci, ysci = self.siaf_ap.idl_to_sci(delx_asec, dely_asec)
+            delx, dely = (xsci - xsci_ref, ysci - ysci_ref)
             if ('FULL' in self.det_info['wind_mode']) and (self.image_mask is not None):
-                cdict = coron_ap_locs(self.module, self.channel, self.image_mask, full=True)
-                xcen, ycen = cdict['cen_sci']
-                delx += (xcen - xpix/2)
-                dely += (ycen - ypix/2)
+                # cdict = coron_ap_locs(self.module, self.channel, self.image_mask, full=True)
+                # xref, yref = cdict['cen_sci']
+                xref, yref = self.siaf_ap.reference_point('sci')
+            elif self._use_ap_info:
+                # Use actual mask reference position within subarray?
+                xref, yref = self.siaf_ap.reference_point('sci')
+            else:
+                # Otherwise assumed mask is in center of subarray for simplicity
+                xref, yref = (xpix/2, ypix/2)
+            delx += (xref - xpix/2)
+            dely += (yref - ypix/2)
+            # Oversampled pixels
             delx_over = delx * self.oversample
             dely_over = dely * self.oversample
-            psf_planet = fshift(psf_planet, delx=delx_over, dely=dely_over, pad=True, interp='cubic')
+            interp = 'linear' if ('FULL' in self.det_info['wind_mode']) else 'cubic'
+            psf_planet = fshift(psf_planet, delx=delx_over, dely=dely_over, pad=True, interp=interp)
 
             # Determine if any throughput loss due to coronagraphic mask
             # artifacts, such as the mask holder or ND squares.
             # Planet positions are relative to the center of the mask,
             # which is not centered in a full detector.
-            # All subarrays should have the mask placed at the center.
-            if self.is_coron and use_cmask:
-                cmask = self.mask_images['DETSAMP']
-                # First, anything in a rectangular region around the
-                # mask has already been correctly accounted for
-                if (np.abs(delx_asec)<10) and (np.abs(dely_asec)<5):
-                    trans = 1
-                elif 'FULL' in self.det_info['wind_mode']:
-                    # If a full detector observation, then adjust
-                    # to be relative to mask location
-                    xoff = delx_asec / self.pixelscale
-                    yoff = dely_asec / self.pixelscale
-                    xpos = int(xcen + xoff)
-                    ypos = int(ycen + yoff)
-                    cmask_sub = cmask[ypos-3:ypos+3,xpos-3:xpos+3]
-                    trans = np.mean(cmask_sub)
-                else:
-                    xpos, ypos = (int(delx), int(dely))
-                    cmask_sub = cmask[ypos-3:ypos+3,xpos-3:xpos+3]
-                    trans = np.mean(cmask_sub)
-            else:
-                trans = 1
-
-            psf_planet *= trans
+            # All subarrays should have the mask placed at the ~center.
+            # If ND_acq, then PSFs already included ND throughput in bandpass.
+            # if use_cmask and self.is_coron and (not self.ND_acq):
+            #     cmask = self.mask_images['DETSAMP']
+            #     # First, anything in a rectangular region around the
+            #     # mask has already been correctly accounted for
+            #     if (( np.abs(delx_asec)<10 and np.abs(dely_asec)<5 ) and
+            #         not ('TAMASK' in self.aperturename)):
+            #         # Set transmission to 1
+            #         trans = 1
+            #     else:
+            #         xpos = int(xref + delx_asec / self.pixelscale)
+            #         ypos = int(yref + dely_asec / self.pixelscale)
+            #         cmask_sub = cmask[ypos-3:ypos+3,xpos-3:xpos+3]
+            #         trans = np.mean(cmask_sub)
+            #         # COM substrate already accounted for in filter throughput curve,
+            #         # so it will be double-counted here. Need to divide it out.
+            #         w_um = self.bandpass.avgwave() / 1e4
+            #         com_th = nircam_com_th(wave_out=w_um)
+            #         trans /= com_th
+            # else:
+            #     trans = 1
+            # psf_planet *= trans
 
             # Add to image
             image_over += psf_planet
@@ -837,7 +868,7 @@ class obs_hci(nrc_hci):
             return frebin(image_over, scale=1/self.oversample)
 
 
-    def gen_disk_image(self, PA_offset=0, xyoff_asec=(0,0), use_cmask=False,
+    def gen_disk_image(self, PA_offset=0, xyoff_asec=(0,0), use_cmask=True, 
         return_oversample=False, **kwargs):
         """Create image of just disk.
 
@@ -872,15 +903,21 @@ class obs_hci(nrc_hci):
         # Final image shape
         ypix, xpix = (self.det_info['ypix'], self.det_info['xpix'])
         bar_offset = self.bar_offset
+        oversample = self.oversample
 
         pixscale_over = self.pixelscale / self.oversample
 
         # Determine final shift amounts to location along bar
         # Shift to position relative to center of image
         if ('FULL' in self.det_info['wind_mode']) and (self.image_mask is not None):
-            cdict = coron_ap_locs(self.module, self.channel, self.image_mask, full=True)
-            xcen, ycen = cdict['cen_sci']
+            # cdict = coron_ap_locs(self.module, self.channel, self.image_mask, full=True)
+            # xcen, ycen = cdict['cen_sci']
+            xcen, ycen = self.siaf_ap.reference_point('sci')
+        elif self._use_ap_info:
+            # Use actual mask reference position within subarray?
+            xcen, ycen = self.siaf_ap.reference_point('sci')
         else:
+            # Otherwise assumed mask is in center of subarray for simplicity
             xcen, ycen = (xpix/2, ypix/2)
         delx_pix = (xcen - xpix/2)
         dely_pix = (ycen - ypix/2)
@@ -889,62 +926,102 @@ class obs_hci(nrc_hci):
         delx_asec = offx_asec + delx_pix * self.pixelscale + bar_offset
         dely_asec = offy_asec + dely_pix * self.pixelscale
 
+        # Distort image from 'idl' to 'sci' coords
+        # Assume disk image is placed at aperture reference point
+        sci_cen = self.siaf_ap.reference_point('sci')
+        im_distort = distort_image(self.disk_hdulist, aper=self.siaf_ap, sci_cen=sci_cen)
+
+        # Expand to oversampled array
+        hdul_disk = deepcopy(self.disk_hdulist)
+        # Final size of subarray
+        out_shape = np.array([ypix*oversample, xpix*oversample], dtype='int')
+        # Extend to accommodate rotations and shifts
+        extend = int(np.sqrt(2)*np.max(im_distort.shape))
+        oversized_shape = out_shape + extend
+        # But don't make smaller than current size
+        orig_shape = hdul_disk[0].data.shape
+        new_shape = np.array([oversized_shape,orig_shape]).max(axis=0)
+        hdul_disk[0].data = pad_or_cut_to_size(im_distort, new_shape)
+
         # Rotate and shift oversampled disk image
-        # Positive PA 
-        hdul_rot_shift = rotate_shift_image(self.disk_hdulist, PA_offset=PA_offset, 
+        # Positive PA_offset will rotate image clockwise (PA_offset = -1*PA_V3)
+        interp_order = 1 if ('FULL' in self.det_info['wind_mode']) else 3
+        hdul_rot_shift = rotate_shift_image(hdul_disk, angle=PA_offset, order=interp_order,
                                             delx_asec=delx_asec, dely_asec=dely_asec)
-        disk_image = hdul_rot_shift[0].data
+        hdul_rot_shift[0].data = pad_or_cut_to_size(hdul_rot_shift[0].data, out_shape)
+
+        hdul_disk.close()
+        del hdul_disk
+
+        # Get X and Y indices corresponding to aperture reference
+        xref, yref = self.siaf_ap.reference_point('sci')
+        hdul_rot_shift[0].header['XIND_REF'] = (xref*oversample, "x index of aperture reference")
+        hdul_rot_shift[0].header['YIND_REF'] = (yref*oversample, "y index of aperture reference")
+        hdul_rot_shift[0].header['CFRAME'] = 'sci'
 
         # Multiply raw disk data by coronagraphic mask.
         # Exclude region already affected by observed mask.
+        # Mostly ND Squares and opaque COM holder.
+        # If ND_acq, then disk already multipled by ND throughput in bandpass.
         cmask = self.mask_images['OVERSAMP']
-        if use_cmask and (cmask is not None):
+        if use_cmask and (cmask is not None) and (not self.ND_acq):
             # Exclude actual coronagraphic mask since this will be
             # taken into account during PSF convolution. Not true for
             # all other elements within FOV, ND squares, and mask holder.
-            cmask_temp = cmask.copy()
             if 'FULL' in self.det_info['wind_mode']:
-                r, th = dist_image(cmask, pixscale=pixscale_over,
-                                   center=cdict['cen_sci'], return_theta=True)
+                cmask_temp = cmask.copy()                
+                # center = cdict['cen_sci']
+                center = self.siaf_ap.reference_point('sci')
+                r, th = dist_image(cmask, pixscale=pixscale_over, center=center, return_theta=True)
                 x_asec, y_asec = rtheta_to_xy(r, th)
                 ind = (np.abs(x_asec)<10) & (np.abs(y_asec)<5)
                 cmask_temp[ind] = 1
+            elif self.ND_acq:
+                # No modifications if ND_acq
+                cmask_temp = cmask
             else:
+                cmask_temp = cmask.copy()
                 r, th = dist_image(cmask, pixscale=pixscale_over, return_theta=True)
                 x_asec, y_asec = rtheta_to_xy(r, th)
                 ind = (np.abs(x_asec)<10) & (np.abs(y_asec)<5)
                 cmask_temp[ind] = 1
 
-            disk_image *= cmask_temp
+            hdul_rot_shift[0].data *= cmask_temp
+
+        # Crop of unnecessary 0 rows/cols
+        # Add additional
+        sh_orig = hdul_rot_shift[0].data.shape
+        hdul_rot_shift[0].data = crop_zero_rows_cols(hdul_rot_shift[0].data, symmetric=True)
+        sh_new = hdul_rot_shift[0].data.shape
+        dy, dx = (np.array(sh_orig) - np.array(sh_new)) / 2
+        hdul_rot_shift[0].header['XIND_REF'] = hdul_rot_shift[0].header['XIND_REF'] - dx
+        hdul_rot_shift[0].header['YIND_REF'] = hdul_rot_shift[0].header['YIND_REF'] - dy
 
         ##################################
         # Image convolution
         ##################################
 
-        noff = len(self.offset_list)
-        xypix = int(np.sqrt(ypix*xpix))
-        nproc = nproc_use_convolve(xypix, 1, noff)
-
         if not self.is_coron: # Single PSF
-            psf = self.calc_psf_from_coeff(return_oversample=True, return_hdul=False)
+            psf = self.psf_list
             # Normalize PSF sum to 1.0
             # Otherwise convolve_fft may throw an error if psf.sum() is too small
+            # May no longer be necessary with normalize_kernel=True
             norm = psf.sum()
             psf = psf / norm
+            disk_image = hdul_rot_shift[0].data
             image_conv = convolve_fft(disk_image, psf, fftn=fftpack.fftn,
                                       ifftn=fftpack.ifftn, allow_huge=True)
             image_conv *= norm
         else:
+            # Closest PSF convolution
+            image_conv = convolve_image(hdul_rot_shift, self.psf_list)
 
-            hdu = fits.PrimaryHDU(disk_image)
-            hdu.header['PIXELSCL'] = (pixscale_over, 'arcsec/pixel')
-            hdul_disk_image = fits.HDUList([hdu])
-
-            # Nearest neighbor convolution
-            image_conv = convolve_image(hdul_disk_image, self.psf_list)
-
-        # In case there are any negative values
+        # In case there are any negative values from FFT artifacts
         image_conv[image_conv<0] = 0
+
+        out_shape = (ypix*oversample, xpix*oversample)
+        image_conv = pad_or_cut_to_size(image_conv, out_shape)
+
         if return_oversample:
             return image_conv
         else:
@@ -967,6 +1044,7 @@ class obs_hci(nrc_hci):
             Scence will rotate in opposite direction.
         xyoff_asec : 
             Positional offset of scene from reference location in 'idl' coords.
+            Shift occurs after PA rotation.
         do_ref : bool
             Slope image for reference star observation using `self.wfe_ref_drift`.
         do_roll2 : bool
@@ -1064,13 +1142,18 @@ class obs_hci(nrc_hci):
         # Shift to position relative to center of image
         delx, dely = np.array([delx_asec, dely_asec]) / self.pixelscale
         if ('FULL' in self.det_info['wind_mode']) and (self.image_mask is not None):
-            cdict = coron_ap_locs(self.module, self.channel, self.image_mask, full=True)
-            xcen, ycen = cdict['cen_sci']
-            delx += (xcen - xpix/2)
-            dely += (ycen - ypix/2)
+            # cdict = coron_ap_locs(self.module, self.channel, self.image_mask, full=True)
+            # xcen, ycen = cdict['cen_sci']
+            xcen, ycen = self.siaf_ap.reference_point('sci')
+        elif self._use_ap_info:
+            # Use actual mask reference position within subarray?
+            xcen, ycen = self.siaf_ap.reference_point('sci')
         else:
-            xcen, ycen = (xpix/2 + bar_offpix, ypix/2)
+            # Otherwise assumed mask is in center of subarray for simplicity
+            xcen, ycen = (xpix/2, ypix/2)
         # Account for possible oversampling
+        delx += (xcen - xpix/2)
+        dely += (ycen - ypix/2)
         delx_over, dely_over = np.array([delx, dely]) * oversample
 
         # Stellar PSF doesn't rotate
@@ -1274,6 +1357,12 @@ class obs_hci(nrc_hci):
             WFE drift between Roll1 and Roll2 observations (nm RMS).
         return_oversample : bool
             Return either the detector pixel-sampled or oversampled image.
+        xyoff_roll1 : tuple or None
+            Explicitly set pointing offset for Roll 1 (arcsec)
+        xyoff_roll2 : tuple or None
+            Explicitly set pointing offset for Roll 2 (arcsec)
+        xyoff_ref : tuple or None
+            Explicitly set pointing offset for Reference (arcsec)
 
         Keyword Args
         ------------
@@ -1308,10 +1397,11 @@ class obs_hci(nrc_hci):
 
         # Final image shape
         xpix, ypix = (self.det_info['xpix'], self.det_info['ypix'])
-        oversample = self.oversample 
+        oversample = self.oversample
+        pixscale_over = self.pixelscale / oversample
 
         if return_oversample:
-            pixscale_out = self.pixelscale / oversample
+            pixscale_out = pixscale_over
             osamp_out = oversample
         else:
             pixscale_out = self.pixelscale
@@ -1367,19 +1457,29 @@ class obs_hci(nrc_hci):
         # Shift to position relative to center of image
         delx, dely = np.array([delx_asec, dely_asec]) / self.pixelscale
         if ('FULL' in self.det_info['wind_mode']) and (self.image_mask is not None):
-            cdict = coron_ap_locs(self.module, self.channel, self.image_mask, full=True)
-            xcen, ycen = cdict['cen_sci']
-            delx += (xcen - xpix/2)
-            dely += (ycen - ypix/2)
+            # cdict = coron_ap_locs(self.module, self.channel, self.image_mask, full=True)
+            # xcen, ycen = cdict['cen_sci']
+            xcen, ycen = self.siaf_ap.reference_point('sci')
+            xcen_baroff = xcen
+        elif self._use_ap_info:
+            # Use actual mask reference position within subarray?
+            xcen, ycen = self.siaf_ap.reference_point('sci')
+            xcen_baroff = xcen
         else:
-            xcen, ycen = (xpix/2 + bar_offpix, ypix/2)
+            # Otherwise assumed mask is in center of subarray for simplicity
+            xcen, ycen = (xpix/2, ypix/2)
+            xcen_baroff = xcen + bar_offpix
         # Account for possible oversampling
-        xcen_over, ycen_over = np.array([xcen, ycen]) * oversample
+        # Create cen_over parameter to pass to de-rotate function
+        xcen_over, ycen_over = np.array([xcen_baroff, ycen]) * oversample
         cen_over = (xcen_over, ycen_over)
+        delx += (xcen - xpix/2)
+        dely += (ycen - ypix/2)
         delx_over, dely_over = np.array([delx, dely]) * oversample
 
         # Perform shift and create slope image
-        im_star = fshift(im_star, delx=delx_over, dely=dely_over, pad=True, interp='cubic')
+        interp = 'linear' if ('FULL' in self.det_info['wind_mode']) else 'cubic'
+        im_star = fshift(im_star, delx=delx_over, dely=dely_over, pad=True, interp=interp)
         im_roll1 = self.gen_slope_image(PA=PA1, xyoff_asec=xyoff_asec1, im_star=im_star, return_oversample=True, **kwargs)
 
         if no_ref and (roll_angle==0):
@@ -1420,10 +1520,10 @@ class obs_hci(nrc_hci):
             #     im_roll2 = convolve_fft(im_roll2, kernel, allow_huge=True)
 
             # Shift roll images by pointing offsets
-            dx, dy = -1 * xyoff_asec1 * oversample / self.pixelscale
-            im_roll1_sh = fshift(im_roll1, delx=dx, dely=dy, interp='cubic')
-            dx, dy = -1 * xyoff_asec2 * oversample / self.pixelscale
-            im_roll2_sh = fshift(im_roll2, delx=dx, dely=dy, interp='cubic')
+            dx, dy = -1 * xyoff_asec1 / pixscale_over
+            im_roll1_sh = fshift(im_roll1, delx=dx, dely=dy, interp=interp)
+            dx, dy = -1 * xyoff_asec2 / pixscale_over
+            im_roll2_sh = fshift(im_roll2, delx=dx, dely=dy, interp=interp)
             # Difference the two rolls
             diff_r1 = im_roll1_sh - im_roll2_sh
             diff_r2 = -1 * diff_r1
@@ -1512,13 +1612,12 @@ class obs_hci(nrc_hci):
 
         # Shift to position relative to center of image
         delx, dely = np.array([delx_asec, dely_asec]) / self.pixelscale
-        if ('FULL' in self.det_info['wind_mode']) and (self.image_mask is not None):
-            delx += (xcen - xpix/2)
-            dely += (ycen - ypix/2)
+        delx += (xcen - xpix/2)
+        dely += (ycen - ypix/2)
         delx_over, dely_over = np.array([delx, dely]) * oversample
 
         # Perform shift and create slope image
-        im_ref = fshift(im_ref, delx=delx_over, dely=dely_over, pad=True, interp='cubic')
+        im_ref = fshift(im_ref, delx=delx_over, dely=dely_over, pad=True, interp=interp)
         # With noise
         im_ref = self.gen_slope_image(im_star=im_ref, do_ref=True, 
                                       return_oversample=True, **kwargs)
@@ -1538,9 +1637,9 @@ class obs_hci(nrc_hci):
 
         # Shift roll images by pointing offsets
         dx, dy = -1 * xyoff_asec1 * oversample / self.pixelscale
-        im_roll1_sh = fshift(im_roll1, delx=dx, dely=dy, interp='cubic')
+        im_roll1_sh = fshift(im_roll1, delx=dx, dely=dy, interp=interp)
         dx, dy = -1 * xyoff_asec_ref * oversample / self.pixelscale
-        im_ref_sh = fshift(im_ref, delx=dx, dely=dy, interp='cubic')
+        im_ref_sh = fshift(im_ref, delx=dx, dely=dy, interp=interp)
                     
         # Telescope Roll 2 with reference subtraction
         if (abs(roll_angle) > eps):
@@ -1572,13 +1671,12 @@ class obs_hci(nrc_hci):
 
                 # Shift to position relative to center of image
                 delx, dely = np.array([delx_asec, dely_asec]) / self.pixelscale
-                if ('FULL' in self.det_info['wind_mode']) and (self.image_mask is not None):
-                    delx += (xcen - xpix/2)
-                    dely += (ycen - ypix/2)
+                delx += (xcen - xpix/2)
+                dely += (ycen - ypix/2)
                 delx_over, dely_over = np.array([delx, dely]) * oversample
 
                 # Perform shift and create slope image
-                im_star2 = fshift(im_star2, delx=delx_over, dely=dely_over, pad=True, interp='cubic')
+                im_star2 = fshift(im_star2, delx=delx_over, dely=dely_over, pad=True, interp=interp)
             # Create Roll2 slope image
             im_roll2 = self.gen_slope_image(PA=PA2, im_star=im_star2, do_roll2=True, 
                                             return_oversample=True, **kwargs)
@@ -1601,7 +1699,7 @@ class obs_hci(nrc_hci):
             #     im_roll2 = convolve_fft(im_roll2, kernel, allow_huge=True)
 
             # Shift roll images by pointing offsets
-            dx, dy = -1 * xyoff_asec2 * oversample / self.pixelscale
+            dx, dy = -1 * xyoff_asec2 / pixscale_over
             im_roll2_sh = fshift(im_roll2, delx=dx, dely=dy, interp='cubic')
                 
             # Subtraction with and without scaling
@@ -1683,7 +1781,7 @@ class obs_hci(nrc_hci):
             final = rotate_offset(final, -PA1, cen=cen_over, reshape=True, cval=np.nan)
             texp_sci = self.multiaccum_times['t_exp']
 
-        # Rebin if requesting detector sampled images 
+        # Rebin if requesting detector sampled images
         if not return_oversample:
             final = frebin(final, scale=1/oversample)
             im_roll1 = frebin(im_roll1, scale=1/oversample)
@@ -1837,6 +1935,7 @@ class obs_hci(nrc_hci):
         rr, stds = radial_std(data, pixscale=header['PIXELSCL'], oversample=header['OSAMP'], 
                               supersample=False, func=func_std)
 
+        interp = 'linear' if ('FULL' in self.det_info['wind_mode']) else 'cubic'
         # Normalize by psf max value
         if no_ref:
             # No reference image subtraction; pure roll subtraction
@@ -1852,9 +1951,9 @@ class obs_hci(nrc_hci):
                 psf2 = self.gen_offset_psf(roff_asec, roll_angle, return_oversample=False, 
                                            coron_rescale=True)
 
-                psf1 = fshift(psf1, delx=0, dely=roff_pix, pad=False, interp='cubic')
+                psf1 = fshift(psf1, delx=0, dely=roff_pix, pad=False, interp=interp)
                 xoff, yoff = xy_rot(0, roff_pix, 10)
-                psf2 = fshift(psf2, delx=xoff, dely=yoff, pad=False, interp='cubic')
+                psf2 = fshift(psf2, delx=xoff, dely=yoff, pad=False, interp=interp)
 
                 diff = psf1 - psf2
                 maxv = np.max(diff)
@@ -2031,3 +2130,55 @@ class obs_hci(nrc_hci):
 
         return sat_level
 
+
+def _gen_disk_hdulist(inst, file, pixscale, dist, wavelength, units, cen_star, 
+    sp_star=None, dist_out=None, shape_out=None):
+    """Create a correctly scaled disk model image.
+
+    Rescale disk model flux to current pixel scale and distance.
+    If instrument bandpass is different from disk model, scales 
+    flux assuming a grey scattering model. 
+
+    Result (in photons/sec) is saved in self.disk_hdulist attribute.
+    """
+
+    disk_params = {
+        'file'       : file,
+        'pixscale'   : pixscale,
+        'dist'       : dist,
+        'wavelength' : wavelength,
+        'units'      : units,
+        'cen_star'   : cen_star,
+    }
+
+    xpix = inst.det_info['xpix']
+    ypix = inst.det_info['ypix']
+    oversample = inst.oversample
+    pixscale_out = inst.pixelscale / oversample
+
+    # TODO: Double-check 'APERNAME', 'DET_X', 'DET_Y', 'DET_V2', 'DET_V3'
+    # correspond to the desired observation
+    disk_hdul = make_disk_image(inst, disk_params, sp_star=sp_star, pixscale_out=pixscale_out,
+                                dist_out=dist_out, shape_out=shape_out)
+
+    # Get rid of the central star flux
+    # and anything interior to a few pixels
+    image = disk_hdul[0].data
+    image_rho = dist_image(image)
+    ind_max = (image == image.max())
+    inner_pix = 3 * oversample
+    if (image[image_rho<inner_pix].max() == image.max()) and (image.max()>1000*image[~ind_max].max()):
+        image[image_rho < inner_pix] = 0
+
+    # Crop image to minimum size plus some border
+    if shape_out is None:
+        im_disk = crop_zero_rows_cols(disk_hdul[0].data, symmetric=True)
+        sh_new = np.array(im_disk.shape) + 20
+        disk_hdul[0].data = pad_or_cut_to_size(im_disk, sh_new)
+        # ydata, xdata = disk_hdul[0].data.shape
+        # ynew = np.max([ypix, ydata])
+        # xnew = np.max([xpix, xdata])
+        # disk_hdul[0].data = pad_or_cut_to_size(disk_hdul[0].data, (ynew,xnew))
+
+    return disk_hdul
+    # self.disk_hdulist = disk_hdul
