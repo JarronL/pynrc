@@ -37,6 +37,8 @@ class multiaccum(object):
         Number of reset frames within first ramp. Default=0.
     nr2 : int
         Number of reset frames for subsequent ramps. Default=1.
+    wind_mode : str
+        Set to determine maximum number of allowed groups.
 
     Notes
     -----
@@ -59,16 +61,7 @@ class multiaccum(object):
     """
 
     def __init__(self, read_mode='RAPID', nint=1, ngroup=1, nf=1, nd1=0, nd2=0, nd3=0, 
-                 nr1=1, nr2=1, **kwargs):
-
-
-        # Pre-defined patterns
-        patterns = ['RAPID', 'BRIGHT1', 'BRIGHT2', 'SHALLOW2', 'SHALLOW4', 'MEDIUM2', 'MEDIUM8', 'DEEP2', 'DEEP8']
-        nf_arr   = [1,1,2,2,4,2,8, 2, 8]
-        nd2_arr  = [0,1,0,3,1,8,2,18,12]
-        # TODO: ng_max currently ignored, because not valid for TSO
-        ng_max   = [10,10,10,10,10,10,10,20,20]
-        self._pattern_settings = dict(zip(patterns, zip(nf_arr, nd2_arr, ng_max)))
+                 nr1=1, nr2=1, wind_mode='FULL', **kwargs):
 
         self.nint = nint
         self._ngroup_max = 10000
@@ -190,6 +183,14 @@ class multiaccum(object):
         plist = sorted(list(self._pattern_settings.keys()))
         return ['CUSTOM'] + plist
 
+    @property
+    def _pattern_settings(self):
+        patterns = ['RAPID', 'BRIGHT1', 'BRIGHT2', 'SHALLOW2', 'SHALLOW4', 'MEDIUM2', 'MEDIUM8', 'DEEP2', 'DEEP8']
+        nf_arr   = [1,1,2,2,4,2,8, 2, 8]
+        nd2_arr  = [0,1,0,3,1,8,2,18,12]
+        ng_max   = [10,10,10,10,10,10,10,20,20]
+
+        return dict(zip(patterns, zip(nf_arr, nd2_arr, ng_max)))
 
     def to_dict(self, verbose=False):
         """Export ramp settings to a dictionary."""
@@ -324,7 +325,7 @@ class det_timing(object):
         self._nchans = nchans
         self._nff = nff
 
-        self.multiaccum = multiaccum(**kwargs)
+        self.multiaccum = multiaccum(wind_mode=wind_mode, **kwargs)
         self.wind_mode = wind_mode.upper()
         self._xpix = xpix; self._x0 = x0
         self._ypix = ypix; self._y0 = y0
