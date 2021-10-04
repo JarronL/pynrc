@@ -387,7 +387,7 @@ class obs_hci(nrc_hci):
         if 'FULL'   in wind_mode: xpix = ypix = 2048
         if 'STRIPE' in wind_mode: xpix = 2048
 
-        super().__init__(wind_mode=wind_mode, xpix=xpix, ypix=ypix,  autogen_coeffs=autogen_coeffs, 
+        super().__init__(wind_mode=wind_mode, xpix=xpix, ypix=ypix, autogen_coeffs=autogen_coeffs, 
                          sgd_type=sgd_type, slew_std=slew_std, fsm_std=fsm_std, **kwargs)
 
         wind_mode = self.Detector.wind_mode
@@ -628,7 +628,7 @@ class obs_hci(nrc_hci):
 
     def add_planet(self, model='SB12', atmo='hy3s', mass=10, age=100, entropy=10,
         xy=None, rtheta=None, runits='AU', Av=0, renorm_args=None, sptype=None,
-        accr=False, mmdot=None, mdot=None, accr_rin=2, truncated=False):
+        accr=False, mmdot=None, mdot=None, accr_rin=2, truncated=False, **kwargs):
         """Insert a planet into observation.
 
         Add exoplanet information that will be used to generate a point
@@ -1480,7 +1480,8 @@ class obs_hci(nrc_hci):
         # Perform shift and create slope image
         interp = 'linear' if ('FULL' in self.det_info['wind_mode']) else 'cubic'
         im_star = fshift(im_star, delx=delx_over, dely=dely_over, pad=True, interp=interp)
-        im_roll1 = self.gen_slope_image(PA=PA1, xyoff_asec=xyoff_asec1, im_star=im_star, return_oversample=True, **kwargs)
+        im_roll1 = self.gen_slope_image(PA=PA1, xyoff_asec=xyoff_asec1, im_star=im_star, 
+                                        return_oversample=True, **kwargs)
 
         if no_ref and (roll_angle==0):
             _log.warning('If no_ref=True, then PA1 must not equal PA2. Setting no_ref=False')
@@ -1553,9 +1554,9 @@ class obs_hci(nrc_hci):
 
             hdu = fits.PrimaryHDU(final)
             hdu.header['EXTNAME'] = ('ROLL_SUB')
-            hdu.header['OVERSAMP'] = (oversample, 'Oversample compared to detector pixels')
-            hdu.header['OSAMP'] =    (oversample, 'Oversample compared to detector pixels')
-            hdu.header['PIXELSCL'] = (self.pixelscale / oversample, 'Image pixel scale (asec/pix)')
+            hdu.header['OVERSAMP'] = (osamp_out, 'Oversample compared to detector pixels')
+            hdu.header['OSAMP'] =    (osamp_out, 'Oversample compared to detector pixels')
+            hdu.header['PIXELSCL'] = (pixscale_out, 'Image pixel scale (asec/pix)')
             hdu.header['FILTER']   = (self.filter, 'Filter name')
             if self.is_lyot:  hdu.header['PUPIL']    = (self.pupil_mask, 'Pupil plane mask')
             if self.is_coron: hdu.header['CORONMSK'] = (self.image_mask, 'Image plane mask')
@@ -1571,9 +1572,9 @@ class obs_hci(nrc_hci):
             for ii, im in enumerate([im_roll1, im_roll2]):
                 hdu = fits.ImageHDU(im)
                 hdu.header['EXTNAME'] = (roll_names[ii])
-                hdu.header['OVERSAMP'] = (oversample, 'Oversample compared to detector pixels')
-                hdu.header['OSAMP'] =    (oversample, 'Oversample compared to detector pixels')
-                hdu.header['PIXELSCL'] = (self.pixelscale / oversample, 'Image pixel scale (asec/pix)')
+                hdu.header['OVERSAMP'] = (osamp_out, 'Oversample compared to detector pixels')
+                hdu.header['OSAMP'] =    (osamp_out, 'Oversample compared to detector pixels')
+                hdu.header['PIXELSCL'] = (pixscale_out, 'Image pixel scale (asec/pix)')
                 hdu.header['FILTER']   = (self.filter, 'Filter name')
                 if self.is_lyot:  hdu.header['PUPIL']    = (self.pupil_mask, 'Pupil plane mask')
                 if self.is_coron: hdu.header['CORONMSK'] = (self.image_mask, 'Image plane mask')
@@ -1700,7 +1701,7 @@ class obs_hci(nrc_hci):
 
             # Shift roll images by pointing offsets
             dx, dy = -1 * xyoff_asec2 / pixscale_over
-            im_roll2_sh = fshift(im_roll2, delx=dx, dely=dy, interp='cubic')
+            im_roll2_sh = fshift(im_roll2, delx=dx, dely=dy, interp=interp)
                 
             # Subtraction with and without scaling
             im_diff1_r2 = im_roll2_sh - im_ref_sh
