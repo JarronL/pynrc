@@ -33,7 +33,7 @@ from astropy.convolution import convolve
 from datetime import datetime
 
 from .dms import create_DMS_HDUList, level1b_data_model, update_dms_headers
-from .apt import DMS_input, gen_pointing_info
+from .apt import DMS_input, gen_jwst_pointing
 from ..nrc_utils import pad_or_cut_to_size, jl_poly, get_detname
 from ..nrc_utils import gen_unconvolved_point_source_image
 from ..reduce.calib import ramp_resample, nircam_cal
@@ -57,11 +57,12 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
         'latents': None, 
         'include_colnoise': False, 
         'col_noise': None,
-        'out_ADU': True,
+        'out_ADU': False,
     }
     """
 
     from ..pynrc_core import DetectorOps, NIRCam
+    from ..obs_nircam import nrc_hci, obs_hci
 
     # Files and output directory
     json_file     = sim_config['json_file']
@@ -70,14 +71,24 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
     xml_file      = sim_config['xml_file']
     save_dir      = sim_config['save_dir']
 
-    # Source information
-    src_tbl   = sim_config['src_tbl']
-    disk_hdul = sim_config['disk_hdul']
+    # Source information for full field observations
+    src_tbl     = sim_config['src_tbl']
+
+    # High-contrast imaging info
+    sp_sci      = sim_config['params_hci_src']['sp_sci']
+    dist_sci    = sim_config['params_hci_src']['dist_sci']
+    sp_ref      = sim_config['params_hci_src']['sp_ref']
+    planet_params = sim_config['params_hci_companions']
+    disk_params = sim_config['params_disk_model']
+    npsfs_per_axis = 9 if disk_params is None else disk_params.get('npsfs_per_axis',9)
 
     # PSF information
     kwargs_nrc = sim_config['params_webbpsf']
     kwargs_psf = sim_config['params_psfconv']
     enable_wfedrift = sim_config['enable_wfedrift']
+    large_grid = sim_config['large_grid']
+
+    # Ramp noise simulation options
     kwargs_det = sim_config['params_noise']
 
     large_slew_uncert = sim_config['large_slew']
@@ -178,29 +189,63 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
             mask  = None if obs_params['coron_mask']=='None' else obs_params['coron_mask']
             ap_obs_name = obs_params['siaf_ap'].AperName
 
-            if 'TAMASK' in ap_obs_name:
-                # For TA observations, instead specify the coronagraphic equivalent
-                # to generate PSFs that will then be attenuated by image mask
-                name_arr = ap_obs_name.split('_')
-                name_arr[-1] = name_arr[-1][4:] if 'FS' in name_arr[-1] else name_arr[-1][2:]
-                ap_nrc_name = '_'.join(name_arr)
-            else:
-                ap_nrc_name = ap_obs_name
+            # if 'TAMASK' in ap_obs_name:
+            #     # For TA observations, instead specify the coronagraphic equivalent
+            #     # to generate PSFs that will then be attenuated by image mask
+            #     name_arr = ap_obs_name.split('_')
+            #     name_arr[-1] = name_arr[-1][4:] if 'FS' in name_arr[-1] else name_arr[-1][2:]
+            #     ap_nrc_name = '_'.join(name_arr)
+            # else:
+            ap_nrc_name = ap_obs_name
+
+            # Check fov_pix size makes sense for aperture size
+            # Reduce if too large. Make odd.
+            kwargs_nrc2 = kwargs_nrc.copy()
+            fov_pix = np.min([2*ap_nrc_name.XSciSize, 2*ap_nrc_name.YSciSize, kwargs_nrc['fov_pix']])
+            fov_pix = fov_pix+1 if (fov_pix % 2)==0 else fov_pix
+            kwargs_nrc2['fov_pix'] = fov_pix
 
             if not dry_run:
-                nrc = NIRCam(filter=filt, pupil_mask=pupil, image_mask=mask,
-                             detector=detname, apname=ap_nrc_name,
-                             autogen_coeffs=False, **kwargs_nrc)      
+                # Get rid of previous instances
+                try: del nrc
+                except: pass
 
-                nrc.gen_psf_coeff()
-                nrc.gen_wfefield_coeff()
-                nrc.gen_wfemask_coeff()
-                if enable_wfedrift:
-                    nrc.gen_wfedrift_coeff()
+                if ('MASK' in ap_nrc_name):
+                    nrc = obs_hci(sp_sci, dist_sci, filter=filt, apname=ap_nrc_name, 
+                                  use_ap_info=True, disk_params=disk_params, 
+                                  npsfs_per_axis=npsfs_per_axis, autogen_coeffs=False,
+                                  detector=detname, **kwargs_nrc2)
 
-                # Create grid of PSFs
-                if (src_tbl is not None) or (disk_hdul is not None):
-                    hdul_psfs = nrc.gen_psfs_over_fov(**kwargs_psf)
+                    nrc.gen_psf_coeff()
+                    nrc.gen_wfemask_coeff(large_grid=large_grid)
+                    if enable_wfedrift:
+                        nrc.gen_wfedrift_coeff()
+
+                    # Create grid of PSFs
+                    if (disk_params is not None) or (src_tbl is not None):
+                        nrc.gen_disk_psfs()
+                        hdul_psfs = nrc.psf_list
+
+                    # Add planets
+                    if planet_params is not None:
+                        for kpl in planet_params:
+                            kw = planet_params[kpl]
+                            nrc.add_planet(**kw)
+
+                else:
+                    nrc = NIRCam(filter=filt, pupil_mask=pupil, image_mask=mask,
+                                 detector=detname, apname=ap_nrc_name,
+                                 autogen_coeffs=False, **kwargs_nrc2)
+
+                    nrc.gen_psf_coeff()
+                    nrc.gen_wfefield_coeff()
+                    nrc.gen_wfemask_coeff(large_grid=large_grid)
+                    if enable_wfedrift:
+                        nrc.gen_wfedrift_coeff()
+
+                    # Create grid of PSFs
+                    if (src_tbl is not None):
+                        hdul_psfs = nrc.gen_psfs_over_fov(**kwargs_psf)
 
                 # Get Zodiacal background emission.
                 ra_ref, dec_ref = (obs_params['ra_ref'], obs_params['dec_ref'])
@@ -241,7 +286,7 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                         base_std = large_slew_uncert if int(exp_num)==1 else ta_sam_uncert
                         # There are no dithers
                         dith_std = 0
-                        tel_pointing = gen_pointing_info(visit_dict, obs_params, rand_seed=rand_seed,
+                        tel_pointing = gen_jwst_pointing(visit_dict, obs_params, rand_seed=rand_seed,
                                                          base_std=base_std, dith_std=dith_std)
                     elif do_sci_pointing:
                         # First science exposure
@@ -259,14 +304,14 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                             base_std = ta_sam_uncert
 
                         # Create jwst_pointing class
-                        tel_pointing = gen_pointing_info(visit_dict, obs_params, base_std=base_std)
+                        tel_pointing = gen_jwst_pointing(visit_dict, obs_params, base_std=base_std)
                         # Update standard and SGD uncertainties and regenerage random pointings
                         tel_pointing._std_sig = std_sam_uncert
                         tel_pointing._sgd_sig = sgd_sam_uncert
                         tel_pointing.gen_random_offsets(rand_seed=rand_seed)
                         tel_pointing.exp_nums = np.arange(tel_pointing.ndith) + 1 + j
 
-                        # Set to False so this is only performed once per visit
+                        # Set to False so tel_pointing is only created once per visit
                         do_sci_pointing = False
 
                     # Save random seed in obs_params
@@ -282,7 +327,17 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                         if src_tbl is not None:
                             # Create slope image
                             im_slope = sources_to_slope(src_tbl, nrc, obs_params, tel_pointing,
-                                                        hdul_psfs=hdul_psfs, im_bg=im_bg)
+                                                        hdul_psfs=hdul_psfs, im_bg=0)
+
+                        if ('MASK' in ap_nrc_name):
+                            expnum = int(obs_params['obs_id_info']['exposure_number'])
+                            ind = np.where(tel_pointing.exp_nums == expnum)[0][0]
+                            idl_off = tel_pointing.position_offsets_act[ind]
+                            im_slope += nrc.gen_slope_image(PA=0, xyoff_asec=idl_off,
+                                                            exclude_noise=True, zfact=0, 
+                                                            wfe_drift0=0)
+
+                        im_slope += im_bg
 
                         # Save slope image
                         if save_slope:
@@ -291,10 +346,14 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                         # Simulate ramp and stuff into a level1b file
                         if save_dms:
                             obs_params['filename'] = 'pynrc_' + obs_params['filename']
-                            slope_to_level1b(im_slope, obs_params, cal_obj=cal_obj, save_dir=save_dir, **kwargs_det)
+                            slope_to_level1b(im_slope, obs_params, cal_obj=cal_obj, 
+                                             save_dir=save_dir, **kwargs_det)
 
                     else:
-                        print(detname, label, vid, exp_num)
+                        expnum = int(obs_params['obs_id_info']['exposure_number'])
+                        ind = np.where(tel_pointing.exp_nums == expnum)[0][0]
+                        idl_off = tel_pointing.position_offsets_act[ind]
+                        print(detname, label, vid, exp_num, idl_off)
 
 
 def save_slope_image(im_slope, obs_params, save_dir=None):
