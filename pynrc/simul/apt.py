@@ -30,6 +30,8 @@ from .. import conf
 from ..nrc_utils import get_detname
 from ..maths.coords import jwst_point
 
+from webbpsf_ext.opds import slew_time
+
 import logging
 _log = logging.getLogger('pynrc')
 
@@ -4445,7 +4447,7 @@ def calc_frame_time(instrument, aperture, xdim, ydim, amps):
 
 
 ###  Modified from MIRAGE
-def get_pointing_info(pointing_files, propid=0, verbose=False):
+def get_pointing_info(pointing_files, propid=0, verbose=False, all_inst=False):
     """Read in information from APT's pointing file.
 
     Parameters
@@ -4455,6 +4457,8 @@ def get_pointing_info(pointing_files, propid=0, verbose=False):
     propid : int
         Proposal ID number (integer). This is used to
         create various ID fields
+    all_inst : bool
+        If False, only NIRCam, otherwise get all instruments.
 
     Returns
     -------
@@ -4559,8 +4563,13 @@ def get_pointing_info(pointing_files, propid=0, verbose=False):
                 try:
 
                     # Only care about NIRCam
-                    if ((np.int(elements[1]) > 0) & ('NRC' in elements[4])) or \
-                            (('TA' in elements[4]) & ('NRC' in elements[4])):
+                    if all_inst:
+                        do_this = (np.int(elements[1]) > 0)
+                    else:
+                        do_this = ((np.int(elements[1]) > 0) & ('NRC' in elements[4])) or \
+                            (('TA' in elements[4]) & ('NRC' in elements[4]))
+
+                    if do_this:
 
                         if (elements[18] == 'PARALLEL'):
                             skip = True
@@ -4814,9 +4823,14 @@ def get_timing_info(timing_json_file, smart_accounting_file):
         exp_start_times = []
         comp_list = visit_dict[k]['components']
         for d in comp_list:
+            # Append science exposure start times
             if d['type']=='SCIENCE':
                 exp_start_times.append(tval)
             tval += d['duration']
+
+            # Save slew durations
+            if d['type']=='VISIT_SLEW':
+                visit_dict[k]['slew_duration'] = d['duration']
 
         visit_dict[k]['exp_start_times'] = np.array(exp_start_times)
 
@@ -4840,6 +4854,39 @@ def get_proposal_info(xml_file, verbose=False):
 
     return obs_params
 
+def get_roll_info(xml_file):
+
+    with open(xml_file) as f:
+        tree = etree.parse(f)
+
+    apt = '{http://www.stsci.edu/JWST/APT}'
+    LinkingRequirements = tree.find(apt + 'LinkingRequirements')
+    OrientFromLink = LinkingRequirements.findall('.//' + apt + 'OrientFromLink')
+
+    # Loop through PA offset links
+    roll_dict = {}
+    for i, orient in enumerate(OrientFromLink):
+        obs1 = orient.get('PrimaryObs')
+        obs2 = orient.get('OrientFromObs')
+        obs1_num = int(obs1.split('(Obs ')[-1][:-1])
+        obs2_num = int(obs2.split('(Obs ')[-1][:-1])
+
+        pa_min = int(orient.get('MinAngle').split(' ')[0])
+        pa_max = int(orient.get('MaxAngle').split(' ')[0])
+
+        roll_dict[i] = {
+            'PrimaryObs'    : obs1_num,
+            'OrientFromObs' : obs2_num,
+            'MinPA' : pa_min,
+            'MaxPA' : pa_max,
+        }
+
+    if len(roll_dict)==0:
+        return None
+    else:
+        return roll_dict
+        
+
 def gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file):
     """
     Read in APT output files and return a dictionary that holds all
@@ -4855,6 +4902,7 @@ def gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file):
     read_modes = get_readmodes(xml_file)
     filter_info = get_filter_info(xml_file)
     dith_info = get_ditherinfo(xml_file)
+    roll_info = get_roll_info(xml_file)
 
     # Save visit information to its own dictionary
     visits_dict = OrderedDict()
@@ -4868,14 +4916,30 @@ def gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file):
             visits_dict[k] = {
                 'obs_num': int(obs_num),
                 'visit_num': int(visit_num),
+                'slew_duration': timing_info[k]['slew_duration'],
+                'visit_duration': timing_info[k]['scheduling_duration'],
                 'exp_start_times': timing_info[k]['exp_start_times'],
             }
         
+    # Add roll offset info to relevant visits
+    if roll_info is not None:
+        for k_roll in roll_info.keys():
+            d_roll = roll_info[k_roll]
+            onum1 = d_roll['PrimaryObs']
+            onum2 = d_roll['OrientFromObs']
+
+            # Cycle through each visit to find obs num matches
+            for key in visits_dict.keys():
+                d = visits_dict[key]
+                obs_num = d['obs_num']
+                # Only update if statment is True
+                d['roll_info'] = d_roll if (obs_num==onum1) or (obs_num==onum2) else d.get('roll_info')
+
     for key in visits_dict.keys():
         d = visits_dict[key]
 
         # Select specific observation and visit number
-        obs_num, visit_num = d['obs_num'], d['visit_num']
+        obs_num, visit_num = (d['obs_num'], d['visit_num'])
         ind = (pointing_info['obs_num'] == obs_num) & (pointing_info['visit_num'] == visit_num)
 
         # Only need 1 entry per visit for dither information
@@ -4993,8 +5057,8 @@ def create_det_class(visit_dict, exp_id, detname):
     return det
 
 
-def create_obs_params(filt, pupil, mask, det, siaf_ap, ra_dec, date_obs, time_obs, pa_v3=0, 
-    siaf_ap_obs=None, xyoff_idl=(0,0), visit_type='SCIENCE', time_series=False,
+def create_obs_params(filt, pupil, mask, det, siaf_ap, ra_dec, date_obs, time_obs="12:00:00", 
+    pa_v3=None, siaf_ap_obs=None, xyoff_idl=(0,0), visit_type='SCIENCE', time_series=False,
     time_exp_offset=0, segNum=None, segTot=None, int_range=None, filename=None, **kwargs):
 
     """ Generate obs_params dictionary
@@ -5016,13 +5080,14 @@ def create_obs_params(filt, pupil, mask, det, siaf_ap, ra_dec, date_obs, time_ob
         RA and Dec in degrees associated with observation pointing
     data_obs : str
         YYYY-MM-DD
-    time_obs : str
-        HH:MM:SS
 
     Keyword Arg
     ===========
-    pa_v3 : float
-        Telescope V3 position angle.
+    time_obs : str
+        HH:MM:SS
+    pa_v3 : float or None
+        Telescope V3 position angle. If set to None, then will automatically determine
+        from date and ra/dec.
     siaf_ap_obs : pysiaf Aperture
         SIAF aperture class used for to observe (if different from `siaf_ap`)
     xyoff_idl : tuple, list
@@ -5054,6 +5119,13 @@ def create_obs_params(filt, pupil, mask, det, siaf_ap, ra_dec, date_obs, time_ob
 
     siaf_ap_ref = siaf_ap
     ra, dec = ra_dec
+
+    output = get_tel_angles(ra, dec, obs_date=date_obs, obs_time=time_obs)
+    pitch_ang = output['pitch_deg']
+    pa_v3_nom = output['v3pa_deg']
+    sol_elong = pitch_ang + 90
+    if pa_v3 is None:
+        pa_v3 = pa_v3_nom
 
     if siaf_ap_obs is None:
         apname = siaf_ap_ref.AperName
@@ -5126,6 +5198,9 @@ def create_obs_params(filt, pupil, mask, det, siaf_ap, ra_dec, date_obs, time_ob
         'ra'           : ra,            # Target RA
         'dec'          : dec,           # Target Dec
         'pa_v3'        : pa_v3,         # Telescope position angle relative to V3
+        'roll_offset'  : 0,             # Roll angle relative to nominal V3 PA
+        'solar_elong'  : sol_elong,     # Solar elongation (deg)
+        'pitch_ang'    : pitch_ang,     # Telescope pitch angle relative to sun (deg)
         'siaf_ap'      : siaf_ap_obs,   # Observed SIAF aperture
         'ra_obs'       : ra_obs,        # RA of observered SIAF aperture ref location
         'dec_obs'      : dec_obs,       # Dec of observed SIAF aperture ref location
@@ -5216,8 +5291,8 @@ def create_obs_params(filt, pupil, mask, det, siaf_ap, ra_dec, date_obs, time_ob
     res = {**obs_params, **kwargs}
     return res
 
-def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs, pa_v3=0, 
-                        segNum=None, segTot=None, int_range=None, det=None, 
+def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs='12:00:00', 
+                        pa_v3=None, segNum=None, segTot=None, int_range=None, det=None, 
                         obs_params=None, **kwargs):
 
     """ Create obs_params from visit dictionary
@@ -5242,14 +5317,18 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs, pa_v3=0
 
     Keyword Arg
     ===========
-    pa_v3 : float
-        Telescope V3 position angle.
+    pa_v3 : float or None
+        Option to specify telescope V3 position angle. If not set, then
+        automatically calculated from RA/Dec and observation date/time.
     segNum : int
         The segment number of the current product. Only for TSO.
     segTot : int
         The total number of segments. Only for TSO.
     int_range : list
         Integration indices to use 
+    obs_params : dict
+        An initial obs_params dictionary. Any duplicate keywords will be
+        updated.
     """
 
     from .dms import DMS_filename
@@ -5340,10 +5419,61 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs, pa_v3=0
 
     # Create intial obs_params dictionary
     obs_params_init = create_obs_params(filt, pupil, mask, det, siaf_ap_ref, (ra, dec), 
-        date_obs, time_obs, pa_v3=pa_v3, siaf_ap_obs=siaf_ap, xyoff_idl=(xoffset,yoffset), 
+        date_obs, time_obs=time_obs, pa_v3=pa_v3, siaf_ap_obs=siaf_ap, xyoff_idl=(xoffset,yoffset), 
         visit_type=type_val, time_series=time_series, time_exp_offset=time_exp_offset, 
         segNum=segNum, segTot=segTot, int_range=int_range, filename=filename)
     
+    # Update V3 PA with roll information
+    roll_info = visit_dict['roll_info']
+    if roll_info is not None:
+        # roll_info = visit_dict['roll_info'][ind_mask][0]
+        obs_num = visit_dict['obs_num']
+        pa_v3 = obs_params_init['pa_v3']
+
+        # Make sure we constrain within V3 PA limits within field of regard
+        output = get_tel_angles(ra, dec, obs_date=date_obs, obs_time=time_obs)
+        # Check if specified pa_v3 is outside of bounds
+        if pa_v3 < output['v3pa_min']:
+            v3pa_min = output['v3pa_min']
+            _log.warn(f'{pa_v3:.2f} is less than allowed {v3pa_min:.2f} for the given date!')
+        elif pa_v3 > output['v3pa_max']:
+            v3pa_max = output['v3pa_max']
+            _log.warn(f'{pa_v3:.2f} is greater than allowed {v3pa_max:.2f} for the given date!')
+
+
+        dpa_max = np.abs([roll_info['MinPA'], roll_info['MaxPA']]).max()
+        if roll_info['MaxPA'] < 0:
+            dpa_max *= -1
+
+        # Add or subtract max roll depending obs
+        if obs_num==roll_info['PrimaryObs']:
+            pa_v3 = pa_v3 + dpa_max / 2
+        elif obs_num==roll_info['OrientFromObs']:
+            pa_v3 = pa_v3 - dpa_max / 2
+
+        if pa_v3 < output['v3pa_min']:
+            pa_v3 = output['v3pa_min']
+        elif pa_v3 > output['v3pa_max']:
+            pa_v3 = output['v3pa_max']
+
+        # Update Roll and V3 PA
+        obs_params_init['roll_offset'] = pa_v3 - obs_params_init['pa_v3']
+        obs_params_init['pa_v3'] = pa_v3
+
+        # Update pitch angle (solar elongation stays the same)
+        pitch_orig = obs_params_init['pitch_ang']
+        roll_ang = obs_params_init['roll_offset']
+        vpitch_rad = np.deg2rad(pitch_orig)
+        vroll_rad = np.deg2rad(roll_ang)
+        pitch_new = np.rad2deg(np.arctan(np.tan(vpitch_rad) / np.cos(vroll_rad)))
+        del_pitch = np.abs(pitch_orig - pitch_new)
+        if roll_ang>0:
+            pitch_new += del_pitch
+        else:
+            pitch_new -= del_pitch
+        obs_params_init['pitch_ang'] = pitch_new
+
+
     obs_params_temp = {
         # Proposal info
         'pi_name'          : 'UNKNOWN',
@@ -5447,7 +5577,15 @@ class DMS_input():
         save_level1b_fits(out_model, obs_params, save_dir)
     """
 
-    def __init__(self, xml_file, pointing_file, json_file, sm_acct_file, save_dir=None):
+    def __init__(self, xml_file, pointing_file, json_file, sm_acct_file, save_dir=None, 
+                 obs_date='2022-03-01', obs_time='12:00:00', pa_v3=None):
+
+        self.files = {
+            'xml_file'      : xml_file,
+            'pointing_file' : pointing_file,
+            'json_file'     : json_file,
+            'sm_acct_file'  : sm_acct_file,
+        }
 
         self.proposal_info = get_proposal_info(xml_file)
         # Series of dictionaries, one per visit
@@ -5455,25 +5593,49 @@ class DMS_input():
         self.program_info = gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file)
 
         # Create unique labels for each exposure
-        self.labels = self.gen_obs_labels()
+        self.labels = self._gen_obs_labels()
 
-        self.obs_date = '2022-03-01'
-        self.obs_time = '12:00:00'
-        self.pa_v3 = 0
+        self._obs_date = obs_date
+        self._obs_time = obs_time
+        self._pa_v3 = pa_v3
 
         self.save_dir = save_dir
 
-    def get_detname(self, det_id):
-        """Return NRC[A-B][1-5] for valid detector/SCA IDs"""
+    @property
+    def obs_date(self):
+        """Date of observations"""
+        if self._obs_date is None:
+            return '2022-03-01'
+        else:
+            return self._obs_date
+    @obs_date.setter
+    def obs_date(self, value):
+        self._obs_date = value
 
-        return get_detname(det_id)
+    @property
+    def obs_time(self):
+        """Start time of observations"""
+        if self._obs_time is None:
+            return '12:00:00:00'
+        else:
+            return self._obs_time
+    @obs_time.setter
+    def obs_time(self, value):
+        self._obs_time = value
+
+    @property
+    def pa_v3(self):
+        return self._pa_v3
+    @pa_v3.setter
+    def pa_v3(self, value):
+        self._pa_v3 = value
         
-    def gen_label(self, visit_id, exp_id, det_id):
-
-        detname = self.get_detname(det_id)
+    def _gen_label(self, visit_id, exp_id, det_id):
+        "Create unique label ID"
+        detname = get_detname(det_id)
         return f'{visit_id}_{exp_id}_{detname}'
 
-    def gen_obs_labels(self):
+    def _gen_obs_labels(self):
         """Create unique label for each observation"""
         
         labels = []
@@ -5486,18 +5648,18 @@ class DMS_input():
             for i, eid in enumerate(exp_ids):
                 det_ids = visit_dict['detectors'][i]
                 for detname in det_ids:
-                    label = self.gen_label(vid, eid, detname)
+                    label = self._gen_label(vid, eid, detname)
                     labels.append(label)
                     
         return labels
 
-    def parse_label(self, label):
+    def _parse_label(self, label):
         """Parse label to get visit_id, exp_id, det_id"""
         
         # visit_id, exp_id, det_id = label.split('_')
         return label.split('_')
         
-    def gen_obs_param(self, visit_id, exp_id, det_id, det=None, 
+    def gen_obs_params(self, visit_id, exp_id, det_id, det=None, 
                       seg_num=None, seg_tot=None, int_range=None):
         """Generate a single set of observation parameters for a given exposure"""
 
@@ -5507,21 +5669,21 @@ class DMS_input():
         pa_v3 = self.pa_v3
 
         visit_dict = self.program_info[visit_id]
-        detname = self.get_detname(det_id)
-        res = populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs, pa_v3=pa_v3, det=det,
-                                  segNum=seg_num, segTot=seg_tot, int_range=int_range, **kwargs)
+        detname = get_detname(det_id)
+        res = populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs=time_obs, pa_v3=pa_v3, 
+                                  det=det, segNum=seg_num, segTot=seg_tot, int_range=int_range, **kwargs)
         res['visit_key'] = visit_id
         res['save_dir'] = self.save_dir
 
         return res
     
-    def gen_obs_params(self, visit_id, exp_id, det_id, det=None, 
-                       seg_num=None, seg_tot=None, int_range=None):
-        """Generate a single set of observation parameters for a given exposure"""
+    # def gen_obs_param(self, visit_id, exp_id, det_id, det=None, 
+    #                    seg_num=None, seg_tot=None, int_range=None):
+    #     """Generate a single set of observation parameters for a given exposure"""
 
-        args = (visit_id, exp_id, det_id)
-        kwargs = {'det': det, 'seg_num': seg_num, 'seg_tot': seg_tot, 'int_range': int_range}
-        return self.gen_obs_param(*args, **kwargs)
+    #     args = (visit_id, exp_id, det_id)
+    #     kwargs = {'det': det, 'seg_num': seg_num, 'seg_tot': seg_tot, 'int_range': int_range}
+    #     return self.gen_obs_params(*args, **kwargs)
 
     def gen_all_obs_params(self):
         """Generate a full set of parameters for all exposures"""
@@ -5530,7 +5692,7 @@ class DMS_input():
         
         all_labels = self.labels
         for label in tqdm(all_labels, desc='Obs Params', leave=False):
-            visit_id, exp_id, det_id = self.parse_label(label)
+            visit_id, exp_id, det_id = self._parse_label(label)
             visit_dict = self.program_info[visit_id]
             det = create_det_class(visit_dict, exp_id, det_id)
             
@@ -5539,14 +5701,24 @@ class DMS_input():
             seg_tot = len(iseg_list)
             if seg_tot>1:
                 for ii in range(seg_tot):
-                    obspar = self.gen_obs_param(visit_id, exp_id, det_id, det=det, 
+                    obspar = self.gen_obs_params(visit_id, exp_id, det_id, det=det, 
                                                 seg_num=ii, seg_tot=seg_tot, int_range=iseg_list[ii])
                     obs_params_all.append(obspar)
             else:
-                obspar = self.gen_obs_param(visit_id, exp_id, det_id, det=det)
+                obspar = self.gen_obs_params(visit_id, exp_id, det_id, det=det)
                 obs_params_all.append(obspar)
                 
         return obs_params_all
+
+    def gen_pitch_array(self, nvals=1000, pitch_init=None):
+
+        f1 = self.files['xml_file']
+        f2 = self.files['pointing_file']
+        f3 = self.files['json_file']
+        f4 = self.files['sm_acct_file']
+
+        return pitch_vs_time(f1, f2, f3, f4, obs_date=self.obs_date, obs_time=self.obs_time, 
+            pitch_init=pitch_init, nvals=nvals)
 
     def make_jwst_point(self, visit_id, exp_id, detname, obs_params=None, 
         base_std=0, dith_std=0, rand_seed=None):
@@ -5585,7 +5757,7 @@ class DMS_input():
 
         # Create a single observation parameter dictionary if not passed
         if obs_params is None:
-            obs_params = self.gen_obs_param(visit_id, exp_id, detname)
+            obs_params = self.gen_obs_params(visit_id, exp_id, detname)
 
         # Filter by type value (SCIENCE, T_ACQ, CONFIRM)
         type_arr = visit_dict['type']
@@ -5603,11 +5775,19 @@ class DMS_input():
         if detname not in det_ids:
             raise ValueError(f'{detname} not valid for Visit {visit_id}.')
 
-        return gen_pointing_info(visit_dict, obs_params, base_std=base_std, dith_std=dith_std, rand_seed=rand_seed)
+        return gen_jwst_pointing(visit_dict, obs_params, base_std=base_std, dith_std=dith_std, rand_seed=rand_seed)
 
 
-def gen_pointing_info(visit_dict, obs_params, base_std=None, dith_std=None, rand_seed=None):
-    
+def gen_pointing_info(*args, **kwargs):
+    """
+    *** Deprecated. Use `gen_jwst_pointing` instead. ***
+    Create telescope pointing sequence for a given visit / exposure.
+    """
+
+    _log.warn("Deprecated. Use `gen_jwst_pointing` function instead in the future.")
+    return gen_jwst_pointing(*args, **kwargs)
+
+def gen_jwst_pointing(visit_dict, obs_params, base_std=None, dith_std=None, rand_seed=None):
     """
     Create telescope pointing sequence for a given visit / exposure.
     """
@@ -5646,3 +5826,135 @@ def gen_pointing_info(visit_dict, obs_params, base_std=None, dith_std=None, rand
     tel_pointing.use_sgd = True if 'SMALL-GRID-DITHER' in subpix_type.upper() else False
     
     return tel_pointing
+
+
+def get_tel_angles(ra, dec, obs_date='2022-03-01', obs_time='12:00:00'):
+    """
+    For a given RA, Dec and date, return the telescope pitch and V3 PA angles.
+    """
+    
+    import datetime
+    from .skyvec2ins import skyvec2ins
+
+    # Create datetime object
+    args1 = np.array(obs_date.split('-')).astype('int')
+    args2 = np.array(obs_time.split(':')).astype('int')
+    args = args1 + args2
+    time_obs = datetime.datetime(*args)
+    
+    # Get array of information
+    res = skyvec2ins(ra, dec, time_obs, npoints=3, nrolls=100)
+    mask_obs = res[1].astype('bool') # Observabilitiy mask
+    elong_deg = np.rad2deg(res[2])   # Solar elongation
+    v3pa_deg = np.rad2deg(res[3])    # V3 Position Angle
+    pitch_deg = elong_deg - 90       # Telescope pitch angles (valid from -5 to 45)
+    
+    pitch = pitch_deg[0,0]
+    mask = mask_obs[:,0] 
+    if mask.sum()==0:
+        _log.warn("Source is not visible on this date!")
+        v3pa = v3pa_deg[:,0].mean()
+        v3pa_min = v3pa_deg[:,0].min()
+        v3pa_max = v3pa_deg[:,0].max()
+    else:
+        v3pa = v3pa_deg[mask,0].mean()
+        v3pa_min = v3pa_deg[mask,0].min()
+        v3pa_max = v3pa_deg[mask,0].max()
+    
+    return {'pitch_deg': pitch, 'v3pa_deg': v3pa, 
+            'v3pa_min': v3pa_min,'v3pa_max': v3pa_max}
+
+def pitch_vs_time(xml_file, pointing_file, timing_json_file, smart_accounting_file,
+    obs_date='2022-03-01', obs_time='12:00:00', pitch_init=None, nvals=1000):
+    
+    timing_info = get_timing_info(timing_json_file, smart_accounting_file)
+    pointing_info = get_pointing_info(pointing_file, all_inst=True)
+    roll_info = get_roll_info(xml_file)
+
+    slew_durations  = np.array([timing_info[k]['slew_duration'] for k in timing_info.keys()])
+    visit_durations = np.array([timing_info[k]['scheduling_duration'] for k in timing_info.keys()])
+
+    # Get pitch angle for each visit
+    pitch_angles = []
+    for k in list(timing_info.keys()):
+        obs_num, visit_num = np.array(k.split(':')).astype('int')
+        ind = (pointing_info['obs_num'] == obs_num) & (pointing_info['visit_num'] == visit_num)
+        ra  = pointing_info['ra'][ind][0]
+        dec = pointing_info['dec'][ind][0]
+
+        res = get_tel_angles(ra, dec, obs_date=obs_date, obs_time=obs_time)
+        # Nominal pitch angle for time and date
+        pitch_angle = res['pitch_deg']
+
+        # V3 PA limits
+        pa_v3_nom = res['v3pa_deg']
+        pa_v3_min, pa_v3_max = (res['v3pa_min'], res['v3pa_max'])
+
+        # Update pitch angles if there is a roll angle
+        if roll_info is not None:
+            for kroll in roll_info.keys():
+                rdict = roll_info[kroll]
+
+                if (obs_num==rdict['PrimaryObs']) or (obs_num==rdict['OrientFromObs']):
+
+                    dpa_max = np.abs([rdict['MinPA'], rdict['MaxPA']]).max()
+                    if rdict['MaxPA'] < 0:
+                        dpa_max *= -1
+
+                    # Add or subtract max roll depending obs
+                    if obs_num==rdict['PrimaryObs']:
+                        pa_v3 = pa_v3_nom + dpa_max / 2
+                    elif obs_num==rdict['OrientFromObs']:
+                        pa_v3 = pa_v3_nom - dpa_max / 2
+
+                    # Make sure we constrain within V3 PA limits within field of regard
+                    if pa_v3 < pa_v3_min:
+                        pa_v3 = pa_v3_min
+                    elif pa_v3 > pa_v3_max:
+                        pa_v3 = pa_v3_max
+
+                    # Calculate change in pitch based on roll angle
+                    roll_ang = pa_v3 - pa_v3_nom
+                    vpitch_rad = np.deg2rad(pitch_angle)
+                    vroll_rad = np.deg2rad(roll_ang)
+                    pitch_new = np.rad2deg(np.arctan(np.tan(vpitch_rad) / np.cos(vroll_rad)))
+                    del_pitch = np.abs(pitch_angle - pitch_new)
+                    # Determine positive or negative depending on roll direction
+                    if roll_ang>0:
+                        pitch_angle += del_pitch
+                    else:
+                        pitch_angle -= del_pitch
+
+        pitch_angles.append(pitch_angle)
+
+    pitch_angles = np.array(pitch_angles)
+    pitch_init = pitch_angles[0] if pitch_init is None else pitch_init
+
+    # Create a timing array broken up in
+    tmax = (visit_durations+slew_durations).cumsum()[-1]
+    tarr = np.linspace(0,tmax,nvals)
+
+    # Start time for slew and visits
+    slew_start = np.cumsum(slew_durations + visit_durations)
+    slew_start = np.concatenate(([0], slew_start[:-1]))
+    visit_start = slew_start + slew_durations
+
+    # Fill pitch angle array w.r.t. time
+    pitch_arr = np.zeros(len(tarr)) + pitch_init
+    for tval, pval in zip(visit_start, pitch_angles):
+        ind = tarr>(tval)
+        pitch_arr[ind] = pval
+
+    # Assume linear change during slew times
+    for i in range(len(pitch_angles)):
+        tstart = slew_start[i]
+        tend = visit_start[i]
+        pitch_start = pitch_init if i==0 else pitch_angles[i-1]
+        pitch_end = pitch_angles[i]
+
+        # Linear interpolation
+        ind = (tarr>=tstart) & (tarr<=tend)
+        pitch_arr[ind] = np.interp(tarr[ind], [tstart,tend], [pitch_start,pitch_end])
+
+    return tarr, pitch_arr, slew_start, visit_start
+
