@@ -414,6 +414,9 @@ class NIRCam(NIRCam_ext):
         else:
             self.update_from_SIAF(apname, pupil=pupil_mask, **kwargs)
 
+            # Default to no jitter for coronagraphy
+            self.options['jitter'] = None if self.is_coron else 'gaussian'
+
         # Generate PSF coefficients
         if autogen_coeffs:
             self.gen_psf_coeff(**kwargs)
@@ -425,9 +428,9 @@ class NIRCam(NIRCam_ext):
         # if autogen_coeffs:
         self._update_bg_class(**kwargs)
 
-        # Check aperture info is consistent
+        # Check aperture info is consistent if not explicitly specified
         ap_name_rec = self.get_siaf_apname()
-        if ((ap_name_rec != self.aperturename) and
+        if ((apname is None) and (ap_name_rec != self.aperturename) and
             not (('FULL' in self.aperturename) and ('TAMASK' in self.aperturename))):
             # Warning strings
             out_str1 = f'Current aperture {self.aperturename} does not match recommendation ({ap_name_rec}).'
@@ -1100,9 +1103,9 @@ class NIRCam(NIRCam_ext):
         channel = 'LW' if scaname[-1]=='5' else 'SW'
         detid = 480 + int(scaname[4]) if module=='A' else 485 + int(scaname[4]) 
         
-        ap = self.siaf[apname]
-        xpix = int(ap.XSciSize)
-        ypix = int(ap.YSciSize)
+        siaf_ap = self.siaf[apname]
+        xpix = int(siaf_ap.XSciSize)
+        ypix = int(siaf_ap.YSciSize)
         if (xpix >= 2048) and (ypix>=2048):
             wind_mode = 'FULL'
         elif (xpix >= 2048):
@@ -1114,7 +1117,7 @@ class NIRCam(NIRCam_ext):
         # indmin = np.where(xcorn+ycorn == np.min(xcorn+ycorn))
         # x0 = int(xcorn[indmin[0][0]])
         # y0 = int(ycorn[indmin[0][0]])
-        x0, y0 = np.array(ap.dms_corner()) - 1
+        x0, y0 = np.array(siaf_ap.dms_corner()) - 1
               
         # Update pupil and mask info
         mask = None
@@ -1205,7 +1208,7 @@ class NIRCam(NIRCam_ext):
         self.update_detectors(**kwargs)
 
         # Update aperture
-        self.aperturename = ap.AperName
+        self.siaf_ap = siaf_ap
 
     def calc_psf_from_coeff(self, sp=None, return_oversample=True, return_hdul=True,
         wfe_drift=None, coord_vals=None, coord_frame='tel', use_bg_psf=False, **kwargs):
@@ -2019,7 +2022,7 @@ class NIRCam(NIRCam_ext):
                           return_coords=None, use_coeff=True, **kwargs):
         """Create PSF grid over full field of view
         
-        Wrapper around `calc_psf_grid` that returns normalized PSFs across 
+        Wrapper around `calc_psfs_grid` that returns normalized PSFs across 
         the field of view. 
         
         Create a grid of PSFs across instrument aperture FoV. By default,
