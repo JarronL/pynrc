@@ -23,8 +23,7 @@ for path in [coron_wg.fig_dir, coron_wg.contrast_maps_dir]:
 
 # For Nominal WFE, cycle through jitters, tacq, and IEC scenarios
 imode = 1
-# for imode_jitt in trange(4, leave=False, desc='Jitter/TACQ'):
-for imode_jitt in trange(1,4, leave=False, desc='Jitter/TACQ'):
+for imode_jitt in trange(4, leave=False, desc='Jitter/TACQ'):
     for imode_iec in trange(3, leave=False, desc='IEC'):
         coron_wg.run_obs(filt, mask, pupil, imode=imode, imode_iec=imode_iec, imode_jitt=imode_jitt)
 

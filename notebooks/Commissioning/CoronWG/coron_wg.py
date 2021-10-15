@@ -167,8 +167,8 @@ def run_obs(filt, mask, pupil, imode=0, imode_iec=None, imode_tacq=None, imode_j
     dopds_sci = create_delta_opds(imode, tint_sci, ref_opds=False, imode_iec=imode_iec)
     dopds_ref = create_delta_opds(imode, tint_ref, ref_opds=True, imode_iec=imode_iec)
     
-    test1 = np.mean(dopds_ref + dopds_sci[-1], axis=0) - np.mean(dopds_sci, axis=0)
-    print(calc_rms(test1) * 1000)
+    # test1 = np.mean(dopds_ref + dopds_sci[-1], axis=0) - np.mean(dopds_sci, axis=0)
+    # print(calc_rms(test1) * 1000)
 
     # Create random jitter realizations for each group timestep [nint, ngroup, 2]
     # Use the same random seed every time
