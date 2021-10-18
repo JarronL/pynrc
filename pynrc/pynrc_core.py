@@ -435,8 +435,8 @@ class NIRCam(NIRCam_ext):
             # Warning strings
             out_str1 = f'Current aperture {self.aperturename} does not match recommendation ({ap_name_rec}).'
             out_str2 = f'Perhaps try self.aperturename = self.get_siaf_apname()'
-            _log.warn(out_str1)
-            _log.warn(out_str2)
+            _log.info(out_str1)
+            _log.info(out_str2)
         
 
     def _update_bg_class(self, fov_bg_match=None, **kwargs):
