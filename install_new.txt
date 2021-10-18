@@ -1,0 +1,46 @@
+Installation Notes
+
+0. Add channels:
+   conda config --add channels conda-forge
+   conda config --add channels http://ssb.stsci.edu/astroconda
+   Check .condarc
+
+1. pysiaf - https://github.com/spacetelescope/pysiaf
+   pip install -e .
+   
+2. poppy - https://github.com/spacetelescope/poppy
+   pip install -e .
+
+3. webbpsf - https://github.com/spacetelescope/webbpsf
+   Add "export WEBBPSF_PATH=$HOME/NIRCam/webbpsf-data/" to .bashrc
+   pip install -e .
+   Note: This also install photutils via pip if not already installed
+   
+4. jwst-backgrounds - https://github.com/spacetelescope/jwst_backgrounds
+   Install healpy: conda install healpy
+      If healpy asks to downgrade any dependencies, install the missing dependencies manually, then use --no-deps flag.
+      conda install healpy --no_deps
+   Install jwst_backgrounds: pip install -e .
+
+5. jwst - https://github.com/spacetelescope/jwst
+   Install stcal        : pip install -e .
+   Install stdatamodels : pip install -e .
+   Install crds         : pip install -e .
+   Install stpipe       : pip install -e .
+   Install jwst         : pip install -e . (adds a few other dependencies)
+
+6. hxrg_ref_pixels
+
+7. Pysynphot
+   conda install pysynphot (v2.0)
+   Add "export PYSYN_CDBS=$HOME/NIRCam/cdbs/" to .bashrc
+   
+8. webbpsf_ext
+   pip install -e .
+   Add "export WEBBPSF_EXT_PATH=$HOME/NIRCam/webbpsf_ext_data/" to .bashrc
+   
+9. pynrc
+   pip install -e .
+   Add "export WEBBPSF_EXT_PATH=$HOME/NIRCam/pynrc_data/" to .bashrc
+   
+   
