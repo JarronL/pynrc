@@ -389,12 +389,11 @@ class obs_hci(nrc_hci):
             - 'wavelength' : Wavelength of observation in microns.
             - 'units'      : String of assumed flux units (ie., MJy/arcsec^2 or muJy/pixel)
             - 'cen_star'   : True/False. Is a star already placed in the central pixel? 
-    npsfs_per_axis
     """
 
     def __init__(self, sp_sci, distance, sp_ref=None, wfe_ref_drift=5, wfe_roll_drift=2,
-        wind_mode='WINDOW', xpix=320, ypix=320, disk_params=None, npsfs_per_axis=9,
-        sgd_type=None, slew_std=5, fsm_std=2.5, autogen_coeffs=True, **kwargs):
+        wind_mode='WINDOW', xpix=320, ypix=320, disk_params=None, autogen_coeffs=True,
+        sgd_type=None, slew_std=5, fsm_std=2.5, **kwargs):
 
         if 'FULL'   in wind_mode: xpix = ypix = 2048
         if 'STRIPE' in wind_mode: xpix = 2048
@@ -420,7 +419,7 @@ class obs_hci(nrc_hci):
         self._disk_params = disk_params
         self.gen_disk_hdulist()
         if autogen_coeffs:
-            self.gen_disk_psfs(npsfs_per_axis=npsfs_per_axis)
+            self.gen_disk_psfs()
 
     @property
     def wfe_ref_drift(self):
