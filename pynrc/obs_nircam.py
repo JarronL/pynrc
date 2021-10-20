@@ -870,6 +870,7 @@ class obs_hci(nrc_hci):
                 # TODO: How does this interact w/ odd/even PSFs??
                 xref, yref = (xpix/2 + 0.5, ypix/2 + 0.5)
 
+            # Detector pixels
             delx += (xref - (xpix/2 + 0.5))
             dely += (yref - (ypix/2 + 0.5))
 
@@ -1238,12 +1239,7 @@ class obs_hci(nrc_hci):
             dely_pix = (ycen - (ypix/2 + 0.5))  # 'sci' pixel shifts
             delx_asec, dely_asec = np.array([delx_pix, dely_pix]) * self.pixelscale
         else:
-            # Otherwise assumed mask is in center of subarray for simplicity
-            # The 0.5 offset indicates PSF is centered in middle of pixel
-            # TODO: How does this interact w/ odd/even PSFs??
-            xcen, ycen = (xpix/2 + 0.5, ypix/2 + 0.5)
-            # Add bar offset
-            xcen += bar_offpix  # Add bar offset
+            # Otherwise assumed mask is already in center of subarray
             delx_pix, dely_pix = (bar_offpix, 0)
             delx_asec, dely_asec = np.array([delx_pix, dely_pix]) * self.pixelscale
 
@@ -1253,12 +1249,12 @@ class obs_hci(nrc_hci):
 
         # PSF shifting
         delx_over, dely_over = np.array([delx_asec, dely_asec]) / pixscale_over
+        delx_det, dely_det = np.array([delx_asec, dely_asec]) / self.pixelscale
 
-        # Get (r,th) in idl coordinates relative to mask center (arcsec) for PSF creation
-        xoff_idl, yoff_idl = (offx_asec + bar_offset, offy_asec)
-        r, th = xy_to_rtheta(xoff_idl, yoff_idl)
-
-        print(r, th, (delx_over, dely_over))
+        _log.debug(f'r, th = ({r:.4f} asec, {th:.1f} deg)')
+        _log.debug(f'delx, dely = ({delx_asec:.4f}, {dely_asec:.4f}) asec')
+        _log.debug(f'delx, dely = ({delx_det:.2f}, {dely_det:.2f}) det pixels')
+        
         # Stellar PSF doesn't rotate
         if im_star is None:
             interp = 'linear' if ('FULL' in self.det_info['wind_mode']) else 'cubic'
@@ -1546,12 +1542,10 @@ class obs_hci(nrc_hci):
         ##################################
         # Generate Roll1 Image
         ##################################
-        offx_asec, offy_asec = xyoff_asec1
 
-        # Add in bar offset for PSF generation
-        delx_asec = offx_asec + bar_offset
-        dely_asec = offy_asec
-        r, th = xy_to_rtheta(delx_asec, dely_asec)
+        # Add in offsets for PSF generation
+        offx_asec, offy_asec = xyoff_asec1
+        r, th = xy_to_rtheta(offx_asec + bar_offset, offy_asec)
 
         # Create stellar PSF centered in image
         im_star = self.gen_offset_psf(r, th, sp=self.sp_sci, return_oversample=True, 
@@ -1561,9 +1555,9 @@ class obs_hci(nrc_hci):
         # Expand to full size
         im_star = pad_or_cut_to_size(im_star, (ypix_over, xpix_over))
 
-        ##################################
-        # Shift Roll1 image
-        ##################################
+        ###################################
+        # Get image shifts to mask location
+        ###################################
 
         # Shift to position relative to center of image
         if (('FULL' in self.det_info['wind_mode']) and (self.image_mask is not None)) or self._use_ap_info:
@@ -1587,15 +1581,9 @@ class obs_hci(nrc_hci):
         xcen_over, ycen_over = np.array([xcen_baroff, ycen]) * oversample
         cen_over = (xcen_over, ycen_over)
 
-        # Add dither offsets
-        delx_asec += offx_asec 
-        dely_asec += offy_asec
-
-        delx_over, dely_over = np.array([delx_asec, dely_asec]) / pixscale_over
-
         # Perform shift and create slope image
         interp = 'linear' if ('FULL' in self.det_info['wind_mode']) else 'cubic'
-        im_star = fshift(im_star, delx=delx_over, dely=dely_over, pad=True, interp=interp)
+        #im_star = fshift(im_star, delx=delx_over, dely=dely_over, pad=True, interp=interp)
         im_roll1 = self.gen_slope_image(PA=PA1, xyoff_asec=xyoff_asec1, im_star=im_star, 
                                         return_oversample=True, **kwargs)
 
@@ -1604,8 +1592,15 @@ class obs_hci(nrc_hci):
             no_ref = False
 
         # Include disk and companion flux for calculating the reference scale factor
+        # Use summed roll image; shift star to center of array and crop
         if ref_scale_all:
-            im_star_sub = pad_or_cut_to_size(im_star_sub, sub_shape, interp=interp,
+            # Get dither offsets
+            offx_asec, offy_asec = xyoff_asec1
+            delx_asec_dith = delx_asec + offx_asec 
+            dely_asec_dith = dely_asec + offy_asec
+            delx_over, dely_over = np.array([delx_asec_dith, dely_asec_dith]) / pixscale_over
+            # Shift and crop star+disk+planets image
+            im_star_sub = pad_or_cut_to_size(im_roll1, sub_shape, interp=interp,
                                              offset_vals=(-1*dely_over,-1*delx_over))
 
         # Fix saturated pixels
@@ -1615,15 +1610,14 @@ class obs_hci(nrc_hci):
         ##################################################
         # Pure roll subtraction (no reference PSF)
         ##################################################
-
         if no_ref:
             # Create Roll2 image
             if (np.abs(wfe_roll_drift) < eps) and np.allclose(xyoff_asec1, xyoff_asec2):
                 im_roll2 = self.gen_slope_image(PA=PA2, im_star=im_star, do_roll2=True, 
                                                 return_oversample=True, **kwargs)
             else:
-                im_roll2 = self.gen_slope_image(PA=PA2, do_roll2=True, wfe_drift0=wfe_drift0, 
-                                                wfe_roll_drift=wfe_roll_drift, 
+                im_roll2 = self.gen_slope_image(PA=PA2, xyoff_asec=xyoff_asec2, do_roll2=True, 
+                                                wfe_drift0=wfe_drift0, wfe_roll_drift=wfe_roll_drift, 
                                                 return_oversample=True, **kwargs)
 
             # Fix saturated pixels
@@ -1635,7 +1629,7 @@ class obs_hci(nrc_hci):
             #     im_roll1 = convolve_fft(im_roll1, kernel, allow_huge=True)
             #     im_roll2 = convolve_fft(im_roll2, kernel, allow_huge=True)
 
-            # Shift roll images by pointing offsets to align and subtract
+            # Shift roll images by dither/pointing offsets to align and subtract
             dx, dy = -1 * xyoff_asec1 / pixscale_over
             im_roll1_sh = fshift(im_roll1, delx=dx, dely=dy, interp=interp)
             dx, dy = -1 * xyoff_asec2 / pixscale_over
@@ -1644,7 +1638,7 @@ class obs_hci(nrc_hci):
             diff_r1 = im_roll1_sh - im_roll2_sh
             diff_r2 = -1 * diff_r1
 
-            # De-rotate each image
+            # De-rotate each image around center of mask
             diff_r1_rot = rotate_offset(diff_r1, -PA1, cen=cen_over, reshape=True, cval=np.nan)
             diff_r2_rot = rotate_offset(diff_r2, -PA2, cen=cen_over, reshape=True, cval=np.nan)
 
@@ -1682,7 +1676,6 @@ class obs_hci(nrc_hci):
             hdulist = fits.HDUList([hdu])
 
             roll_names = ['ROLL1', 'ROLL2']
-            keys = ['roll1', 'roll2']
             pa_vals = [PA1, PA2]
             for ii, im in enumerate([im_roll1, im_roll2]):
                 hdu = fits.ImageHDU(im)
@@ -1703,20 +1696,17 @@ class obs_hci(nrc_hci):
 
             return hdulist
 
+
+        ##################################################
         # Continuing with a ref PSF subtraction algorithm
         ##################################################
 
         # Reference star slope simulation
-        # Ideal slope
         wfe_drift_ref = wfe_drift0 + wfe_ref_drift
 
-        # Additional field offsets
+        # Add in offsets for PSF generation
         offx_asec, offy_asec = xyoff_asec_ref
-
-        # Add in bar offset for PSF generation
-        delx_asec = offx_asec + bar_offset
-        dely_asec = offy_asec
-        r, th = xy_to_rtheta(delx_asec, dely_asec)
+        r, th = xy_to_rtheta(offx_asec + bar_offset, offy_asec)
 
         # Create stellar PSF centered in image
         im_ref = self.gen_offset_psf(r, th, sp=self.sp_ref, return_oversample=True, 
@@ -1726,17 +1716,10 @@ class obs_hci(nrc_hci):
         # Expand to full size
         im_ref = pad_or_cut_to_size(im_ref, (ypix_over, xpix_over))
 
-        # Shift to position relative to center of image
-        delx, dely = np.array([delx_asec, dely_asec]) / self.pixelscale
-        delx += (xcen - xpix/2)
-        dely += (ycen - ypix/2)
-        delx_over, dely_over = np.array([delx, dely]) * oversample
-
-        # Perform shift and create slope image
-        im_ref = fshift(im_ref, delx=delx_over, dely=dely_over, pad=True, interp=interp)
-        # With noise
-        im_ref = self.gen_slope_image(im_star=im_ref, do_ref=True, 
-                                      return_oversample=True, **kwargs)
+        # Create Reference slope image
+        # Essentially just adds image shifts and noise
+        im_ref = self.gen_slope_image(PA=0, xyoff_asec=xyoff_asec_ref, im_star=im_ref, 
+                                      do_ref=True, return_oversample=True, **kwargs)
 
         # Fix saturated pixels
         if fix_sat:
@@ -1752,9 +1735,9 @@ class obs_hci(nrc_hci):
         #     im_roll1 = convolve_fft(im_roll1, kernel, allow_huge=True)
 
         # Shift roll images by pointing offsets
-        dx, dy = -1 * xyoff_asec1 * oversample / self.pixelscale
+        dx, dy = -1 * xyoff_asec1 / pixscale_over
         im_roll1_sh = fshift(im_roll1, delx=dx, dely=dy, interp=interp)
-        dx, dy = -1 * xyoff_asec_ref * oversample / self.pixelscale
+        dx, dy = -1 * xyoff_asec_ref / pixscale_over
         im_ref_sh = fshift(im_ref, delx=dx, dely=dy, interp=interp)
                     
         # Telescope Roll 2 with reference subtraction
@@ -1773,11 +1756,13 @@ class obs_hci(nrc_hci):
                 im_star2     = im_star
                 im_star2_sub = im_star_sub
             else:
+
+                ##################################
+                # Generate Roll2 Image
+
+                # Add in offsets for PSF generation
                 offx_asec, offy_asec = xyoff_asec2
-                # Add in bar offset for PSF generation
-                delx_asec = offx_asec + bar_offset
-                dely_asec = offy_asec
-                r, th = xy_to_rtheta(delx_asec, dely_asec)
+                r, th = xy_to_rtheta(offx_asec + bar_offset, offy_asec)
 
                 # Create stellar PSF (Roll 2) centered in image
                 im_star2 = self.gen_offset_psf(r, th, sp=self.sp_sci, return_oversample=True, 
@@ -1785,22 +1770,20 @@ class obs_hci(nrc_hci):
                 im_star2_sub = pad_or_cut_to_size(im_star2, sub_shape)
                 im_star2     = pad_or_cut_to_size(im_star2, (ypix_over, xpix_over))
 
-                # Shift to position relative to center of image
-                delx, dely = np.array([delx_asec, dely_asec]) / self.pixelscale
-                delx += (xcen - xpix/2)
-                dely += (ycen - ypix/2)
-                delx_over, dely_over = np.array([delx, dely]) * oversample
 
-                # Perform shift and create slope image
-                im_star2 = fshift(im_star2, delx=delx_over, dely=dely_over, pad=True, interp=interp)
             # Create Roll2 slope image
-            im_roll2 = self.gen_slope_image(PA=PA2, im_star=im_star2, do_roll2=True, 
-                                            return_oversample=True, **kwargs)
+            im_roll2 = self.gen_slope_image(PA=PA2, xyoff_asec=xyoff_asec2, im_star=im_star2, 
+                                            do_roll2=True, return_oversample=True, **kwargs)
 
             # Include disk and companion flux for calculating the reference scale factor
             if ref_scale_all:
-                interp = 'linear' if ('FULL' in self.det_info['wind_mode']) else 'cubic'
-                im_star2_sub = pad_or_cut_to_size(im_star2_sub, sub_shape, interp=interp,
+                # Get dither offsets
+                offx_asec, offy_asec = xyoff_asec2
+                delx_asec_dith = delx_asec + offx_asec 
+                dely_asec_dith = dely_asec + offy_asec
+                delx_over, dely_over = np.array([delx_asec_dith, dely_asec_dith]) / pixscale_over
+                # Shift and crop star+disk+planets image
+                im_star2_sub = pad_or_cut_to_size(im_roll2, sub_shape, interp=interp,
                                                   offset_vals=(-1*dely_over,-1*delx_over))
 
             # Fix saturated pixels
@@ -1808,7 +1791,6 @@ class obs_hci(nrc_hci):
                 im_roll2 = self._fix_sat_im(im_roll2, oversample=oversample, **kwargs)
 
             # Subtract reference star from Roll 2
-            #im_star_sub = pad_or_cut_to_size(im_star+im_pl_r2, sub_shape)
             scale2 = scale_ref_image(im_star2_sub, im_ref_sub)
             _log.debug('scale2: {0:.3f}'.format(scale2))
             # print('scale2: {0:.3f}'.format(scale2), im_star2_sub.sum(), im_ref_sub.sum())
@@ -1883,7 +1865,7 @@ class obs_hci(nrc_hci):
                         final1[~nan_mask] = temp
                     final = final1
             else:
-                # Choose better PSF removal version
+                # Choose version that optmizes PSF subtraction
                 final = final2
 
             texp_sci = 2 * self.multiaccum_times['t_exp']
@@ -2300,3 +2282,60 @@ def _gen_disk_hdulist(inst, file, pixscale, dist, wavelength, units, cen_star,
 
     return disk_hdul
     # self.disk_hdulist = disk_hdul
+
+
+def get_cen_offsets(self, idl_offset=(0,0), PA_offset=0):
+    """ Determine offsets relative to center of subarray
+    
+    Given the 'idl' offset of some object relative to an observation's
+    siaf_ap reference position (e.g., mask center), determine the 
+    relative position from the center of the subarray image.
+    
+    Parameters
+    ==========
+    idl_offset : tuple
+        Source location in arcsec from SIAF aperture position.
+    PA_offset : float
+        Rotation of scene by some position angle.
+        Positive values are counter-clockwise from +Y direction.
+        This should be -1 times telescope V3 PA.
+    """
+    
+    ypix, xpix = (self.det_info['ypix'], self.det_info['xpix'])
+
+    # Location relative to star
+    idl_offset = np.array(idl_offset)
+    delx_asec, dely_asec = idl_offset
+    
+    # Add in PA offset
+    if PA_offset!=0:
+        delx_asec, dely_asec = xy_rot(delx_asec, dely_asec, PA_offset)
+    
+    bar_offset = self.bar_offset
+    
+    # Add in bar offset for PSF generation
+    delx_asec = delx_asec + bar_offset
+    dely_asec = dely_asec
+    
+    # Shift to position relative to center of image
+    # Convert delx and dely from 'idl' to 'sci' coords
+    xsci_ref, ysci_ref = self.siaf_ap.reference_point('sci')
+    xsci, ysci = self.siaf_ap.idl_to_sci(delx_asec, dely_asec)
+    delx, dely = (xsci - xsci_ref, ysci - ysci_ref)
+
+    # Determine final shift amounts to mask location
+    # Shift to position relative to center of image
+    if (('FULL' in self.det_info['wind_mode']) and (self.image_mask is not None)) or self._use_ap_info:
+        xref, yref = self.siaf_ap.reference_point('sci')
+    else:
+        # Otherwise assumed mask is in center of subarray for simplicity
+        xref, yref = (xpix/2 + 0.5, ypix/2 + 0.5)
+
+    # Detector pixels
+    delx += (xref - (xpix/2 + 0.5))
+    dely += (yref - (ypix/2 + 0.5))
+    
+    delx_asec = delx * self.pixelscale
+    dely_asec = dely * self.pixelscale
+    
+    return (delx_asec, dely_asec)
