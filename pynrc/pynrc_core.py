@@ -345,14 +345,119 @@ class NIRCam(NIRCam_ext):
     PSF based on wavelength, field position, and WFE drift.
 
     In addition to PSF generation, includes ability to estimate detector saturation 
-    limits, sensitivities, and 
+    limits, sensitivities, and perform ramp optimizations.
 
+    Parameters
+    ==========
+    filter : str
+        Name of input filter.
+    pupil_mask : str, None
+        Pupil elements such as grisms or lyot stops (default: None).
+    image_mask : str, None
+        Specify which coronagraphic occulter (default: None).
+    ND_acq : bool
+        Add in neutral density attenuation in throughput and PSF creation?
+        Used primarily for sensitivity and saturation calculations.
+        Not recommended for simulations (TBI). 
+    detector : int or str
+        NRC[A-B][1-5] or 481-490
+    apname : str
+        Pass specific SIAF aperture name, which will update pupil mask, image mask,
+        and detector subarray information.
+    autogen_coeffs : bool
+        Automatically generate base PSF coefficients. Equivalent to performing
+        `self.gen_psf_coeff()`. Default: True
+        WFE drift and field-dependent coefficients should be run manually via
+        `gen_wfedrift_coeff`, `gen_wfefield_coeff`, and `gen_wfemask_coeff`.
+
+    Keyword Args
+    ============
+
+    wind_mode : str
+        Window mode type 'FULL', 'STRIPE', 'WINDOW'.
+    xpix : int
+        Size of window in x-pixels for frame time calculation.
+    ypix : int
+        Size of window in y-pixels for frame time calculation.
+    x0 : int
+        Lower-left x-coord position of detector window.
+    y0 : int
+        Lower-left y-coord position of detector window.
+    read_mode : str
+        NIRCam Ramp Readout mode such as 'RAPID', 'BRIGHT1', etc.
+    nint : int
+        Number of integrations (ramps).
+    ngroup : int
+        Number of groups in a integration.
+    nf : int
+        Number of frames per group.
+    nd1 : int
+        Number of drop frame after reset (before first group read). 
+    nd2 : int
+        Number of drop frames within a group (ie., groupgap). 
+    nd3 : int
+        Number of drop frames after final read frame in ramp. 
+    nr1 : int
+        Number of reset frames within first ramp.
+    nr2 : int
+        Number of reset frames for subsequent ramps.
+
+    PSF Keywords
+    ============
+    fov_pix : int
+        Size of the PSF FoV in pixels (real SW or LW pixels).
+        The defaults depend on the type of observation.
+        Odd number place the PSF on the center of the pixel,
+        whereas an even number centers it on the "crosshairs."
+    oversample : int
+        Factor to oversample during WebbPSF calculations.
+        Default 2 for coronagraphy and 4 otherwise.
+    include_si_wfe : bool
+        Include SI WFE measurements? Default=True.
+    include_distortions : bool
+        If True, will include a distorted version of the PSF.
+    tel_pupil : str
+        File name or HDUList specifying telescope entrance pupil.
+    opd : tuple or HDUList
+        Tuple (file, slice) or filename or HDUList specifying OPD.
+    wfe_drift : float
+        Wavefront error drift amplitude in nm.
+    offset_r : float
+        Radial offset from the center in arcsec.
+    offset_theta :float
+        Position angle for radial offset, in degrees CCW.
+    bar_offset : float
+        For wedge masks, option to set the PSF position across the bar.
+    jitter : str or None
+        Currently either 'gaussian' or None.
+    jitter_sigma : float
+        If ``jitter = 'gaussian'``, then this is the size of the blurring effect.
+    npsf : int
+        Number of wavelengths/PSFs to fit.
+    ndeg : int
+        Degree of polynomial fit.
+    nproc : int
+        Manual setting of number of processor cores to break up PSF calculation.
+        If set to None, this is determined based on the requested PSF size,
+        number of available memory, and hardware processor cores. The automatic
+        calculation endeavors to leave a number of resources available to the
+        user so as to not crash the user's machine. 
+    save : bool
+        Save the resulting PSF coefficients to a file? (default: True)
+    force : bool
+        Forces a recalculation of PSF even if saved PSF exists. (default: False)
+    quick : bool
+        Only perform a fit over the filter bandpass with a lower default polynomial degree fit.
+        (default: True)
+    use_legendre : bool
+        Fit with Legendre polynomials, an orthonormal basis set. (default: True)
     """
 
     def __init__(self, filter=None, pupil_mask=None, image_mask=None, 
                  ND_acq=False, detector=None, apname=None, autogen_coeffs=True, **kwargs):
 
-        detector = kwargs.pop('detector', None)
+        if detector is not None:
+            detector = get_detname(detector)
 
         # Available Filters
         # Note: Certain narrowband filters reside in the pupil wheel and cannot be paired
@@ -874,7 +979,7 @@ class NIRCam(NIRCam_ext):
         # Detector update
         if detector is not None:
             update_coeffs = True
-            self.detector = detector
+            self.detector = get_detname(detector)
             self.update_detectors()
 
         # Regenerate PSF coefficients
@@ -1090,12 +1195,10 @@ class NIRCam(NIRCam_ext):
         """Update detector properties based on SIAF aperture"""
 
         if not (apname in self.siaf_ap_names):
-            _log.warning('Cannot find {} in siaf.apernames list.'.format(apname))
-            return
+            raise ValueError(f'Cannot find {apname} in siaf.apernames list.')
             
         if ('NRCALL' in apname) or ('NRCAS' in apname) or ('NRCBS' in apname):
-            _log.warning('{} is not valid. Single detector apertures only.'.format(apname))
-            return
+            raise ValueError(f'{apname} is not valid. Single detector apertures only.')
             
         # Convert SCA name to detector ID
         scaname = apname[0:5]
@@ -1113,10 +1216,8 @@ class NIRCam(NIRCam_ext):
         else:
             wind_mode = 'WINDOW'
         
-        # xcorn, ycorn = ap.corners('det')
-        # indmin = np.where(xcorn+ycorn == np.min(xcorn+ycorn))
-        # x0 = int(xcorn[indmin[0][0]])
-        # y0 = int(ycorn[indmin[0][0]])
+        # Get lower left corner from siaf info
+        # This is in full frame detector coordinates
         x0, y0 = np.array(siaf_ap.dms_corner()) - 1
               
         # Update pupil and mask info
@@ -1204,7 +1305,7 @@ class NIRCam(NIRCam_ext):
         # Update detector
         det_kwargs = {'xpix': xpix, 'ypix': ypix, 'x0': x0, 'y0': y0, 'wind_mode':wind_mode}
         kwargs = merge_dicts(kwargs, det_kwargs)
-        self.detector = scaname
+        self.detector = get_detname(scaname)
         self.update_detectors(**kwargs)
 
         # Update aperture
@@ -2069,7 +2170,7 @@ class NIRCam(NIRCam_ext):
                                    return_coords=return_coords, use_coeff=use_coeff,
                                    npsf_per_full_fov=npsf_per_full_fov, **kwargs)
 
-    def gen_obs_params(self, target_name, ra, dec, date_obs, time_obs, pa_v3=0, 
+    def _gen_obs_params(self, target_name, ra, dec, date_obs, time_obs, pa_v3=0, 
         siaf_ap_ref=None, xyoff_idl=(0,0), visit_type='SCIENCE', time_series=False,
         time_exp_offset=0, segNum=None, segTot=None, int_range=None, filename=None, **kwargs):
 
@@ -2140,7 +2241,7 @@ class NIRCam(NIRCam_ext):
         return obs_params
 
 
-    def simulate_ramps(self, sp=None, im_slope=None, cframe='sci', nint=None, 
+    def _simulate_ramps(self, sp=None, im_slope=None, cframe='sci', nint=None, 
         do_dark=False, **kwargs):
         """ Simulate Ramp Data
 
@@ -2296,7 +2397,7 @@ class NIRCam(NIRCam_ext):
 
         return res_ramps, res_zeros
 
-    def simulate_level1b(self, target_name, ra, dec, date_obs, time_obs, 
+    def _simulate_level1b(self, target_name, ra, dec, date_obs, time_obs, 
         sp=None, im_slope=None, cframe='sci', nint=None, do_dark=False, 
         save_dir=None, return_model=False, **kwargs):
 
@@ -2307,7 +2408,7 @@ class NIRCam(NIRCam_ext):
         sci_data, zero_data = self.simulate_ramps(sp=sp, im_slope=im_slope, cframe=cframe, nint=nint, 
             do_dark=do_dark, **kwargs)
 
-        obs_params = self.gen_obs_params(target_name, ra, dec, date_obs, time_obs, **kwargs)
+        obs_params = self._gen_obs_params(target_name, ra, dec, date_obs, time_obs, **kwargs)
         obs_params['save_dir'] = save_dir
 
         outModel = level1b_data_model(obs_params, sci_data=sci_data, zero_data=zero_data)
