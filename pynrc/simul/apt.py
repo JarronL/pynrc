@@ -405,7 +405,24 @@ class AptInput:
 
         for index, instrument in enumerate(input_dictionary['Instrument']):
             instrument = instrument.lower()
-            if instrument == 'nircam':
+            if instrument == 'nircam' and input_dictionary['Mode'][index] == 'coron':
+                # For coronagraphic observations, there is no need to expand for detectors.
+                # Coronographic observations will always use only a single detector, which
+                # we already know from the 'aperture' key in the input dictionary
+                detectors = [input_dictionary['aperture'][index][3:5]]
+
+                # Reset the mode of the coronagraphic observations to be imaging, since
+                # 'coron' is not a supported mode, and those running Mirage with these
+                # files currently have to manually switch the mode over to 'imaging'
+                input_dictionary['Mode'][index] = 'imaging'
+
+                n_detectors = len(detectors)
+                for key in input_dictionary:
+                    observation_dictionary[key].extend(([input_dictionary[key][index]] * n_detectors))
+                observation_dictionary['detector'].extend(detectors)
+
+            elif instrument == 'nircam':
+            # if instrument == 'nircam' and input_dictionary['Mode'][index] != 'coron':
                 # NIRCam case: Expand for detectors. Create one entry in each list for each
                 # detector, rather than a single entry for 'ALL' or 'BSALL'
 
@@ -2914,6 +2931,19 @@ class ReadAPTXML():
 
         coronmask = template.find(ncc + 'CoronMask').text
 
+        # APT outputs the incorrect aperture name. It specifies
+        # SUB320 for both MASK430R and MASKLWB cases. Fix that here.
+        if subarray != 'FULL':
+            if coronmask == 'MASK430R':
+                subarray = 'SUB320{}430R'.format(mod)
+            elif coronmask == 'MASKLWB':
+                subarray = 'SUB320{}LWB'.format(mod)
+            elif coronmask == 'MASK335R':
+                subarray = 'SUB320{}335R'.format(mod)
+            elif coronmask == 'MASKSWB':
+                subarray = 'SUB640{}SWB'.format(mod)
+            elif coronmask == 'MASK210R':
+                subarray = 'SUB640{}210R'.format(mod)
 
         coron_sci_detector = 'A2' if coronmask=='MASK210R' else \
                        'A4' if coronmask=='MASKSWB' else 'A5'
@@ -3015,7 +3045,8 @@ class ReadAPTXML():
                 elif key == 'Tracking':
                     value = tracking
                 elif key == 'Mode':
-                    value = 'imaging'
+                    # value = 'imaging'
+                    value = 'coron'
                 elif key == 'Module':
                     value = mod
                 elif key == 'Subarray':
@@ -3061,7 +3092,8 @@ class ReadAPTXML():
                 elif key == 'Tracking':
                     dir_value = tracking
                 elif (key == 'Mode'):
-                    dir_value = 'imaging'
+                    # dir_value = 'imaging'
+                    dir_value = 'coron'
                 elif key == 'Module':
                     dir_value = mod
                 elif key == 'Subarray':
@@ -3127,9 +3159,17 @@ class ReadAPTXML():
                         value = mod
                     elif key == 'Subarray':
                         value = subarray
+                    # elif key == 'PrimaryDithers':
+                    #     value = primary_dithers_pattern
+                    # elif key == 'SubpixelPositions':
+                    #     value = subpix_dithers_pattern
                     elif key == 'PrimaryDithers':
-                        value = primary_dithers_pattern
+                        value = number_of_primary_dithers
                     elif key == 'SubpixelPositions':
+                        value = number_of_subpixel_dithers
+                    elif key == 'PrimaryDitherType':
+                        value = primary_dithers_pattern
+                    elif key == 'SubpixelDitherType':
                         value = subpix_dithers_pattern
                     else:
                         value = str(None)
@@ -4223,6 +4263,12 @@ def make_start_times(obs_info):
             # Get the number of amps from the subarray definition file
             match = aperture == subarray_def['AperName']
 
+            if np.sum(match) == 0:
+                if '_MASKLWB' in aperture or '_MASKSWB' in aperture:
+                    apsplit = aperture.split('_')
+                    no_filter = '{}_{}'.format(apsplit[0], apsplit[1])
+                    match = no_filter == subarray_def['AperName']
+
             # needed for NIRCam case
             if np.sum(match) == 0:
                 logger.info(('Aperture: {} does not match any entries in the subarray definition file. Guessing at the '
@@ -4887,7 +4933,7 @@ def get_roll_info(xml_file):
         return roll_dict
         
 
-def gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file):
+def gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file, rand_seed=None):
     """
     Read in APT output files and return a dictionary that holds all
     necessary visit information to create an observation in DMS
@@ -4895,7 +4941,7 @@ def gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file):
     to that within the Smart Accounting file.
     """
 
-    rng = np.random.default_rng()
+    rng = np.random.default_rng(rand_seed)
 
     timing_info = get_timing_info(json_file, sm_acct_file)
     pointing_info = get_pointing_info(pointing_file)
@@ -5424,7 +5470,7 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs='12:00:0
         segNum=segNum, segTot=segTot, int_range=int_range, filename=filename)
     
     # Update V3 PA with roll information
-    roll_info = visit_dict['roll_info']
+    roll_info = visit_dict.get('roll_info')
     if roll_info is not None:
         # roll_info = visit_dict['roll_info'][ind_mask][0]
         obs_num = visit_dict['obs_num']
@@ -5578,7 +5624,7 @@ class DMS_input():
     """
 
     def __init__(self, xml_file, pointing_file, json_file, sm_acct_file, save_dir=None, 
-                 obs_date='2022-03-01', obs_time='12:00:00', pa_v3=None):
+                 obs_date='2022-03-01', obs_time='12:00:00', pa_v3=None, dith_seed_init=None):
 
         self.files = {
             'xml_file'      : xml_file,
@@ -5590,7 +5636,7 @@ class DMS_input():
         self.proposal_info = get_proposal_info(xml_file)
         # Series of dictionaries, one per visit
         # Dictionaries are ordered according to smart accounting order information
-        self.program_info = gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file)
+        self.program_info = gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file, rand_seed=dith_seed_init)
 
         # Create unique labels for each exposure
         self.labels = self._gen_obs_labels()
