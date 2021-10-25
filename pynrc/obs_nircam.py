@@ -824,28 +824,38 @@ class obs_hci(nrc_hci):
         # Additional field offsets
         offx_asec, offy_asec = xyoff_asec
 
+        # Size of final image
         ypix, xpix = (self.det_info['ypix'], self.det_info['xpix'])
         xpix_over = xpix * self.oversample
         ypix_over = ypix * self.oversample
 
+        # Oversampled pixel scale
+        pixscale_over = self.pixelscale / self.oversample
+
         image_over = np.zeros([ypix_over, xpix_over])
         bar_offset = self.bar_offset
+        bar_offpix = bar_offset / self.pixelscale
+
         for pl in tqdm(self.planets, desc='Companions', leave=False):
+
+            ##################################
+            # Generate Image
 
             # Create slope image (postage stamp) of planet
             sp = self.planet_spec(**pl)
 
             # Location relative to star
-            delx_asec, dely_asec = pl['xyoff_asec']
+            plx_asec, ply_asec = pl['xyoff_asec']
 
             # Add in PA offset
             if PA_offset!=0:
-                delx_asec, dely_asec = xy_rot(delx_asec, dely_asec, PA_offset)
+                plx_asec, ply_asec = xy_rot(plx_asec, ply_asec, PA_offset)
+
+            # print(f'Planet offset ({plx_asec:.4f}, {ply_asec:.4f}) asec')
 
             # Add in bar offset for PSF generation
-            delx_asec = delx_asec + offx_asec + bar_offset
-            dely_asec = dely_asec + offy_asec
-            r, th = xy_to_rtheta(delx_asec, dely_asec)
+            xoff_idl, yoff_idl = (plx_asec + offx_asec + bar_offset, ply_asec + offy_asec)
+            r, th = xy_to_rtheta(xoff_idl, yoff_idl)
             psf_planet = self.gen_offset_psf(r, th, sp=sp, return_oversample=True, 
                                              use_coeff=use_coeff, wfe_drift=wfe_drift, 
                                              coron_rescale=coron_rescale, use_cmask=use_cmask,
@@ -854,60 +864,43 @@ class obs_hci(nrc_hci):
             # Expand to full size
             psf_planet = pad_or_cut_to_size(psf_planet, (ypix_over, xpix_over))
 
-            # Shift to position relative to center of image
-            # Convert delx and dely from 'idl' to 'sci' coords
-            xsci_ref, ysci_ref = self.siaf_ap.reference_point('sci')
-            xsci, ysci = self.siaf_ap.idl_to_sci(delx_asec, dely_asec)
-            delx, dely = (xsci - xsci_ref, ysci - ysci_ref)
+            ##################################
+            # Shift image
 
             # Determine final shift amounts to mask location
             # Shift to position relative to center of image
             if (('FULL' in self.det_info['wind_mode']) and (self.image_mask is not None)) or self._use_ap_info:
-                xref, yref = self.siaf_ap.reference_point('sci')
+                xcen, ycen = self.siaf_ap.reference_point('sci')
+                delx_pix = (xcen - (xpix/2 + 0.5))  # 'sci' pixel shifts
+                dely_pix = (ycen - (ypix/2 + 0.5))  # 'sci' pixel shifts
+                delx_asec, dely_asec = np.array([delx_pix, dely_pix]) * self.pixelscale
             else:
-                # Otherwise assumed mask is in center of subarray for simplicity
-                # The 0.5 offset indicates PSF is centered in middle of pixel
-                # TODO: How does this interact w/ odd/even PSFs??
-                xref, yref = (xpix/2 + 0.5, ypix/2 + 0.5)
+                # Otherwise assumed mask is already in center of subarray
+                delx_pix, dely_pix = (bar_offpix, 0)
+                delx_asec, dely_asec = np.array([delx_pix, dely_pix]) * self.pixelscale
 
-            # Detector pixels
-            delx += (xref - (xpix/2 + 0.5))
-            dely += (yref - (ypix/2 + 0.5))
+            # Add dither offsets
+            delx_asec += offx_asec 
+            dely_asec += offy_asec 
 
-            # Oversampled pixels
-            delx_over = delx * self.oversample
-            dely_over = dely * self.oversample
+            # PSF shifting
+            delx_over, dely_over = np.array([delx_asec, dely_asec]) / pixscale_over
+            delx_det, dely_det = np.array([delx_asec, dely_asec]) / self.pixelscale
+
+            # print(f'delx, dely = ({delx_asec:.4f}, {dely_asec:.4f}) asec')
+            # print(f'delx, dely = ({delx_det:.2f}, {dely_det:.2f}) det pixels')
+
+            # Determine planet PSF shift in pixels compared to center of mask
+            # Convert delx and dely from 'idl' to 'sci' coords
+            xsci_ref, ysci_ref = self.siaf_ap.reference_point('sci')
+            xsci_pl, ysci_pl = self.siaf_ap.idl_to_sci(plx_asec, ply_asec)
+            delx_sci, dely_sci = (xsci_pl - xsci_ref, ysci_pl - ysci_ref)
+
+            delx_over += delx_sci * self.oversample
+            dely_over += dely_sci * self.oversample
+
             interp = 'linear' if ('FULL' in self.det_info['wind_mode']) else 'cubic'
             psf_planet = fshift(psf_planet, delx=delx_over, dely=dely_over, pad=True, interp=interp)
-
-            # *** Now included in gen_offset_psf() ***
-            # Determine if any throughput loss due to coronagraphic mask
-            # artifacts, such as the mask holder or ND squares.
-            # Planet positions are relative to the center of the mask,
-            # which is not centered in a full detector.
-            # All subarrays should have the mask placed at the ~center.
-            # If ND_acq, then PSFs already included ND throughput in bandpass.
-            # if use_cmask and self.is_coron and (not self.ND_acq):
-            #     cmask = self.mask_images['DETSAMP']
-            #     # First, anything in a rectangular region around the
-            #     # mask has already been correctly accounted for
-            #     if (( np.abs(delx_asec)<10 and np.abs(dely_asec)<4.5 ) and
-            #         not ('TAMASK' in self.aperturename)):
-            #         # Set transmission to 1
-            #         trans = 1
-            #     else:
-            #         xpos = int(xref + delx_asec / self.pixelscale)
-            #         ypos = int(yref + dely_asec / self.pixelscale)
-            #         cmask_sub = cmask[ypos-3:ypos+3,xpos-3:xpos+3]
-            #         trans = np.mean(cmask_sub)
-            #         # COM substrate already accounted for in filter throughput curve,
-            #         # so it will be double-counted here. Need to divide it out.
-            #         w_um = self.bandpass.avgwave() / 1e4
-            #         com_th = nircam_com_th(wave_out=w_um)
-            #         trans /= com_th
-            # else:
-            #     trans = 1
-            # psf_planet *= trans
 
             # Add to image
             image_over += psf_planet
@@ -1226,6 +1219,8 @@ class obs_hci(nrc_hci):
             _log.info('  gen_slope_image: Creating stellar PSF...')
             im_star = self.gen_offset_psf(r, th, sp=sp, wfe_drift=wfe_drift, 
                                           return_oversample=return_oversample, **kwargs)
+        # Expand to full size
+        im_star = pad_or_cut_to_size(im_star, (ypix_over, xpix_over))
 
         ##################################
         # Shift image
@@ -1254,12 +1249,15 @@ class obs_hci(nrc_hci):
         _log.debug(f'r, th = ({r:.4f} asec, {th:.1f} deg)')
         _log.debug(f'delx, dely = ({delx_asec:.4f}, {dely_asec:.4f}) asec')
         _log.debug(f'delx, dely = ({delx_det:.2f}, {dely_det:.2f}) det pixels')
+
+        # print(f'r, th = ({r:.4f} asec, {th:.1f} deg)')
+        # print(f'delx, dely = ({delx_asec:.4f}, {dely_asec:.4f}) asec')
+        # print(f'delx, dely = ({delx_det:.2f}, {dely_det:.2f}) det pixels')
         
         # Stellar PSF doesn't rotate
-        if im_star is None:
-            interp = 'linear' if ('FULL' in self.det_info['wind_mode']) else 'cubic'
-            im_star = pad_or_cut_to_size(im_star, (ypix_over, xpix_over), interp=interp,
-                                         offset_vals=(dely_over,delx_over))
+        interp = 'linear' if ('FULL' in self.det_info['wind_mode']) else 'cubic'
+        im_star = fshift(im_star, delx=delx_over, dely=dely_over, interp=interp)
+        im_star[im_star<0] = 0
 
         ##################################
         # Disk and Planet images
@@ -2108,11 +2106,10 @@ class obs_hci(nrc_hci):
             # For off-axis PSF max values, use fiducial at bar_offset location
             bar_offset = self.bar_offset
             ny, nx = (ypix, xpix)
-            xpos = bar_offset / pixscale + nx/2
 
             # Get mask transmission for grid of points
             yv = (np.arange(ny) - ny/2) * pixscale
-            xv = np.ones_like(yv) * xpos
+            xv = np.ones_like(yv) * bar_offset
             trans = nrc_mask_trans(self.image_mask, xv, yv)
             # Linear combination of min/max to determine PSF max value at given distance
             # Get a and b values for each position
@@ -2187,6 +2184,12 @@ class obs_hci(nrc_hci):
 
         Keyword Args
         ------------
+        exclude_disk : bool
+            Do not include disk in final image (for radial contrast),
+            but still add Poisson noise from disk.
+        exclude_planets : bool
+            Do not include planets in final image (for radial contrast),
+            but still add Poisson noise from disk.
         use_cmask : bool
             Use the coronagraphic mask image to attenuate planet or disk that
             is obscurred by a corongraphic mask feature.
@@ -2285,7 +2288,7 @@ def _gen_disk_hdulist(inst, file, pixscale, dist, wavelength, units, cen_star,
 
 
 def get_cen_offsets(self, idl_offset=(0,0), PA_offset=0):
-    """ Determine offsets relative to center of subarray
+    """ Determine pixel offsets relative to center of subarray
     
     Given the 'idl' offset of some object relative to an observation's
     siaf_ap reference position (e.g., mask center), determine the 
@@ -2301,41 +2304,22 @@ def get_cen_offsets(self, idl_offset=(0,0), PA_offset=0):
         This should be -1 times telescope V3 PA.
     """
     
-    ypix, xpix = (self.det_info['ypix'], self.det_info['xpix'])
-
     # Location relative to star
     idl_offset = np.array(idl_offset)
     delx_asec, dely_asec = idl_offset
-    
+
     # Add in PA offset
     if PA_offset!=0:
         delx_asec, dely_asec = xy_rot(delx_asec, dely_asec, PA_offset)
-    
-    bar_offset = self.bar_offset
-    
-    # Add in bar offset for PSF generation
-    delx_asec = delx_asec + bar_offset
-    dely_asec = dely_asec
-    
-    # Shift to position relative to center of image
+
+    # Determine planet PSF shift in pixels compared to center of mask
     # Convert delx and dely from 'idl' to 'sci' coords
     xsci_ref, ysci_ref = self.siaf_ap.reference_point('sci')
-    xsci, ysci = self.siaf_ap.idl_to_sci(delx_asec, dely_asec)
-    delx, dely = (xsci - xsci_ref, ysci - ysci_ref)
+    xsci_pl, ysci_pl = self.siaf_ap.idl_to_sci(delx_asec, dely_asec)
+    delx_sci, dely_sci = (xsci_pl - xsci_ref, ysci_pl - ysci_ref)
 
-    # Determine final shift amounts to mask location
-    # Shift to position relative to center of image
-    if (('FULL' in self.det_info['wind_mode']) and (self.image_mask is not None)) or self._use_ap_info:
-        xref, yref = self.siaf_ap.reference_point('sci')
-    else:
-        # Otherwise assumed mask is in center of subarray for simplicity
-        xref, yref = (xpix/2 + 0.5, ypix/2 + 0.5)
-
-    # Detector pixels
-    delx += (xref - (xpix/2 + 0.5))
-    dely += (yref - (ypix/2 + 0.5))
-    
-    delx_asec = delx * self.pixelscale
-    dely_asec = dely * self.pixelscale
+    # Add in bar offset
+    delx_asec = delx_sci * self.pixelscale + self.bar_offset
+    dely_asec = dely_sci * self.pixelscale
     
     return (delx_asec, dely_asec)
