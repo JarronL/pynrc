@@ -2,7 +2,8 @@
 skyvec2ins JWST Coronagraph Visibility Calculator
 
 Developed by Chris Stark (cstark@stsci.edu), translated to Python
-from IDL by Joseph Long (jlong@stsci.edu)
+from IDL by Joseph Long (jlong@stsci.edu), Brendan Hagan,
+Bryony Nickson (bnickson@stsci.edu) and Mees Fix (mfix@stsci.edu)
 
 The allowed pointing of JWST leads to target visibility that depends on
 ecliptic latitude, and the range of roll angles allowed depends on

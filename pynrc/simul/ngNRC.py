@@ -49,7 +49,8 @@ from tqdm.auto import trange, tqdm
 import logging
 _log = logging.getLogger('pynrc')
 
-def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visit_id=None):
+def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visit_id=None,
+                        dry_run=None, save_slope=None, save_dms=None):
 
     """
     TODO
@@ -59,6 +60,26 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
         'col_noise': None,
         'out_ADU': False,
     }
+
+    Keyword Args
+    ============
+    dry_run : bool or None
+        Won't generate any image data, but instead runs through each 
+        observation, printing detector info, SIAF aperture name, filter,
+        visit IDs, exposure numbers, and dither information.
+        If set to None, then grabs keyword from `sim_config`, otherwise
+        defaults to False if not found.
+    save_slope : bool or None
+        Saves noiseless slope images to a separate DMS-like FITS file
+        that is names 'slope_{DMSfilename}'.
+        If set to None, then grabs keyword from `sim_config`, otherwise
+        defaults to False if not found. No effect if dry_run=True.
+    save_dms : bool or None
+        Option to disable simulation of ramp data and creation of DMS FITS.
+        If dry_run=True, then setting save_dms=True will save DMS FITS
+        files populated with all zeros.
+        If set to None, then grabs keyword from `sim_config`; if no keyword
+        is found, then default to True if dry_run=False, otherwise False.
     """
 
     from ..pynrc_core import DetectorOps, NIRCam
@@ -95,14 +116,23 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
     ta_sam_uncert     = sim_config['ta_sam']
     std_sam_uncert    = sim_config['std_sam']
     sgd_sam_uncert    = sim_config['sgd_sam']
+    dith_seed_init    = sim_config.get('dith_seed_init')
 
-    save_slope = sim_config['save_slope']
-    save_dms = sim_config['save_dms']
-    dry_run = sim_config['dry_run']
+    if save_slope is None:
+        save_slope = sim_config.get('save_slope', False)
+    if dry_run is None:
+        dry_run = sim_config.get('dry_run', False)
+    # Saving DMS data is off by default if running dry run,
+    # but keyword settings will take precedence.
+    save_dms_def = False if dry_run else True
+    if save_dms is None:
+        save_dms = sim_config.get('save_dms', save_dms_def)
+
 
     #################################################
     # Create DMS Input class
-    obs_input = DMS_input(xml_file, pointing_file, json_file, sm_acct_file, save_dir=save_dir)
+    obs_input = DMS_input(xml_file, pointing_file, json_file, sm_acct_file,
+                          save_dir=save_dir, dith_seed_init=dith_seed_init)
 
     # Update observing start date/time and V3 PA
     obs_input.obs_date = sim_config['obs_date']
@@ -129,6 +159,7 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
         # udetnames = ['NRCA5']
         
     for detname in udetnames:
+        # print('detname: ', detname)
 
         ind = (obs_detnames == detname)
         if ind.sum()==0:
@@ -147,20 +178,27 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
             ind_mask2 = np.array([filter in a for a in ulabels])
             ind_mask = ind_mask1 & ind_mask2
             ulabels = ulabels[ind_mask]
+            log_print = _log.info
         elif (apname is not None) and (filter is None):
             ind_mask = np.array([apname in a for a in ulabels])
             ulabels = ulabels[ind_mask]
+            log_print = _log.info
         elif (apname is None) and (filter is not None):
             ind_mask = np.array([filter in a for a in ulabels])
             ulabels = ulabels[ind_mask]
+            log_print = _log.info
+        else:
+            log_print = _log.warn
+
 
         if len(ulabels)==0:
-            _log.warn('No valid observations for specified parameters:')
-            _log.warn(f'  SCA: {detname}, SIAF: {apname}, Filter: {filter}')
+            log_print('No valid observations for specified parameters:')
+            log_print(f'  SCA: {detname}, SIAF: {apname}, Filter: {filter}')
             continue
 
         # ulabels = ['NRCA5_FULL_F277W']
         for label in ulabels:
+            # print(' label: ', label)
             ind2 = (obs_labels == label)
             
             if ind2.sum()==0:
@@ -176,10 +214,13 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
             if visit_id is not None:
                 ind_mask = (visit_ids == visit_id)
                 visit_ids = visit_ids[ind_mask]
+                log_print = _log.info
+            else:
+                log_print = _log.warn
 
             if len(visit_ids)==0:
-                _log.warn('No valid Visit IDs for specified parameters:')
-                _log.warn(f'  SCA: {detname}, SIAF: {apname}, Filter: {filter}, Visit: {visit_id}')
+                log_print('No valid Visit IDs for specified parameters:')
+                log_print(f'  SCA: {detname}, SIAF: {apname}, Filter: {filter}, Visit: {visit_id}')
                 continue
 
             # Create NIRCam instrument object
@@ -187,7 +228,8 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
             filt  = obs_params['filter']
             pupil = None if obs_params['pupil']=='CLEAR'     else obs_params['pupil']
             mask  = None if obs_params['coron_mask']=='None' else obs_params['coron_mask']
-            ap_obs_name = obs_params['siaf_ap'].AperName
+            siaf_ap = obs_params['siaf_ap']
+            ap_obs_name = siaf_ap.AperName
 
             # if 'TAMASK' in ap_obs_name:
             #     # For TA observations, instead specify the coronagraphic equivalent
@@ -201,7 +243,7 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
             # Check fov_pix size makes sense for aperture size
             # Reduce if too large. Make odd.
             kwargs_nrc2 = kwargs_nrc.copy()
-            fov_pix = np.min([2*ap_nrc_name.XSciSize, 2*ap_nrc_name.YSciSize, kwargs_nrc['fov_pix']])
+            fov_pix = np.min([2*siaf_ap.XSciSize, 2*siaf_ap.YSciSize, kwargs_nrc['fov_pix']])
             fov_pix = fov_pix+1 if (fov_pix % 2)==0 else fov_pix
             kwargs_nrc2['fov_pix'] = fov_pix
 
@@ -256,6 +298,7 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
 
             # Cycle through each of the visits
             for vid in visit_ids:
+                # print('  vid: ', vid)
                 visit_dict = obs_input.program_info[vid]
 
                 # Get exposure IDs
@@ -271,7 +314,8 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
 
                     # Create the observation parameters dictionary for selected exposure
                     exp_num = exp_ids[j]
-                    obs_params = obs_input.gen_obs_param(vid, exp_num, detname)
+                    # print('   exp_num: ', exp_num)
+                    obs_params = obs_input.gen_obs_params(vid, exp_num, detname)
 
                     # Random seed for dither uncertainties
                     rand_seed = visit_dict['dith_rand_seed'] + j
@@ -283,11 +327,24 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                         continue
                     elif tup=='T_ACQ' or tup=='CONFIRM':
                         # First slew has large uncertainty
+                        if int(exp_num)==1:
+                            base_std = large_slew_uncert
+                        elif obs_params['ddist']==0:
+                            # If not #1 and confirmation image occurred before, then no SAM
+                            base_std = large_slew_uncert
+                            # Need to subtract 1 from random seed to get same 
+                            # random offset as previous confirmation image
+                            rand_seed -= 1
+                        else:
+                            # If not #1 and no confirm image, then TA SAM
+                            base_std = ta_sam_uncert
+
                         base_std = large_slew_uncert if int(exp_num)==1 else ta_sam_uncert
                         # There are no dithers
                         dith_std = 0
                         tel_pointing = gen_jwst_pointing(visit_dict, obs_params, rand_seed=rand_seed,
                                                          base_std=base_std, dith_std=dith_std)
+                        tel_pointing.exp_nums = np.array([int(exp_num)])
                     elif do_sci_pointing:
                         # First science exposure
                         #   Exposure #1 is the "slew" position
@@ -300,7 +357,7 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                             # random offset as previous confirmation image
                             rand_seed -= 1
                         else:
-                            # If not #1 and no confirm image, then TA SAM
+                            # If not #1 and no confirm image, then SAM from TA position
                             base_std = ta_sam_uncert
 
                         # Create jwst_pointing class
@@ -353,31 +410,39 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                         expnum = int(obs_params['obs_id_info']['exposure_number'])
                         ind = np.where(tel_pointing.exp_nums == expnum)[0][0]
                         idl_off = tel_pointing.position_offsets_act[ind]
-                        print(detname, label, vid, exp_num, idl_off)
+                        a = obs_params['siaf_ap'].AperName
+                        f = obs_params['filter']
+                        print(detname, a, f, vid, exp_num, idl_off)
+
+                        # Save Level1b DMS FITS files without any data
+                        if save_dms:
+                            obs_params['filename'] = 'pynrc_' + obs_params['filename']
+                            create_DMS_HDUList(None, None, obs_params, save_dir=save_dir)
 
 
 def save_slope_image(im_slope, obs_params, save_dir=None):
+    ""
 
-        # Create data model for headers
-        outModel = level1b_data_model(obs_params)
-        hdul_temp, _ = fits_support.to_fits(outModel._instance, outModel._schema)
+    # Create data model for headers
+    outModel = level1b_data_model(obs_params)
+    hdul_temp, _ = fits_support.to_fits(outModel._instance, outModel._schema)
 
-        # Create a new HDUList for the slope image
-        hdu1 = fits.PrimaryHDU(header=hdul_temp[0].header.copy())
-        hdu2 = fits.ImageHDU(data=im_slope, header=hdul_temp[1].header.copy(strip=True))
-        hdul_slope = fits.HDUList([hdu1, hdu2])
+    # Create a new HDUList for the slope image
+    hdu1 = fits.PrimaryHDU(header=hdul_temp[0].header.copy())
+    hdu2 = fits.ImageHDU(data=im_slope, header=hdul_temp[1].header.copy(strip=True))
+    hdul_slope = fits.HDUList([hdu1, hdu2])
 
-        # Save slope FITS file
-        file_slope = 'slope_' + obs_params['filename']
-        if save_dir is not None:
-            file_slope = os.path.join(save_dir, file_slope)
-        hdul_slope.writeto(file_slope, overwrite=True)
+    # Save slope FITS file
+    file_slope = 'slope_' + obs_params['filename']
+    if save_dir is not None:
+        file_slope = os.path.join(save_dir, file_slope)
+    hdul_slope.writeto(file_slope, overwrite=True)
 
-        hdul_temp.close()
-        hdul_slope.close()
+    hdul_temp.close()
+    hdul_slope.close()
 
-        # Update some WCS and segment info
-        update_dms_headers(file_slope, obs_params)
+    # Update some WCS and segment info
+    update_dms_headers(file_slope, obs_params)
 
 
 def slope_to_level1b(im_slope, obs_params, cal_obj=None, save_dir=None, 
@@ -404,8 +469,8 @@ def slope_to_level1b(im_slope, obs_params, cal_obj=None, save_dir=None,
         Dictionary of parameters to populate DMS header. 
         See `create_DMS_HDUList` in dms.py.
     cal_obj : :class:`pynrc.nircam_cal`
-        DMS object built from exported APT files. See `DMS_input`
-        in apt.py.
+        DMS object built from exported APT files. 
+        See `DMS_input` in apt.py.
     save_dir : None or str
         Option to override output directory as specified in `obs_params` dictionary.
         If not specified as either a function keyword or in `obs_params`, then files 
