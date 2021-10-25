@@ -9,6 +9,7 @@ import logging
 _log = logging.getLogger('pynrc')
 
 from webbpsf_ext.webbpsf_ext_core import _check_list
+from .nrc_utils import pix_noise
 
 class multiaccum(object):
     """
@@ -504,7 +505,7 @@ class det_timing(object):
     def _fix_precision(self, input):
         """
         Many timing calculations result from minor precision issues with very
-        small numbers (1e-16) added the real result. This function attempts
+        small numbers (1e-16) added to the real result. This function attempts
         to truncate these small innaccuracies by dividing by the clock sample
         time to get the total integer number of clock cycles.
         """
@@ -575,7 +576,7 @@ class det_timing(object):
         
     @property
     def time_frame(self):
-        """Determine frame times based on xpix, ypix, and wind_mode."""
+        """Determine frame time (sec) based on xpix, ypix, and wind_mode."""
 
         chsize = self.chsize                   # Number of x-pixels within a channel
         xticks = chsize + self._line_overhead  # Clock ticks per line
@@ -637,20 +638,20 @@ class det_timing(object):
         res = self.multiaccum.nint * self.time_ramp
         return self._fix_precision(res)
 
-#     @property
-#     def time_total_int(self):
-#         """Total time for all frames in a ramp.
-#         
-#         Includes resets and excess drops, as well as NFF Rows Reset.
-#         """
-# 
-#         ma = self.multiaccum
-#         nf = ma.nf; nd1 = ma.nd1; nd2 = ma.nd2; nd3 = ma.nd3
-#         ngroup = ma.ngroup
-#         nr = 1
-# 
-#         nframes = nr + nd1 + ngroup*nf + (ngroup-1)*nd2 + nd3        
-#         return nframes * self.time_frame + self.time_row_reset
+    # @property
+    # def time_total_int(self):
+    #     """Total time for all frames in a ramp.
+        
+    #     Includes resets and excess drops, as well as NFF Rows Reset.
+    #     """
+
+    #     ma = self.multiaccum
+    #     nf = ma.nf; nd1 = ma.nd1; nd2 = ma.nd2; nd3 = ma.nd3
+    #     ngroup = ma.ngroup
+    #     nr = 1
+
+    #     nframes = nr + nd1 + ngroup*nf + (ngroup-1)*nd2 + nd3        
+    #     return nframes * self.time_frame + self.time_row_reset
 
     @property
     def time_total_int1(self):
@@ -733,6 +734,8 @@ class det_timing(object):
             Date string of observation ('2020-02-28')
         time_start : str
             Time string of observation ('12:24:56')
+        offset_seconds : None or float
+            Time from beginning of observation until start of integration.
 
         Returns
         -------
@@ -786,6 +789,77 @@ class det_timing(object):
 
         return int_times_tab
         
+    def pixel_noise(self, ng=None, nf=None, verbose=False, **kwargs):
+        """Noise values per pixel.
+        
+        Return theoretical noise calculation for the specified MULTIACCUM exposure 
+        in terms of e-/sec. This uses the pre-defined detector-specific noise 
+        properties. Can specify flux of a source as well as background and 
+        zodiacal light (in e-/sec/pix). After getting the noise per pixel per
+        ramp (integration), value(s) are divided by the sqrt(NINT) to return
+        the final noise
+
+        Parameters
+        ----------
+        ng : None or int or image
+            Option to explicitly state number of groups. This is specifically
+            used to enable the ability of only calculating pixel noise for
+            unsaturated groups for each pixel. If a numpy array, then it should
+            be the same shape as `fsrc` image. By default will use `self.multiaccum.ngroup`.
+        nf : int
+            Option to explicitly states number of frames in each group.
+            By default will use `self.multiaccum.nf`.
+        verbose : bool
+            Print out results at the end.
+
+        Keyword Arguments
+        -----------------
+        rn : float
+            Read Noise per pixel (e-).
+        ktc : float
+            kTC noise (in e-). Only valid for single frame (n=1)
+        p_excess : array-like
+            An array or list of two elements that holds the parameters
+            describing the excess variance observed in effective noise plots.
+            By default these are both 0. For NIRCam detectors, recommended
+            values are [1.0,5.0] for SW and [1.5,10.0] for LW.
+        idark : float
+            Dark current in e-/sec/pix.
+        fsrc : float
+            Flux of source in e-/sec/pix.
+        fzodi : float
+            Zodiacal light emission in e-/sec/pix.
+        fbg : float
+            Any additional background (telescope emission or scattered light?)
+        ideal_Poisson : bool
+            If set to True, use total signal for noise estimate,
+            otherwise MULTIACCUM equation is used.
+
+        Notes
+        -----
+        fsrc, fzodi, and fbg are functionally the same as they are immediately summed.
+        They can also be single values or multiple elements (list, array, tuple, etc.).
+        If multiple inputs are arrays, make sure their array sizes match.
+        
+        """
+
+        ma = self.multiaccum
+        if ng is None:
+            ng = ma.ngroup
+        if nf is None:
+            nf = ma.nf
+
+        # Pixel noise per ramp (e-/sec/pix)
+        pn = pix_noise(ngroup=ng, nf=nf, nd2=ma.nd2, tf=self.time_frame, **kwargs)
+    
+        # Divide by sqrt(Total Integrations)
+        final = pn / np.sqrt(ma.nint)
+        if verbose:
+            print('Noise (e-/sec/pix): {}'.format(final))
+            print('Total Noise (e-/pix): {}'.format(final*self.time_exp))
+
+        return final
+
     def pix_timing_map(self, same_scan_direction=None, reverse_scan_direction=None,
                        avg_groups=False, reset_zero=False, return_flat=False):
         """Create array of pixel times for a single ramp. 
@@ -1390,7 +1464,10 @@ def create_detops(header, DMS=False, read_mode=None, nint=None, ngroup=None,
     from pynrc.pynrc_core import DetectorOps
 
     # Detector ID
-    detector = header['SCA_ID'] if detector is None else detector
+    if detector is None:
+        detector = header.get('SCA_ID')
+        if detector is None:
+            detector = header.get('DETECTOR')         
 
     # Detector size
     xpix = header['SUBSIZE1'] if DMS else header['NAXIS1'] if xpix is None else xpix
@@ -1405,28 +1482,9 @@ def create_detops(header, DMS=False, read_mode=None, nint=None, ngroup=None,
         y1 = header['SUBSTRT2'] if DMS else header['ROWCORNR']
         y0 = y1 - 1
 
-    # Subarray setting, Full, Stripe, or Window
-    # if wind_mode is None:
-    #     if DMS:
-    #         if 'FULL' in header['SUBARRAY']:
-    #             wind_mode = 'FULL'
-    #         elif 'GRISM' in header['SUBARRAY']:
-    #             wind_mode = 'STRIPE'
-    #         else:
-    #             wind_mode = 'WINDOW'
-    #     else:
-    #         if not header['SUBARRAY']:
-    #             wind_mode = 'FULL'
-    #         elif 'DISABLE' in header['HWINMODE']:
-    #             wind_mode = 'STRIPE'
-    #         else:
-    #             wind_mode = 'WINDOW'
-
     # Subarray setting: Full, Stripe, or Window
     if wind_mode is None:
-        if DMS and ('FULL' in header['SUBARRAY']):
-            wind_mode = 'FULL'
-        elif (not DMS) and (not header['SUBARRAY']):
+        if xpix==ypix==2048:
             wind_mode = 'FULL'
         else:
             # Test if STRIPE or WINDOW

@@ -2368,8 +2368,10 @@ class nircam_cal(nircam_dark):
     """
 
     def __init__(self, scaid, same_scan_direction=False, reverse_scan_direction=False,
-                 verbose=True):
+                 DMS=False, verbose=True):
                         
+
+        self.DMS = DMS
 
         # Directory information
         self.scaid = scaid
@@ -2439,7 +2441,10 @@ class nircam_cal(nircam_dark):
         self.get_ref_pixel_noise()
 
         self.get_nonlinear_coeffs()
-        self.get_linear_coeffs()
+        try:
+            self.get_linear_coeffs()
+        except:
+            _log.info('Skipping linearity coefficients. Not needed for simulations.')
         self.get_super_flats()
         
         setup_logging(prev_log, verbose=False)

@@ -110,10 +110,10 @@ class DetectorOps(det_timing):
                         486:'B1', 487:'B2', 488:'B3', 489:'B4', 490:'B5'}
         # Allow user to specify name using either SCA ID or Detector ID (ie., 481 or 'A1')
         try: # First, attempt to set SCA ID
-            self.scaid = detector 
+            self.scaid = detector
         except ValueError: 
             try: # If that doesn't work, then try to set Detector ID
-                self.detid = detector
+                self.detid = get_detname(detector)[3:]
             except ValueError: # If neither work, raise ValueError exception
                 raise ValueError("Invalid detector: {0} \n\tValid names are: {1},\n\t{2}" \
                       .format(detector, ', '.join(self.detid_list), \
@@ -2158,6 +2158,12 @@ class NIRCam(NIRCam_ext):
         sp : :mod:`pysynphot.spectrum`, None
             A pysynphot spectral object. If not specified, then it is
             assumed that we're looking at blank sky.
+        cframe : str
+            Output coordinate frame, 'sci' or 'det'.
+        nint : None or int
+            Options to specify arbitrary number of integrations. 
+        do_dark : bool
+            Make a dark ramp (ie., pupil='FLAT'), no external flux.
 
         Keyword Args
         ------------
@@ -2216,8 +2222,8 @@ class NIRCam(NIRCam_ext):
             Apply non-linearity?
         random_nonlin : bool
             Add randomness to the linearity coefficients?
-        apply_flats: None
-            Apply sub-pixel QE variations (crosshatching).
+        apply_flats: bool
+            Apply sub-pixel QE variations (crosshatching)?
         latents : None or ndarray
             (TODO) Apply persistence from previous integration.
 
@@ -2294,16 +2300,23 @@ class NIRCam(NIRCam_ext):
         
         setup_logging(log_prev, verbose=False)
 
-        return res_ramps, res_zeros
+        return np.asarray(res_ramps), np.asarray(res_zeros)
 
     def simulate_level1b(self, target_name, ra, dec, date_obs, time_obs, 
         sp=None, im_slope=None, cframe='sci', nint=None, do_dark=False, 
-        save_dir=None, return_model=False, **kwargs):
+        save_dir=None, return_model=False, return_hdul=False, **kwargs):
 
         """ Simulate and save a Level 1b data model """
 
         from .simul.dms import level1b_data_model, save_level1b_fits
+        from stdatamodels import fits_support
 
+        # Update total number of integrations
+        if nint is not None:
+            nint_orig = self.Detector.multiaccum.nint
+            self.update_detectors(nint=nint)
+
+        kwargs['out_ADU'] = True
         sci_data, zero_data = self.simulate_ramps(sp=sp, im_slope=im_slope, cframe=cframe, nint=nint, 
             do_dark=do_dark, **kwargs)
 
@@ -2311,10 +2324,22 @@ class NIRCam(NIRCam_ext):
         obs_params['save_dir'] = save_dir
 
         outModel = level1b_data_model(obs_params, sci_data=sci_data, zero_data=zero_data)
-        save_level1b_fits(outModel, obs_params, save_dir=save_dir)
+        if save_dir:
+            save_level1b_fits(outModel, obs_params, save_dir=save_dir)
 
-        if return_model:
+        # Return number of integrations
+        if nint is not None:
+            self.update_detectors(nint=nint_orig)
+
+        if return_hdul:
+            out_hdul, out_asdf = fits_support.to_fits(outModel._instance, outModel._schema)
+
+        if return_model and return_hdul:
+            return outModel, out_hdul
+        elif return_model:
             return outModel
+        elif return_hdul:
+            return out_hdul
 
 
 def table_filter(t, topn=None, **kwargs):
@@ -2405,6 +2430,7 @@ def gen_ramps(args):
 
     # Must call np.random.seed() for multiprocessing, otherwise 
     # random numbers for parallel processes start in the same seed state!
+    # TODO: Update to rng = np.random.default_rng()
     np.random.seed()
     try:
         res = simulate_detector_ramp(*args_orig, **kwargs)

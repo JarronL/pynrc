@@ -1876,7 +1876,7 @@ def apply_flat(cube, det, imflat_full):
     return cube
 
 
-def add_cosmic_rays(data, scenario='SUNMAX', scale=1, tframe=10.73677, ref_info=[4,4,4,4]):
+def add_cosmic_rays(data, scenario='SUNMAX', scale=1, tframe=10.73677, ref_info=[4,4,4,4], rand_seed=None):
     """ Add random cosmic rays to data cube"""
 
     import json
@@ -1906,7 +1906,7 @@ def add_cosmic_rays(data, scenario='SUNMAX', scale=1, tframe=10.73677, ref_info=
 
     # For each ion type, add random events
     ion_keys = type_dict.keys()
-    rng = np.random.default_rng()
+    rng = np.random.default_rng(rand_seed)
     for k in ion_keys:
         rate   = type_dict[k]['rates'] # events / cm^2 / sec
         # How many event per frame on average?
@@ -1949,10 +1949,14 @@ def add_cosmic_rays(data, scenario='SUNMAX', scale=1, tframe=10.73677, ref_info=
 
             # Add source-by-source in case of overlapped indices
             for i, (iy, ix) in enumerate(zip(inty,intx)):
-                data[ii:, iy,   ix]   += val1[i]
-                data[ii:, iy+1, ix]   += val2[i]
-                data[ii:, iy,   ix+1] += val3[i]
-                data[ii:, iy+1, ix+1] += val4[i]
+                if (iy>=0) and (ix>=0):
+                    data[ii:, iy,   ix]   += val1[i]
+                if (iy+1<ny): 
+                    data[ii:, iy+1, ix]   += val2[i]
+                if (ix+1<nx): 
+                    data[ii:, iy,   ix+1] += val3[i]
+                if (iy+1<ny) and (ix+1<nx):
+                    data[ii:, iy+1, ix+1] += val4[i]
 
     return data.reshape(sh)
 
@@ -2117,8 +2121,8 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
         Apply non-linearity? If False, then warning if out_ADU=True
     random_nonlin : bool
         Add randomness to the linearity coefficients?
-    apply_flats: None
-        Apply sub-pixel QE variations (crosshatching).
+    apply_flats: bool
+        Apply sub-pixel QE variations (crosshatching and illumination)?
     latents : None or ndarray
         (TODO) Apply persistence from previous integration.
     prog_bar : bool
@@ -2247,8 +2251,8 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     # The apply_nonlin function goes from e- to DN
     if apply_nonlinearity:
         data = gain * apply_nonlin(data, det, dco.nonlinear_dict, randomize=random_nonlin)
-    elif out_ADU:
-        _log.warn("Assuming perfectly linear ramp, but convert to 16-bit UINT (out_ADU=True)")
+    # elif out_ADU:
+    #     _log.warn("Assuming perfectly linear ramp, but convert to 16-bit UINT (out_ADU=True)")
     if prog_bar: pbar.update(1)
 
     ####################
