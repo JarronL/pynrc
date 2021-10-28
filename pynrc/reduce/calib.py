@@ -2444,7 +2444,7 @@ class nircam_cal(nircam_dark):
         try:
             self.get_linear_coeffs()
         except:
-            _log.info('Skipping linearity coefficients. Not needed for simulations.')
+            _log.info('Skipping linearity coefficients. Not needed for simulations...')
         self.get_super_flats()
         
         setup_logging(prev_log, verbose=False)
@@ -5498,19 +5498,18 @@ def pixel_linearity_gains(frame, coeff_arr, use_legendre=True, lxmap=[0,1e5]):
     return gain 
 
 def apply_linearity(cube, det, coeff_dict):
-    """Apply pixel non-linearity to ideal ramp
+    """Apply pixel linearity corrections to ramp
 
-    Given a simulated cube of data in electrons, apply non-linearity 
-    coefficients to obtain values in DN (ADU). This 
+    Linearize a bias-subtracted, ref-pixel-corrected ramp and convert
+    from units of DN to electrons.
 
     Parameters
     ----------
     cube : ndarray
-        Simulated ramp data in e-. These should be intrinsic
-        flux values with Poisson noise, but prior to read noise,
-        kTC, IPC, etc. Size (nz,ny,nx).
+        Ramp data in DN of size (nz,ny,nx). Should be bias-subtracted and
+        ref-pixel-corrected.
     det : Detector Class
-        Desired detector class output
+        NIRCam detector class.
     coeff_dict : ndarray
         Dictionary holding coefficient information:
 
@@ -5562,6 +5561,10 @@ def apply_linearity(cube, det, coeff_dict):
         # Convert from DN to electrons
         res[i,:] = frame * gain
         del gain
+
+        # For reference pixels, copy frame data and multiple by detector gain
+        mask_ref = det.mask_ref
+        res[i,mask_ref] = frame[mask_ref] * det.gain
 
     return res
 
@@ -5665,6 +5668,12 @@ def apply_nonlin(cube, det, coeff_dict, randomize=True):
         # Correct any pixels that are above saturation DN
         ind_over = (res[i]>sat_vals) | ind_high
         res[i,ind_over] = sat_vals[ind_over]
+
+        # For reference pixels, copy frame data and divide by detector gain
+        # Normally reference pixels should start as 0s, but just in case...
+        mask_ref = det.mask_ref
+        res[i,mask_ref] = frame[mask_ref] / det.gain
+
 
     return res
 
