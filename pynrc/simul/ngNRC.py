@@ -1168,7 +1168,7 @@ def add_col_noise(super_dark_ramp, ramp_column_varations, prob_bad):
     return data
 
 def gen_ramp_biases(ref_dict, nchan=None, data_shape=(2,2048,2048), 
-                    include_refinst=True, ref_border=[4,4,4,4]):
+                    include_refinst=True, ref_border=[4,4,4,4], rand_seed=None):
     """ Generate a ramp of bias offsets
 
     Parameters
@@ -1187,6 +1187,8 @@ def gen_ramp_biases(ref_dict, nchan=None, data_shape=(2,2048,2048),
     ref_border: list
         Number of references pixels [lower, upper, left, right]
     """
+
+    rng = np.random.default_rng(rand_seed)
     
     if nchan is None:
         nchan = len(ref_dict['amp_offset_mean'])
@@ -1198,21 +1200,21 @@ def gen_ramp_biases(ref_dict, nchan=None, data_shape=(2,2048,2048),
     ######################
     # Add overall bias
     # TODO: Add temperature dependence
-    bias_off = ref_dict['master_bias_mean'] + np.random.normal(scale=ref_dict['master_bias_std'])
+    bias_off = ref_dict['master_bias_mean'] + rng.normal(scale=ref_dict['master_bias_std'])
     cube += bias_off
 
     # Add amplifier offsets
     # These correlate to bias offset
     cf = ref_dict['master_amp_cf']
-    amp_off = jl_poly(bias_off, cf) + np.random.normal(scale=ref_dict['amp_offset_std'])
+    amp_off = jl_poly(bias_off, cf) + rng.normal(scale=ref_dict['amp_offset_std'])
 
     for ch in range(nchan):
         cube[:,:,ch*chsize:(ch+1)*chsize] += amp_off[ch]
     
     # Include frame-to-frame bias variation
     ######################
-    bias_off_f2f = np.random.normal(scale=ref_dict['master_bias_f2f'], size=nz)
-    amp_off_f2f = np.random.normal(scale=ref_dict['amp_offset_f2f'][0:nchan], size=(nz,nchan))
+    bias_off_f2f = rng.normal(scale=ref_dict['master_bias_f2f'], size=nz)
+    amp_off_f2f = rng.normal(scale=ref_dict['amp_offset_f2f'][0:nchan], size=(nz,nchan))
 
     for i, im in enumerate(cube):
         im += bias_off_f2f[i]
@@ -1238,7 +1240,8 @@ def gen_ramp_biases(ref_dict, nchan=None, data_shape=(2,2048,2048),
             mask_ch[:,ch*chsize:(ch+1)*chsize] = True
 
             std = ref_dict['amp_ref_inst_f2f'][ch]
-            ref_noise = std * pink_noise(nz)
+            ch_rand_seed = rng.integers(0, 2**32-1)
+            ref_noise = std * pink_noise(nz, rand_seed=ch_rand_seed)
             cube[:, mask_ref & mask_ch] += ref_noise.reshape([-1,1])
 
     # Set even/odd offsets
@@ -1260,7 +1263,7 @@ def gen_ramp_biases(ref_dict, nchan=None, data_shape=(2,2048,2048),
 
 
 def fft_noise(pow_spec, nstep_out=None, fmin=None, f=None, 
-              pad_mode='edge', **kwargs):
+              pad_mode='edge', rand_seed=None, **kwargs):
     """ Random Noise from Power Spectrum
     
     Returns a noised array where the instrinsic distribution
@@ -1320,6 +1323,8 @@ def fft_noise(pow_spec, nstep_out=None, fmin=None, f=None,
 
     """
     
+    rng = np.random.default_rng(rand_seed)
+
     if nstep_out is None:
         nstep_out = 2 * (len(pow_spec) - 1)
         
@@ -1353,11 +1358,11 @@ def fft_noise(pow_spec, nstep_out=None, fmin=None, f=None,
     
     # Generate scaled random power + phase
     # sr = lin_spec
-    # sr = np.random.normal(scale=lin_spec)
-    # si = np.random.normal(scale=lin_spec)
+    # sr = rng.normal(scale=lin_spec)
+    # si = rng.normal(scale=lin_spec)
     # For large numbers, faster to gen with scale=1, then multiply
-    sr = np.random.normal(size=len(lin_spec)) * lin_spec
-    si = np.random.normal(size=len(lin_spec)) * lin_spec
+    sr = rng.normal(size=len(lin_spec)) * lin_spec
+    si = rng.normal(size=len(lin_spec)) * lin_spec
 
     # If the signal length is even, frequencies +/- 0.5 are equal
     # so the coefficient must be real.
@@ -1401,6 +1406,9 @@ def pink_noise(nstep_out, pow_spec=None, f=None, fmin=None, alpha=-1, **kwargs):
         point get set equal to the power spectrum value at fmin.
     alpha : float
         Power spectrum index to generate if `pow_spec` is not specified directly.
+
+    Keyword Args
+    ============
     pad_mode : str or function
         One of the following string values or a user supplied function.
         Default is 'edge'.
@@ -1435,7 +1443,9 @@ def pink_noise(nstep_out, pow_spec=None, f=None, fmin=None, alpha=-1, **kwargs):
             Pads with the wrap of the vector along the axis.
             The first values are used to pad the end and the
             end values are used to pad the beginning.
-
+    rand_seed : None or int
+        Seed value to initialize random number generator to obtain
+        repeatable values.
 
     """
     
@@ -1459,7 +1469,7 @@ def pink_noise(nstep_out, pow_spec=None, f=None, fmin=None, alpha=-1, **kwargs):
 
 def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
     acn=0, pow_spec_corr=None, corr_scales=None, fcorr_lim=[1,10],
-    ref_ratio=0.8, verbose=True, **kwargs):
+    ref_ratio=0.8, rand_seed=None, verbose=True, **kwargs):
     
     """ Simulate Noise Ramp
     
@@ -1498,6 +1508,8 @@ def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
     
     from pynrc.reduce.calib import fit_corr_powspec, broken_pink_powspec
     import time
+
+    rng = np.random.default_rng(rand_seed)
 
     nchan = det.nout
     nx = det.xpix
@@ -1546,19 +1558,19 @@ def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
                 for ch in np.arange(nchan):
                     x1 = ch * chsize
                     x2 = x1 + chsize
-                    here[:,x1:x2] = np.random.normal(scale=rd_noise[ch], size=(ny,chsize))
+                    here[:,x1:x2] = rng.normal(scale=rd_noise[ch], size=(ny,chsize))
 
                 # If there are reference pixels, overwrite with appropriate noise values
                 # Noisy reference pixels for each side of detector
                 rd_ref = rr * np.mean(rd_noise)
                 if w[0] > 0: # lower
-                    here[:w[0],:] = np.random.normal(scale=rd_ref, size=(w[0],nx))
+                    here[:w[0],:] = rng.normal(scale=rd_ref, size=(w[0],nx))
                 if w[1] > 0: # upper
-                    here[-w[1]:,:] = np.random.normal(scale=rd_ref, size=(w[1],nx))
+                    here[-w[1]:,:] = rng.normal(scale=rd_ref, size=(w[1],nx))
                 if w[2] > 0: # left
-                    here[:,:w[2]] = np.random.normal(scale=rd_ref, size=(ny,w[2]))
+                    here[:,:w[2]] = rng.normal(scale=rd_ref, size=(ny,w[2]))
                 if w[3] > 0: # right
-                    here[:,-w[3]:] = np.random.normal(scale=rd_ref, size=(ny,w[3]))
+                    here[:,-w[3]:] = rng.normal(scale=rd_ref, size=(ny,w[3]))
 
                 # Add the noise in to the result
                 result[z,:,:] += here
@@ -1608,7 +1620,8 @@ def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
         else:
             pf = p_filter2
 
-        tt = c_pink * pink_noise(nstep, pow_spec=pf)
+        rand_seed_pass_through = rng.integers(0, 2**32-1)
+        tt = c_pink * pink_noise(nstep, pow_spec=pf, rand_seed=rand_seed_pass_through)
         tt = tt.reshape([nz, ny_poh, ch_poh])[:,0:ny,0:chsize]
         _log.debug('  Corr Pink Noise (input, output): {:.2f}, {:.2f}'
               .format(c_pink, np.std(tt)))
@@ -1649,7 +1662,8 @@ def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
                 x1 = ch*chsize
                 x2 = x1 + chsize
 
-                tt = u_pink[ch] * pink_noise(nstep, pow_spec=p_filter2)
+                rand_seed_pass_through = rng.integers(0, 2**32-1)
+                tt = u_pink[ch] * pink_noise(nstep, pow_spec=p_filter2, rand_seed=rand_seed_pass_through)
                 tt = tt.reshape([nz, ny_poh, ch_poh])[:,0:ny,0:chsize]
                 _log.debug('  Ch{} Pink Noise (input, output): {:.2f}, {:.2f}'
                       .format(ch, u_pink[ch], np.std(tt)))
@@ -1682,8 +1696,10 @@ def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
             x2 = x1 + chsize
 
             # Generate new pink noise for each even and odd vector.
-            a = acn * pink_noise(int(nstep/2), pow_spec=pf_acn)
-            b = acn * pink_noise(int(nstep/2), pow_spec=pf_acn)
+            rand_seed_pass_through = rng.integers(0, 2**32-1)
+            a = acn * pink_noise(int(nstep/2), pow_spec=pf_acn, rand_seed=rand_seed_pass_through)
+            rand_seed_pass_through = rng.integers(0, 2**32-1)
+            b = acn * pink_noise(int(nstep/2), pow_spec=pf_acn, rand_seed=rand_seed_pass_through)
             _log.debug('  Ch{} ACN Noise (input, [outa, outb]): {:.2f}, [{:.2f}, {:.2f}]'
                     .format(ch, acn, np.std(a), np.std(b)))
 
@@ -1706,7 +1722,7 @@ def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
     return result
 
 def gen_dark_ramp(dark, out_shape, tf=10.73677, gain=1, ref_info=None,
-                  avg_ramp=None, include_poisson=True):
+                  avg_ramp=None, include_poisson=True, rand_seed=None, **kwargs):
     
     """
     Assumes a constant dark current rate, either in image form or single value.
@@ -1728,8 +1744,10 @@ def gen_dark_ramp(dark, out_shape, tf=10.73677, gain=1, ref_info=None,
         Gain of detector in e-/sec. If specified to be other than 1, then we
         assume `dark` to be in units of DN/sec.
     avg_ramp : ndarray
-
+        Time-dependent flux of average dark ramp.
     """
+
+    rng = np.random.default_rng(rand_seed)
 
     nz, ny, nx = out_shape
 
@@ -1750,7 +1768,7 @@ def gen_dark_ramp(dark, out_shape, tf=10.73677, gain=1, ref_info=None,
     else:
         # Add Poisson noise at each frame step
         if include_poisson:
-            result = np.random.poisson(lam=dark_frame, size=out_shape).astype('float')
+            result = rng.poisson(lam=dark_frame, size=out_shape).astype('float')
         else:
             result = np.array([dark_frame for i in range(nz)])
         # Perform cumulative sum in place
@@ -1779,7 +1797,7 @@ def gen_dark_ramp(dark, out_shape, tf=10.73677, gain=1, ref_info=None,
     return result 
 
 def sim_dark_ramp(det, super_dark, ramp_avg_ch=None, ramp_avg_tf=10.73677, 
-    out_ADU=False, include_poisson=True, verbose=False, **kwargs):
+    out_ADU=False, verbose=False, **kwargs):
     """
     Simulate a dark current ramp based on input det class and a
     super dark image. 
@@ -1794,8 +1812,6 @@ def sim_dark_ramp(det, super_dark, ramp_avg_ch=None, ramp_avg_tf=10.73677,
         Desired detector class output
     super_dark : ndarray
         Dark current input image (DN/sec)
-    include_poisson : bool
-        Include Poisson noise from photons?
     
     Keyword Args
     ------------
@@ -1805,6 +1821,8 @@ def sim_dark_ramp(det, super_dark, ramp_avg_ch=None, ramp_avg_tf=10.73677,
         Delta time between between `ramp_avg_ch` points.
     out_ADU : bool
         Divide by gain to get value in ADU (float).
+    include_poisson : bool
+        Include Poisson noise from photons?
     verbose : bool
         Print some messages.
     """
@@ -1871,8 +1889,7 @@ def sim_dark_ramp(det, super_dark, ramp_avg_ch=None, ramp_avg_tf=10.73677,
         
         avg_ramp = None if ramp_avg_ch is None else ramp_avg_ch[ch]
         res[:,:,x1:x2] = gen_dark_ramp(dark, (nz,ny,chsize), gain=gain, tf=tf,
-                                       avg_ramp=avg_ramp, ref_info=None, 
-                                       include_poisson=include_poisson)
+                                       avg_ramp=avg_ramp, ref_info=None, **kwargs)
 
     if out_ADU:
         res /= gain
@@ -1954,7 +1971,8 @@ def apply_flat(cube, det, imflat_full):
     return cube * imflat_full[y1:y2, x1:x2]
 
 
-def add_cosmic_rays(data, scenario='SUNMAX', scale=1, tframe=10.73677, ref_info=[4,4,4,4], rand_seed=None):
+def add_cosmic_rays(data, scenario='SUNMAX', scale=1, tframe=10.73677, ref_info=[4,4,4,4], 
+                    rand_seed=None):
     """ Add random cosmic rays to data cube"""
 
     import json
@@ -2130,7 +2148,8 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
                            include_colnoise=True, col_noise=None, amp_crosstalk=True,
                            add_crs=True, cr_model='SUNMAX', cr_scale=1, apply_flats=None, 
                            apply_nonlinearity=True, random_nonlin=False, latents=None,
-                           return_zero_frame=None, return_full_ramp=False, prog_bar=True, **kwargs):
+                           return_zero_frame=None, return_full_ramp=False, prog_bar=True, 
+                           rand_seed=None, **kwargs):
     
     """ Return a single simulated ramp
     
@@ -2210,6 +2229,8 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     """
     
     from ..reduce.calib import apply_nonlin
+
+    rng = np.random.default_rng(rand_seed)
 
     ################################
     # Dark calibration properties
@@ -2296,9 +2317,10 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     if prog_bar: pbar.set_description("Dark Current")
     ramp_avg_ch = dco.dark_ramp_dict['ramp_avg_ch']
     # Create dark (adds Poisson noise)
+    rseed = rng.integers(0, 2**32-1)
     if include_dark:
         data += sim_dark_ramp(det, super_dark, ramp_avg_ch=ramp_avg_ch, 
-                              include_poisson=include_poisson, verbose=False)
+                              include_poisson=include_poisson, rand_seed=rseed, verbose=False)
     if prog_bar: pbar.update(1)
 
     ####################
@@ -2315,23 +2337,29 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     ####################
     # Add on-sky source image
     if prog_bar: pbar.set_description("Sky Image")
+    rseed = rng.integers(0, 2**32-1)
     if im_slope is not None:
-        data += sim_image_ramp(det, im_slope, include_poisson=include_poisson, verbose=False)
+        data += sim_image_ramp(det, im_slope, include_poisson=include_poisson, 
+                               rand_seed=rseed, verbose=False)
     if prog_bar: pbar.update(1)
 
     ####################
     # Add cosmic rays
     if prog_bar: pbar.set_description("Cosmic Rays")
+    rseed = rng.integers(0, 2**32-1)
     if add_crs:
-        data = add_cosmic_rays(data, scenario=cr_model, scale=cr_scale, tframe=tframe, ref_info=ref_info)
+        data = add_cosmic_rays(data, scenario=cr_model, scale=cr_scale, tframe=tframe, 
+                               ref_info=ref_info, rand_seed=rseed)
     if prog_bar: pbar.update(1)
     
     ####################
     # Add non-linearity
     if prog_bar: pbar.set_description("Non-Linearity")
     # The apply_nonlin function goes from e- to DN
+    rseed = rng.integers(0, 2**32-1)
     if apply_nonlinearity:
-        data = gain * apply_nonlin(data, det, dco.nonlinear_dict, randomize=random_nonlin)
+        data = gain * apply_nonlin(data, det, dco.nonlinear_dict, 
+                                   randomize=random_nonlin, rand_seed=rseed)
     # elif out_ADU:
     #     _log.warn("Assuming perfectly linear ramp, but convert to 16-bit UINT (out_ADU=True)")
     if prog_bar: pbar.update(1)
@@ -2356,8 +2384,10 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     ####################
     # Add kTC noise:
     if prog_bar: pbar.set_description("kTC Noise")
+    rseed = rng.integers(0, 2**32-1)
+    rng2 = np.random.default_rng(rseed)
     if include_ktc:
-        ktc_offset = gain * np.random.normal(scale=ktc_noise, size=(ny,nx))
+        ktc_offset = gain * rng2.normal(scale=ktc_noise, size=(ny,nx))
         data += ktc_offset
     if prog_bar: pbar.update(1)
         
@@ -2386,6 +2416,7 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     ####################
     # Add read and 1/f noise
     if prog_bar: pbar.set_description("Detector & ASIC Noise")
+    rseed = rng.integers(0, 2**32-1)
     if nchan==1:
         rn, up = (rn[0], up[0])
     rn  = None if (not include_rn)    else rn
@@ -2393,15 +2424,17 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     cp  = None if (not include_cpink) else cp*1.2
     acn = None if (not include_acn)   else acn
     data += gain * sim_noise_data(det, rd_noise=rn, u_pink=up, c_pink=cp, acn=acn, 
-                                  corr_scales=scales, ref_ratio=ref_ratio, verbose=False)
+                                  corr_scales=scales, ref_ratio=ref_ratio, 
+                                  rand_seed=rseed, verbose=False)
     if prog_bar: pbar.update(1)
 
     ####################
     # Add reference offsets
     if prog_bar: pbar.set_description("Ref Pixel Offsets")
+    rseed = rng.integers(0, 2**32-1)
     if include_refoffsets:
         data += gain * gen_ramp_biases(dco.ref_pixel_dict, nchan=nchan, include_refinst=include_refinst,
-                                       data_shape=data.shape, ref_border=ref_info)
+                                       data_shape=data.shape, ref_border=ref_info, rand_seed=rseed)
     if prog_bar: pbar.update(1)
 
     ####################
@@ -2409,6 +2442,7 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     if prog_bar: pbar.set_description("Column Noise")
     # Passing col_noise allows for shifting of noise 
     # by one col ramp-to-ramp in higher level function
+    # TODO: Add random seed option to function
     if include_colnoise and (col_noise is None):
         col_noise = gain * gen_col_noise(dco.column_variations, 
                                          dco.column_prob_bad, 
