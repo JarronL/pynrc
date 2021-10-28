@@ -32,6 +32,8 @@ from astropy.convolution import convolve
 
 from datetime import datetime
 
+from pynrc.logging_utils import setup_logging
+
 from .dms import create_DMS_HDUList, level1b_data_model, update_dms_headers
 from .apt import DMS_input, gen_jwst_pointing
 from ..nrc_utils import pad_or_cut_to_size, jl_poly, get_detname
@@ -1457,7 +1459,7 @@ def pink_noise(nstep_out, pow_spec=None, f=None, fmin=None, alpha=-1, **kwargs):
 
 def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
     acn=0, pow_spec_corr=None, corr_scales=None, fcorr_lim=[1,10],
-    ref_ratio=0.8, **kwargs):
+    ref_ratio=0.8, verbose=True, **kwargs):
     
     """ Simulate Noise Ramp
     
@@ -1533,7 +1535,8 @@ def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
         rr = ref_ratio #reference_pixel_noise_ratio 
         
         if np.any(rd_noise):
-            _log.info('Generating read noise...')
+            if verbose:
+                _log.info('Generating read noise...')
 
             # Go frame-by-frame
             for z in np.arange(nz):
@@ -1585,7 +1588,8 @@ def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
     
     # Add correlated pink noise.
     if (c_pink is not None) and (c_pink > 0):
-        _log.info('Adding correlated pink noise...')
+        if verbose:
+            _log.info('Adding correlated pink noise...')
 
         if corr_scales is not None:
             scales = np.array(corr_scales)
@@ -1638,7 +1642,8 @@ def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
 
         # Only do the rest if any values are not 0
         if np.any(u_pink):
-            _log.info('Adding uncorrelated pink noise...')
+            if verbose:
+                _log.info('Adding uncorrelated pink noise...')
             
             for ch in trange(nchan, desc='Uncorr 1/f', leave=False):
                 x1 = ch*chsize
@@ -1663,7 +1668,8 @@ def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
 
     # Add ACN
     if (acn is not None) and (acn>0):
-        _log.info('Adding ACN noise...')
+        if verbose:
+            _log.info('Adding ACN noise...')
 
         facn = np.fft.rfftfreq(nstep2)
         facn[0] = facn[1] # First element should not be 0
@@ -1700,7 +1706,7 @@ def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
     return result
 
 def gen_dark_ramp(dark, out_shape, tf=10.73677, gain=1, ref_info=None,
-                  avg_ramp=None):
+                  avg_ramp=None, include_poisson=True):
     
     """
     Assumes a constant dark current rate, either in image form or single value.
@@ -1743,7 +1749,10 @@ def gen_dark_ramp(dark, out_shape, tf=10.73677, gain=1, ref_info=None,
         result = np.zeros(out_shape)
     else:
         # Add Poisson noise at each frame step
-        result = np.random.poisson(lam=dark_frame, size=out_shape).astype('float')
+        if include_poisson:
+            result = np.random.poisson(lam=dark_frame, size=out_shape).astype('float')
+        else:
+            result = np.array([dark_frame for i in range(nz)])
         # Perform cumulative sum in place
         result = np.cumsum(result, axis=0, out=result)
 
@@ -1770,7 +1779,7 @@ def gen_dark_ramp(dark, out_shape, tf=10.73677, gain=1, ref_info=None,
     return result 
 
 def sim_dark_ramp(det, super_dark, ramp_avg_ch=None, ramp_avg_tf=10.73677, 
-    out_ADU=False, verbose=False, **kwargs):
+    out_ADU=False, include_poisson=True, verbose=False, **kwargs):
     """
     Simulate a dark current ramp based on input det class and a
     super dark image. 
@@ -1785,6 +1794,8 @@ def sim_dark_ramp(det, super_dark, ramp_avg_ch=None, ramp_avg_tf=10.73677,
         Desired detector class output
     super_dark : ndarray
         Dark current input image (DN/sec)
+    include_poisson : bool
+        Include Poisson noise from photons?
     
     Keyword Args
     ------------
@@ -1860,7 +1871,8 @@ def sim_dark_ramp(det, super_dark, ramp_avg_ch=None, ramp_avg_tf=10.73677,
         
         avg_ramp = None if ramp_avg_ch is None else ramp_avg_ch[ch]
         res[:,:,x1:x2] = gen_dark_ramp(dark, (nz,ny,chsize), gain=gain, tf=tf,
-                                       avg_ramp=avg_ramp, ref_info=None)
+                                       avg_ramp=avg_ramp, ref_info=None, 
+                                       include_poisson=include_poisson)
 
     if out_ADU:
         res /= gain
@@ -1893,7 +1905,9 @@ def sim_image_ramp(det, im_slope, verbose=False, **kwargs):
     im_slope : ndarray
         Input slope image (e-/sec). 
         *NOTE* - This is different than sim_dark_ramp, which assumed DN/sec.
-    
+    include_poisson : bool
+        Include Poisson noise from photons? Default: True.
+
     Keyword Args
     ------------
     out_ADU : bool
@@ -1933,12 +1947,11 @@ def apply_flat(cube, det, imflat_full):
     else:
         _, ny, nx = sh
 
-    # Need to crop input coefficients in the event of subarrays
+    # Need to crop in the event of subarrays
     x1, x2 = (det.x0, det.x0 + nx)
     y1, y2 = (det.y0, det.y0 + ny)
 
-    cube *= imflat_full[y1:y2, x1:x2]
-    return cube
+    return cube * imflat_full[y1:y2, x1:x2]
 
 
 def add_cosmic_rays(data, scenario='SUNMAX', scale=1, tframe=10.73677, ref_info=[4,4,4,4], rand_seed=None):
@@ -2109,8 +2122,8 @@ def add_xtalk(data, det, coeffs=None):
     return data.reshape(sh)
 
 
-def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=False,
-                           include_dark=True, include_bias=True, include_ktc=True, 
+def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=False, 
+                           include_poisson=True, include_dark=True, include_bias=True, include_ktc=True, 
                            include_rn=True, include_cpink=True, include_upink=True, 
                            include_acn=True, apply_ipc=True, apply_ppc=True, 
                            include_refoffsets=True, include_refinst=True, 
@@ -2147,6 +2160,8 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
         frames within the ramp. The last set of `nd2` drop frames are omitted.
     out_ADU : bool
         If true, divide by gain and convert to 16-bit UINT.
+    include_poisson : bool
+        Include photon noise?
     include_dark : bool
         Add dark current?
     include_bias : bool
@@ -2282,7 +2297,8 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     ramp_avg_ch = dco.dark_ramp_dict['ramp_avg_ch']
     # Create dark (adds Poisson noise)
     if include_dark:
-        data += sim_dark_ramp(det, super_dark, ramp_avg_ch=ramp_avg_ch, verbose=False)
+        data += sim_dark_ramp(det, super_dark, ramp_avg_ch=ramp_avg_ch, 
+                              include_poisson=include_poisson, verbose=False)
     if prog_bar: pbar.update(1)
 
     ####################
@@ -2300,7 +2316,7 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     # Add on-sky source image
     if prog_bar: pbar.set_description("Sky Image")
     if im_slope is not None:
-        data += sim_image_ramp(det, im_slope, verbose=False)
+        data += sim_image_ramp(det, im_slope, include_poisson=include_poisson, verbose=False)
     if prog_bar: pbar.update(1)
 
     ####################
@@ -2376,8 +2392,8 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     up  = None if (not include_upink) else up
     cp  = None if (not include_cpink) else cp*1.2
     acn = None if (not include_acn)   else acn
-    data += gain * sim_noise_data(det, rd_noise=rn, u_pink=up, c_pink=cp,
-                                  acn=acn, corr_scales=scales, ref_ratio=ref_ratio)
+    data += gain * sim_noise_data(det, rd_noise=rn, u_pink=up, c_pink=cp, acn=acn, 
+                                  corr_scales=scales, ref_ratio=ref_ratio, verbose=False)
     if prog_bar: pbar.update(1)
 
     ####################
@@ -2385,7 +2401,7 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     if prog_bar: pbar.set_description("Ref Pixel Offsets")
     if include_refoffsets:
         data += gain * gen_ramp_biases(dco.ref_pixel_dict, nchan=nchan, include_refinst=include_refinst,
-                                        data_shape=data.shape, ref_border=ref_info)
+                                       data_shape=data.shape, ref_border=ref_info)
     if prog_bar: pbar.update(1)
 
     ####################
@@ -2429,7 +2445,7 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
         return ramp_resample(data, det, return_zero_frame=return_zero_frame)
 
 
-def make_ramp_poisson(im_slope, det, out_ADU=True, zero_data=False):
+def make_ramp_poisson(im_slope, det, out_ADU=True, zero_data=False, include_poisson=True):
     """
     Create a ramp with only photon noise. Useful for quick simulations.
     
@@ -2473,7 +2489,10 @@ def make_ramp_poisson(im_slope, det, out_ADU=True, zero_data=False):
     # Add Poisson noise at each frame step
     sh0, sh1 = im_slope.shape
     new_shape = (naxis3, sh0, sh1)
-    ramp = np.random.poisson(lam=frame, size=new_shape).astype(np.float64)
+    if include_poisson:
+        ramp = np.random.poisson(lam=frame, size=new_shape).astype(np.float64)
+    else:
+        rerampsult = np.array([frame for i in range(naxis3)])
     # Perform cumulative sum in place
     data = np.cumsum(ramp, axis=0)
 
