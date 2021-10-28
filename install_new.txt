@@ -12,6 +12,7 @@ Installation Notes
    pip install -e .
 
 3. webbpsf - https://github.com/spacetelescope/webbpsf
+   Create webbpsf-data director
    Add "export WEBBPSF_PATH=$HOME/NIRCam/webbpsf-data/" to .bashrc
    pip install -e .
    Note: This also install photutils via pip if not already installed
@@ -29,18 +30,22 @@ Installation Notes
    Install stpipe       : pip install -e .
    Install jwst         : pip install -e . (adds a few other dependencies)
 
-6. hxrg_ref_pixels
 
-7. Pysynphot
+6. pysynphot
    conda install pysynphot (v2.0)
    Add "export PYSYN_CDBS=$HOME/NIRCam/cdbs/" to .bashrc
    
-8. webbpsf_ext
+7. webbpsf_ext
    pip install -e .
    Add "export WEBBPSF_EXT_PATH=$HOME/NIRCam/webbpsf_ext_data/" to .bashrc
    
-9. pynrc
+8. pynrc
    pip install -e .
    Add "export WEBBPSF_EXT_PATH=$HOME/NIRCam/pynrc_data/" to .bashrc
    
    
+   
+Other
+
+1. hxrg_ref_pixels
+
