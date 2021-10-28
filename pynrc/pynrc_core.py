@@ -2241,7 +2241,7 @@ class NIRCam(NIRCam_ext):
         return obs_params
 
 
-    def _simulate_ramps(self, sp=None, im_slope=None, cframe='sci', nint=None, 
+    def simulate_ramps(self, sp=None, im_slope=None, cframe='sci', nint=None, 
         do_dark=False, **kwargs):
         """ Simulate Ramp Data
 
@@ -2403,11 +2403,11 @@ class NIRCam(NIRCam_ext):
 
         return np.asarray(res_ramps), np.asarray(res_zeros)
 
-    def _simulate_level1b(self, target_name, ra, dec, date_obs, time_obs, 
+    def simulate_level1b(self, target_name, ra, dec, date_obs, time_obs, 
         sp=None, im_slope=None, cframe='sci', nint=None, do_dark=False, 
         save_dir=None, return_model=False, return_hdul=False, **kwargs):
 
-        """ Simulate and save a Level 1b data model """
+        """ Simulate DMS Level 1b data model """
 
         from .simul.dms import level1b_data_model, save_level1b_fits
         from stdatamodels import fits_support
