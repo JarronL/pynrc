@@ -5507,7 +5507,7 @@ def apply_linearity(cube, det, coeff_dict):
     ----------
     cube : ndarray
         Ramp data in DN of size (nz,ny,nx). Should be bias-subtracted and
-        ref-pixel-corrected.
+        ref-pixel-corrected. Should match det subarray shape.
     det : Detector Class
         NIRCam detector class.
     coeff_dict : ndarray
@@ -5523,11 +5523,16 @@ def apply_linearity(cube, det, coeff_dict):
              - 'cf_nonlin_low' : Coefficients for flux values below counts_cut
 
     """
+    nz, _, _ = cube.shape
+    nx, ny = (det.xpix, det.ypix)
 
-    nz, ny, nx = cube.shape
     # Need to crop input coefficients in the event of subarrays
     x1, x2 = (det.x0, det.x0 + nx)
     y1, y2 = (det.y0, det.y0 + ny)
+
+    if cube.shape[-2]!=ny or cube.shape[-1]!=nx:
+        # Assume full frame cube needs to be cropped
+        cube = cube[:,y1:y2,x1:x2]
 
     # Nominal coefficient array
     cf_arr         = coeff_dict.get('cf_nonlin')[:,y1:y2,x1:x2]
@@ -5579,7 +5584,7 @@ def apply_nonlin(cube, det, coeff_dict, randomize=True):
     cube : ndarray
         Simulated ramp data in e-. These should be intrinsic
         flux values with Poisson noise, but prior to read noise,
-        kTC, IPC, etc. Size (nz,ny,nx).
+        kTC, IPC, etc. Size (nz,ny,nx). Should match det subarray shape.
     det : Detector Class
         Desired detector class output
     coeff_dict : ndarray
@@ -5608,10 +5613,16 @@ def apply_nonlin(cube, det, coeff_dict, randomize=True):
         Add variation to the non-linearity coefficients  
     """
 
-    nz, ny, nx = cube.shape
+    nz, _, _ = cube.shape
+    nx, ny = (det.xpix, det.ypix)
+
     # Need to crop input coefficients in the event of subarrays
     x1, x2 = (det.x0, det.x0 + nx)
     y1, y2 = (det.y0, det.y0 + ny)
+
+    if cube.shape[-2]!=ny or cube.shape[-1]!=nx:
+        # Assume full frame cube needs to be cropped
+        cube = cube[:,y1:y2,x1:x2]
 
     # Nominal coefficient array
     cf_arr         = coeff_dict.get('cf_nonlin')[:,y1:y2,x1:x2]
