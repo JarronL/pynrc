@@ -1832,7 +1832,7 @@ def gen_dark_ramp(dark, out_shape, tf=10.73677, gain=1, ref_info=None,
     # Return in units of e-
     return result 
 
-def sim_dark_ramp(det, super_dark, ramp_avg_ch=None, ramp_avg_tf=10.73677, 
+def sim_dark_ramp(det, slope_image, ramp_avg_ch=None, ramp_avg_tf=10.73677, 
     out_ADU=False, verbose=False, **kwargs):
     """
     Simulate a dark current ramp based on input det class and a
@@ -1846,13 +1846,16 @@ def sim_dark_ramp(det, super_dark, ramp_avg_ch=None, ramp_avg_tf=10.73677,
     ----------
     det : Detector Class
         Desired detector class output
-    super_dark : ndarray
-        Dark current input image (DN/sec)
+    slope_image : ndarray
+        Input slope image (DN/sec).
+        Can either be full frame or match `det` subarray. 
+        Returns `det` subarray shape.
     
     Keyword Args
     ------------
     ramp_avg_ch : ndarray or None
-        Time-dependent flux of average dark ramp for each amplifier channel.
+        Time-dependent flux of average dark ramp for each amplifier channel
+        for dark current simulations.
     ramp_avg_tf : float
         Delta time between between `ramp_avg_ch` points.
     out_ADU : bool
@@ -1871,9 +1874,9 @@ def sim_dark_ramp(det, super_dark, ramp_avg_ch=None, ramp_avg_tf=10.73677,
     ref_info = det.ref_info
 
     # Do we need to crop out subarray?
-    if super_dark.shape[0]==ny:
+    if slope_image.shape[0]==ny:
         y1, y2 = (0, ny)
-    else: # Will crop a subarray out of super_dark image
+    else: # Will crop a subarray out of slope_image 
         y1 = det.y0
         y2 = int(y1 + ny)
 
@@ -1912,19 +1915,20 @@ def sim_dark_ramp(det, super_dark, ramp_avg_ch=None, ramp_avg_tf=10.73677,
     res = np.zeros([nz,ny,nx])
     for ch in np.arange(nchan):
         if nchan==1: # Subarray window case
-            if super_dark.shape[1]==nx:
+            if slope_image.shape[1]==nx:
                 x1, x2 = (0, nx)
-            else: # Will crop a subarray out of super_dark image
+            else: # Will crop a subarray out of slope_image 
                 x1 = det.x0
                 x2 = int(x1 + nx)
         else: # STRIPE or FULL frame
             x1 = ch*chsize 
             x2 = x1 + chsize
 
-        dark = super_dark[y1:y2,x1:x2]
+        slope_sub = slope_image[y1:y2,x1:x2]
         
         avg_ramp = None if ramp_avg_ch is None else ramp_avg_ch[ch]
-        res[:,:,x1:x2] = gen_dark_ramp(dark, (nz,ny,chsize), gain=gain, tf=tf,
+        # Convert from DN to e-
+        res[:,:,x1:x2] = gen_dark_ramp(slope_sub, (nz,ny,chsize), gain=gain, tf=tf,
                                        avg_ramp=avg_ramp, ref_info=None, **kwargs)
 
     if out_ADU:
@@ -1958,6 +1962,8 @@ def sim_image_ramp(det, im_slope, verbose=False, **kwargs):
     im_slope : ndarray
         Input slope image (e-/sec). 
         *NOTE* - This is different than sim_dark_ramp, which assumed DN/sec.
+        Can either be full frame or match `det` subarray. 
+        Returns `det` subarray shape.
     include_poisson : bool
         Include Poisson noise from photons? Default: True.
 
@@ -1987,6 +1993,8 @@ def apply_flat(cube, det, imflat_full):
         Simulated ramp data in e-. These should be intrinsic
         flux values with Poisson noise, but prior to read noise,
         kTC, IPC, etc. Size (nz,ny,nx). In det coords.
+        Can either be full frame or match `det` subarray. 
+        Returns `det` subarray shape.
     det : Detector Class
         Desired detector class output
     imflat_full : ndarray
@@ -2004,7 +2012,16 @@ def apply_flat(cube, det, imflat_full):
     x1, x2 = (det.x0, det.x0 + nx)
     y1, y2 = (det.y0, det.y0 + ny)
 
-    return cube * imflat_full[y1:y2, x1:x2]
+    imflat_sub = imflat_full[y1:y2, x1:x2]
+    try:
+        # Assume cube is already paired down to correct subarray size
+        res = cube * imflat_sub
+    except:
+        # Assume cube is full frame
+        cube_sub = cube[y1:y2, x1:x2] if len(sh)==2 else cube[:, y1:y2, x1:x2]
+        res = cube_sub * imflat_sub
+
+    return res
 
 
 def add_cosmic_rays(data, scenario='SUNMAX', scale=1, tframe=10.73677, ref_info=[4,4,4,4], 
@@ -2108,8 +2125,12 @@ def xtalk_image(frame, det, coeffs=None):
         crosstalk behavior.
 
     """
-    
+
     im_xtalk = np.zeros_like(frame)
+    if det.nout<=1:
+        # No crosstalk if only a single output channel
+        return im_xtalk
+
     # Pixel shifts for each sub-channel
     subch_shift = {"0": 1, "1": -1, "2": 1, "3": -1}
     
@@ -2176,7 +2197,7 @@ def add_xtalk(data, det, coeffs=None):
     return data.reshape(sh)
 
 
-def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=False, 
+def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=False, rand_seed=None, 
                            include_poisson=True, include_dark=True, include_bias=True, include_ktc=True, 
                            include_rn=True, include_cpink=True, include_upink=True, 
                            include_acn=True, apply_ipc=True, apply_ppc=True, 
@@ -2185,11 +2206,9 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
                            add_crs=True, cr_model='SUNMAX', cr_scale=1, apply_flats=None, 
                            apply_nonlinearity=True, random_nonlin=False, latents=None,
                            return_zero_frame=None, return_full_ramp=False, prog_bar=True, 
-                           rand_seed=None, **kwargs):
+                           **kwargs):
     
     """ Return a single simulated ramp
-    
-    The output will be in raw detector coordinates.
     
     Parameters
     ==========
@@ -2199,7 +2218,9 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
         NIRCam calibration class that holds the necessary calibration 
         info to simulate a ramp.
     im_slope : ndarray
-        Input slope image of observed scene. 
+        Input slope image of observed scene.
+        Can either be full frame or match `det` subarray. 
+        Returns `det` subarray shape.
     cframe : str
         Coordinate frame of input image, 'sci' or 'det'.
         Output will be in same coordinates.
