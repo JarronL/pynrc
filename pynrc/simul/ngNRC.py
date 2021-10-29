@@ -22,7 +22,9 @@ Modification History:
     - Instead use slope_to_ramps
 20 Sept 2021
     - Major refactor, splitting out slope_to_level1b and slope_to_fitswriter
-    - Added linearity
+    - Added linearity, flat fields, and cosmic rays
+28 Oct 2021
+    - Use numpy random number generator objects to produce repeatable results.
 """
 import numpy as np
 import os
@@ -65,6 +67,19 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
 
     Keyword Args
     ============
+    detname : None or int or str
+        Option to supply a valid detector name. If set, only the currently
+        specified SCA will be simulated.
+    apname : None or str
+        Similar to `detname` keyword, can supply a specific SIAF aperture
+        name that exists within the observation. Only that aperture will
+        be simulated.
+    filter : None or str
+        Specify a filter within observation to be simulated. Can be combined
+        with `detname` and `apname` keywords. Should have the form "ABC:XYZ",
+        or "ObsNum:VisitNum" (e.g., "005:001" for observation 5, visit 1).
+    visit_id : None or str
+        Specify the visit ID to simulate.
     dry_run : bool or None
         Won't generate any image data, but instead runs through each 
         observation, printing detector info, SIAF aperture name, filter,
@@ -1074,7 +1089,7 @@ def add_ppc(im, ppc_frac=0.002, nchans=4, kernel=None,
     return res
 
 
-def gen_col_noise(ramp_column_varations, prob_bad, nz=108, nx=2048):
+def gen_col_noise(ramp_column_varations, prob_bad, nz=108, nx=2048, rand_seed=None):
     """ Generate RTN Column Noise
 
     This function takes the random telegraph noise templates derived from 
@@ -1087,6 +1102,8 @@ def gen_col_noise(ramp_column_varations, prob_bad, nz=108, nx=2048):
     The nubmer of columns (and whether or not a column is assigned a random
     variation) is based on the `prob_bad` variable.
     """
+
+    rng = np.random.default_rng(rand_seed)
 
     # Number of samples in ramp templates
     nz0 = ramp_column_varations.shape[0]
@@ -1101,12 +1118,12 @@ def gen_col_noise(ramp_column_varations, prob_bad, nz=108, nx=2048):
     # Create set of random values between 0 and 1
     # Mark those with values less than prob_bad for 
     # adding some random empirically measured column
-    xmask_random = np.random.random_sample(size=nx) <= prob_bad
+    xmask_random = rng.random(size=nx) <= prob_bad
     nbad_random = len(xmask_random[xmask_random])
 
     # Grab some random columns from the stored templates
     ntemplates = ramp_column_varations.shape[1]
-    ind_rand = np.random.randint(0, high=ntemplates, size=ntemplates)
+    ind_rand = rng.integers(0, high=ntemplates, size=ntemplates)
     # Make sure we get unique values (no repeats)
     _, ind_rand = np.unique(ind_rand, return_index=True)
     ind_rand = ind_rand[0:nbad_random]
@@ -1114,13 +1131,13 @@ def gen_col_noise(ramp_column_varations, prob_bad, nz=108, nx=2048):
     # This should be very unlikely to occur, but just in case...
     if len(ind_rand) < nbad_random:
         ndiff = nbad_random - len(ind_rand)
-        ind_rand = np.append(ind_rand, np.random.randint(0, high=ntemplates, size=ndiff))
+        ind_rand = np.append(ind_rand, rng.integers(0, high=ntemplates, size=ndiff))
         
     # Select the set of random column variation templates
     cols_rand = ramp_column_varations[:,ind_rand]
 
     # Add a random phase shift to each of those template column
-    tshifts = np.random.randint(0, high=nz0, size=nbad_random)
+    tshifts = rng.integers(0, high=nz0, size=nbad_random)
     for i in range(nbad_random):
         cols_rand[:,i] = np.roll(cols_rand[:,i], tshifts[i])
 
@@ -1133,7 +1150,7 @@ def gen_col_noise(ramp_column_varations, prob_bad, nz=108, nx=2048):
     # Only return number of request frames
     return cols_all_add[0:nz, :, :]
 
-def add_col_noise(super_dark_ramp, ramp_column_varations, prob_bad):
+def add_col_noise(super_dark_ramp, ramp_column_varations, prob_bad, rand_seed=None):
     """ Add RTN Column Noise
     
     This function takes the random telegraph noise templates derived from 
@@ -1160,7 +1177,8 @@ def add_col_noise(super_dark_ramp, ramp_column_varations, prob_bad):
     
     nz, ny, nx = super_dark_ramp.shape
     
-    cols_all_add = gen_col_noise(ramp_column_varations, prob_bad, nz=nz, nx=nx)
+    cols_all_add = gen_col_noise(ramp_column_varations, prob_bad, nz=nz, nx=nx, 
+                                 rand_seed=rand_seed)
 
     # Add to dark ramp
     data = super_dark_ramp + cols_all_add
@@ -1233,15 +1251,14 @@ def gen_ramp_biases(ref_dict, nchan=None, data_shape=(2,2048,2048),
     if left>0:  mask_ref[:,0:left] = True
     if right>0: mask_ref[:,-right:] = True
 
-    # ref_inst = np.random.normal(scale=ref_dict['amp_ref_inst_f2f'], size=(nz,nchan))
+    rseed_nchan = rng.integers(0, 2**32-1, size=nchan)
     if include_refinst:
         for ch in range(nchan):
             mask_ch = np.zeros([ny,nx]).astype('bool')
             mask_ch[:,ch*chsize:(ch+1)*chsize] = True
 
             std = ref_dict['amp_ref_inst_f2f'][ch]
-            ch_rand_seed = rng.integers(0, 2**32-1)
-            ref_noise = std * pink_noise(nz, rand_seed=ch_rand_seed)
+            ref_noise = std * pink_noise(nz, rand_seed=rseed_nchan[ch])
             cube[:, mask_ref & mask_ch] += ref_noise.reshape([-1,1])
 
     # Set even/odd offsets
@@ -1509,7 +1526,21 @@ def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
     from pynrc.reduce.calib import fit_corr_powspec, broken_pink_powspec
     import time
 
+    ################################
+    # Initialize a random number generator
     rng = np.random.default_rng(rand_seed)
+    # Create individual random number generators for each noise element
+    # (eg., read noise, uncorrelated pink noise, correlated pink noise)
+    # This allows for repeatable noise values for each element as long as
+    # the same rand_seed is passed, even if others elemented are excluded 
+    # on different runs.
+    # If rand_seed=None, then everthing here will be random.
+    rng_keys = ['rd_noise', 'u_pink', 'c_pink', 'acn']
+    rng_dict = {}
+    for k in rng_keys:
+        # Create a random seed to pass to individual RNGs
+        rseed = rng.integers(0, 2**32-1)
+        rng_dict[k] = np.random.default_rng(rseed)
 
     nchan = det.nout
     nx = det.xpix
@@ -1534,6 +1565,7 @@ def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
                             
     # Make white read noise. This is the same for all pixels.
     if rd_noise is not None:
+        rng = rng_dict['rd_noise']
         # We want rd_noise to be an array or list
         if isinstance(rd_noise, (np.ndarray,list)):
             temp = np.asarray(rd_noise)
@@ -1600,6 +1632,7 @@ def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
     
     # Add correlated pink noise.
     if (c_pink is not None) and (c_pink > 0):
+        rng = rng_dict['c_pink']
         if verbose:
             _log.info('Adding correlated pink noise...')
 
@@ -1620,11 +1653,12 @@ def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
         else:
             pf = p_filter2
 
-        rand_seed_pass_through = rng.integers(0, 2**32-1)
-        tt = c_pink * pink_noise(nstep, pow_spec=pf, rand_seed=rand_seed_pass_through)
+        # Pass through a random seed to pink_noise function
+        rseed = rng.integers(0, 2**32-1)
+        tt = c_pink * pink_noise(nstep, pow_spec=pf, rand_seed=rseed)
         tt = tt.reshape([nz, ny_poh, ch_poh])[:,0:ny,0:chsize]
-        _log.debug('  Corr Pink Noise (input, output): {:.2f}, {:.2f}'
-              .format(c_pink, np.std(tt)))
+        # print('  Corr Pink Noise (input, output): {:.2f}, {:.2f}'
+        #       .format(c_pink, np.std(tt)))
 
         for ch in np.arange(nchan):
             x1 = ch*chsize
@@ -1644,6 +1678,7 @@ def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
     # Add uncorrelated pink noise. Because this pink noise is stationary and
     # different for each output, we don't need to flip it (but why not?)
     if u_pink is not None:
+        rng = rng_dict['u_pink']
         # We want u_pink to be an array or list
         if isinstance(u_pink, (np.ndarray,list)):
             temp = np.asarray(u_pink)
@@ -1662,11 +1697,12 @@ def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
                 x1 = ch*chsize
                 x2 = x1 + chsize
 
-                rand_seed_pass_through = rng.integers(0, 2**32-1)
-                tt = u_pink[ch] * pink_noise(nstep, pow_spec=p_filter2, rand_seed=rand_seed_pass_through)
+                # Pass through a random seed to pink_noise function
+                rseed = rng.integers(0, 2**32-1)
+                tt = u_pink[ch] * pink_noise(nstep, pow_spec=p_filter2, rand_seed=rseed)
                 tt = tt.reshape([nz, ny_poh, ch_poh])[:,0:ny,0:chsize]
-                _log.debug('  Ch{} Pink Noise (input, output): {:.2f}, {:.2f}'
-                      .format(ch, u_pink[ch], np.std(tt)))
+                # print('  Ch{} Pink Noise (input, output): {:.2f}, {:.2f}'
+                #       .format(ch, u_pink[ch], np.std(tt)))
 
                 if (same_scan_direction) or (np.mod(ch,2)==0):
                     flip = True if reverse_scan_direction else False
@@ -1682,6 +1718,7 @@ def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
 
     # Add ACN
     if (acn is not None) and (acn>0):
+        rng = rng_dict['acn']
         if verbose:
             _log.info('Adding ACN noise...')
 
@@ -1696,12 +1733,11 @@ def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
             x2 = x1 + chsize
 
             # Generate new pink noise for each even and odd vector.
-            rand_seed_pass_through = rng.integers(0, 2**32-1)
-            a = acn * pink_noise(int(nstep/2), pow_spec=pf_acn, rand_seed=rand_seed_pass_through)
-            rand_seed_pass_through = rng.integers(0, 2**32-1)
-            b = acn * pink_noise(int(nstep/2), pow_spec=pf_acn, rand_seed=rand_seed_pass_through)
-            _log.debug('  Ch{} ACN Noise (input, [outa, outb]): {:.2f}, [{:.2f}, {:.2f}]'
-                    .format(ch, acn, np.std(a), np.std(b)))
+            rseed_a, rseed_b = rng.integers(0, 2**32-1, size=2)
+            a = acn * pink_noise(int(nstep/2), pow_spec=pf_acn, rand_seed=rseed_a)
+            b = acn * pink_noise(int(nstep/2), pow_spec=pf_acn, rand_seed=rseed_b)
+            # print('  Ch{} ACN Noise (input, [outa, outb]): {:.2f}, [{:.2f}, {:.2f}]'
+            #         .format(ch, acn, np.std(a), np.std(b)))
 
             # Reformat into an image.
             tt = np.reshape(np.transpose(np.vstack((a, b))),
@@ -2230,8 +2266,6 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     
     from ..reduce.calib import apply_nonlin
 
-    rng = np.random.default_rng(rand_seed)
-
     ################################
     # Dark calibration properties
     dco = cal_obj
@@ -2299,6 +2333,21 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     ref_info = det.ref_info
     
     ################################
+    # Random seed information
+
+    rng = np.random.default_rng(rand_seed)
+    # Create random seed values to pass to each function.
+    # This will all be determinate as long as `rand_seed` is defined.
+    # If rand_seed=None, then everthing here will not be repeatable.
+    rseed_keys = [
+        'sim_dark_ramp', 'sim_image_ramp', 'add_cosmic_rays', 'apply_nonlin', 
+        'ktc', 'sim_noise_data', 'gen_ramp_biases', 'gen_col_noise'
+    ]
+    rseed_dict = {}
+    for k in rseed_keys:
+        rseed_dict[k] = rng.integers(0, 2**32-1)
+
+    ################################
     # Begin...
     ################################
     if prog_bar: 
@@ -2317,8 +2366,8 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     if prog_bar: pbar.set_description("Dark Current")
     ramp_avg_ch = dco.dark_ramp_dict['ramp_avg_ch']
     # Create dark (adds Poisson noise)
-    rseed = rng.integers(0, 2**32-1)
     if include_dark:
+        rseed = rseed_dict['sim_dark_ramp']
         data += sim_dark_ramp(det, super_dark, ramp_avg_ch=ramp_avg_ch, 
                               include_poisson=include_poisson, rand_seed=rseed, verbose=False)
     if prog_bar: pbar.update(1)
@@ -2337,8 +2386,8 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     ####################
     # Add on-sky source image
     if prog_bar: pbar.set_description("Sky Image")
-    rseed = rng.integers(0, 2**32-1)
     if im_slope is not None:
+        rseed = rseed_dict['sim_image_ramp']
         data += sim_image_ramp(det, im_slope, include_poisson=include_poisson, 
                                rand_seed=rseed, verbose=False)
     if prog_bar: pbar.update(1)
@@ -2346,8 +2395,8 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     ####################
     # Add cosmic rays
     if prog_bar: pbar.set_description("Cosmic Rays")
-    rseed = rng.integers(0, 2**32-1)
     if add_crs:
+        rseed = rseed_dict['add_cosmic_rays']
         data = add_cosmic_rays(data, scenario=cr_model, scale=cr_scale, tframe=tframe, 
                                ref_info=ref_info, rand_seed=rseed)
     if prog_bar: pbar.update(1)
@@ -2356,8 +2405,8 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     # Add non-linearity
     if prog_bar: pbar.set_description("Non-Linearity")
     # The apply_nonlin function goes from e- to DN
-    rseed = rng.integers(0, 2**32-1)
     if apply_nonlinearity:
+        rseed = rseed_dict['apply_nonlin']
         data = gain * apply_nonlin(data, det, dco.nonlinear_dict, 
                                    randomize=random_nonlin, rand_seed=rseed)
     # elif out_ADU:
@@ -2384,9 +2433,8 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     ####################
     # Add kTC noise:
     if prog_bar: pbar.set_description("kTC Noise")
-    rseed = rng.integers(0, 2**32-1)
-    rng2 = np.random.default_rng(rseed)
     if include_ktc:
+        rng2 = np.random.default_rng(rseed_dict['ktc'])
         ktc_offset = gain * rng2.normal(scale=ktc_noise, size=(ny,nx))
         data += ktc_offset
     if prog_bar: pbar.update(1)
@@ -2416,23 +2464,26 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     ####################
     # Add read and 1/f noise
     if prog_bar: pbar.set_description("Detector & ASIC Noise")
-    rseed = rng.integers(0, 2**32-1)
     if nchan==1:
         rn, up = (rn[0], up[0])
     rn  = None if (not include_rn)    else rn
     up  = None if (not include_upink) else up
     cp  = None if (not include_cpink) else cp*1.2
     acn = None if (not include_acn)   else acn
+    rseed = rseed_dict['sim_noise_data']
     data += gain * sim_noise_data(det, rd_noise=rn, u_pink=up, c_pink=cp, acn=acn, 
                                   corr_scales=scales, ref_ratio=ref_ratio, 
                                   rand_seed=rseed, verbose=False)
     if prog_bar: pbar.update(1)
 
+
+
+
     ####################
     # Add reference offsets
     if prog_bar: pbar.set_description("Ref Pixel Offsets")
-    rseed = rng.integers(0, 2**32-1)
     if include_refoffsets:
+        rseed = rseed_dict['gen_ramp_biases']
         data += gain * gen_ramp_biases(dco.ref_pixel_dict, nchan=nchan, include_refinst=include_refinst,
                                        data_shape=data.shape, ref_border=ref_info, rand_seed=rseed)
     if prog_bar: pbar.update(1)
@@ -2442,11 +2493,10 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     if prog_bar: pbar.set_description("Column Noise")
     # Passing col_noise allows for shifting of noise 
     # by one col ramp-to-ramp in higher level function
-    # TODO: Add random seed option to function
     if include_colnoise and (col_noise is None):
-        col_noise = gain * gen_col_noise(dco.column_variations, 
-                                         dco.column_prob_bad, 
-                                         nz=nz, nx=nx)
+        rseed = rseed_dict['gen_col_noise']
+        col_noise = gain * gen_col_noise(dco.column_variations, dco.column_prob_bad, 
+                                         nz=nz, nx=nx, rand_seed=rseed)
     elif (include_colnoise==False):
         col_noise = 0
     # Add to data
@@ -2479,7 +2529,8 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
         return ramp_resample(data, det, return_zero_frame=return_zero_frame)
 
 
-def make_ramp_poisson(im_slope, det, out_ADU=True, zero_data=False, include_poisson=True):
+def make_ramp_poisson(im_slope, det, out_ADU=True, zero_data=False, 
+                      include_poisson=True, rand_seed=None):
     """
     Create a ramp with only photon noise. Useful for quick simulations.
     
@@ -2493,6 +2544,8 @@ def make_ramp_poisson(im_slope, det, out_ADU=True, zero_data=False, include_pois
     # xpix = det.xpix
     # ypix = det.ypix
     
+    rng = np.random.default_rng(rand_seed)
+
     ma  = det.multiaccum
 
     nd1     = ma.nd1
@@ -2524,9 +2577,9 @@ def make_ramp_poisson(im_slope, det, out_ADU=True, zero_data=False, include_pois
     sh0, sh1 = im_slope.shape
     new_shape = (naxis3, sh0, sh1)
     if include_poisson:
-        ramp = np.random.poisson(lam=frame, size=new_shape).astype(np.float64)
+        ramp = rng.poisson(lam=frame, size=new_shape).astype(np.float64)
     else:
-        rerampsult = np.array([frame for i in range(naxis3)])
+        ramp = np.array([frame for i in range(naxis3)])
     # Perform cumulative sum in place
     data = np.cumsum(ramp, axis=0)
 
