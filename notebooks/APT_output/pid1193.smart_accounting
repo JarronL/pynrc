@@ -1,0 +1,88 @@
+Smart accounting uses a heuristic algorithm to try to find Observations which
+could be scheduled in sequence.  Instead of charging all Observations in a
+sequence an initial major slew only the first Observation in the sequence is
+charged an initial slew.
+
+
+Sequence   1:
+Visit ID     Smart Accounting Slew     APT Slew                  Target
+ 047:001                      1800         1800                 EPS-ERI
+ 048:001                       860         1800                 EPS-ERI
+ 049:001                       808         1800             EPS-ERI-PSF
+
+Total:                        3468         5400
+
+
+Sequence   2:
+Visit ID     Smart Accounting Slew     APT Slew                  Target
+ 031:001                      1800         1800             EPS-ERI-PSF
+ 032:001                       188         1800             EPS-ERI-PSF
+ 033:001                       158         1800             EPS-ERI-PSF
+ 034:001                       811         1800                 EPS-ERI
+ 035:001                       197         1800                 EPS-ERI
+ 036:001                       145         1800                 EPS-ERI
+ 037:001                       925         1800                 EPS-ERI
+ 038:001                       143         1800                 EPS-ERI
+ 039:001                       204         1800                 EPS-ERI
+ 040:001                       324         1800                 EPS-ERI
+ 041:001                        51         1800                 EPS-ERI
+ 042:001                       659         1800                 EPS-ERI
+ 043:001                       659         1800                 EPS-ERI
+ 044:001                        51         1800                 EPS-ERI
+ 045:001                       808         1800             EPS-ERI-PSF
+ 046:001                        51         1800             EPS-ERI-PSF
+
+Total:                        7174        28800
+
+
+Sequence   3:
+Visit ID     Smart Accounting Slew     APT Slew                  Target
+ 016:001                      1800         1800            VEGA-PSF-IMG
+ 017:001                      1183         1800          VEGA-PSF-CORON
+ 018:001                       158         1800          VEGA-PSF-CORON
+ 019:001                      1050         1800                    VEGA
+ 020:001                       197         1800                    VEGA
+ 021:001                       145         1800                    VEGA
+ 022:001                       925         1800                    VEGA
+ 023:001                       143         1800                    VEGA
+ 024:001                       204         1800                    VEGA
+ 025:001                       324         1800                    VEGA
+ 026:001                        51         1800                    VEGA
+ 027:001                       860         1800                    VEGA
+ 028:001                        51         1800                    VEGA
+ 029:001                      1231         1800         VEGA-PSF-NIRCAM
+ 030:001                        51         1800         VEGA-PSF-NIRCAM
+
+Total:                        8373        27000
+
+
+Sequence   4:
+Visit ID     Smart Accounting Slew     APT Slew                  Target
+ 001:001                      1800         1800       FOMALHAUT-PSF-IMG
+ 002:001                       739         1800     FOMALHAUT-PSF-CORON
+ 003:001                       158         1800     FOMALHAUT-PSF-CORON
+ 004:001                       473         1800               FOMALHAUT
+ 005:001                       197         1800               FOMALHAUT
+ 006:001                       145         1800               FOMALHAUT
+ 007:001                       925         1800               FOMALHAUT
+ 008:001                       143         1800               FOMALHAUT
+ 009:001                       204         1800               FOMALHAUT
+ 010:001                       324         1800               FOMALHAUT
+ 011:001                        51         1800               FOMALHAUT
+ 012:001                       925         1800               FOMALHAUT
+ 013:001                        51         1800               FOMALHAUT
+ 014:001                       981         1800    FOMALHAUT-PSF-NIRCAM
+ 015:001                        51         1800    FOMALHAUT-PSF-NIRCAM
+
+Total:                        7167        27000
+
+
+Each sequence shows the visits in the order that the smart accounting algorithm
+used to estimate the slew time.  The column 'Smart Accounting Slew' is the
+estimated slew time assigned to the visit by the smart accounting algorithm.
+The column labeled 'APT Slew' shows the original slew estimate assigned by APT.
+The 'target' column shows the target for the visit on that line.
+
+A visit marked with '**' at the end of the line is not schedulable anywhere.
+Visits which are not schedulable may be placed in their own sequence because
+there is no way to know what they might be grouped with if they could be scheduled.
