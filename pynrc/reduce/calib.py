@@ -5573,7 +5573,7 @@ def apply_linearity(cube, det, coeff_dict):
 
     return res
 
-def apply_nonlin(cube, det, coeff_dict, randomize=True):
+def apply_nonlin(cube, det, coeff_dict, randomize=True, rand_seed=None):
     """Apply pixel non-linearity to ideal ramp
 
     Given a simulated cube of data in electrons, apply non-linearity 
@@ -5613,6 +5613,8 @@ def apply_nonlin(cube, det, coeff_dict, randomize=True):
         Add variation to the non-linearity coefficients  
     """
 
+    rng = np.random.default_rng(rand_seed)
+
     nz, _, _ = cube.shape
     nx, ny = (det.xpix, det.ypix)
 
@@ -5647,7 +5649,7 @@ def apply_nonlin(cube, det, coeff_dict, randomize=True):
     well_depth = det.well_level # Full well in e- corresponding to sat in DN
 
     if randomize:
-        cf0_rand = np.random.normal(loc=cflin0_mean, scale=cflin0_std)
+        cf0_rand = rng.normal(loc=cflin0_mean, scale=cflin0_std)
         cf_arr = np.concatenate(([cf0_rand], corr_slope * cf0_rand + corr_intercept))
 
     res = np.zeros_like(cube)

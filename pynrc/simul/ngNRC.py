@@ -36,7 +36,8 @@ from datetime import datetime
 
 from pynrc.logging_utils import setup_logging
 
-from .dms import create_DMS_HDUList, level1b_data_model, update_dms_headers
+from .dms import create_DMS_HDUList, level1b_data_model
+from .dms import update_dms_headers, update_headers_pynrc_info
 from .apt import DMS_input, gen_jwst_pointing
 from ..nrc_utils import pad_or_cut_to_size, jl_poly, get_detname
 from ..nrc_utils import gen_unconvolved_point_source_image
@@ -133,7 +134,9 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
     ta_sam_uncert     = sim_config['ta_sam']
     std_sam_uncert    = sim_config['std_sam']
     sgd_sam_uncert    = sim_config['sgd_sam']
-    dith_seed_init    = sim_config.get('dith_seed_init')
+
+    # Random seed information
+    rand_seed_init  = sim_config.get('rand_seed_init')
 
     if save_slope is None:
         save_slope = sim_config.get('save_slope', False)
@@ -149,7 +152,7 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
     #################################################
     # Create DMS Input class
     obs_input = DMS_input(xml_file, pointing_file, json_file, sm_acct_file,
-                          save_dir=save_dir, dith_seed_init=dith_seed_init)
+                          save_dir=save_dir, rand_seed_init=rand_seed_init)
 
     # Update observing start date/time and V3 PA
     obs_input.obs_date = sim_config['obs_date']
@@ -186,7 +189,7 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
         # Create calibration object
         det = DetectorOps(detector=detname)
         caldir = os.path.join(conf.PYNRC_PATH, 'calib', str(det.scaid))
-        if not dry_run:
+        if (not dry_run) and save_dms:
             cal_obj = nircam_cal(det.scaid, caldir, verbose=False)
 
         ulabels= np.unique(obs_labels[ind])
@@ -335,7 +338,9 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                     obs_params = obs_input.gen_obs_params(vid, exp_num, detname)
 
                     # Random seed for dither uncertainties
-                    rand_seed = visit_dict['dith_rand_seed'] + j
+                    rand_seed = visit_dict['rand_seed_dith'] + j
+                    # Random seed for noise uncertainties
+                    rand_seed_noise_j = visit_dict['rand_seed_noise'] + j
 
                     tup = type_arr[j].upper()
                     ra_ref, dec_ref = (obs_params['ra_ref'], obs_params['dec_ref'])
@@ -389,7 +394,9 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                         do_sci_pointing = False
 
                     # Save random seed in obs_params
-                    obs_params['dith_rand_seed'] = rand_seed
+                    obs_params['rand_seed_init'] = rand_seed_init
+                    obs_params['rand_seed_dith'] = rand_seed
+                    obs_params['rand_seed_noise'] = rand_seed_noise_j
 
                     # Skip slope creation if obs_label doesn't match NIRCam class
                     a = obs_params['siaf_ap'].AperName
@@ -397,6 +404,7 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                     if label != f'{a}_{f}':
                         continue
 
+                    # Generate dithered slope image for given exposure ID
                     if not dry_run:
                         if src_tbl is not None:
                             # Create slope image
@@ -407,15 +415,14 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                             expnum = int(obs_params['obs_id_info']['exposure_number'])
                             ind = np.where(tel_pointing.exp_nums == expnum)[0][0]
                             idl_off = tel_pointing.position_offsets_act[ind]
-                            im_slope += nrc.gen_slope_image(PA=0, xyoff_asec=idl_off,
-                                                            exclude_noise=True, zfact=0, 
-                                                            wfe_drift0=0)
+                            im_slope += nrc.gen_slope_image(PA=0, xyoff_asec=idl_off, zfact=0, 
+                                                            exclude_noise=True, wfe_drift0=0)
 
                         im_slope += im_bg
 
                         # Save slope image
                         if save_slope:
-                            save_slope_image(im_slope, obs_params, save_dir=save_dir)
+                            save_slope_image(im_slope, obs_params, save_dir=save_dir, **kwargs_det)
 
                         # Simulate ramp and stuff into a level1b file
                         if save_dms:
@@ -434,11 +441,12 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                         # Save Level1b DMS FITS files without any data
                         if save_dms:
                             obs_params['filename'] = 'pynrc_' + obs_params['filename']
-                            create_DMS_HDUList(None, None, obs_params, save_dir=save_dir)
+                            create_DMS_HDUList(None, None, obs_params, 
+                                               save_dir=save_dir, **kwargs_det)
 
 
-def save_slope_image(im_slope, obs_params, save_dir=None):
-    ""
+def save_slope_image(im_slope, obs_params, save_dir=None, **kwargs):
+    """Save slope image as Level1b-like FITS"""
 
     # Create data model for headers
     outModel = level1b_data_model(obs_params)
@@ -452,7 +460,12 @@ def save_slope_image(im_slope, obs_params, save_dir=None):
     # Save slope FITS file
     file_slope = 'slope_' + obs_params['filename']
     if save_dir is not None:
+        # Create directory and intermediates if they don't exist
+        os.makedirs(save_dir, exist_ok=True)
         file_slope = os.path.join(save_dir, file_slope)
+
+    # Save model to DMS FITS file 
+    print(f'  Saving: {file_slope}')
     hdul_slope.writeto(file_slope, overwrite=True)
 
     hdul_temp.close()
@@ -460,6 +473,7 @@ def save_slope_image(im_slope, obs_params, save_dir=None):
 
     # Update some WCS and segment info
     update_dms_headers(file_slope, obs_params)
+    update_headers_pynrc_info(file_slope, obs_params, **kwargs)
 
 
 def slope_to_level1b(im_slope, obs_params, cal_obj=None, save_dir=None, 
@@ -542,6 +556,9 @@ def slope_to_level1b(im_slope, obs_params, cal_obj=None, save_dir=None,
         Show a progress bar for this ramp generation?
     """
     
+    rseed_init = obs_params.get('rand_seed_noise')
+    rng = np.random.default_rng(rseed_init)
+
     det = obs_params['det_obj']
     nint = det.multiaccum.nint
 
@@ -557,8 +574,11 @@ def slope_to_level1b(im_slope, obs_params, cal_obj=None, save_dir=None,
     sci_data = []
     zero_data = []
     for i in trange(nint, desc='Ramps', leave=False):
+        # New random seed for noise generator initialization
+        rand_seed = rng.integers(0, 2**32-1)
         res = simulate_detector_ramp(det, cal_obj, im_slope=im_slope, return_zero_frame=True,
-                                     return_full_ramp=False, cframe='sci', out_ADU=out_ADU, **kwargs)
+                                     return_full_ramp=False, cframe='sci', out_ADU=out_ADU, 
+                                     rand_seed=rand_seed, **kwargs)
         # Append to lists
         sci_data.append(res[0])
         zero_data.append(res[1])
@@ -567,12 +587,9 @@ def slope_to_level1b(im_slope, obs_params, cal_obj=None, save_dir=None,
     sci_data = np.asarray(sci_data)
     zero_data = np.asarray(zero_data)
 
-    # hdu = fits.PrimaryHDU(sci_data)
-    # hdu.writeto(save_dir + obs_params['filename'], overwrite=True)
-
     # Create and save Level 1b data model to disk
     # This also updates header information
-    create_DMS_HDUList(sci_data, zero_data, obs_params, save_dir=save_dir)
+    create_DMS_HDUList(sci_data, zero_data, obs_params, save_dir=save_dir, **kwargs)
 
 def sources_to_slope(source_table, nircam_obj, obs_params, tel_pointing, 
                      hdul_psfs=None, im_bg=None, cframe_out='sci', **kwargs):
@@ -804,9 +821,8 @@ def sources_to_level1b(source_table, nircam_obj, obs_params, tel_pointing,
 
 
 def slope_to_fitswriter(det, cal_obj, im_slope=None, cframe='det',
-                        filter=None, pupil=None, 
-                        targ_name=None, obs_time=None, file_out=None, 
-                        out_ADU=True, return_results=True, **kwargs):
+    filter=None, pupil=None, targ_name=None, obs_time=None, file_out=None, 
+    out_ADU=True, return_results=True, rand_seed=None, **kwargs):
     
     """Simulate HDUList from slope image
 
@@ -899,7 +915,8 @@ def slope_to_fitswriter(det, cal_obj, im_slope=None, cframe='det',
         im_slope = sci_to_det(im_slope)
 
     data = simulate_detector_ramp(det, cal_obj, im_slope=im_slope, cframe='det',
-                                  out_ADU=out_ADU, return_zero_frame=False, **kwargs)
+                                  out_ADU=out_ADU, return_zero_frame=False, 
+                                  rand_seed=rand_seed, **kwargs)
     hdu = fits.PrimaryHDU(data)
     hdu.header = det.make_header(filter, pupil, obs_time, targ_name=targ_name, DMS=False)
 
@@ -2197,16 +2214,16 @@ def add_xtalk(data, det, coeffs=None):
     return data.reshape(sh)
 
 
-def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=False, rand_seed=None, 
-                           include_poisson=True, include_dark=True, include_bias=True, include_ktc=True, 
-                           include_rn=True, include_cpink=True, include_upink=True, 
-                           include_acn=True, apply_ipc=True, apply_ppc=True, 
+def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=False, 
+                           include_poisson=True, include_dark=True, include_bias=True, 
+                           include_ktc=True, include_rn=True, apply_ipc=True, apply_ppc=True, 
+                           include_cpink=True, include_upink=True, include_acn=True, 
                            include_refoffsets=True, include_refinst=True, 
                            include_colnoise=True, col_noise=None, amp_crosstalk=True,
                            add_crs=True, cr_model='SUNMAX', cr_scale=1, apply_flats=None, 
                            apply_nonlinearity=True, random_nonlin=False, latents=None,
-                           return_zero_frame=None, return_full_ramp=False, prog_bar=True, 
-                           **kwargs):
+                           rand_seed=None, return_zero_frame=None, return_full_ramp=False, 
+                           prog_bar=True, **kwargs):
     
     """ Return a single simulated ramp
     

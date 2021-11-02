@@ -2242,7 +2242,7 @@ class NIRCam(NIRCam_ext):
 
 
     def simulate_ramps(self, sp=None, im_slope=None, cframe='sci', nint=None, 
-        do_dark=False, **kwargs):
+        do_dark=False, rand_seed=None, **kwargs):
         """ Simulate Ramp Data
 
         Create a series of ramp data based on the current NIRCam settings. 
@@ -2331,6 +2331,8 @@ class NIRCam(NIRCam_ext):
         """
         from .reduce.calib import nircam_cal
 
+        rng = np.random.default_rng(rand_seed)
+
         det = self.Detector
         nint = det.multiaccum.nint if nint is None else nint
 
@@ -2386,7 +2388,9 @@ class NIRCam(NIRCam_ext):
         # Create a list of arguments to pass
         worker_arguments = []
         for i in range(nint):
-            kw = {'im_slope': im_slope, 'cframe': cframe, 'return_zero_frame': True}
+            rseed_i = rng.integers(0,2**32-1)
+            kw = {'im_slope': im_slope, 'cframe': cframe, 
+                  'return_zero_frame': True, 'rand_seed': rseed_i}
             kws = merge_dicts(kw, kwargs)
 
             args = (det, det_cal_obj)
@@ -2527,12 +2531,6 @@ def gen_ramps(args):
     from .simul.ngNRC import simulate_detector_ramp
 
     args_orig, kwargs = args
-    # det, dark_cal_obj = args_orig
-
-    # Must call np.random.seed() for multiprocessing, otherwise 
-    # random numbers for parallel processes start in the same seed state!
-    # TODO: Update to rng = np.random.default_rng()
-    np.random.seed()
     try:
         res = simulate_detector_ramp(*args_orig, **kwargs)
     except Exception as e:

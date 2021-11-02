@@ -491,7 +491,7 @@ def level1b_data_model(obs_params, sci_data=None, zero_data=None):
     
     return outModel
 
-def save_level1b_fits(outModel, obs_params, save_dir=None):
+def save_level1b_fits(outModel, obs_params, save_dir=None, **kwargs):
     """Save Level1bModel to FITS and update headers"""
 
     # Check if save directory specified in obs_params
@@ -500,19 +500,24 @@ def save_level1b_fits(outModel, obs_params, save_dir=None):
 
     file_path = outModel.meta.filename
     if save_dir is not None:
+        # Create directory and intermediates if they don't exist
+        os.makedirs(save_dir, exist_ok=True)
         file_path = os.path.join(save_dir, file_path)
         
-    # Save model to DMS FITS file and update header information
-    print(f'Saving: {file_path}')
+    # Save model to DMS FITS file 
+    print(f'  Saving: {file_path}')
     outModel.save(file_path)
+
+    # Update header information
     update_dms_headers(file_path, obs_params)
+    update_headers_pynrc_info(file_path, obs_params, **kwargs)
 
 
-def create_DMS_HDUList(sci_data, zero_data, obs_params, save_dir=None):
+def create_DMS_HDUList(sci_data, zero_data, obs_params, save_dir=None, **kwargs):
     """Save Level 1b to FITS file"""
     
     outModel = level1b_data_model(obs_params, sci_data=sci_data, zero_data=zero_data)
-    save_level1b_fits(outModel, obs_params, save_dir=save_dir)
+    save_level1b_fits(outModel, obs_params, save_dir=save_dir, **kwargs)
 
 
 def update_dms_headers(filename, obs_params):
@@ -579,6 +584,56 @@ def update_dms_headers(filename, obs_params):
     # TODO: Check if this is actually the case
     if '1b' in pheader['DATAMODL']:
         pheader['DATAMODL'] = 'RampModel'
+
+    hdulist.flush()
+    hdulist.close()
+
+def update_headers_pynrc_info(filename, obs_params, **kwargs):
+    """Add pynrc info to headers"""
+
+    hdulist = fits.open(filename, mode='update')
+    pheader = hdulist[0].header
+    fheader = hdulist[1].header
+
+    # Add random seed info
+    rand_init  = obs_params.get('rand_seed_init')
+    rand_dith  = obs_params.get('rand_seed_dith')
+    rand_noise = obs_params.get('rand_seed_noise')
+    pheader['RANDINIT'] = (rand_init, "Random seed to init program sim")
+    pheader['RANDDITH'] = (rand_dith, "Random seed for dither errors")
+    pheader['RANDNOIS'] = (rand_noise, "Random seed for ramp noise init")
+
+    # Add noise parameter settings
+    kw_to_hkey = {
+        'include_poisson'    : 'POISSON',
+        'include_dark'       : 'ADDDARK', 
+        'include_bias'       : 'ADDBIAS',
+        'include_ktc'        : 'ADDKTC',
+        'include_rn'         : 'ADDRN',
+        'include_cpink'      : 'CPINK',
+        'include_upink'      : 'UPINK',
+        'include_acn'        : 'ACN',
+        'apply_ipc'          : 'ADDIPC',
+        'apply_ppc'          : 'ADDPPC',
+        'amp_crosstalk'      : 'XTALK',
+        'include_refoffsets' : 'REFOFFS',
+        'include_refinst'    : 'REFINST',
+        'include_colnoise'   : 'COLNOISE',
+        'add_crs'            : 'ADDCR',
+        'cr_model'           : 'CRMODEL',
+        'cr_scale'           : 'CRSCALE',
+        'apply_nonlinearity' : 'ADDLIN',
+        'random_nonlin'      : 'RANDLIN',
+        'apply_flats'        : 'ADDFLATS',
+    }
+    for kw in kw_to_hkey.keys():
+        hkey = kw_to_hkey[kw]
+        pheader[hkey] = kwargs.get(kw)
+
+    hkey_first = 'RANDINIT'
+    pheader.insert(hkey_first, '', after=False)
+    pheader.insert(hkey_first, ('', 'pyNRC information'), after=False)
+    pheader.insert(hkey_first, '', after=False)
 
     hdulist.flush()
     hdulist.close()

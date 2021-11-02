@@ -4995,8 +4995,9 @@ def gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file, rand_se
             else:
                 d[k] = dith_info[k][ind]#[0]
 
-        # Add a random seed for random dither offsets
-        d['dith_rand_seed'] = rng.integers(0, 2**32-1)
+        # Add a random seed for random dither offsets and noise
+        d['rand_seed_dith']  = rng.integers(0, 2**32-1)
+        d['rand_seed_noise'] = rng.integers(0, 2**32-1)
             
         # Pointing, Filter, and Readout information
         for dict_append in [pointing_info, filter_info, read_modes]:
@@ -5624,7 +5625,7 @@ class DMS_input():
     """
 
     def __init__(self, xml_file, pointing_file, json_file, sm_acct_file, save_dir=None, 
-                 obs_date='2022-03-01', obs_time='12:00:00', pa_v3=None, dith_seed_init=None):
+                 obs_date='2022-03-01', obs_time='12:00:00', pa_v3=None, rand_seed_init=None):
 
         self.files = {
             'xml_file'      : xml_file,
@@ -5636,7 +5637,7 @@ class DMS_input():
         self.proposal_info = get_proposal_info(xml_file)
         # Series of dictionaries, one per visit
         # Dictionaries are ordered according to smart accounting order information
-        self.program_info = gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file, rand_seed=dith_seed_init)
+        self.program_info = gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file, rand_seed=rand_seed_init)
 
         # Create unique labels for each exposure
         self.labels = self._gen_obs_labels()
@@ -5861,7 +5862,7 @@ def gen_jwst_pointing(visit_dict, obs_params, base_std=None, dith_std=None, rand
         dith_offsets = [(visit_dict['dithx'][ind][0], visit_dict['dithy'][ind][0])]
 
     if rand_seed is None:
-        rand_seed = visit_dict.get('dith_rand_seed')
+        rand_seed = visit_dict.get('rand_seed_dith')
 
     tel_pointing = jwst_point(ap_obs_name, ap_ref_name, ra_ref, dec_ref, pos_ang=pos_ang, 
                               base_offset=base_offset, dith_offsets=dith_offsets, 
@@ -5898,7 +5899,7 @@ def get_tel_angles(ra, dec, obs_date='2022-03-01', obs_time='12:00:00'):
     pitch = pitch_deg[0,0]
     mask = mask_obs[:,0] 
     if mask.sum()==0:
-        _log.warn("Source is not visible on this date!")
+        _log.warn(f"Source RA, Dec = ({ra:.1f}, {dec:.1f}) deg is not visible on {obs_date}!")
         v3pa = v3pa_deg[:,0].mean()
         v3pa_min = v3pa_deg[:,0].min()
         v3pa_max = v3pa_deg[:,0].max()
