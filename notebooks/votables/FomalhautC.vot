@@ -1,0 +1,326 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<VOTABLE version="1.2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns="http://www.ivoa.net/xml/VOTable/v1.2"
+  xsi:schemaLocation="http://www.ivoa.net/xml/VOTable/v1.2 http://www.ivoa.net/xml/VOTable/v1.2">
+ <DESCRIPTION>
+   VizieR Astronomical Server vizier.u-strasbg.fr
+    Date: 2019-05-06T06:22:39 [V1.99+ (14-Oct-2013)]
+   Explanations and Statistics of UCDs:			See LINK below
+   In case of problem, please report to:	cds-question@unistra.fr
+   In this version, NULL integer columns are written as an empty string
+   &lt;TD&gt;&lt;/TD&gt;, explicitely possible from VOTable-1.3
+ </DESCRIPTION>
+<!-- VOTable description at http://www.ivoa.net/Documents/latest/VOT.html -->
+<INFO ID="VERSION" name="votable-version" value="1.99+ (14-Oct-2013)"/>
+<INFO ID="Ref" name="-ref" value="VOTx24017"/>
+<INFO name="-out.form" value="mini"/>
+<INFO name="MaxTuples" value="50000" />
+<INFO name="queryParameters" value="5">
+-oc.form=D.
+-c=Fomalhaut C
+-phot
+-out=_raj,_dej,_tabname(),_ID(),_sed4
+-c.rs=1
+</INFO>
+<INFO ID="Target" name="-c" value="342.018719-24.368812,rs=1.">
+</INFO>
+
+<RESOURCE ID="VizieR_S610438959" name="VizieR(2019-05-06T06:22:39)">
+  <DESCRIPTION>VizieR database maintained by CDS, see http://vizier.u-strasbg.fr</DESCRIPTION>
+  <COOSYS ID="J2000_2000.000" system="eq_FK5" equinox="J2000" epoch="2000.000"/>
+  <COOSYS ID="J2000" system="eq_FK5" equinox="J2000"/>
+  <TABLE ID="VizieR_0" name="allVizieR">
+    <DESCRIPTION>all VizieR catalogues</DESCRIPTION>
+    <!-- Definitions of GROUPs and FIELDs -->
+    <GROUP ID="gsed" name="_sed" ucd="phot" utype="spec:PhotometryPoint">
+      <DESCRIPTION>The SED group is made of 4 columns: mean frequency, flux, flux error, and filter designation</DESCRIPTION>
+      <FIELDref ref="sed_freq" utype="photdm:PhotometryFilter.SpectralAxis.Coverage.Location.Value"/>
+      <FIELDref ref="sed_flux" utype="spec:PhotometryPoint"/>
+      <FIELDref ref="sed_eflux" utype="spec:PhotometryPointError"/>
+      <FIELDref ref="sed_filter" utype="photdm:PhotometryFilter.identifier"/>
+    </GROUP>
+    <FIELD name="_RAJ2000" ucd="pos.eq.ra" ref="J2000" datatype="double" width="13" precision="9" unit="deg">
+      <DESCRIPTION>Right ascension (FK5, Equinox=J2000.0) at Epoch=J2000, proper motions taken into account </DESCRIPTION>
+    </FIELD>
+    <FIELD name="_DEJ2000" ucd="pos.eq.dec" ref="J2000" datatype="double" width="13" precision="9" unit="deg">
+      <DESCRIPTION>Declination (FK5, Equinox=J2000.0) at Epoch=J2000, proper motions taken into account </DESCRIPTION>
+    </FIELD>
+    <FIELD name="_tabname" ucd="meta.table" datatype="char" arraysize="32*">
+      <DESCRIPTION>Table name</DESCRIPTION>
+      <LINK href="http://vizier.u-strasbg.fr/viz-bin/VizieR-5?-info=XML&amp;-out.add=.&amp;-source=I/297/out&amp;-c=${+RAJ2000}${+DEJ2000}&amp;-c.eq=J2000.000&amp;-c.rs=0.5"/>
+    </FIELD>
+    <FIELD name="_ID" ucd="meta.id" datatype="char" arraysize="64*">
+      <DESCRIPTION>String which identifies the row</DESCRIPTION>
+    </FIELD>
+    <FIELD ID="sed_freq" name="_sed_freq" ucd="em.freq" unit="GHz" datatype="double" width="10" precision="E6">
+      <DESCRIPTION>Mean frequency, in GHz</DESCRIPTION>
+    </FIELD>
+    <FIELD ID="sed_flux" name="_sed_flux" ucd="phot.flux.density" unit="Jy" datatype="float" width="9" precision="E3">
+      <DESCRIPTION>Corresponding flux density, in Jy</DESCRIPTION>
+    </FIELD>
+    <FIELD ID="sed_eflux" name="_sed_eflux" ucd="stat.error;phot.flux.density" unit="Jy" datatype="float" width="8" precision="E2">
+      <DESCRIPTION>Mean error (standard deviations) of flux density</DESCRIPTION>
+    </FIELD>
+    <FIELD ID="sed_filter" name="_sed_filter" ucd="meta.id;instr.filter" unit="" datatype="char" width="32" arraysize="32*">
+      <DESCRIPTION>Filter designation, in the form photoSystem:filterName; a designation starting by ':=' is an assumed monochromatic point; this column is empty when the frequency is specified for each data point.</DESCRIPTION>
+      <LINK href="http://cdsarc.u-strasbg.fr/viz-bin/metafilter?${_sed_filter}"/>
+    </FIELD>
+<DATA><TABLEDATA>
+<TR><TD>342.018527800</TD><TD>-24.368825000</TD><TD>I/297/out</TD><TD>NOMAD1===0656-0944300&amp;-c=\htarg{342.0185278 -24.3688250,eq=J2000</TD><TD>138.55e+3</TD><TD>0.885</TD><TD></TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>342.018527800</TD><TD>-24.368825000</TD><TD>I/297/out</TD><TD>NOMAD1===0656-0944300&amp;-c=\htarg{342.0185278 -24.3688250,eq=J2000</TD><TD>181.75e+3</TD><TD>1.02</TD><TD></TD><TD>2MASS:H</TD></TR>
+<TR><TD>342.018527800</TD><TD>-24.368825000</TD><TD>I/297/out</TD><TD>NOMAD1===0656-0944300&amp;-c=\htarg{342.0185278 -24.3688250,eq=J2000</TD><TD>241.96e+3</TD><TD>0.929</TD><TD></TD><TD>2MASS:J</TD></TR>
+<TR><TD>342.01872400</TD><TD>-24.36884100</TD><TD>I/312/sample</TD><TD>PPMX===224804.4-242207 &amp;-c=\htarg{342.018724 -24.368841,eq=J2000</TD><TD>138.55e+3</TD><TD>0.885</TD><TD>0.017</TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>342.01872400</TD><TD>-24.36884100</TD><TD>I/312/sample</TD><TD>PPMX===224804.4-242207 &amp;-c=\htarg{342.018724 -24.368841,eq=J2000</TD><TD>181.75e+3</TD><TD>1.02</TD><TD>0.05</TD><TD>2MASS:H</TD></TR>
+<TR><TD>342.01872400</TD><TD>-24.36884100</TD><TD>I/312/sample</TD><TD>PPMX===224804.4-242207 &amp;-c=\htarg{342.018724 -24.368841,eq=J2000</TD><TD>241.96e+3</TD><TD>0.929</TD><TD>0.020</TD><TD>2MASS:J</TD></TR>
+<TR><TD>342.01863200</TD><TD>-24.36887200</TD><TD>I/317/sample</TD><TD>PPMXL===1374127136452208220&amp;-c=\htarg{342.018632 -24.368872,eq=J</TD><TD>138.55e+3</TD><TD>0.885</TD><TD>0.017</TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>342.01863200</TD><TD>-24.36887200</TD><TD>I/317/sample</TD><TD>PPMXL===1374127136452208220&amp;-c=\htarg{342.018632 -24.368872,eq=J</TD><TD>181.75e+3</TD><TD>1.02</TD><TD>0.05</TD><TD>2MASS:H</TD></TR>
+<TR><TD>342.01863200</TD><TD>-24.36887200</TD><TD>I/317/sample</TD><TD>PPMXL===1374127136452208220&amp;-c=\htarg{342.018632 -24.368872,eq=J</TD><TD>241.96e+3</TD><TD>0.929</TD><TD>0.020</TD><TD>2MASS:J</TD></TR>
+<TR><TD>342.018610700</TD><TD>-24.368858100</TD><TD>I/320/spm4</TD><TD>-c=\htarg{342.0186107 -24.3688581,eq=J2000}\&amp;-c.rs=0.004</TD><TD>138.55e+3</TD><TD>0.885</TD><TD></TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>342.018610700</TD><TD>-24.368858100</TD><TD>I/320/spm4</TD><TD>-c=\htarg{342.0186107 -24.3688581,eq=J2000}\&amp;-c.rs=0.004</TD><TD>181.75e+3</TD><TD>1.02</TD><TD></TD><TD>2MASS:H</TD></TR>
+<TR><TD>342.018610700</TD><TD>-24.368858100</TD><TD>I/320/spm4</TD><TD>-c=\htarg{342.0186107 -24.3688581,eq=J2000}\&amp;-c.rs=0.004</TD><TD>241.96e+3</TD><TD>0.929</TD><TD></TD><TD>2MASS:J</TD></TR>
+<TR><TD>342.018610700</TD><TD>-24.368858100</TD><TD>I/320/spm4</TD><TD>-c=\htarg{342.0186107 -24.3688581,eq=J2000}\&amp;-c.rs=0.004</TD><TD>541.43e+3</TD><TD>5.12e-3</TD><TD></TD><TD>Johnson:V</TD></TR>
+<TR><TD>342.018610700</TD><TD>-24.368858100</TD><TD>I/320/spm4</TD><TD>-c=\htarg{342.0186107 -24.3688581,eq=J2000}\&amp;-c.rs=0.004</TD><TD>674.90e+3</TD><TD>2.26e-3</TD><TD></TD><TD>Johnson:B</TD></TR>
+<TR><TD>342.018708900</TD><TD>-24.368809800</TD><TD>I/322A/out</TD><TD>UCAC4===329-202449&amp;-c=\htarg{342.0187089 -24.3688098,eq=J2000}\&amp;</TD><TD>138.55e+3</TD><TD>0.885</TD><TD>0.016</TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>342.018708900</TD><TD>-24.368809800</TD><TD>I/322A/out</TD><TD>UCAC4===329-202449&amp;-c=\htarg{342.0187089 -24.3688098,eq=J2000}\&amp;</TD><TD>181.75e+3</TD><TD>1.02</TD><TD>0.06</TD><TD>2MASS:H</TD></TR>
+<TR><TD>342.018708900</TD><TD>-24.368809800</TD><TD>I/322A/out</TD><TD>UCAC4===329-202449&amp;-c=\htarg{342.0187089 -24.3688098,eq=J2000}\&amp;</TD><TD>241.96e+3</TD><TD>0.929</TD><TD>0.017</TD><TD>2MASS:J</TD></TR>
+<TR><TD>342.018718709100</TD><TD>-24.368830617300</TD><TD>I/339/hsoy</TD><TD>-c=\htarg{342.0187187091 -24.3688306173,eq=J2000}\&amp;-c.rs=0.004</TD><TD>181.75e+3</TD><TD>1.02</TD><TD>0.05</TD><TD>2MASS:H</TD></TR>
+<TR><TD>342.018718709100</TD><TD>-24.368830617300</TD><TD>I/339/hsoy</TD><TD>-c=\htarg{342.0187187091 -24.3688306173,eq=J2000}\&amp;-c.rs=0.004</TD><TD>241.96e+3</TD><TD>0.929</TD><TD>0.020</TD><TD>2MASS:J</TD></TR>
+<TR><TD>342.018718709100</TD><TD>-24.368830617300</TD><TD>I/339/hsoy</TD><TD>-c=\htarg{342.0187187091 -24.3688306173,eq=J2000}\&amp;-c.rs=0.004</TD><TD>445.46e+3</TD><TD>0.129</TD><TD>0.000</TD><TD>Gaia:G</TD></TR>
+<TR><TD>342.018740795</TD><TD>-24.368811855</TD><TD>I/340/ucac5</TD><TD>-c=\htarg{342.0186992 -24.3687906,eq=J2000}\&amp;-c.rs=0.004</TD><TD>181.75e+3</TD><TD>1.02</TD><TD></TD><TD>2MASS:H</TD></TR>
+<TR><TD>342.018740795</TD><TD>-24.368811855</TD><TD>I/340/ucac5</TD><TD>-c=\htarg{342.0186992 -24.3687906,eq=J2000}\&amp;-c.rs=0.004</TD><TD>241.96e+3</TD><TD>0.929</TD><TD></TD><TD>2MASS:J</TD></TR>
+<TR><TD>342.018740795</TD><TD>-24.368811855</TD><TD>I/340/ucac5</TD><TD>-c=\htarg{342.0186992 -24.3687906,eq=J2000}\&amp;-c.rs=0.004</TD><TD>445.46e+3</TD><TD>0.129</TD><TD></TD><TD>Gaia:G</TD></TR>
+<TR><TD>342.01860900</TD><TD>-24.36875300</TD><TD>II/246/out</TD><TD>2MASS===22480446-2422075 &amp;-c=\htarg{342.018609 -24.368753,eq=J20</TD><TD>136.89e+3</TD><TD>0.856</TD><TD>0.017</TD><TD>Johnson:K</TD></TR>
+<TR><TD>342.01860900</TD><TD>-24.36875300</TD><TD>II/246/out</TD><TD>2MASS===22480446-2422075 &amp;-c=\htarg{342.018609 -24.368753,eq=J20</TD><TD>183.92e+3</TD><TD>1.01</TD><TD>0.05</TD><TD>Johnson:H</TD></TR>
+<TR><TD>342.01860900</TD><TD>-24.36875300</TD><TD>II/246/out</TD><TD>2MASS===22480446-2422075 &amp;-c=\htarg{342.018609 -24.368753,eq=J20</TD><TD>239.83e+3</TD><TD>0.948</TD><TD>0.020</TD><TD>Johnson:J</TD></TR>
+<TR><TD>342.0189500</TD><TD>-24.3689800</TD><TD>II/297/irc</TD><TD>objID=200853090</TD><TD>34.819e+3</TD><TD>97.3e-3</TD><TD>22.6e-3</TD><TD>AKARI:S9W</TD></TR>
+<TR><TD>342.01875000</TD><TD>-24.36883000</TD><TD>J/ApJ/582/1011/table2</TD><TD>recno=33727</TD><TD>181.75e+3</TD><TD>1.01</TD><TD></TD><TD>2MASS:H</TD></TR>
+<TR><TD>342.01875000</TD><TD>-24.36883000</TD><TD>J/ApJ/582/1011/table2</TD><TD>recno=33727</TD><TD>241.96e+3</TD><TD>0.902</TD><TD></TD><TD>2MASS:J</TD></TR>
+<TR><TD>342.0186250</TD><TD>-24.3687500</TD><TD>J/A+A/442/211/table1</TD><TD>recno=305</TD><TD>181.75e+3</TD><TD>1.02</TD><TD></TD><TD>2MASS:H</TD></TR>
+<TR><TD>342.0186250</TD><TD>-24.3687500</TD><TD>J/A+A/442/211/table1</TD><TD>recno=305</TD><TD>241.96e+3</TD><TD>0.929</TD><TD></TD><TD>2MASS:J</TD></TR>
+<TR><TD>342.01876806</TD><TD>-24.36882806</TD><TD>J/AJ/142/138/Mdwarfs</TD><TD>recno=8411</TD><TD>138.55e+3</TD><TD>0.882</TD><TD></TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>342.01876806</TD><TD>-24.36882806</TD><TD>J/AJ/142/138/Mdwarfs</TD><TD>recno=8411</TD><TD>181.75e+3</TD><TD>1.02</TD><TD></TD><TD>2MASS:H</TD></TR>
+<TR><TD>342.01876806</TD><TD>-24.36882806</TD><TD>J/AJ/142/138/Mdwarfs</TD><TD>recno=8411</TD><TD>241.96e+3</TD><TD>0.933</TD><TD></TD><TD>2MASS:J</TD></TR>
+<TR><TD>342.01870889</TD><TD>-24.36880972</TD><TD>J/AJ/148/119/stars</TD><TD>recno=1679</TD><TD>138.55e+3</TD><TD>0.885</TD><TD></TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>342.01870889</TD><TD>-24.36880972</TD><TD>J/AJ/148/119/stars</TD><TD>recno=1679</TD><TD>181.75e+3</TD><TD>1.02</TD><TD></TD><TD>2MASS:H</TD></TR>
+<TR><TD>342.01870889</TD><TD>-24.36880972</TD><TD>J/AJ/148/119/stars</TD><TD>recno=1679</TD><TD>241.96e+3</TD><TD>0.929</TD><TD></TD><TD>2MASS:J</TD></TR>
+<TR><TD>342.01870889</TD><TD>-24.36880972</TD><TD>J/AJ/148/119/stars</TD><TD>recno=1679</TD><TD>392.66e+3</TD><TD>0.258</TD><TD></TD><TD>SDSS:i</TD></TR>
+<TR><TD>342.01870889</TD><TD>-24.36880972</TD><TD>J/AJ/148/119/stars</TD><TD>recno=1679</TD><TD>479.90e+3</TD><TD>57.9e-3</TD><TD></TD><TD>SDSS:r</TD></TR>
+<TR><TD>342.01870889</TD><TD>-24.36880972</TD><TD>J/AJ/148/119/stars</TD><TD>recno=1679</TD><TD>541.43e+3</TD><TD>32.5e-3</TD><TD></TD><TD>Johnson:V</TD></TR>
+<TR><TD>342.01870889</TD><TD>-24.36880972</TD><TD>J/AJ/148/119/stars</TD><TD>recno=1679</TD><TD>621.98e+3</TD><TD>16.0e-3</TD><TD></TD><TD>SDSS:g</TD></TR>
+<TR><TD>342.01870889</TD><TD>-24.36880972</TD><TD>J/AJ/148/119/stars</TD><TD>recno=1679</TD><TD>674.90e+3</TD><TD>7.98e-3</TD><TD></TD><TD>Johnson:B</TD></TR>
+<TR><TD>342.0186250</TD><TD>-24.3687500</TD><TD>J/AJ/152/24/stars</TD><TD>recno=125</TD><TD>89.490e+3</TD><TD>0.523</TD><TD>0.024</TD><TD>WISE:W1</TD></TR>
+<TR><TD>342.0186250</TD><TD>-24.3687500</TD><TD>J/AJ/152/24/stars</TD><TD>recno=125</TD><TD>241.96e+3</TD><TD>0.929</TD><TD>0.020</TD><TD>2MASS:J</TD></TR>
+<TR><TD>342.01870833</TD><TD>-24.36881111</TD><TD>J/AJ/153/95/table3</TD><TD>recno=5119</TD><TD>13.571e+3</TD><TD>20.7e-3</TD><TD>1.4e-3</TD><TD>WISE:W4</TD></TR>
+<TR><TD>342.01870833</TD><TD>-24.36881111</TD><TD>J/AJ/153/95/table3</TD><TD>recno=5119</TD><TD>25.934e+3</TD><TD>60.4e-3</TD><TD>0.9e-3</TD><TD>WISE:W3</TD></TR>
+<TR><TD>342.01870833</TD><TD>-24.36881111</TD><TD>J/AJ/153/95/table3</TD><TD>recno=5119</TD><TD>65.172e+3</TD><TD>0.329</TD><TD>0.007</TD><TD>WISE:W2</TD></TR>
+<TR><TD>342.01870833</TD><TD>-24.36881111</TD><TD>J/AJ/153/95/table3</TD><TD>recno=5119</TD><TD>89.490e+3</TD><TD>0.524</TD><TD>0.022</TD><TD>WISE:W1</TD></TR>
+<TR><TD>342.01870833</TD><TD>-24.36881111</TD><TD>J/AJ/153/95/table3</TD><TD>recno=5119</TD><TD>136.89e+3</TD><TD>0.856</TD><TD>0.017</TD><TD>Johnson:K</TD></TR>
+<TR><TD>342.01870833</TD><TD>-24.36881111</TD><TD>J/AJ/153/95/table3</TD><TD>recno=5119</TD><TD>392.66e+3</TD><TD>0.243</TD><TD>0.018</TD><TD>SDSS:i'</TD></TR>
+<TR><TD>342.01870833</TD><TD>-24.36881111</TD><TD>J/AJ/153/95/table3</TD><TD>recno=5119</TD><TD>479.90e+3</TD><TD>56.8e-3</TD><TD>1.4e-3</TD><TD>SDSS:r'</TD></TR>
+<TR><TD>342.01870833</TD><TD>-24.36881111</TD><TD>J/AJ/153/95/table3</TD><TD>recno=5119</TD><TD>541.43e+3</TD><TD>32.0e-3</TD><TD>0.8e-3</TD><TD>Johnson:V</TD></TR>
+<TR><TD>342.01870833</TD><TD>-24.36881111</TD><TD>J/AJ/153/95/table3</TD><TD>recno=5119</TD><TD>621.98e+3</TD><TD>15.8e-3</TD><TD>0.6e-3</TD><TD>SDSS:g'</TD></TR>
+<TR><TD>342.01870833</TD><TD>-24.36881111</TD><TD>J/AJ/153/95/table3</TD><TD>recno=5119</TD><TD>674.90e+3</TD><TD>7.65e-3</TD><TD>0.47e-3</TD><TD>Johnson:B</TD></TR>
+<TR><TD>342.01870833</TD><TD>-24.36881111</TD><TD>J/AJ/153/95/table3</TD><TD>recno=5119</TD><TD>1.2967e+6</TD><TD>63.1e-6</TD><TD>4.0e-6</TD><TD>GALEX:NUV</TD></TR>
+<TR><TD>342.01870833</TD><TD>-24.36881111</TD><TD>J/AJ/153/95/table3</TD><TD>recno=5119</TD><TD>1.9607e+6</TD><TD>12.7e-6</TD><TD>3.0e-6</TD><TD>GALEX:FUV</TD></TR>
+<TR><TD>342.0187500</TD><TD>-24.3688333</TD><TD>J/AJ/154/151/table13</TD><TD>recno=28</TD><TD>138.55e+3</TD><TD>0.885</TD><TD></TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>342.0187500</TD><TD>-24.3688333</TD><TD>J/AJ/154/151/table13</TD><TD>recno=28</TD><TD>181.75e+3</TD><TD>1.02</TD><TD></TD><TD>2MASS:H</TD></TR>
+<TR><TD>342.0187500</TD><TD>-24.3688333</TD><TD>J/AJ/154/151/table13</TD><TD>recno=28</TD><TD>241.96e+3</TD><TD>0.929</TD><TD></TD><TD>2MASS:J</TD></TR>
+<TR><TD>342.0187500</TD><TD>-24.3688333</TD><TD>J/AJ/154/151/table13</TD><TD>recno=28</TD><TD>380.16e+3</TD><TD>0.365</TD><TD></TD><TD>Cousins:I</TD></TR>
+<TR><TD>342.0187500</TD><TD>-24.3688333</TD><TD>J/AJ/154/151/table13</TD><TD>recno=28</TD><TD>463.43e+3</TD><TD>92.2e-3</TD><TD></TD><TD>Cousins:R</TD></TR>
+<TR><TD>342.0187500</TD><TD>-24.3688333</TD><TD>J/AJ/154/151/table13</TD><TD>recno=28</TD><TD>541.43e+3</TD><TD>33.5e-3</TD><TD></TD><TD>Johnson:V</TD></TR>
+<TR><TD>342.0185833</TD><TD>-24.3687500</TD><TD>J/AJ/155/122/table5</TD><TD>recno=635</TD><TD>241.96e+3</TD><TD>0.929</TD><TD>0.020</TD><TD>2MASS:J</TD></TR>
+<TR><TD>342.0185833</TD><TD>-24.3687500</TD><TD>J/AJ/155/122/table5</TD><TD>recno=635</TD><TD>1.2967e+6</TD><TD>75.4e-6</TD><TD>3.0e-6</TD><TD>GALEX:NUV</TD></TR>
+<TR><TD>342.0185833</TD><TD>-24.3687500</TD><TD>J/AJ/155/122/table5</TD><TD>recno=635</TD><TD>1.9607e+6</TD><TD>15.5e-6</TD><TD>2.8e-6</TD><TD>GALEX:FUV</TD></TR>
+<TR><TD>342.0187500</TD><TD>-24.3688333</TD><TD>J/AJ/155/265/results</TD><TD>recno=67</TD><TD>138.55e+3</TD><TD>0.882</TD><TD></TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>342.0187500</TD><TD>-24.3688333</TD><TD>J/AJ/155/265/results</TD><TD>recno=67</TD><TD>181.75e+3</TD><TD>1.02</TD><TD></TD><TD>2MASS:H</TD></TR>
+<TR><TD>342.0187500</TD><TD>-24.3688333</TD><TD>J/AJ/155/265/results</TD><TD>recno=67</TD><TD>241.96e+3</TD><TD>0.924</TD><TD></TD><TD>2MASS:J</TD></TR>
+<TR><TD>342.0187500</TD><TD>-24.3688333</TD><TD>J/AJ/155/265/results</TD><TD>recno=67</TD><TD>380.16e+3</TD><TD>0.359</TD><TD></TD><TD>Cousins:I</TD></TR>
+<TR><TD>342.0187500</TD><TD>-24.3688333</TD><TD>J/AJ/155/265/results</TD><TD>recno=67</TD><TD>463.43e+3</TD><TD>91.3e-3</TD><TD></TD><TD>Cousins:R</TD></TR>
+<TR><TD>342.0187500</TD><TD>-24.3688333</TD><TD>J/AJ/155/265/results</TD><TD>recno=67</TD><TD>541.43e+3</TD><TD>32.6e-3</TD><TD></TD><TD>Johnson:V</TD></TR>
+<TR><TD>342.018800</TD><TD>-24.368800</TD><TD>J/AJ/156/102/table9</TD><TD>recno=3452584</TD><TD>138.55e+3</TD><TD>0.885</TD><TD></TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>342.018800</TD><TD>-24.368800</TD><TD>J/AJ/156/102/table9</TD><TD>recno=3452584</TD><TD>181.75e+3</TD><TD>1.02</TD><TD></TD><TD>2MASS:H</TD></TR>
+<TR><TD>342.018800</TD><TD>-24.368800</TD><TD>J/AJ/156/102/table9</TD><TD>recno=3452584</TD><TD>241.96e+3</TD><TD>0.929</TD><TD></TD><TD>2MASS:J</TD></TR>
+<TR><TD>342.0187500</TD><TD>-24.3688333</TD><TD>J/MNRAS/389/585/table1</TD><TD>recno=179</TD><TD>138.55e+3</TD><TD>0.885</TD><TD></TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>342.0187500</TD><TD>-24.3688333</TD><TD>J/MNRAS/389/585/table1</TD><TD>recno=179</TD><TD>181.75e+3</TD><TD>1.02</TD><TD></TD><TD>2MASS:H</TD></TR>
+<TR><TD>342.0187500</TD><TD>-24.3688333</TD><TD>J/MNRAS/389/585/table1</TD><TD>recno=179</TD><TD>241.96e+3</TD><TD>0.929</TD><TD></TD><TD>2MASS:J</TD></TR>
+<TR><TD>342.01877000</TD><TD>-24.36883000</TD><TD>J/MNRAS/435/2161/table3</TD><TD>Seq=8015</TD><TD>138.55e+3</TD><TD>0.882</TD><TD></TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>342.01877000</TD><TD>-24.36883000</TD><TD>J/MNRAS/435/2161/table3</TD><TD>Seq=8015</TD><TD>181.75e+3</TD><TD>1.02</TD><TD></TD><TD>2MASS:H</TD></TR>
+<TR><TD>342.01877000</TD><TD>-24.36883000</TD><TD>J/MNRAS/435/2161/table3</TD><TD>Seq=8015</TD><TD>241.96e+3</TD><TD>0.933</TD><TD></TD><TD>2MASS:J</TD></TR>
+<TR><TD>342.018750</TD><TD>-24.368611</TD><TD>J/MNRAS/443/2561/stars</TD><TD>recno=2818</TD><TD>138.55e+3</TD><TD>0.885</TD><TD>0.017</TD><TD>2MASS:Ks</TD></TR>
+<TR><TD>342.018750</TD><TD>-24.368611</TD><TD>J/MNRAS/443/2561/stars</TD><TD>recno=2818</TD><TD>181.75e+3</TD><TD>1.02</TD><TD>0.05</TD><TD>2MASS:H</TD></TR>
+<TR><TD>342.018750</TD><TD>-24.368611</TD><TD>J/MNRAS/443/2561/stars</TD><TD>recno=2818</TD><TD>241.96e+3</TD><TD>0.929</TD><TD>0.020</TD><TD>2MASS:J</TD></TR>
+<TR><TD>342.018750</TD><TD>-24.368611</TD><TD>J/MNRAS/443/2561/stars</TD><TD>recno=2818</TD><TD>541.43e+3</TD><TD>31.1e-3</TD><TD>0.9e-3</TD><TD>Johnson:V</TD></TR>
+<TR><TD>342.018750</TD><TD>-24.368611</TD><TD>J/MNRAS/443/2561/stars</TD><TD>recno=2818</TD><TD>541.43e+3</TD><TD>31.1e-3</TD><TD></TD><TD>Johnson:V</TD></TR>
+<TR><TD>342.018750</TD><TD>-24.368611</TD><TD>J/MNRAS/443/2561/stars</TD><TD>recno=2818</TD><TD>674.90e+3</TD><TD>8.04e-3</TD><TD>0.44e-3</TD><TD>Johnson:B</TD></TR>
+<TR><TD>342.018708900</TD><TD>-24.368809700</TD><TD>J/MNRAS/463/4210/ucac4rpm</TD><TD>recno=3611825</TD><TD>541.43e+3</TD><TD>32.5e-3</TD><TD></TD><TD>Johnson:V</TD></TR>
+<TR><TD>342.018708900</TD><TD>-24.368809700</TD><TD>J/MNRAS/463/4210/ucac4rpm</TD><TD>recno=3611825</TD><TD>674.90e+3</TD><TD>7.98e-3</TD><TD></TD><TD>Johnson:B</TD></TR>
+</TABLEDATA></DATA>
+
+<INFO name="Warning" value="increase the precision for computed column 11"/>
+<INFO name="Warning" value="increase the precision for computed column 11"/>
+<INFO name="Warning" value="increase the precision for computed column 11"/>
+<INFO name="Warning" value="increase the precision for computed column 11"/>
+<INFO name="Warning" value="increase the precision for computed column 10"/>
+<INFO name="Warning" value="increase the precision for computed column 10"/>
+<INFO name="Warning" value="increase the precision for computed column 11"/>
+<INFO name="Warning" value="increase the precision for computed column 11"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 11"/>
+<INFO name="Warning" value="increase the precision for computed column 11"/>
+<INFO name="Error" value="Invalid DBMS connection"/>
+<INFO name="Warning" value="increase the precision for computed column 10"/>
+<INFO name="Warning" value="increase the precision for computed column 10"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="(patch vizier 20171220) accept several mainpos to add _V column"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 10"/>
+<INFO name="Warning" value="increase the precision for computed column 10"/>
+<INFO name="Warning" value="increase the precision for computed column 10"/>
+<INFO name="Warning" value="increase the precision for computed column 10"/>
+<INFO name="Warning" value="change VO format int  (%02d) to char"/>
+<INFO name="Warning" value="change VO format int  (%02d) to char"/>
+<INFO name="Warning" value="change VO format int  (%02d) to char"/>
+<INFO name="Warning" value="change VO format int  (%02d) to char"/>
+<INFO name="Warning" value="change VO format int  (%02d) to char"/>
+<INFO name="Warning" value="change VO format int  (%02d) to char"/>
+<INFO name="Warning" value="change VO format int  (%02d) to char"/>
+<INFO name="Warning" value="change VO format int  (%02d) to char"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 10"/>
+<INFO name="Warning" value="increase the precision for computed column 10"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 6"/>
+<INFO name="Warning" value="increase the precision for computed column 6"/>
+<INFO name="Warning" value="increase the precision for computed column 5"/>
+<INFO name="Warning" value="increase the precision for computed column 5"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 10"/>
+<INFO name="Warning" value="increase the precision for computed column 10"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 12"/>
+<INFO name="Warning" value="increase the precision for computed column 12"/>
+<INFO name="Warning" value="(patch vizier 20171220) accept several mainpos to add _V column"/>
+<INFO name="Warning" value="increase the precision for computed column 5"/>
+<INFO name="Warning" value="increase the precision for computed column 5"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 7"/>
+<INFO name="Warning" value="increase the precision for computed column 7"/>
+<INFO name="Warning" value="increase the precision for computed column 7"/>
+<INFO name="Warning" value="increase the precision for computed column 7"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 7"/>
+<INFO name="Warning" value="increase the precision for computed column 7"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 7"/>
+<INFO name="Warning" value="increase the precision for computed column 7"/>
+<INFO name="Warning" value="increase the precision for computed column 7"/>
+<INFO name="Warning" value="increase the precision for computed column 7"/>
+<INFO name="Warning" value="increase the precision for computed column 7"/>
+<INFO name="Warning" value="increase the precision for computed column 7"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="change VO format int  (%03d) to char"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 13"/>
+<INFO name="Warning" value="increase the precision for computed column 13"/>
+<INFO name="Warning" value="increase the precision for computed column 13"/>
+<INFO name="Warning" value="increase the precision for computed column 13"/>
+<INFO name="Warning" value="increase the precision for computed column 13"/>
+<INFO name="Warning" value="increase the precision for computed column 13"/>
+<INFO name="Warning" value="increase the precision for computed column 7"/>
+<INFO name="Warning" value="increase the precision for computed column 7"/>
+<INFO name="Warning" value="increase the precision for computed column 7"/>
+<INFO name="Warning" value="increase the precision for computed column 7"/>
+<INFO name="Warning" value="increase the precision for computed column 7"/>
+<INFO name="Warning" value="increase the precision for computed column 7"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 6"/>
+<INFO name="Warning" value="increase the precision for computed column 6"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 7"/>
+<INFO name="Warning" value="increase the precision for computed column 7"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 7"/>
+<INFO name="Warning" value="increase the precision for computed column 7"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 8"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="change VO format int  (%04d) to char"/>
+<INFO name="Warning" value="increase the precision for computed column 7"/>
+<INFO name="Warning" value="increase the precision for computed column 7"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 10"/>
+<INFO name="Warning" value="increase the precision for computed column 10"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 9"/>
+<INFO name="Warning" value="increase the precision for computed column 11"/>
+<INFO name="QUERY_STATUS" value="ERROR">
+Invalid DBMS connection
+</INFO>
+  </TABLE>
+</RESOURCE>
+</VOTABLE>
