@@ -1244,8 +1244,8 @@ class NIRCam(NIRCam_ext):
                 elif ('MASK430R' in apname):
                     mask  = 'MASK430R'
                 if 'TA' in apname:
-                    _log.warn('Full TA apertures are treated similar to coronagraphic observations.')
-                    _log.warn("To calculate SNR, self.update_psf_coeff(image_mask='CLEAR') and set self.ND_acq.")
+                    _log.info('Full TA apertures are treated similar to coronagraphic observations.')
+                    _log.info("To calculate SNR, self.update_psf_coeff(image_mask='CLEAR') and set self.ND_acq.")
             elif '_TAMASK' in apname:
                 # For small TA subarray, turn off mask and enable ND square
                 mask = None
