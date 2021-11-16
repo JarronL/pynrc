@@ -2560,11 +2560,23 @@ def ramp_resample(data, det_new, return_zero_frame=False):
     
     nz, ny, nx = data.shape
     
-    x1, y1 = (det_new.x0, det_new.y0)
+    # x1, y1 = (det_new.x0, det_new.y0)
     xpix, ypix = (det_new.xpix, det_new.ypix)
-    x2 = x1 + xpix
-    y2 = y1 + ypix
-    
+    # x2 = x1 + xpix
+    # y2 = y1 + ypix
+
+    # Do we need to crop out subarray?
+    if ny==ypix:
+        y1, y2 = (0, ny)
+    else: # Will crop a subarray out of data 
+        y1 = det_new.y0
+        y2 = int(y1 + ypix)
+    if nx==xpix:
+        x1, x2 = (0, nx)
+    else: # Will crop a subarray out of data 
+        x1 = det_new.x0
+        x2 = int(x1 + xpix)
+
     ma  = det_new.multiaccum
     nd1     = ma.nd1
     nd2     = ma.nd2
