@@ -116,7 +116,7 @@ The updated coronagraphic TA offsets are verified in Part 2 by repeating the obs
                                 <ncc:Filter>F210M</ncc:Filter>
                                 <ncc:ReadoutPattern>RAPID</ncc:ReadoutPattern>
                                 <ncc:Groups>10</ncc:Groups>
-                                <ncc:Integrations>1</ncc:Integrations>
+                                <ncc:Integrations>2</ncc:Integrations>
                                 <ncc:EtcId></ncc:EtcId>
                             </ncc:FilterConfig>
                         </ncc:Filters>
@@ -124,7 +124,7 @@ The updated coronagraphic TA offsets are verified in Part 2 by repeating the obs
                         <ncc:PsfJustification>false</ncc:PsfJustification>
                     </ncc:NircamCoron>
                 </Template>
-                <ScienceDuration>324</ScienceDuration>
+                <ScienceDuration>645</ScienceDuration>
                 <CoordinatedParallel>false</CoordinatedParallel>
                 <SpecialRequirements>
                     <PcsMode>COARSE</PcsMode>

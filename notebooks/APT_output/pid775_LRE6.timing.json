@@ -1,18 +1,18 @@
 {
   "proposal_id" : "775",
   "number_of_visits" : 4,
-  "science_time" : 0.37,
-  "charged_time" : 1.98,
+  "science_time" : 0.45,
+  "charged_time" : 2.08,
   "observations" : [ {
     "id" : 32,
-    "charged_duration_seconds" : 720,
-    "science_duration_seconds" : 324,
+    "charged_duration_seconds" : 1074,
+    "science_duration_seconds" : 645,
     "number_of_visits" : 1,
     "instrument" : "NIRCAM",
     "template" : "NIRCam Coronagraphic Imaging",
     "visits" : [ {
       "id" : 1,
-      "scheduling_duration" : 664,
+      "scheduling_duration" : 1018,
       "components" : [ {
         "type" : "VISIT_SLEW",
         "duration" : 56
@@ -33,10 +33,10 @@
         "duration" : 92
       }, {
         "type" : "SCIENCE",
-        "duration" : 108
+        "duration" : 215
       }, {
         "type" : "EXPOSURE_OVERHEAD",
-        "duration" : 18
+        "duration" : 29
       }, {
         "type" : "SAM",
         "duration" : 7
@@ -45,10 +45,10 @@
         "duration" : 10
       }, {
         "type" : "SCIENCE",
-        "duration" : 108
+        "duration" : 215
       }, {
         "type" : "EXPOSURE_OVERHEAD",
-        "duration" : 18
+        "duration" : 29
       }, {
         "type" : "SAM",
         "duration" : 7
@@ -57,10 +57,10 @@
         "duration" : 10
       }, {
         "type" : "SCIENCE",
-        "duration" : 108
+        "duration" : 215
       }, {
         "type" : "EXPOSURE_OVERHEAD",
-        "duration" : 18
+        "duration" : 29
       }, {
         "type" : "VISIT_OVERHEADS",
         "duration" : 56
