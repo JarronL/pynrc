@@ -26,8 +26,11 @@ Modification History:
 28 Oct 2021
     - Use numpy random number generator objects to produce repeatable results.
 """
+import json
 import numpy as np
 import os
+
+from copy import deepcopy
 
 from astropy.io import fits
 from astropy.convolution import convolve
@@ -111,15 +114,7 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
     save_dir      = sim_config['save_dir']
 
     # Source information for full field observations
-    src_tbl     = sim_config['src_tbl']
-
-    # High-contrast imaging info
-    sp_sci      = sim_config['params_hci_src']['sp_sci']
-    dist_sci    = sim_config['params_hci_src']['dist_sci']
-    sp_ref      = sim_config['params_hci_src']['sp_ref']
-    planet_params = sim_config['params_hci_companions']
-    disk_params = sim_config['params_disk_model']
-    npsfs_per_axis = 9 if disk_params is None else disk_params.get('npsfs_per_axis',9)
+    params_targets = sim_config['params_targets']
 
     # PSF information
     kwargs_nrc = sim_config['params_webbpsf']
@@ -166,10 +161,11 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
     obs_detnames = np.array([get_detname(par['detector']) for par in obs_params_all])
     obs_filters  = np.array([par['filter']                for par in obs_params_all])
     obs_apnames  = np.array([par['siaf_ap'].AperName      for par in obs_params_all])
+    obs_targets  = np.array([par['target_name']           for par in obs_params_all])
     obs_visitids = np.array([par['visit_key']             for par in obs_params_all])
 
     # Unique labels for sorting
-    obs_labels  = np.array([f'{a}_{f}' for a, f in zip(obs_apnames, obs_filters)])
+    obs_labels  = np.array([f'{a}_{f}_{t}' for a, f, t in zip(obs_apnames, obs_filters, obs_targets)])
 
     # Select only a specific detector to generate simulations?
     if detname is None:
@@ -210,7 +206,6 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
         else:
             log_print = _log.warn
 
-
         if len(ulabels)==0:
             log_print('No valid observations for specified parameters:')
             log_print(f'  SCA: {detname}, SIAF: {apname}, Filter: {filter}')
@@ -218,13 +213,15 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
 
         # ulabels = ['NRCA5_FULL_F277W']
         for label in ulabels:
+            aname = '_'.join(label.split('_')[0:-2])
+            fname = label.split('_')[-2]
+            tname = label.split('_')[-1]
+
             # print(' label: ', label)
             ind2 = (obs_labels == label)
             
             if ind2.sum()==0:
-                aname = '_'.join(label.split('_')[0:-1])
-                fname = label.split('_')[-1]
-                _log.warn(f'Skipping {aname} + {fname} for {detname}...')
+                _log.warn(f'Skipping {aname} + {fname} + {tname} for {detname}...')
                 continue
 
             # Select visit ids that have current obs config
@@ -243,29 +240,43 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                 log_print(f'  SCA: {detname}, SIAF: {apname}, Filter: {filter}, Visit: {visit_id}')
                 continue
 
-            # Create NIRCam instrument object
-            obs_params = obs_params_all[ind2][0]
-            filt  = obs_params['filter']
-            pupil = None if obs_params['pupil']=='CLEAR'     else obs_params['pupil']
-            mask  = None if obs_params['coron_mask']=='None' else obs_params['coron_mask']
-            siaf_ap = obs_params['siaf_ap']
-            ap_obs_name = siaf_ap.AperName
-
-            # if 'TAMASK' in ap_obs_name:
-            #     # For TA observations, instead specify the coronagraphic equivalent
-            #     # to generate PSFs that will then be attenuated by image mask
-            #     name_arr = ap_obs_name.split('_')
-            #     name_arr[-1] = name_arr[-1][4:] if 'FS' in name_arr[-1] else name_arr[-1][2:]
-            #     ap_nrc_name = '_'.join(name_arr)
-            # else:
-            ap_nrc_name = ap_obs_name
+            # Grab a set of obs parameters to create some key info
+            op_temp = obs_params_all[ind2][0]
+            siaf_ap = op_temp['siaf_ap']
 
             # Check fov_pix size makes sense for aperture size
             # Reduce if too large. Make odd.
             kwargs_nrc2 = kwargs_nrc.copy()
-            fov_pix = np.min([2*siaf_ap.XSciSize, 2*siaf_ap.YSciSize, kwargs_nrc['fov_pix']])
+            fov_pix = kwargs_nrc.get('fov_pix')
+            if fov_pix is None:
+                fov_pix = 641 if op_temp['channel'].upper()=='SHORT' else 321
+            fov_pix = np.min([2*siaf_ap.XSciSize, 2*siaf_ap.YSciSize, fov_pix])
             fov_pix = fov_pix+1 if (fov_pix % 2)==0 else fov_pix
             kwargs_nrc2['fov_pix'] = fov_pix
+
+            # Get target information
+            target_id = op_temp['target_name']
+            try:
+                target_info = params_targets[target_id]
+            except KeyError:
+                _log.error(f"Cannot find {target_id} target! Skipping {aname} + {fname} for {detname}...")
+                continue
+
+            # More target info
+            src_tbl     = target_info.get('src_tbl')
+            star_info   = target_info.get('params_star')
+            sp_star   = None if star_info is None else star_info.get('sp')
+            dist_pc   = target_info.get('dist_pc')
+            age_Myr   = target_info.get('age_Myr')
+            planet_params = target_info.get('params_companions')
+            disk_params   = target_info.get('params_disk_model')
+
+            # Gather info to create NIRCam instrument object
+            filt  = op_temp['filter']
+            pupil = None if op_temp['pupil']=='CLEAR'     else op_temp['pupil']
+            mask  = None if op_temp['coron_mask']=='None' else op_temp['coron_mask']
+            ap_obs_name = siaf_ap.AperName
+            ap_nrc_name = ap_obs_name
 
             if not dry_run:
                 # Get rid of previous instances
@@ -273,10 +284,10 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                 except: pass
 
                 if ('MASK' in ap_nrc_name):
-                    nrc = obs_hci(sp_sci, dist_sci, filter=filt, apname=ap_nrc_name, 
+                    print(ap_nrc_name, filt)
+                    nrc = obs_hci(sp_star, dist_pc, filter=filt, apname=ap_nrc_name, 
                                   use_ap_info=True, disk_params=disk_params, 
-                                  npsfs_per_axis=npsfs_per_axis, autogen_coeffs=False,
-                                  detector=detname, **kwargs_nrc2)
+                                  autogen_coeffs=False, detector=detname, **kwargs_nrc2)
 
                     nrc.gen_psf_coeff()
                     nrc.gen_wfemask_coeff(large_grid=large_grid)
@@ -291,8 +302,13 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                     # Add planets
                     if planet_params is not None:
                         for kpl in planet_params:
+                            if age_Myr is None:
+                                _log.warn('Target age is not set. Assuming 100 Myr.')
+                                age = 100
+                            else:
+                                age = age_Myr
                             kw = planet_params[kpl]
-                            nrc.add_planet(**kw)
+                            nrc.add_planet(age=age, **kw)
 
                 else:
                     nrc = NIRCam(filter=filt, pupil_mask=pupil, image_mask=mask,
@@ -310,8 +326,8 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                         hdul_psfs = nrc.gen_psfs_over_fov(**kwargs_psf)
 
                 # Get Zodiacal background emission.
-                ra_ref, dec_ref = (obs_params['ra_ref'], obs_params['dec_ref'])
-                date_str = obs_params['date-obs']
+                ra_ref, dec_ref = (op_temp['ra_ref'], op_temp['dec_ref'])
+                date_str = op_temp['date-obs']
                 date_arg = (int(s) for s in date_str.split('-'))
                 day_of_year = datetime(*date_arg).timetuple().tm_yday
                 im_bg = nrc.bg_zodi_image(ra=ra_ref, dec=dec_ref, thisday=day_of_year)
@@ -323,126 +339,165 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
 
                 # Get exposure IDs
                 obs_dict_arr = visit_dict['obs_id_info']
-                exp_ids   = np.array([d['exposure_number'] for d in obs_dict_arr])
+                exp_ids = np.array([int(d['exposure_number']) for d in obs_dict_arr])
+                grp_ids = np.array([int(d['visit_group'])     for d in obs_dict_arr])
+                seq_ids = np.array([int(d['sequence_id'])     for d in obs_dict_arr])
+                act_ids = np.array([    d['activity_id']      for d in obs_dict_arr])
 
                 # Get type of observations (T-ACQ, CONFIRM, SCIENCE, ETC?)
                 type_arr = visit_dict['type']
                 type_vals = np.array(['T_ACQ', 'CONFIRM', 'SCIENCE'])
-                do_sci_pointing = True
                 # Cycle through each exposure in visit
-                for j in trange(len(exp_ids)):
+                nexp = len(exp_ids)  # Total number of exposures with this aperture name
+                for j in trange(nexp, desc="Exposures", leave=False):
 
                     # Create the observation parameters dictionary for selected exposure
                     exp_num = exp_ids[j]
+                    grp_id = grp_ids[j]
+                    seq_id = seq_ids[j]
+                    act_id = act_ids[j]
+                    act_int = np.int(act_id, 36) # Convert base 36 to integer number
                     # print('   exp_num: ', exp_num)
-                    obs_params = obs_input.gen_obs_params(vid, exp_num, detname)
+                    obs_params = obs_input.gen_obs_params(vid, exp_num, detname,
+                                                          grp_id=grp_id, seq_id=seq_id, act_id=act_id)
+                    # Update some target info
+                    obs_params['catalog_name'] = target_info.get('TargetArchiveName', 'UNKNOWN')
+                    if 'RAProperMotion' in obs_params.keys():
+                        obs_params['mu_RA']  = target_info['RAProperMotion']
+                    if 'DecProperMotion' in obs_params.keys():
+                        obs_params['mu_DEC']  = target_info['DecProperMotion']
+
+                    # Random seed for noise uncertainties; each seed should be unique but also repeatable
+                    rand_seed_noise_j = visit_dict['rand_seed_noise'] + grp_id*act_int*nexp + exp_num
 
                     # Random seed for dither uncertainties
-                    rand_seed = visit_dict['rand_seed_dith'] + j
-                    # Random seed for noise uncertainties
-                    rand_seed_noise_j = visit_dict['rand_seed_noise'] + j
-
-                    tup = type_arr[j].upper()
-                    ra_ref, dec_ref = (obs_params['ra_ref'], obs_params['dec_ref'])
+                    tup = obs_params['visit_type'].upper() #type_arr[j].upper()
+                    lup = obs_params['visit_level'].upper()
+                    ddist = obs_params['ddist']
                     if tup not in type_vals:
-                        _log.warn(f'Exposure type {tup} not recognized in Visit {vid}, Exp {exp_num}')
+                        _log.warn(f'Exposure type {tup} not recognized.')
+                        _log.warn(f'  Visit {vid}, Exp {exp_num}, Grp {grp_id}, Seq {seq_id}, Act {act_id}')
                         continue
-                    elif tup=='T_ACQ' or tup=='CONFIRM':
-                        # First slew has large uncertainty
-                        if int(exp_num)==1:
-                            base_std = large_slew_uncert
-                        elif obs_params['ddist']==0:
-                            # If not #1 and confirmation image occurred before, then no SAM
-                            base_std = large_slew_uncert
-                            # Need to subtract 1 from random seed to get same 
-                            # random offset as previous confirmation image
-                            rand_seed -= 1
-                        else:
-                            # If not #1 and no confirm image, then TA SAM
-                            base_std = ta_sam_uncert
-
-                        base_std = large_slew_uncert if int(exp_num)==1 else ta_sam_uncert
-                        # There are no dithers
+                    if tup=='T_ACQ':
+                        rand_seed_base = rand_seed_dith = visit_dict['rand_seed_dith']
+                        base_std = large_slew_uncert
                         dith_std = 0
-                        tel_pointing = gen_jwst_pointing(visit_dict, obs_params, rand_seed=rand_seed,
-                                                         base_std=base_std, dith_std=dith_std)
-                        tel_pointing.exp_nums = np.array([int(exp_num)])
-                    elif do_sci_pointing:
-                        # First science exposure
-                        #   Exposure #1 is the "slew" position
-                        if int(exp_num)==1:
-                            base_std = large_slew_uncert
-                        elif obs_params['ddist']==0:
-                            # If not #1 and confirmation image occurred before, then no SAM
-                            base_std = ta_sam_uncert
-                            # Need to subtract 1 from random seed to get same 
-                            # random offset as previous confirmation image
-                            rand_seed -= 1
+                    elif (tup=='CONFIRM') and (ddist==0):
+                        rand_seed_base = rand_seed_dith= visit_dict['rand_seed_dith']
+                        base_std = large_slew_uncert
+                        dith_std = 0
+                    elif (tup=='CONFIRM'):
+                        rand_seed_base = rand_seed_dith= visit_dict['rand_seed_dith'] + 1
+                        base_std = ta_sam_uncert
+                        dith_std = 0
+                    elif (tup=='SCIENCE') and (lup=='TARGET'):
+                        rand_seed_base = visit_dict['rand_seed_dith'] + 1
+                        rand_seed_dith = rand_seed_base + 1
+                        base_std = large_slew_uncert if type_arr[0].upper()=='SCIENCE' else ta_sam_uncert
+                    elif (tup=='SCIENCE') and (lup=='FILTER'):
+                        rand_seed_base = visit_dict['rand_seed_dith'] + 1
+                        if ddist==0:
+                            rand_seed_dith = rand_seed_base + 1
                         else:
-                            # If not #1 and no confirm image, then SAM from TA position
-                            base_std = ta_sam_uncert
+                            rand_seed_dith = rand_seed_base + 1 + grp_id*act_int*nexp + exp_num
+                        base_std = large_slew_uncert if type_arr[0].upper()=='SCIENCE' else ta_sam_uncert
+                    elif (tup=='SCIENCE'):
+                        pass  # No need to do anything, since no new activity
+                    else:
+                        raise ValueError(f'Not sure what to do with {lup}, {tup}, dDist={ddist:.3f}')
 
+                    # New science pointing once per science activity
+                    ra_ref, dec_ref = (obs_params['ra_ref'], obs_params['dec_ref'])
+                    if tup=='T_ACQ' or tup=='CONFIRM':
+                        tel_pointing = gen_jwst_pointing(visit_dict, obs_params, base_std=base_std, dith_std=dith_std,
+                                                         rand_seed=rand_seed_dith, rand_seed_base=rand_seed_base)
+                        tel_pointing.exp_nums = np.array([exp_num])
+                    elif (tup=='SCIENCE') and (int(exp_num)==1):
+                        # Make sure 
+                        first_dith_zero = True if (lup=='TARGET' or ddist==0) else False
                         # Create jwst_pointing class
                         tel_pointing = gen_jwst_pointing(visit_dict, obs_params, base_std=base_std)
                         # Update standard and SGD uncertainties and regenerage random pointings
                         tel_pointing._std_sig = std_sam_uncert
                         tel_pointing._sgd_sig = sgd_sam_uncert
-                        tel_pointing.gen_random_offsets(rand_seed=rand_seed)
-                        tel_pointing.exp_nums = np.arange(tel_pointing.ndith) + 1 + j
-
-                        # Set to False so tel_pointing is only created once per visit
-                        do_sci_pointing = False
+                        tel_pointing.gen_random_offsets(rand_seed=rand_seed_dith, rand_seed_base=rand_seed_base,
+                                                        first_dith_zero=first_dith_zero)
+                        tel_pointing.exp_nums = np.arange(tel_pointing.ndith) + 1 
 
                     # Save random seed in obs_params
                     obs_params['rand_seed_init'] = rand_seed_init
-                    obs_params['rand_seed_dith'] = rand_seed
+                    obs_params['rand_seed_dith'] = rand_seed_dith
                     obs_params['rand_seed_noise'] = rand_seed_noise_j
 
                     # Skip slope creation if obs_label doesn't match NIRCam class
                     a = obs_params['siaf_ap'].AperName
                     f = obs_params['filter']
-                    if label != f'{a}_{f}':
+                    t = obs_params['target_name']
+                    if label != f'{a}_{f}_{t}':
                         continue
 
+                    # Create dictionary of parameters to save to FITS header
+                    kwargs_pynrc = kwargs_det.copy()
+                    kwargs_pynrc['json_file']     = os.path.basename(json_file)
+                    kwargs_pynrc['sm_acct_file']  = os.path.basename(sm_acct_file)
+                    kwargs_pynrc['pointing_file'] = os.path.basename(pointing_file)
+                    kwargs_pynrc['xml_file']      = os.path.basename(xml_file)
+
+                    # Save simulated offset positions incl. random mispointings
+                    expnum = int(obs_params['obs_id_info']['exposure_number'])
+                    ind = np.where(tel_pointing.exp_nums == expnum)[0][0]
+                    idl_off = tel_pointing.position_offsets_act[ind]
+                    kwargs_pynrc['xoffset_act'] = idl_off[0]
+                    kwargs_pynrc['yoffset_act'] = idl_off[1]
+                    kwargs_pynrc['pa_v3'] = obs_params['pa_v3']
+
                     # Generate dithered slope image for given exposure ID
-                    if not dry_run:
-                        if src_tbl is not None:
-                            # Create slope image
-                            im_slope = sources_to_slope(src_tbl, nrc, obs_params, tel_pointing,
-                                                        hdul_psfs=hdul_psfs, im_bg=0)
-
-                        if ('MASK' in ap_nrc_name):
-                            expnum = int(obs_params['obs_id_info']['exposure_number'])
-                            ind = np.where(tel_pointing.exp_nums == expnum)[0][0]
-                            idl_off = tel_pointing.position_offsets_act[ind]
-                            im_slope += nrc.gen_slope_image(PA=0, xyoff_asec=idl_off, zfact=0, 
-                                                            exclude_noise=True, wfe_drift0=0)
-
-                        im_slope += im_bg
-
-                        # Save slope image
-                        if save_slope:
-                            save_slope_image(im_slope, obs_params, save_dir=save_dir, **kwargs_det)
-
-                        # Simulate ramp and stuff into a level1b file
-                        if save_dms:
-                            obs_params['filename'] = 'pynrc_' + obs_params['filename']
-                            slope_to_level1b(im_slope, obs_params, cal_obj=cal_obj, 
-                                             save_dir=save_dir, **kwargs_det)
-
-                    else:
-                        expnum = int(obs_params['obs_id_info']['exposure_number'])
-                        ind = np.where(tel_pointing.exp_nums == expnum)[0][0]
-                        idl_off = tel_pointing.position_offsets_act[ind]
-                        a = obs_params['siaf_ap'].AperName
-                        f = obs_params['filter']
-                        print(detname, a, f, vid, exp_num, idl_off)
+                    if dry_run:
+                        idl_off_str = f'({idl_off[0]:+0.3f}, {idl_off[1]:+0.3f})'
+                        gsa_str = f'{grp_id:02d}{seq_id:01d}{act_id}'
+                        print(detname, a, f, t, vid, gsa_str, exp_num, idl_off_str)
 
                         # Save Level1b DMS FITS files without any data
                         if save_dms:
                             obs_params['filename'] = 'pynrc_' + obs_params['filename']
                             create_DMS_HDUList(None, None, obs_params, 
-                                               save_dir=save_dir, **kwargs_det)
+                                               save_dir=save_dir, **kwargs_pynrc)
+                    else:
+                        # Start with background
+                        # im_bg was initially created above for this 
+                        # aperture, filter, target but the date may have changed
+                        ra_ref, dec_ref = (obs_params['ra_ref'], obs_params['dec_ref'])
+                        date_str = obs_params['date-obs']
+                        date_arg = (int(s) for s in date_str.split('-'))
+                        day_of_year2 = datetime(*date_arg).timetuple().tm_yday
+                        if day_of_year == day_of_year2:
+                            im_slope = im_bg.copy()
+                        else:
+                            day_of_year = day_of_year2
+                            im_bg = nrc.bg_zodi_image(ra=ra_ref, dec=dec_ref, thisday=day_of_year)
+                            im_slope = im_bg.copy()
+
+                        if src_tbl is not None:
+                            # Create slope image from table
+                            im_slope += sources_to_slope(src_tbl, nrc, obs_params, tel_pointing,
+                                                         hdul_psfs=hdul_psfs, im_bg=0)
+
+                        # Create slope image from HCI observation
+                        if isinstance(nrc, obs_hci):
+                            pa_v3 = obs_params['pa_v3']
+                            im_slope += nrc.gen_slope_image(PA=pa_v3, xyoff_asec=idl_off, 
+                                                            zfact=0, exclude_noise=True, wfe_drift0=0)
+
+                        # Save slope image
+                        if save_slope:
+                            save_slope_image(im_slope, obs_params, 
+                                             save_dir=save_dir, **kwargs_pynrc)
+
+                        # Simulate ramp and stuff into a level1b file
+                        if save_dms:
+                            obs_params['filename'] = 'pynrc_' + obs_params['filename']
+                            slope_to_level1b(im_slope, obs_params, cal_obj=cal_obj, 
+                                             save_dir=save_dir, **kwargs_pynrc)
 
 
 def save_slope_image(im_slope, obs_params, save_dir=None, **kwargs):
@@ -670,11 +725,34 @@ def sources_to_slope(source_table, nircam_obj, obs_params, tel_pointing,
     ###############################
     # Convolve full image with PSFs
 
-    if hdul_psfs is None:
-        hdul_psfs = nrc.gen_psfs_over_fov(return_coords=None, **kwargs)
-        
     # Perform convolution
-    hdul_sci_conv = convolve_image(hdul_sci_image, hdul_psfs, output_sampling=1, return_hdul=True)
+    if nrc.is_coron:
+        # For coronagraphy, assume position-dependent PSFs are a function
+        # of coronagraphic mask transmission, off-axis, and on-axis PSFs.
+        # PSF(x,y) = trans(x,y)*psf_off + (1-trans(x,y))*psf_on
+        trans = nrc.mask_images['OVERMASK']
+        
+        # Off-axis component
+        hdul_sci_image_off = deepcopy(hdul_sci_image)
+        hdul_sci_image_off[0].data = hdul_sci_image_off[0].data * trans
+        psf_off = nrc.calc_psf_from_coeff(return_oversample=True, return_hdul=True,  
+                                          coord_vals=(10,10), coord_frame='idl')
+        hdul_conv_off = convolve_image(hdul_sci_image_off, psf_off, output_sampling=1, return_hdul=True)
+
+        # On-axis component (closest PSF convolution)
+        hdul_sci_image_on = deepcopy(hdul_sci_image)
+        hdul_sci_image_on[0].data = hdul_sci_image_on[0].data * (1 - trans)
+        hdul_psfs = nrc.psf_list if hdul_psfs is None else hdul_psfs
+        hdul_conv_on = convolve_image(hdul_sci_image_on, hdul_psfs, output_sampling=1, return_hdul=True)
+        
+        hdul_sci_conv = hdul_conv_on
+        hdul_sci_conv[0].data += hdul_conv_off[0].data
+    else:
+        if hdul_psfs is None:
+            hdul_psfs = nrc.gen_psfs_over_fov(return_coords=None, **kwargs)
+
+        hdul_sci_conv = convolve_image(hdul_sci_image, hdul_psfs, output_sampling=1, return_hdul=True)
+
     im_conv = hdul_sci_conv[0].data
     ny, nx = im_conv.shape
     xsci = np.arange(nx) + hdul_sci_conv[0].header['XSCI0']
@@ -1125,8 +1203,8 @@ def gen_col_noise(ramp_column_varations, prob_bad, nz=108, nx=2048, rand_seed=No
     # Number of samples in ramp templates
     nz0 = ramp_column_varations.shape[0]
 
-    if nz>nz0:
-        raise ValueError('nz should not be greater than {} frames'.format(nz0))
+    # if nz>nz0:
+    #     raise ValueError('nz should not be greater than {} frames'.format(nz0))
 
     # Variable to store column offsets for all NX columns
     cols_all_add = np.zeros([nz0,nx])
@@ -1164,10 +1242,15 @@ def gen_col_noise(ramp_column_varations, prob_bad, nz=108, nx=2048, rand_seed=No
     # Reshape to (nz0,1,nx) to easily add to a ramp of size (nz,ny,nx)
     cols_all_add = cols_all_add.reshape([nz0,1,-1])
 
-    # Only return number of request frames
-    return cols_all_add[0:nz, :, :]
+    # Only return number of requested frames
+    if nz>nz0:
+        cols_all_add2 = np.zeros([nz,1,nx])
+        cols_all_add2[0:nz0] = cols_all_add
+        return cols_all_add2
+    else:
+        return cols_all_add[0:nz, :, :]
 
-def add_col_noise(super_dark_ramp, ramp_column_varations, prob_bad, rand_seed=None):
+def add_col_noise(data_in, ramp_column_varations, prob_bad, rand_seed=None):
     """ Add RTN Column Noise
     
     This function takes the random telegraph noise templates derived from 
@@ -1183,7 +1266,7 @@ def add_col_noise(super_dark_ramp, ramp_column_varations, prob_bad, rand_seed=No
     Parameters
     ==========
     
-    super_dark_ramp : ndarray
+    data_in : ndarray
         Idealized ramp of size (nz,ny,nx)
     ramp_column_variations : ndarray
         The column-average ramp variations of size (nz,nx). 
@@ -1192,15 +1275,12 @@ def add_col_noise(super_dark_ramp, ramp_column_varations, prob_bad, rand_seed=No
         Probability that a given column is subject to these column variations.
     """
     
-    nz, ny, nx = super_dark_ramp.shape
+    nz, ny, nx = data_in.shape
     
     cols_all_add = gen_col_noise(ramp_column_varations, prob_bad, nz=nz, nx=nx, 
                                  rand_seed=rand_seed)
-
     # Add to dark ramp
-    data = super_dark_ramp + cols_all_add
-    
-    return data
+    return data_in + cols_all_add
 
 def gen_ramp_biases(ref_dict, nchan=None, data_shape=(2,2048,2048), 
                     include_refinst=True, ref_border=[4,4,4,4], rand_seed=None):

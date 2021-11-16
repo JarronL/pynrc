@@ -17,8 +17,6 @@ from .apt import DMS_input
 import logging
 _log = logging.getLogger('pynrc')
 
-from .apt import populate_obs_params
-
 def dec_to_base36(val):
     """Convert decimal integer to base 36 (0-Z)"""
 
@@ -288,8 +286,8 @@ def level1b_data_model(obs_params, sci_data=None, zero_data=None):
     if sci_data is None:
         sci_shape = (obs_params['nints'], obs_params['ngroups'], obs_params['ysize'], obs_params['xsize'])
         zero_shape = (obs_params['nints'], obs_params['ysize'], obs_params['xsize'])
-        sci_data  = np.empty(sci_shape, dtype='uint16')
-        zero_data = np.empty(zero_shape, dtype='uint16')
+        sci_data  = np.zeros(sci_shape, dtype='uint16')
+        zero_data = np.zeros(zero_shape, dtype='uint16')
 
     # Make sure data is a 4D array
     if len(sci_data.shape)<4:
@@ -300,10 +298,10 @@ def level1b_data_model(obs_params, sci_data=None, zero_data=None):
     outModel = Level1bModel(data=sci_data, zeroframe=zero_data)
     # Update from 'Level1bModel' to 'RampModel'
     # TODO: Is this correct??
-    outModel.meta.model_type = 'RampModel'
+    # outModel.meta.model_type = 'RampModel'
     
     outModel.meta.origin = 'STScI'
-    outModel.meta.filetype = 'raw'
+    outModel.meta.filetype = 'uncalibrated' # 'raw'
     
     # Proposal information
     outModel.meta.program.pi_name          = obs_params['pi_name']
@@ -313,17 +311,16 @@ def level1b_data_model(obs_params, sci_data=None, zero_data=None):
     outModel.meta.program.science_category = obs_params['science_category']
     outModel.meta.program.continuation_id  = 0
 
-    # Date and time of observation
-    outModel.meta.observation.date = obs_params['date-obs']
-    outModel.meta.observation.time = obs_params['time-obs']
-    start_time_string = obs_params['date-obs'] + 'T' + obs_params['time-obs']
-    outModel.meta.date = start_time_string
-
     # Science target information
     outModel.meta.target.proposer_name = obs_params['target_name']
     outModel.meta.target.catalog_name  = obs_params['catalog_name']
     outModel.meta.target.ra  = obs_params['ra']
     outModel.meta.target.dec = obs_params['dec']
+    outModel.meta.target.proposer_ra  = obs_params['ra']
+    outModel.meta.target.proposer_dec = obs_params['dec']
+    outModel.meta.target.proper_motion_ra = obs_params.get('mu_RA')
+    outModel.meta.target.proper_motion_dec = obs_params.get('mu_DEC')
+    outModel.meta.target.proper_motion_epoch = '2000-01-01 00:00:00.0000000'
     outModel.meta.coordinates.reference_frame = 'ICRS'
     
     # Exposure Type
@@ -332,12 +329,17 @@ def level1b_data_model(obs_params, sci_data=None, zero_data=None):
     #   NRC_TACQ, NRC_TACONFIRM
     #   NRC_IMAGE, NRC_CORON, NRC_GRISM
     #   NRC_WFSS, NRC_TSIMAGE, NRC_TSGRISM
-    outModel.meta.exposure.type = obs_params['exp_type']
+    outModel.meta.exposure.type = obs_params['exp_type'].upper()
+
     # Specify whether the exposure is part of a TSO observation
     if outModel.meta.exposure.type.lower() in ['nrc_tsimage', 'nrc_tsgrism']:
         outModel.meta.visit.tsovisit = True
     else:
         outModel.meta.visit.tsovisit = False
+    # Background Target?
+    outModel.meta.observation.bkgdtarg = False
+    # Number of expected exposures
+    outModel.meta.visit.total_exposures = obs_params['nexposures']
 
     # Instrument info
     outModel.meta.telescope           = 'JWST'
@@ -345,6 +347,7 @@ def level1b_data_model(obs_params, sci_data=None, zero_data=None):
     outModel.meta.instrument.module   = obs_params['module']
     outModel.meta.instrument.channel  = obs_params['channel']
     outModel.meta.instrument.detector = obs_params['detector']
+    outModel.meta.exposure.sca_num    = obs_params['det_obj'].scaid
     
     # Filter and pupil info
     filt = obs_params['filter']
@@ -362,7 +365,9 @@ def level1b_data_model(obs_params, sci_data=None, zero_data=None):
     outModel.meta.instrument.filter = filt
     outModel.meta.instrument.pupil  = pupil
 
-    if 'MASK' in obs_params['coron_mask'].upper():
+    # Coronagraphic mask for non-TA observations
+    apername = obs_params['siaf_ap'].AperName
+    if ('MASK' in obs_params['coron_mask'].upper()) and ('TA' not in apername):
         outModel.meta.instrument.coronagraph = obs_params['coron_mask'].upper()
 
     # Detector information 
@@ -377,8 +382,10 @@ def level1b_data_model(obs_params, sci_data=None, zero_data=None):
     
     # MULTIACCUM Settings
     outModel.meta.exposure.readpatt              = obs_params['readpatt']
+    outModel.meta.exposure.noutputs              = obs_params['noutputs']
     outModel.meta.exposure.nframes               = obs_params['nframes']
     outModel.meta.exposure.ngroups               = obs_params['ngroups']
+    outModel.meta.exposure.frame_divisor         = obs_params['nframes']
     outModel.meta.exposure.nints                 = obs_params['nints']
     outModel.meta.exposure.integration_start     = obs_params['integration_start']
     outModel.meta.exposure.integration_end       = obs_params['integration_end']
@@ -389,18 +396,46 @@ def level1b_data_model(obs_params, sci_data=None, zero_data=None):
     outModel.meta.exposure.frame_time            = obs_params['frame_time']
     outModel.meta.exposure.group_time            = obs_params['group_time']
     outModel.meta.exposure.groupgap              = obs_params['groupgap']
+    outModel.meta.exposure.drop_frames1          = 0  # Always 0 for NIRCam
+    outModel.meta.exposure.drop_frames3          = 0  # Always 0 for NIRCam
+    outModel.meta.exposure.nsamples              = 1  # Always 1 for NIRCam
     outModel.meta.exposure.integration_time      = obs_params['integration_time']
     outModel.meta.exposure.exposure_time         = obs_params['exposure_time']
     # INT_TIMES table to be saved in INT_TIMES extension
     outModel.int_times = obs_params['int_times']
     
-    # Total time to complete an integration (including reset fraems)
+    # Start date and time as specified in obs params
+    # This is absolute start time of entire set of visits / exposures
+    start_time_string = obs_params['date-obs'] + 'T' + obs_params['time-obs']
+    # Get visit absolute start time
+    visit_time = Time(start_time_string) + obs_params.get('visit_start_relative',0)*u.second
+    visit_time_str = visit_time.utc.value
+    visit_time_str = ' '.join(visit_time_str.split('T'))
+
+    # Add offset time to get beginning of observation and update start_time_string
+    texp_start_relative = obs_params.get('texp_start_relative', 0)
+    start_time = Time(start_time_string) + texp_start_relative * u.second
+    start_time_string = start_time.utc.value
+    # Total time to complete an integration and exposures (including reset fraems)
     tint_tot = obs_params['tint_plus_overhead']
     texp_tot = obs_params['texp_plus_overhead']
-    try:
-        start_time = Time(start_time_string) + obs_params['texp_start_relative']*u.second
-    except AttributeError:
-        start_time = Time(start_time_string) 
+    # Get observation end time
+    end_time = start_time + texp_tot*u.second
+    end_time_string = end_time.utc.value
+
+    # Date and time of this observation
+    date_obs, time_obs = start_time_string.split('T')
+    outModel.meta.observation.date = date_obs
+    outModel.meta.observation.time = time_obs
+    outModel.meta.time_sys = 'UTC'
+    outModel.meta.time_unit = 's'
+    
+    # UTC ISO string values
+    # tnow = start_time.now()
+    # outModel.meta.date = 'T'.join(tnow.iso.split(' '))
+    outModel.meta.visit.start_time     = visit_time_str
+    outModel.meta.observation.date_beg = start_time_string
+    outModel.meta.observation.date_end = end_time_string
 
     # set the exposure start time
     outModel.meta.exposure.start_time = start_time.mjd 
@@ -429,7 +464,8 @@ def level1b_data_model(obs_params, sci_data=None, zero_data=None):
         outModel.meta.observation.visit_group        = obs_id_dict['visit_group']
         outModel.meta.observation.sequence_id        = obs_id_dict['sequence_id']
         outModel.meta.observation.activity_id        = obs_id_dict['activity_id']
-        outModel.meta.observation.exposure_number    = obs_id_dict['exposure_number']
+        exp_num_str = str(int(obs_id_dict['exposure_number'])) # Remove leading 0s
+        outModel.meta.observation.exposure_number    = exp_num_str
         outModel.meta.observation.visit_id           = obs_id_dict['visit_id']
         outModel.meta.observation.obs_id             = obs_id_dict['obs_id']
 
@@ -445,16 +481,65 @@ def level1b_data_model(obs_params, sci_data=None, zero_data=None):
     outModel.meta.pointing.dec_v1 = pointing_dec_v1
     outModel.meta.pointing.pa_v3  = pa_v3
     
+
+    
     # Dither information
-    outModel.meta.dither.primary_type    = obs_params.get('primary_type')
-    outModel.meta.dither.position_number = obs_params.get('position_number')
-    outModel.meta.dither.total_points    = obs_params.get('total_points')
-    outModel.meta.dither.pattern_size    = obs_params.get('pattern_size')
-    outModel.meta.dither.subpixel_type   = obs_params.get('subpixel_type')
-    outModel.meta.dither.subpixel_number = obs_params.get('subpixel_number')
+    # Certain dither info should be None if string is 'NONE'
+    pri_dithers = obs_params.get('pridith_points_packing')
+    if (pri_dithers is not None) and (pri_dithers.upper()=='NONE'):
+        pri_dithers = None
+    sub_dith_type = obs_params.get('subpixel_pattern')
+    if (sub_dith_type is not None) and (sub_dith_type.upper()=='NONE'):
+        sub_dith_type = None
+    sgd_type = obs_params.get('sgd_pattern')
+    if (sgd_type is not None) and (sgd_type.upper()=='NONE'):
+        sgd_type = None
+
+    # If SGD, then PATT_NUM holds the current position number
+    position_number = obs_params.get('position_number') if sgd_type is None else obs_params.get('subpixel_number')
+
+    outModel.meta.dither.primary_type          = obs_params.get('pridith_pattern_type')
+    outModel.meta.dither.primary_dither_type   = pri_dithers
+    outModel.meta.dither.primary_points        = obs_params.get('pridith_npoints')
+    outModel.meta.dither.position_number       = position_number
+    # outModel.meta.dither.pattern_start         = obs_params.get('pattern_start')
+    outModel.meta.dither.total_points          = obs_params.get('total_points')
+    # outModel.meta.dither.dither_points         = obs_params.get('dither_points')
+    outModel.meta.dither.pattern_size          = obs_params.get('pattern_size')
+    outModel.meta.dither.small_grid_pattern    = sgd_type
+    outModel.meta.dither.subpixel_pattern      = sub_dith_type
     outModel.meta.dither.subpixel_total_points = obs_params.get('subpixel_total_points')
+    outModel.meta.dither.subpixel_number       = obs_params.get('subpixel_number')  # not valid
     outModel.meta.dither.x_offset = obs_params.get('x_offset')
     outModel.meta.dither.y_offset = obs_params.get('y_offset')
+
+    ### Header keywords and associated attributes
+    # PATTTYPE = primary_type         / Primary dither pattern type                    
+    # PRIDTYPE = primary_dither_type  / Primary dither points and packing              
+    # PRIDTPTS = primary_points       / Number of points in primary dither pattern     
+    # PATT_NUM = position_number      / Position number in primary pattern             
+    # PATTSTRT = pattern_start        / Starting point in pattern                      
+    # NUMDTHPT = total_points         / Total number of points in pattern              
+    # NRIMDTPT = dither_points        / Number of points in image dither pattern       
+    # PATTSIZE = pattern_size         / Primary dither pattern size
+    # SMGRDPAT = small_grid_pattern   / Name of small grid dither pattern              
+    # SUBPXPTS = subpixel_total_points/ Number of points in subpixel dither pattern  
+    # SUBPXPAT = subpixel_pattern     / Subpixel dither pattern type
+
+    ### Examples of types
+    # outModel.meta.dither.primary_type = 'NONE'
+    # outModel.meta.dither.primary_dither_type = '1'
+    # outModel.meta.dither.primary_points = 1
+    # outModel.meta.dither.position_number = 1
+    # outModel.meta.dither.pattern_start = 1
+    # outModel.meta.dither.total_points = 5
+    # outModel.meta.dither.dither_points = 10
+    # outModel.meta.dither.pattern_size = 'DEFAULT'
+    # outModel.meta.dither.small_grid_pattern = '5-POINT-DIAMOND'
+    # outModel.meta.dither.subpixel_total_points = 5
+    # outModel.meta.dither.subpixel_pattern = 'SMALL-GRID-DITHER'
+
+
 
     # WCS Info
     outModel.meta.aperture.name = siaf_ap.AperName
@@ -582,8 +667,8 @@ def update_dms_headers(filename, obs_params):
     # If we leave it as Level1bModel, the pipeline doesn't
     # work properly
     # TODO: Check if this is actually the case
-    if '1b' in pheader['DATAMODL']:
-        pheader['DATAMODL'] = 'RampModel'
+    # if '1b' in pheader['DATAMODL']:
+    #     pheader['DATAMODL'] = 'RampModel'
 
     hdulist.flush()
     hdulist.close()
@@ -595,6 +680,42 @@ def update_headers_pynrc_info(filename, obs_params, **kwargs):
     pheader = hdulist[0].header
     fheader = hdulist[1].header
 
+    # Add file info from kwargs
+    kw_to_hkey = {
+        # Keyword Arg        : (Header key, Header comment)
+        'json_file'     : ('APTJSON',  'APT JSON file input.'),
+        'sm_acct_file'  : ('APTSMRT',  'APT smart accounting file input.'),
+        'pointing_file' : ('APTPOINT', 'APT pointing file input.'),
+        'xml_file'      : ('APTXML',   'APT XML file input.'),
+    }
+    for kw in kw_to_hkey.keys():
+        hkey, comment = kw_to_hkey[kw]
+        pheader[hkey] = (kwargs.get(kw), comment)
+
+    # Insert pynrc header comment
+    hkey_first = 'APTJSON'
+    pheader.insert(hkey_first, '', after=False)
+    pheader.insert(hkey_first, ('', 'pyNRC information'), after=False)
+    pheader.insert(hkey_first, '', after=False)
+
+    # Input telescope pointing info
+    pheader['RA_IN']    = (obs_params['ra_obs'],'RA of observered SIAF aperture.')
+    pheader['DEC_IN']   = (obs_params['dec_obs'], 'DEC of observered SIAF aperture.')
+    pheader['PAV3_IN']  = (obs_params['pa_v3'], 'Telescope position angle relative to V3.')
+    pheader['ROLL_IN']  = (obs_params['roll_offset'], 'Roll angle relative to nominal V3 PA.')
+    pheader['ELONG_IN'] = (obs_params['solar_elong'], 'Solar elongation (deg).')
+    pheader['PITCH_IN'] = (obs_params['pitch_ang'], 'Telescope pitch angle relative to sun (deg).')
+
+    # Add actual dither offset information
+    kw_to_hkey = {
+        # Keyword Arg        : (Header key, Header comment)
+        'xoffset_act'   : ('XOFFACT', 'x dither offset in arcsec (idl coords)'),
+        'yoffset_act'   : ('YOFFACT', 'y dither offset in arcsec (idl coords)'),
+    }
+    for kw in kw_to_hkey.keys():
+        hkey, comment = kw_to_hkey[kw]
+        pheader[hkey] = (kwargs.get(kw), comment)
+
     # Add random seed info
     rand_init  = obs_params.get('rand_seed_init')
     rand_dith  = obs_params.get('rand_seed_dith')
@@ -605,35 +726,31 @@ def update_headers_pynrc_info(filename, obs_params, **kwargs):
 
     # Add noise parameter settings
     kw_to_hkey = {
-        'include_poisson'    : 'POISSON',
-        'include_dark'       : 'ADDDARK', 
-        'include_bias'       : 'ADDBIAS',
-        'include_ktc'        : 'ADDKTC',
-        'include_rn'         : 'ADDRN',
-        'include_cpink'      : 'CPINK',
-        'include_upink'      : 'UPINK',
-        'include_acn'        : 'ACN',
-        'apply_ipc'          : 'ADDIPC',
-        'apply_ppc'          : 'ADDPPC',
-        'amp_crosstalk'      : 'XTALK',
-        'include_refoffsets' : 'REFOFFS',
-        'include_refinst'    : 'REFINST',
-        'include_colnoise'   : 'COLNOISE',
-        'add_crs'            : 'ADDCR',
-        'cr_model'           : 'CRMODEL',
-        'cr_scale'           : 'CRSCALE',
-        'apply_nonlinearity' : 'ADDLIN',
-        'random_nonlin'      : 'RANDLIN',
-        'apply_flats'        : 'ADDFLATS',
+        # Keyword Arg        : (Header key, Header comment)
+        'include_poisson'    : ('POISSON', 'Include Poisson noise?'),
+        'include_dark'       : ('ADDDARK', 'Include dark current?'), 
+        'include_bias'       : ('ADDBIAS', 'Include bias image?'),
+        'include_ktc'        : ('ADDKTC',  'Include kTC noise?'),
+        'include_rn'         : ('ADDRN',   'Include read noise?'),
+        'include_cpink'      : ('CPINK',   'Include correlated amplifer 1/f noise?'),
+        'include_upink'      : ('UPINK',   'Include uncorrelated amplifer 1/f noise?'),
+        'include_acn'        : ('ACN',     'Include alternating column noise?'),
+        'apply_ipc'          : ('ADDIPC',  'Add interpixel capacitance?'),
+        'apply_ppc'          : ('ADDPPC',  'Add post-pixel coupling signal bleed?'),
+        'amp_crosstalk'      : ('XTALK',   'Add amplifier crosstalk?'),
+        'include_refoffsets' : ('REFOFFS', 'Include reference offsets?'),
+        'include_refinst'    : ('REFINST', 'Include reference pixel instability?'),
+        'include_colnoise'   : ('COLNOISE','Include sporatic column noise?'),
+        'add_crs'            : ('ADDCR',   'Add cosmic rays events?'),
+        'cr_model'           : ('CRMODEL', 'Cosmic ray model SUNMAX, SUNMIN, or FLARES.'),
+        'cr_scale'           : ('CRSCALE', 'Cosmic ray model scaling.'),
+        'apply_nonlinearity' : ('ADDLIN',  'Include pixel nonlinearity?'),
+        'random_nonlin'      : ('RANDLIN', 'Add noise to nonlinearity function?'),
+        'apply_flats'        : ('ADDFLATS','Include pflat and lflat field variations?'),
     }
     for kw in kw_to_hkey.keys():
-        hkey = kw_to_hkey[kw]
-        pheader[hkey] = kwargs.get(kw)
-
-    hkey_first = 'RANDINIT'
-    pheader.insert(hkey_first, '', after=False)
-    pheader.insert(hkey_first, ('', 'pyNRC information'), after=False)
-    pheader.insert(hkey_first, '', after=False)
+        hkey, comment = kw_to_hkey[kw]
+        pheader[hkey] = (kwargs.get(kw), comment)
 
     hdulist.flush()
     hdulist.close()

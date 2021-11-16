@@ -108,11 +108,13 @@ class nrc_hci(NIRCam):
     @property
     def bar_offset(self):
         """Offset position along bar mask (arcsec)."""
-        if self._bar_offset is None:
+        if 'TA' in self.siaf_ap.AperName:
+            bar_offset = 0
+        elif self._bar_offset is None:
             # bar_offset, _ = offset_bar(self._filter, self.image_mask)
             narrow = ('NARROW' in self.siaf_ap.AperName)
             bar_offset = self.get_bar_offset(narrow=narrow)
-            bar_offset = 0 if bar_offset==None else bar_offset
+            bar_offset = 0 if bar_offset is None else bar_offset # Circular masks return None
         else:
             bar_offset = self._bar_offset
         return bar_offset
@@ -170,6 +172,14 @@ class nrc_hci(NIRCam):
 
         coords = rtheta_to_xy(offset_r, offset_theta)
 
+        # FULL TA coronagraphic masks require siaf_ap to be passed
+        # since we want offset relative to TA position rather than
+        # center of the coronagraphic 20x20" aperture
+        apname = self.siaf_ap.AperName
+        if self.is_coron and ('TAMASK' in apname) and ('FULL' in apname):
+            kwargs['siaf_ap'] = self.siaf_ap
+            use_cmask = True
+
         if use_coeff:
             psf = self.calc_psf_from_coeff(sp=sp, return_oversample=return_oversample, 
                 wfe_drift=wfe_drift, coord_vals=coords, coord_frame='idl', 
@@ -178,42 +188,41 @@ class nrc_hci(NIRCam):
             psf = self.calc_psf(sp=sp, return_hdul=False, return_oversample=return_oversample, 
                 wfe_drift=wfe_drift, coord_vals=coords, coord_frame='idl', **kwargs)
 
-        # Coronagraphic mask attenuation
+        # Being coronagraphic mask attenuation
         if not self.is_coron:
             return psf
 
-        # if ('FULL' in self.det_info['wind_mode']) and (self.image_mask is not None):
-        #     # cdict = coron_ap_locs(self.module, self.channel, self.image_mask, full=True)
-        #     # xref, yref = cdict['cen_sci']
-        #     xref, yref = self.siaf_ap.reference_point('sci')
-        # elif self._use_ap_info:
-        #     # Use actual mask reference position within subarray?
-        #     xref, yref = self.siaf_ap.reference_point('sci')
-        # else:
-        #     # Otherwise assumed mask is in center of subarray for simplicity
-        #     ypix, xpix = (self.det_info['ypix'], self.det_info['xpix'])
-        #     xref, yref = (xpix/2+0.5, ypix/2+0.5)
-
-        delx_asec, dely_asec = coords
 
         # Determine if any throughput loss due to coronagraphic mask
         # artifacts, such as the mask holder or ND squares.
-        # If ND_acq, then PSFs already included ND throughput in bandpass.
+        # If ND_acq=True, then PSFs already included ND throughput in bandpass.
         if use_cmask and self.is_coron and (not self.ND_acq):
             # First, anything in a rectangular region around the
             # mask has already been correctly accounted for
+            delx_asec, dely_asec = coords
             if (( np.abs(delx_asec)<10 and np.abs(dely_asec)<4.5 ) and
-                not ('TAMASK' in self.siaf_ap.AperName)):
-                # Set transmission to 1
+                ('TAMASK' not in apname)):
+                # Set transmission to 1 for coronagraphic observations
+                # within occulting mask region
                 trans = 1
             else:
                 cmask = self.mask_images['DETSAMP']
+                # 1. For the FULL TA masks, we want offsets relative
+                #    to the mask reference point
+                # 2. For all others, we want reference points relative to
+                #    the 20"x20" coronagraphic field 
+                if 'TAMASK' in apname:
+                    siaf_ap_relative = self.siaf_ap 
+                else:
+                    si_mask_apname = self._psf_coeff_mod.get('si_mask_apname')
+                    siaf_ap_relative = self.siaf[si_mask_apname]
+
                 # Convert offsets w.r.t. to mask center to xsci/ysci for current siaf_ap
-                si_mask_apname = self._psf_coeff_mod.get('si_mask_apname')
-                siaf_ap_mask = self.siaf[si_mask_apname]
                 # First get tel (V2/V3) coordinates, then 'sci' coords
-                xtel, ytel = siaf_ap_mask.convert(delx_asec, dely_asec, 'idl', 'tel')
-                xsci, ysci = self.siaf_ap.convert(xtel, ytel, 'tel', 'sci')
+                xtel, ytel = siaf_ap_relative.convert(delx_asec, dely_asec, 'idl', 'tel')
+                xy_sci = self.siaf_ap.convert(xtel, ytel, 'tel', 'sci')
+                xsci, ysci = np.array(xy_sci).astype('int')
+                
                 # Extract a 3x3 region to average
                 cmask_sub = cmask[ysci-3:ysci+3,xsci-3:xsci+3]
                 trans = np.mean(cmask_sub)
@@ -412,6 +421,10 @@ class obs_hci(nrc_hci):
         Automatically generate base PSF coefficients. Equivalent to performing
         `self.gen_psf_coeff()`. `gen_wfedrift_coeff`, and `gen_wfemask_coeff`.
         Default: True.
+    use_ap_info : bool   
+        For subarray observations, the mask reference points are not actually in the 
+        center of the array. Set this to True to shift the sources to actual 
+        aperture reference location. Otherwise, default will place in center of array.
     sgd_type : str or None
         Small grid dither pattern. Valid types are
         '9circle', '5box', '5diamond', '3bar', or '5bar'. If 'auto', 
@@ -439,9 +452,9 @@ class obs_hci(nrc_hci):
         super().__init__(wind_mode=wind_mode, xpix=xpix, ypix=ypix, autogen_coeffs=autogen_coeffs, 
                          sgd_type=sgd_type, slew_std=slew_std, fsm_std=fsm_std, **kwargs)
 
-        wind_mode = self.Detector.wind_mode
-        if (wind_mode=='FULL') and (self.channel=='short' or self.channel=='SW'):
-            raise NotImplementedError('SW Full Frame not yet implemented.')
+        # wind_mode = self.Detector.wind_mode
+        # if (wind_mode=='FULL') and (self.channel=='short' or self.channel=='SW'):
+        #     raise NotImplementedError('SW Full Frame not yet implemented.')
 
         # Spectral models
         self.sp_sci = sp_sci
@@ -1114,6 +1127,9 @@ class obs_hci(nrc_hci):
         if not self.is_coron: # Single PSF
             image_conv = convolve_image(hdul_rot_shift, hdul_psfs)
         else:
+            # For coronagraphy, assume position-dependent PSFs are a function
+            # of coronagraphic mask transmission, off-axis, and on-axis PSFs.
+            # PSF(x,y) = trans(x,y)*psf_off + (1-trans(x,y))*psf_on
             trans = self.mask_images['OVERMASK']
             
             # Off-axis component
@@ -1248,6 +1264,11 @@ class obs_hci(nrc_hci):
         # Generate Image
         ##################################
 
+        # Default to use coronagraph mask ND square and holder attenuation
+        use_cmask = kwargs.get('use_cmask')
+        if use_cmask is None:
+            kwargs['use_cmask'] = True
+
         # Get (r,th) in idl coordinates relative to mask center (arcsec) for PSF creation
         xoff_idl, yoff_idl = (offx_asec + bar_offset, offy_asec)
         r, th = xy_to_rtheta(xoff_idl, yoff_idl)
@@ -1255,8 +1276,11 @@ class obs_hci(nrc_hci):
         # Stellar PSF doesn't rotate
         if im_star is None:
             _log.info('  gen_slope_image: Creating stellar PSF...')
-            im_star = self.gen_offset_psf(r, th, sp=sp, wfe_drift=wfe_drift, 
+            im_star = self.gen_offset_psf(r, th, sp=sp, wfe_drift=wfe_drift,
                                           return_oversample=return_oversample, **kwargs)
+        elif im_star==0:
+            im_star = np.zeros([ypix_over, xpix_over])
+            
         # Expand to full size
         im_star = pad_or_cut_to_size(im_star, (ypix_over, xpix_over))
 
@@ -1294,7 +1318,7 @@ class obs_hci(nrc_hci):
         
         # Stellar PSF doesn't rotate
         interp = 'linear' if ('FULL' in self.det_info['wind_mode']) else 'cubic'
-        im_star = fshift(im_star, delx=delx_over, dely=dely_over, interp=interp)
+        im_star = fshift(im_star, delx=delx_over, dely=dely_over, pad=True, interp=interp)
         im_star[im_star<0] = 0
 
         ##################################
@@ -1519,7 +1543,7 @@ class obs_hci(nrc_hci):
             otherwise MULTIACCUM equation is used.
         use_cmask : bool
             Use the coronagraphic mask image to attenuate planets or disk
-            obscurred by a corongraphic mask feature.
+            obscurred by a corongraphic mask feature. Default is True.
         zfact : float
             Zodiacal background factor (default=2.5)
         ra : float
@@ -1544,6 +1568,10 @@ class obs_hci(nrc_hci):
             pixscale_out = self.pixelscale
             osamp_out = 1
 
+        # Default to use coronagraph mask ND square and holder attenuation
+        use_cmask = kwargs.get('use_cmask')
+        if use_cmask is None:
+            kwargs['use_cmask'] = True
 
         # Sub-image for determining ref star scale factor
         subsize = 50 * oversample
@@ -2322,7 +2350,6 @@ def _gen_disk_hdulist(inst, file, pixscale, dist, wavelength, units, cen_star,
         # disk_hdul[0].data = pad_or_cut_to_size(disk_hdul[0].data, (ynew,xnew))
 
     return disk_hdul
-    # self.disk_hdulist = disk_hdul
 
 
 def get_cen_offsets(self, idl_offset=(0,0), PA_offset=0):

@@ -39,6 +39,7 @@ instrument_abbreviations = {'nircam': 'NRC', 'fgs': 'FGS', 'niriss': 'NIS',
                             'nirspec': 'NRS', 'miri': 'MIR'}
 NIRCAM_UNSUPPORTED_PUPIL_VALUES = ['GDHS0', 'GDHS60', 'MASKIPR', 'PINHOLES']
 
+NONE_STR = str(None).upper()
 
 class AptInput:
     """Summary
@@ -157,7 +158,7 @@ class AptInput:
             instrument = instrument.lower()
 
             # retrieve corresponding entry from observation list
-            entry = get_entry(self.obstab, intab['entry_number'][index])
+            entry = _get_entry(self.obstab, intab['entry_number'][index])
 
             if instrument == 'nircam':
                 # keep the number of entries in the dictionary consistent
@@ -165,7 +166,7 @@ class AptInput:
                     if key in ['Date', 'PAV3', 'Instrument', 'CosmicRayLibrary', 'CosmicRayScale']:
                         value = str(entry[key])
                     else:
-                        value = str(None)
+                        value = NONE_STR
 
                     intab[key].append(value)
 
@@ -196,7 +197,7 @@ class AptInput:
                     for channel in ['SW', 'LW']:
                         for name, item in nircam_mapping.items():
                             key = '{}_{}'.format(channel.lower(), name)
-                            intab[key].append(str(None))
+                            intab[key].append(NONE_STR)
 
         intab['epoch_start_date'] = intab['Date']
         return intab
@@ -302,7 +303,7 @@ class AptInput:
         # the future.
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            self.exposure_tab = make_start_times(self.exposure_tab)
+            self.exposure_tab = _make_start_times(self.exposure_tab)
 
         # Fix data for filename generation
         # Set parallel seq id
@@ -359,7 +360,7 @@ class AptInput:
                         if self.exposure_tab['APTTemplate'][i] == 'WfscGlobalAlignment':
                             guider_number = self.exposure_tab['aperture'][i][3]
                         elif self.exposure_tab['APTTemplate'][i] == 'FgsExternalCalibration':
-                            guider_number = get_guider_number(self.input_xml, obs_num)
+                            guider_number = _get_guider_number(self.input_xml, obs_num)
                         else:
                             raise ValueError("WARNING: unsupported APT template with Fiducial Override.")
                         guider_aperture = 'FGS{}_FULL'.format(guider_number)
@@ -568,7 +569,7 @@ class AptInput:
                     if input_dictionary['APTTemplate'][index] == 'WfscGlobalAlignment':
                         guider_number = input_dictionary['aperture'][index][3]
                     elif input_dictionary['APTTemplate'][index] == 'FgsExternalCalibration':
-                        guider_number = get_guider_number(self.input_xml, input_dictionary['obs_num'][index])
+                        guider_number = _get_guider_number(self.input_xml, input_dictionary['obs_num'][index])
                     detectors = ['G{}'.format(guider_number)]
 
                 elif instrument == 'miri':
@@ -1019,7 +1020,7 @@ def read_subarray_definition_file(filename):
     return data
 
 
-def get_entry(dict, entry_number):
+def _get_entry(dict, entry_number):
     """Return a numbered entry from a dictionary that corresponds to the observataion_list.yaml.
 
     Parameters
@@ -1036,7 +1037,7 @@ def get_entry(dict, entry_number):
         if entry_key in observation.keys():
             return observation[entry_key]
 
-def append_dictionary(base_dictionary, added_dictionary, braid=False):
+def _append_dictionary(base_dictionary, added_dictionary, braid=False):
     """Append the content of added_dictionary key-by-key to the base_dictionary.
 
     This assumes that the keys refer to lists.
@@ -1110,11 +1111,12 @@ class ReadAPTXML():
         self.apt = '{http://www.stsci.edu/JWST/APT}'
 
         # Set up dictionary of observation parameters to be populated
-        ProposalParams_keys = ['PI_Name', 'Proposal_category', 'ProposalID',
+        ProposalParams_keys = ['PI_Name', 'Proposal_category', 'Proposal_subcategory', 'ProposalID',
                                'Science_category', 'Title']
         ObsParams_keys = ['Module', 'Subarray', 'Instrument',
-                          'PrimaryDitherType', 'PrimaryDithers', 'SubpixelPositions',
-                          'SubpixelDitherType', 'CoordinatedParallel', 'ParallelInstrument',
+                          'PrimaryDitherType', 'PrimaryDithers', 'DitherSize',
+                          'SubpixelPositions', 'SubpixelDitherType', 'SmallGridDitherType',
+                          'CoordinatedParallel', 'ParallelInstrument',
                           'ObservationID', 'TileNumber', 'APTTemplate',
                           'ApertureOverride', 'ObservationName',
                           'DitherPatternType', 'ImageDithers',  # NIRISS
@@ -1200,6 +1202,7 @@ class ReadAPTXML():
         scicat_default = 'Planets and Planet Formation'
         piname_default = 'D.N. Adams'
         propcat_default = 'GO'
+        propsubcat_default = 'UNKNOWN'
 
         # Get just the element with the proposal information
         proposal_info = tree.find(self.apt + 'ProposalInformation')
@@ -1218,10 +1221,18 @@ class ReadAPTXML():
 
         # Proposal Category
         try:
-            prop_category = proposal_info.find(self.apt + 'ProposalCategory')[0]
-            prop_category = etree.QName(prop_category).localname
+            # prop_category = proposal_info.find(self.apt + 'ProposalCategory')[0]
+            # prop_category = etree.QName(prop_category).localname
+            prop_category = proposal_info.find(self.apt + 'ProposalCategory').text
         except:
             prop_category = propcat_default
+
+        # Proposal Sub-Category
+        try:
+            prop_subcategory = proposal_info.find(self.apt + 'ProposalCategorySubtype').text
+        except:
+            prop_subcategory = propsubcat_default
+
 
         # Science Category
         try:
@@ -1351,6 +1362,7 @@ class ReadAPTXML():
             proposal_parameter_dictionary = {'PI_Name': pi_name, 'ProposalID': prop_id,
                                              'Title': prop_title,
                                              'Proposal_category': prop_category,
+                                             'Proposal_subcategory': prop_subcategory,
                                              'Science_category': science_category,
                                              'CoordinatedParallel': coordparallel,
                                              'ObservationID': observation_number,
@@ -1373,7 +1385,7 @@ class ReadAPTXML():
                         parallel_exposures_dictionary = self.read_parallel_exposures(obs, exposures_dictionary,
                                                                                      proposal_parameter_dictionary,
                                                                                      verbose=verbose)
-                        exposures_dictionary = append_dictionary(exposures_dictionary, parallel_exposures_dictionary, braid=True)
+                        exposures_dictionary = _append_dictionary(exposures_dictionary, parallel_exposures_dictionary, braid=True)
 
             # If template is WFSC Commissioning
             elif template_name in ['WfscCommissioning']:
@@ -1431,7 +1443,7 @@ class ReadAPTXML():
                         parallel_exposures_dictionary = self.read_parallel_exposures(obs, exposures_dictionary,
                                                                                      proposal_parameter_dictionary,
                                                                                      verbose=verbose)
-                        exposures_dictionary = append_dictionary(exposures_dictionary, parallel_exposures_dictionary, braid=True)
+                        exposures_dictionary = _append_dictionary(exposures_dictionary, parallel_exposures_dictionary, braid=True)
 
                     else:
                         raise ValueError('Parallel template {} (with primary template {}) not supported.'
@@ -1463,7 +1475,7 @@ class ReadAPTXML():
             #         exposures_dictionary['number_of_dithers'][i] = '1'
 
             # add the exposure dictionary to the main dictionary
-            self.APTObservationParams = append_dictionary(self.APTObservationParams,
+            self.APTObservationParams = _append_dictionary(self.APTObservationParams,
                                                           exposures_dictionary)
             # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
@@ -1483,7 +1495,7 @@ class ReadAPTXML():
 
             if n_tiles > 1:
                 for i in range(n_tiles - 1):
-                    self.APTObservationParams = append_dictionary(self.APTObservationParams, exposures_dictionary)
+                    self.APTObservationParams = _append_dictionary(self.APTObservationParams, exposures_dictionary)
 
             self.observation_info[observation_number] = {}
             self.observation_info[observation_number]['visit_numbers'] = visit_numbers
@@ -1753,7 +1765,7 @@ class ReadAPTXML():
                     elif key == 'Tracking':
                         value = tracking
                     else:
-                        value = str(None)
+                        value = NONE_STR
                     if (key == 'Mode'):
                         value = 'imaging'
                     exposures_dictionary[key].append(value)
@@ -1876,7 +1888,7 @@ class ReadAPTXML():
                             elif key == 'Tracking':
                                 value = tracking
                             else:
-                                value = str(None)
+                                value = NONE_STR
 
                             if (key in ['PrimaryDithers', 'ImageDithers']) and (str(value) == 'None'):
                                 value = '1'
@@ -2078,7 +2090,7 @@ class ReadAPTXML():
             fgs_grps = fgs_conf.find(ns + 'Groups').text
             fgs_ints = fgs_conf.find(ns + 'Integrations').text
 
-        guider_det_num = get_guider_number_from_special_requirements(self.apt, obs)
+        guider_det_num = _get_guider_number_from_special_requirements(self.apt, obs)
         fgs_subarr = "FGS{}_FULL".format(guider_det_num)
 
         # Repeat for the number of exposures
@@ -2474,8 +2486,8 @@ class ReadAPTXML():
         exposures_dictionary['SubpixelPositions'] = [number_of_subpixel_dithers, number_of_subpixel_dithers]
         exposures_dictionary['ImageDithers'] = [number_of_dithers, number_of_dithers]
         exposures_dictionary['number_of_dithers'] = [number_of_dithers, number_of_dithers]
-        exposures_dictionary['ShortFilter'] = [str(None), short_filter]
-        exposures_dictionary['ShortPupil'] = [str(None), short_pupil]
+        exposures_dictionary['ShortFilter'] = [NONE_STR, short_filter]
+        exposures_dictionary['ShortPupil'] = [NONE_STR, short_pupil]
         exposures_dictionary['LongFilter'] = [acq_filter, long_filter]
         exposures_dictionary['LongPupil'] = ['CLEAR', long_pupil]
         exposures_dictionary['FiducialPointOverride'] = [str(False)] * 2
@@ -2488,7 +2500,7 @@ class ReadAPTXML():
             if key in proposal_parameter_dictionary.keys() and key != 'TargetID':
                 value = [proposal_parameter_dictionary[key]] * 2
             elif exposures_dictionary[key] == []:
-                value = [str(None)] * 2
+                value = [NONE_STR] * 2
             if value != 'reset_value':
                 exposures_dictionary[key].extend(value)
 
@@ -2592,8 +2604,8 @@ class ReadAPTXML():
         exposures_dictionary['SubpixelPositions'] = [number_of_subpixel_dithers, number_of_subpixel_dithers]
         exposures_dictionary['ImageDithers'] = [number_of_dithers, number_of_dithers]
         exposures_dictionary['number_of_dithers'] = [number_of_dithers, number_of_dithers]
-        exposures_dictionary['ShortFilter'] = [str(None), short_filter]
-        exposures_dictionary['ShortPupil'] = [str(None), short_pupil]
+        exposures_dictionary['ShortFilter'] = [NONE_STR, short_filter]
+        exposures_dictionary['ShortPupil'] = [NONE_STR, short_pupil]
         exposures_dictionary['LongFilter'] = [acq_filter, long_filter]
         exposures_dictionary['LongPupil'] = ['CLEAR', long_pupil]
         exposures_dictionary['FiducialPointOverride'] = [str(False)] * 2
@@ -2606,7 +2618,7 @@ class ReadAPTXML():
             if key in proposal_parameter_dictionary.keys() and key != 'TargetID':
                 value = [proposal_parameter_dictionary[key]] * 2
             elif exposures_dictionary[key] == []:
-                value = [str(None)] * 2
+                value = [NONE_STR] * 2
             if value != 'reset_value':
                 exposures_dictionary[key].extend(value)
 
@@ -2926,7 +2938,7 @@ class ReadAPTXML():
             subpix_dither_type = 'SMALL-GRID-DITHER'
         else:
             number_of_subpixel_dithers = 1
-            subpix_dither_type = str(None)
+            subpix_dither_type = NONE_STR
         number_of_astrometric_dithers = 0 # it's optional, and off by default
 
         coronmask = template.find(ncc + 'CoronMask').text
@@ -3054,7 +3066,7 @@ class ReadAPTXML():
                 elif key == 'PrimaryDithers':
                     value = ta_dithers_pattern
                 else:
-                    value = str(None)
+                    value = NONE_STR
                 ta_exposures[key].append(value)
 
         # Setup astrometric exposures, if present
@@ -3101,7 +3113,7 @@ class ReadAPTXML():
                 elif key == 'PrimaryDithers':
                     dir_value = number_of_astrometric_dithers
                 else:
-                    dir_value = str(None)
+                    dir_value = NONE_STR
                 astrometric_exposures[key].append(dir_value)
 
         # Now that we have the correct number of dithers, we can
@@ -3171,8 +3183,10 @@ class ReadAPTXML():
                         value = primary_dithers_pattern
                     elif key == 'SubpixelDitherType':
                         value = subpix_dithers_pattern
+                    elif key == 'SmallGridDitherType':
+                        value = subpix_dithers_pattern
                     else:
-                        value = str(None)
+                        value = NONE_STR
                     science_exposures[key].append(value)
 
 
@@ -3283,7 +3297,7 @@ class ReadAPTXML():
             subpix_dither_type = 'SMALL-GRID-DITHER'
         else:
             number_of_subpixel_dithers = 1
-            subpix_dither_type = str(None)
+            subpix_dither_type = NONE_STR
 
         # Get information about any TA exposures
 
@@ -3334,7 +3348,7 @@ class ReadAPTXML():
                 elif key == 'PrimaryDithers':
                     value = ta_dithers_pattern
                 else:
-                    value = str(None)
+                    value = NONE_STR
                 ta_exposures[key].append(value)
 
 
@@ -3400,7 +3414,7 @@ class ReadAPTXML():
                     elif key == 'SubpixelPositions':
                         value = subpix_dithers_pattern
                     else:
-                        value = str(None)
+                        value = NONE_STR
                     science_exposures[key].append(value)
 
 
@@ -3515,7 +3529,7 @@ class ReadAPTXML():
             elif key in prop_param_dict.keys():
                 value = [prop_param_dict[key]] * number_of_exposures
             else:
-                value = [str(None)] * number_of_exposures
+                value = [NONE_STR] * number_of_exposures
 
             if (key in ['PrimaryDithers', 'ImageDithers']) and ((value is None) or (value == 'None')):
                 value = ['1'] * number_of_exposures
@@ -3674,7 +3688,7 @@ class ReadAPTXML():
                 elif key == 'PrimaryDithers':
                     value = ta_dithers
                 else:
-                    value = str(None)
+                    value = NONE_STR
                 ta_exposures[key].append(value)
 
         # Now that we have the correct number of dithers, we can
@@ -3742,7 +3756,7 @@ class ReadAPTXML():
                         elif key == 'SubpixelPositions':
                             value = subpix_dithers
                         else:
-                            value = str(None)
+                            value = NONE_STR
                         science_exposures[key].append(value)
 
                         if direct_imaging.upper() == 'TRUE':
@@ -3769,7 +3783,7 @@ class ReadAPTXML():
                             elif key == 'PrimaryDithers':
                                 dir_value = number_of_direct_dithers
                             else:
-                                dir_value = str(None)
+                                dir_value = NONE_STR
                             direct_exposures[key].append(dir_value)
 
                 # After collecting information for all exposures, we need to
@@ -4112,7 +4126,7 @@ class ReadAPTXML():
         return pupil_name, filter_name
 
 
-def get_guider_number(xml_file, observation_number):
+def _get_guider_number(xml_file, observation_number):
     """"Parse the guider number for a particular FGSExternalCalibration or
     WfscGlobalAlignment observation.
     """
@@ -4132,13 +4146,13 @@ def get_guider_number(xml_file, observation_number):
                 number = detector[-1]
                 return number
             except TypeError:
-                number = get_guider_number_from_special_requirements(apt_namespace, obs)
+                number = _get_guider_number_from_special_requirements(apt_namespace, obs)
                 return number
 
     raise RuntimeError('Could not find guider number in observation {} in {}'.format(observation_number, xml_file))
 
 
-def get_guider_number_from_special_requirements(apt_namespace, obs):
+def _get_guider_number_from_special_requirements(apt_namespace, obs):
     """Parse the guider number from the SpecialRequirements for a particular WfscGlobalAlignment
     observation.
     """
@@ -4155,7 +4169,7 @@ def get_guider_number_from_special_requirements(apt_namespace, obs):
 
     return guider
 
-def make_start_times(obs_info):
+def _make_start_times(obs_info):
     """Create exposure start times for each entry in the observation dictionary.
 
     Parameters
@@ -4363,7 +4377,7 @@ def make_start_times(obs_info):
             siaf_obj = Siaf(siaf_inst)[aperture]
 
             # Calculate the readout time for a single frame
-            frametime = calc_frame_time(siaf_inst, aperture, siaf_obj.XSciSize, siaf_obj.YSciSize, amp)
+            frametime = _calc_frame_time(siaf_inst, aperture, siaf_obj.XSciSize, siaf_obj.YSciSize, amp)
 
             # Estimate total exposure time
             exptime = ((fpg + spg) * groups + fpg) * integrations * frametime
@@ -4402,7 +4416,7 @@ def make_start_times(obs_info):
     obs_info['namp'] = namp
     return obs_info
 
-def calc_frame_time(instrument, aperture, xdim, ydim, amps):
+def _calc_frame_time(instrument, aperture, xdim, ydim, amps):
     """Calculate the readout time for a single frame
     of a given size and number of amplifiers. Note that for
     NIRISS and FGS, the fast readout direction is opposite to
@@ -4550,6 +4564,7 @@ def get_pointing_info(pointing_files, propid=0, verbose=False, all_inst=False):
     pri_dith_arr = []
     sub_dith_arr = []
 
+    grp_counter = 1
     act_counter = 1
     expnum = 1
     with open(pointing_files) as f:
@@ -4601,7 +4616,9 @@ def get_pointing_info(pointing_files, propid=0, verbose=False, all_inst=False):
                     obsnum, visitnum = v.split(':')
                     obsnum = str(obsnum).zfill(3)
                     visitnum = str(visitnum).zfill(3)
-                    # Reset exposure number at beginning of new visit
+                    # At beginning of each visit, reset numbers
+                    grp_counter = 2 # Default to 2 since GS acq is 1
+                    act_counter = 1
                     expnum = 1
                     if (skip is True) and (verbose):
                         _log.info('Skipping observation {} ({})'.format(obsnum, obslabel))
@@ -4617,7 +4634,9 @@ def get_pointing_info(pointing_files, propid=0, verbose=False, all_inst=False):
 
                     if do_this:
 
-                        if (elements[18] == 'PARALLEL'):
+                        level = elements[17]
+                        type_val = elements[18]
+                        if (type_val == 'PARALLEL'):
                             skip = True
 
                         if skip:
@@ -4625,14 +4644,32 @@ def get_pointing_info(pointing_files, propid=0, verbose=False, all_inst=False):
                             continue
 
                         observation_label.append(obslabel)
-                        # Visit group hard coded to 1. It's not clear how APT divides visits up into visit
-                        # groups. For now just keep everything in a single visit group.
-                        vgrp = '01'
+
+                        # Visit Groups and Activity numbers
+                        ap = elements[4]
+                        if type_val=='T_ACQ':
+                            grp_counter = 2
+                            act_counter = 2 # First activity is always subarray switch
+                        elif type_val=='CONFIRM':
+                            grp_counter = 3
+                            if 'TA' not in ap:
+                                act_counter += 1 # Add additional activity for SAM
+                        elif ('MASK' in ap) and (type_val=='SCIENCE'):
+                            if (level=='TARGET') and ('FULL' not in ap):
+                                act_counter += 1 # Add additional activity for FULL->subarray
+                            elif (level=='TARGET') and (act_counter==1):
+                                act_counter += 1 # Add additional activity (NRCSUBMAIN, SUBARRAY=FULL)
+                            elif (level == 'FILTER'):
+                                act_counter += 1 # Start of new activity
+                                expnum = 1       # Reset exposure number
+                            grp_counter = 3
 
                         # Parallel sequence is hard coded to 1 (Simulated instrument as prime rather than
                         # parallel) at the moment. Future improvements may allow the proper sequence
                         # number to be constructed.
                         seq = '1'
+
+                        # Set activity ID to 1
 
                         tar.append(np.int(elements[0]))
                         tile.append(np.int(elements[1]))
@@ -4643,7 +4680,6 @@ def get_pointing_info(pointing_files, propid=0, verbose=False, all_inst=False):
                         # If pointing file exp and dith are both 1, then reset exposure num to 1
                         # otherwise increment by 1.
 
-                        level = elements[17]
                         # Reset primary dither position on new target, filter, or tile
                         if level in ['TARGET', 'FILTER', 'TILE']:
                             pri_dith_pos = 1
@@ -4656,7 +4692,6 @@ def get_pointing_info(pointing_files, propid=0, verbose=False, all_inst=False):
                         pri_dith_arr.append(pri_dith_pos)
                         sub_dith_arr.append(sub_dith_pos)
 
-                        ap = elements[4]
                         # if ('GRISMR_WFSS' in elements[4]):
                         #     ap = ap.replace('GRISMR_WFSS', 'FULL')
                         # elif ('GRISMC_WFSS' in elements[4]):
@@ -4689,7 +4724,7 @@ def get_pointing_info(pointing_files, propid=0, verbose=False, all_inst=False):
 
                         # Use dither position as a proxy for exp ID. 
                         # Each dither should have it's own file
-                        obs_id = jw_obs_id(propid, obsnum, visitnum, vgrp, seq, act_counter, expnum)
+                        obs_id = jw_obs_id(propid, obsnum, visitnum, grp_counter, seq, act_counter, expnum)
                         obs_id_all.append(obs_id)
 
                         obs_num_int.append(int(obsnum))
@@ -4697,6 +4732,16 @@ def get_pointing_info(pointing_files, propid=0, verbose=False, all_inst=False):
 
                         # Increment exposure number
                         expnum += 1
+
+                        # Increment group counter after target acq
+                        # useful for TSO
+                        if type_val=='T_ACQ':
+                            grp_counter += 1
+                            expnum = 1 # Reset exposure counter
+                        # Increment activity coun
+                        elif type_val=='CONFIRM':
+                            act_counter += 1 
+                            expnum = 1 # Reset exposure counter
 
                 except ValueError as e:
                     if verbose:
@@ -4710,7 +4755,7 @@ def get_pointing_info(pointing_files, propid=0, verbose=False, all_inst=False):
         'v2': np.array(v2), 'v3': np.array(v3), 'idlx': np.array(idlx), 'idly': np.array(idly), 
         'obs_label': np.array(observation_label), 'obs_num': np.array(obs_num_int), 
         'visit_num': np.array(visit_num_int), 'obs_id_info': np.array(obs_id_all), 
-        'type': np.array(type_str), 'ddist': np.array(ddist),
+        'level': np.array(level_arr), 'type': np.array(type_str), 'ddist': np.array(ddist),
         }
     return pointing
 
@@ -4769,8 +4814,10 @@ def get_ditherinfo(xml_file, verbose=False):
     """Dither information"""
 
     keys = [
-        'PrimaryDitherType', 'PrimaryDithers', 'SubpixelPositions', 'SubpixelDitherType',
-        'DitherPatternType', 'ImageDithers', 'number_of_dithers'
+        'PrimaryDitherType', 'PrimaryDithers', 'DitherSize', 
+        'SubpixelPositions', 'SubpixelDitherType',
+        'SmallGridDitherType', 'DitherPatternType', 
+        'ImageDithers', 'number_of_dithers'
     ]
 
     return build_dict_from_xml(xml_file, keys, verbose=verbose)
@@ -4814,6 +4861,18 @@ def get_readmodes(xml_file, verbose=False):
 
     return out_dict
 
+def get_target_info(xml_file, verbose=False):
+    """Target for each each exposure"""
+    key_update = {
+        'TargetID' : 'TargetID',
+    }
+    res = build_dict_from_xml(xml_file, key_update.keys(), verbose=verbose)
+
+    out_dict = {}
+    for k in key_update.keys():
+        out_dict[key_update[k]] = res[k]
+
+    return out_dict
 
 def get_filter_info(xml_file, verbose=False):
     """Filter information for each exposure"""
@@ -4869,14 +4928,15 @@ def get_timing_info(timing_json_file, smart_accounting_file):
         exp_start_times = []
         comp_list = visit_dict[k]['components']
         for d in comp_list:
+            # Save visit start time and slew duration
+            if d['type']=='VISIT_SLEW':
+                visit_dict[k]['visit_start'] = tval
+                visit_dict[k]['slew_duration'] = d['duration']
+
             # Append science exposure start times
             if d['type']=='SCIENCE':
                 exp_start_times.append(tval)
             tval += d['duration']
-
-            # Save slew durations
-            if d['type']=='VISIT_SLEW':
-                visit_dict[k]['slew_duration'] = d['duration']
 
         visit_dict[k]['exp_start_times'] = np.array(exp_start_times)
 
@@ -4894,7 +4954,7 @@ def get_proposal_info(xml_file, verbose=False):
         'title'            : program_info['Title'][0],
         'pid'              : program_info['ProposalID'][0],
         'category'         : program_info['Proposal_category'][0],
-        'sub_category'     : 'UNKNOWN',
+        'sub_category'     : program_info['Proposal_subcategory'][0],
         'science_category' : program_info['Science_category'][0],
     }
 
@@ -4944,6 +5004,7 @@ def gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file, rand_se
     rng = np.random.default_rng(rand_seed)
 
     timing_info = get_timing_info(json_file, sm_acct_file)
+    target_info = get_target_info(xml_file)
     pointing_info = get_pointing_info(pointing_file)
     read_modes = get_readmodes(xml_file)
     filter_info = get_filter_info(xml_file)
@@ -4962,6 +5023,7 @@ def gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file, rand_se
             visits_dict[k] = {
                 'obs_num': int(obs_num),
                 'visit_num': int(visit_num),
+                'visit_start': timing_info[k]['visit_start'],
                 'slew_duration': timing_info[k]['slew_duration'],
                 'visit_duration': timing_info[k]['scheduling_duration'],
                 'exp_start_times': timing_info[k]['exp_start_times'],
@@ -5000,7 +5062,7 @@ def gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file, rand_se
         d['rand_seed_noise'] = rng.integers(0, 2**32-1)
             
         # Pointing, Filter, and Readout information
-        for dict_append in [pointing_info, filter_info, read_modes]:
+        for dict_append in [target_info, pointing_info, filter_info, read_modes]:
             for k in dict_append.keys():
                 if k in d.keys():
                     pass
@@ -5043,7 +5105,7 @@ def get_exp_type(visit_type, visit_mode, pupil):
         exp_type = 'NRC_TACQ'
     elif 'CONFIRM' in visit_type:
         exp_type = 'NRC_TACONFIRM'
-    elif ('RND' in pupil) or ('BAR' in pupil):
+    elif ('RND' in pupil) or ('BAR' in pupil) or ('CIRC' in pupil) or ('WEDGE' in pupil):
         exp_type = 'NRC_CORON'
     elif 'SCIENCE' in visit_type:
         try:
@@ -5060,16 +5122,35 @@ def get_exp_type(visit_type, visit_mode, pupil):
     return exp_type
 
 
-def create_det_class(visit_dict, exp_id, detname):
+def create_det_class(visit_dict, exp_id, detname, grp_id=1, seq_id=1, act_id='01'):
 
     from ..pynrc_core import DetectorOps
+    from .dms import dec_to_base36
 
     # Ensure standardized detector naming convention ("NRC[A/B][1-5]")
     det_id = get_detname(detname)
     
+    act_id_b36 = act_id if isinstance(act_id, str) else dec_to_base36(int(act_id))
+
+    visit_group     = '{:02d}'.format(int(grp_id))  # Visit group identifier
+    sequence_id     = '{:01d}'.format(int(seq_id))  # Parallel sequence ID (1=prime, 2-5=parallel)
+    activity_id     = '{:0>2}'.format(act_id_b36)   # Activity number (base 36)
+    exposure_number = '{:05d}'.format(int(exp_id))  # Exposure Number
+    par_info_grab = visit_group + sequence_id + activity_id + '_' + exposure_number
+
+    # Get list of all parameters strung together
+    par_info_all = []
+    for d in visit_dict['obs_id_info']:
+        par_info = d['visit_group'] + d['sequence_id'] + d['activity_id'] + '_' + d['exposure_number']
+        par_info_all.append(par_info)
+    par_info_all = np.array(par_info_all)
+
+    # Grab indices for specified info
+    ind_mask = (par_info_all == par_info_grab)
+
     # Grab indices for specified exposure number
-    exp_ids_visit = np.array([int(d['exposure_number']) for d in visit_dict['obs_id_info']])
-    ind_mask      = (exp_ids_visit == int(exp_id))
+    # exp_ids_visit = np.array([int(d['exposure_number']) for d in visit_dict['obs_id_info']])
+    # ind_mask      = (exp_ids_visit == int(exp_id))
     
     # Get siaf aperture names
     apname = visit_dict['aperture'][ind_mask][0]
@@ -5104,9 +5185,10 @@ def create_det_class(visit_dict, exp_id, detname):
     return det
 
 
-def create_obs_params(filt, pupil, mask, det, siaf_ap, ra_dec, date_obs, time_obs="12:00:00", 
-    pa_v3=None, siaf_ap_obs=None, xyoff_idl=(0,0), visit_type='SCIENCE', time_series=False,
-    time_exp_offset=0, segNum=None, segTot=None, int_range=None, filename=None, **kwargs):
+def create_obs_params(filt, pupil, mask, det, siaf_ap, ra_dec, date_obs, time_obs="12:00:00.000", 
+    pa_v3=None, siaf_ap_obs=None, xyoff_idl=(0,0), visit_level='TARGET', visit_type='SCIENCE', 
+    time_series=False, time_visit_offset=0, time_exp_offset=0, segNum=None, segTot=None, int_range=None, 
+    filename=None, **kwargs):
 
     """ Generate obs_params dictionary
 
@@ -5166,6 +5248,17 @@ def create_obs_params(filt, pupil, mask, det, siaf_ap, ra_dec, date_obs, time_ob
 
     siaf_ap_ref = siaf_ap
     ra, dec = ra_dec
+
+    # Ensure 3 decimal points in time_obs
+    try:
+        # Split off decimal point after string
+        # Add a bunch of zeros, then truncate
+        tsplit = time_obs.split('.')
+        sub_sec = (tsplit[1] + '000')[:3]
+        time_obs = '.'.join([tsplit[0], sub_sec])
+    except:
+        # If no decimal, just add zeros
+        time_obs = time_obs + '.000'
 
     output = get_tel_angles(ra, dec, obs_date=date_obs, obs_time=time_obs)
     pitch_ang = output['pitch_deg']
@@ -5244,6 +5337,8 @@ def create_obs_params(filt, pupil, mask, det, siaf_ap, ra_dec, date_obs, time_ob
         'catalog_name' : 'UNKNOWN',
         'ra'           : ra,            # Target RA
         'dec'          : dec,           # Target Dec
+
+        # Pointing info
         'pa_v3'        : pa_v3,         # Telescope position angle relative to V3
         'roll_offset'  : 0,             # Roll angle relative to nominal V3 PA
         'solar_elong'  : sol_elong,     # Solar elongation (deg)
@@ -5260,6 +5355,10 @@ def create_obs_params(filt, pupil, mask, det, siaf_ap, ra_dec, date_obs, time_ob
         'time-obs'      : time_obs,
         'obs_id_info'   : obs_id_info,
         'obs_label'     : 'UNKNOWN',
+        # Exposure Start time relative to TIME-OBS (seconds)
+        'texp_start_relative'  : time_exp_offset,
+        # Visit start offset from date/time-obs
+        'visit_start_relative' : time_visit_offset,
 
         # Instrument configuration
         'det_obj'    : det,
@@ -5270,15 +5369,16 @@ def create_obs_params(filt, pupil, mask, det, siaf_ap, ra_dec, date_obs, time_ob
         'pupil'      : pupil,
         'coron_mask' : mask,
         # Observation Type
-        'visit_type' : visit_type,
+        'visit_level': visit_level,  # e.g., TAREGT, DITHER, FILTER
+        'visit_type' : visit_type,   # e.g., T_ACQ, CONFIRM, SCIENCE
         'visit_mode' : visit_mode,
         'exp_type'   : exp_type,
         # Subarray
         'subarray_name' : 'UNKNOWN',
 
         # subarray_bounds indexed to zero, but values in header should be indexed to 1.
-        'xstart'   : det.x0+1,
-        'ystart'   : det.y0+1,
+        'xstart'   : det.x0+1 if det.fastaxis>0 else 2048-det.x0-det.xpix+1,
+        'ystart'   : det.y0+1 if det.slowaxis>0 else 2048-det.y0-det.ypix+1,
         'xsize'    : det.xpix,
         'ysize'    : det.ypix,   
         'fastaxis' : det.fastaxis,
@@ -5301,8 +5401,6 @@ def create_obs_params(filt, pupil, mask, det, siaf_ap, ra_dec, date_obs, time_ob
         'tint_plus_overhead' : det.time_total_int1,
         'texp_plus_overhead' : det.time_total,
 
-        # Exposure Start time relative to TIME-OBS (seconds)
-        'texp_start_relative' : time_exp_offset,
         # Create INT_TIMES table, to be saved in INT_TIMES extension
         # Currently, this is all integrations within the exposure, despite segment
         'int_times' : det.int_times_table(date_obs, time_obs, offset_seconds=time_exp_offset),
@@ -5312,13 +5410,18 @@ def create_obs_params(filt, pupil, mask, det, siaf_ap, ra_dec, date_obs, time_ob
         'group_times'       : group_times,
 
         # Dither information defaults (update later)
-        'primary_type'          : 'NONE',    # Primary dither pattern name
+        'pridith_pattern_type'  : 'NONE',       # Primary dither pattern name
+        'pridith_points_packing': None,         # Primary dither points and packing
+        'pridith_npoints'       : 1,            # Number of points in primary dither pattern
         'position_number'       : 1,            # Primary dither position number
-        'total_points'          : 1,            # Total number of pri dither positions??
+        'pattern_start'         : 1,            # Starting point in pattern (???)
+        'total_points'          : 1,            # Total number of points in pattern
+        'dither_points'         : 1,            # Number of points in image dither pattern
         'pattern_size'          : 'DEFAULT',    # Primary dither pattern size 
-        'subpixel_type'         : 'STANDARD',   # Subpixel dither pattern name
+        'sgd_pattern'           : 'NONE',       # Small grid dither pattern name
         'subpixel_number'       : 1,            # Subpixel dither position number
         'subpixel_total_points' : 1,            # Total number of subpixel dither positions
+        'subpixel_pattern'      : 'STANDARD',   # Subpixel dither pattern name
         'x_offset'              : xoff_idl,     # Dither pointing offset from starting position in x (arcsec)
         'y_offset'              : yoff_idl,     # Dither pointing offset from starting position in y (arcsec)
     }
@@ -5338,9 +5441,9 @@ def create_obs_params(filt, pupil, mask, det, siaf_ap, ra_dec, date_obs, time_ob
     res = {**obs_params, **kwargs}
     return res
 
-def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs='12:00:00', 
+def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs='12:00:00.000', 
                         pa_v3=None, segNum=None, segTot=None, int_range=None, det=None, 
-                        obs_params=None, **kwargs):
+                        obs_params=None, grp_id=1, seq_id=1, act_id='01', **kwargs):
 
     """ Create obs_params from visit dictionary
 
@@ -5385,11 +5488,19 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs='12:00:0
 
     # Build detector operations class
     if det is None:
-        det = create_det_class(visit_dict, exp_id, det_id)
+        det = create_det_class(visit_dict, exp_id, det_id, 
+                               grp_id=grp_id, seq_id=seq_id, act_id=act_id)
     
     # Grab indices for specified exposure number
-    exp_ids_visit = np.array([int(d['exposure_number']) for d in visit_dict['obs_id_info']])
-    ind_mask      = (exp_ids_visit == int(exp_id))
+    obs_dict_arr = visit_dict['obs_id_info']
+    exp_ids = np.array([int(d['exposure_number']) for d in obs_dict_arr])
+    grp_ids = np.array([int(d['visit_group'])     for d in obs_dict_arr])
+    seq_ids = np.array([int(d['sequence_id'])     for d in obs_dict_arr])
+    act_ids = np.array([    d['activity_id']      for d in obs_dict_arr])
+
+    nexp = len(exp_ids)
+    ind_mask = (exp_ids == int(exp_id)) & (grp_ids == int(grp_id)) & \
+               (seq_ids == int(seq_id)) & (act_ids == act_id)
     
     # Dictionary info of observation, visit, exposure, etc
     obs_id_info   = visit_dict['obs_id_info'][ind_mask][0]
@@ -5428,8 +5539,9 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs='12:00:0
     #   NRC_IMAGE, NRC_GRISM, NRC_CORON,
     #   NRC_TSIMAGE, NRC_TSGRISM, 
     #   NRC_FOCUS, NRC_WFSS
-    type_val = visit_dict['type'][ind_mask][0]
-    mode_val = visit_dict['mode'][ind_mask][0]
+    level_val = visit_dict['level'][ind_mask][0]
+    type_val  = visit_dict['type'][ind_mask][0]
+    mode_val  = visit_dict['mode'][ind_mask][0]
     time_series = True if 'ts' in mode_val.lower() else False
     exp_type = get_exp_type(type_val, mode_val, pupil)
                             
@@ -5438,36 +5550,58 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs='12:00:0
     yoffset = visit_dict['idly'][ind_mask][0]
     ddist   = visit_dict['ddist'][ind_mask][0]
 
-    # Exposure start times offset
-    time_exp_offset = visit_dict['exp_start_times'][ind_mask][0]
-
-
     # Dither information
     pri_dith_type = visit_dict['PrimaryDitherType'][ind_mask][0]
+    pri_dith_size = visit_dict['DitherSize'][ind_mask][0]
     sub_dith_type = visit_dict['SubpixelDitherType'][ind_mask][0]
+    sgd_type      = visit_dict['SmallGridDitherType'][ind_mask][0]
     dither_points = visit_dict['number_of_dithers'][ind_mask][0]
-    try:
-        # npri_dith = int(visit_dict['PrimaryDithers'])
-        npri_dith = visit_dict['PrimaryDithers'][ind_mask][0]
-    except ValueError:
-        npri_dith = 1
-    try:
-        # nsub_dith = int(visit_dict['SubpixelPositions'])
-        nsub_dith = visit_dict['SubpixelPositions'][ind_mask][0]
-    except ValueError:
-        nsub_dith = 1
+    try: pri_dithers = visit_dict['PrimaryDithers'][ind_mask][0] # e.g., '3TIGHT'
+    except ValueError: pri_dithers = NONE_STR
+    try: 
+        npri_dith = int(visit_dict['PrimaryDithers'][ind_mask][0])
+    except ValueError: 
+        try: 
+            npri_dith = int(visit_dict['PrimaryDithers'][ind_mask][0][0])
+        except ValueError: 
+            npri_dith = NONE_STR
+    try: nsub_dith = int(visit_dict['SubpixelPositions'][ind_mask][0])
+    except ValueError: nsub_dith = 1
     pri_pos_num = int(visit_dict['pri_dith'][ind_mask][0])
     sub_pos_num = int(visit_dict['sub_dith'][ind_mask][0])
+
+    # # Certain dither info should be None if string is 'NONE'
+    # if (pri_dithers is not None) and (pri_dithers.upper()=='NONE'):
+    #     pri_dithers = None
+    # if (sub_dith_type is not None) and (sub_dith_type.upper()=='NONE'):
+    #     sub_dith_type = None
+    # if (sgd_type is not None) and (sgd_type.upper()=='NONE'):
+    #     sgd_type = None
 
     # Create output filename
     filename = DMS_filename(obs_id_info, det.detname, segNum=segNum, prodType='uncal')
 
+    # Exposure start times offset
     time_exp_offset = visit_dict['exp_start_times'][ind_mask][0]
+    # Visit start time
+    time_visit_offset = visit_dict['visit_start']
+
+    # Ensure 3 decimal points in time_obs
+    try:
+        # Split off decimal point after string
+        # Add a bunch of zeros, then truncate
+        tsplit = time_obs.split('.')
+        sub_sec = (tsplit[1] + '000')[:3]
+        time_obs = '.'.join([tsplit[0], sub_sec])
+    except:
+        # If no decimal, just add zeros
+        time_obs = time_obs + '.000'
 
     # Create intial obs_params dictionary
     obs_params_init = create_obs_params(filt, pupil, mask, det, siaf_ap_ref, (ra, dec), 
         date_obs, time_obs=time_obs, pa_v3=pa_v3, siaf_ap_obs=siaf_ap, xyoff_idl=(xoffset,yoffset), 
-        visit_type=type_val, time_series=time_series, time_exp_offset=time_exp_offset, 
+        visit_level=level_val, visit_type=type_val, time_series=time_series, 
+        time_visit_offset=time_visit_offset, time_exp_offset=time_exp_offset, 
         segNum=segNum, segTot=segTot, int_range=int_range, filename=filename)
     
     # Update V3 PA with roll information
@@ -5538,16 +5672,21 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs='12:00:0
         'obs_label'     : obs_label,
         'exp_type'      : exp_type,
         'subarray_name' : subarray_name,
-        
+        'nexposures'    : nexp,   # Total number of planned exposures in visit
+
         # Dither information defaults (update later)
-        'primary_type'          : pri_dith_type,# Primary dither pattern name
+        'pridith_pattern_type'  : pri_dith_type,# Primary dither pattern name
+        'pridith_points_packing': pri_dithers,  # Primary dither points and packing
+        'pridith_npoints'       : npri_dith,    # Number of points in primary dither pattern
         'position_number'       : pri_pos_num,  # Primary dither position number
-        'total_points'          : npri_dith,    # Total number of pri dither positions??
-        'dither_points'         : dither_points,# Total number of all dither positions??
-        'pattern_size'          : 'DEFAULT',    # Primary dither pattern size 
-        'subpixel_type'         : sub_dith_type,# Subpixel dither pattern name
+        'pattern_start'         : 1,            # Starting point in pattern (???)
+        'total_points'          : dither_points,# Total number of points in pattern
+        'dither_points'         : dither_points,# Number of points in image dither pattern
+        'pattern_size'          : pri_dith_size,# Primary dither pattern size 
+        'sgd_pattern'           : sgd_type,     # Small grid dither pattern name
         'subpixel_number'       : sub_pos_num,  # Subpixel dither position number
         'subpixel_total_points' : nsub_dith,    # Total number of subpixel dither positions
+        'subpixel_pattern'      : sub_dith_type,# Subpixel dither pattern name
         'x_offset'              : xoffset,      # Dither pointing offset from starting position in x (arcsec)
         'y_offset'              : yoffset,      # Dither pointing offset from starting position in y (arcsec)
         'ddist'                 : ddist,        # Movement relative to previous exposure (arcsec)
@@ -5606,7 +5745,7 @@ class DMS_input():
         obs_input = DMS_input(xml_file, pointing_file, json_file, sm_acct_file)
         # Update observation time and telescope PA
         obs_input.obs_date = '2022-03-01'
-        obs_input.obs_time = '12:00:00'
+        obs_input.obs_time = '12:00:00.000'
         obs_input.pa_v3 = 45
 
         # Create a list of observation parameters
@@ -5663,7 +5802,7 @@ class DMS_input():
     def obs_time(self):
         """Start time of observations"""
         if self._obs_time is None:
-            return '12:00:00:00'
+            return '12:00:00.000'
         else:
             return self._obs_time
     @obs_time.setter
@@ -5677,10 +5816,10 @@ class DMS_input():
     def pa_v3(self, value):
         self._pa_v3 = value
         
-    def _gen_label(self, visit_id, exp_id, det_id):
+    def _gen_label(self, visit_id, exp_id, det_id, grp_id, seq_id, act_id):
         "Create unique label ID"
         detname = get_detname(det_id)
-        return f'{visit_id}_{exp_id}_{detname}'
+        return f'{visit_id}_{exp_id}_{detname}_{grp_id}_{seq_id}_{act_id}'
 
     def _gen_obs_labels(self):
         """Create unique label for each observation"""
@@ -5691,29 +5830,41 @@ class DMS_input():
         for vid in visit_ids:
             visit_dict = self.program_info[vid]
             exp_ids = np.array([int(d['exposure_number']) for d in visit_dict['obs_id_info']])
+            grp_ids = np.array([int(d['visit_group'])     for d in visit_dict['obs_id_info']])
+            seq_ids = np.array([int(d['sequence_id'])     for d in visit_dict['obs_id_info']])
+            act_ids = np.array([    d['activity_id']      for d in visit_dict['obs_id_info']])
             # For each exposure id, get detector id
-            for i, eid in enumerate(exp_ids):
+            for i in range(len(exp_ids)):
                 det_ids = visit_dict['detectors'][i]
+                eid = exp_ids[i]
+                gid = grp_ids[i]
+                sid = seq_ids[i]
+                aid = act_ids[i]
                 for detname in det_ids:
-                    label = self._gen_label(vid, eid, detname)
+                    label = self._gen_label(vid, eid, detname, gid, sid, aid)
                     labels.append(label)
                     
         return labels
 
     def _parse_label(self, label):
-        """Parse label to get visit_id, exp_id, det_id"""
+        """Parse label to get visit_id, exp_id, det_id, grp_id, seq_id, act_id"""
         
         # visit_id, exp_id, det_id = label.split('_')
         return label.split('_')
         
     def gen_obs_params(self, visit_id, exp_id, det_id, det=None, 
-                      seg_num=None, seg_tot=None, int_range=None):
+                       seg_num=None, seg_tot=None, int_range=None,
+                       grp_id=1, seq_id=1, act_id='01'):
         """Generate a single set of observation parameters for a given exposure"""
 
         kwargs = self.proposal_info
         date_obs = self.obs_date
         time_obs = self.obs_time
         pa_v3 = self.pa_v3
+
+        kwargs['grp_id'] = grp_id
+        kwargs['seq_id'] = seq_id
+        kwargs['act_id'] = act_id
 
         visit_dict = self.program_info[visit_id]
         detname = get_detname(det_id)
@@ -5739,9 +5890,10 @@ class DMS_input():
         
         all_labels = self.labels
         for label in tqdm(all_labels, desc='Obs Params', leave=False):
-            visit_id, exp_id, det_id = self._parse_label(label)
+            visit_id, exp_id, det_id, grp_id, seq_id, act_id = self._parse_label(label)
             visit_dict = self.program_info[visit_id]
-            det = create_det_class(visit_dict, exp_id, det_id)
+            det = create_det_class(visit_dict, exp_id, det_id, 
+                                   grp_id=grp_id, seq_id=seq_id, act_id=act_id)
             
             # Get FITS segmenting
             iseg_list = file_segmenting(det)
@@ -5749,10 +5901,12 @@ class DMS_input():
             if seg_tot>1:
                 for ii in range(seg_tot):
                     obspar = self.gen_obs_params(visit_id, exp_id, det_id, det=det, 
-                                                seg_num=ii, seg_tot=seg_tot, int_range=iseg_list[ii])
+                                                 seg_num=ii, seg_tot=seg_tot, int_range=iseg_list[ii],
+                                                 grp_id=grp_id, seq_id=seq_id, act_id=act_id)
                     obs_params_all.append(obspar)
             else:
-                obspar = self.gen_obs_params(visit_id, exp_id, det_id, det=det)
+                obspar = self.gen_obs_params(visit_id, exp_id, det_id, det=det,
+                                             grp_id=grp_id, seq_id=seq_id, act_id=act_id)
                 obs_params_all.append(obspar)
                 
         return obs_params_all
@@ -5768,7 +5922,7 @@ class DMS_input():
             pitch_init=pitch_init, nvals=nvals)
 
     def make_jwst_point(self, visit_id, exp_id, detname, obs_params=None, 
-        base_std=0, dith_std=0, rand_seed=None):
+        base_std=0, dith_std=0, rand_seed=None, grp_id=1, seq_id=1, act_id='01'):
         """Create jwst_point object
         
 
@@ -5804,7 +5958,8 @@ class DMS_input():
 
         # Create a single observation parameter dictionary if not passed
         if obs_params is None:
-            obs_params = self.gen_obs_params(visit_id, exp_id, detname)
+            obs_params = self.gen_obs_params(visit_id, exp_id, detname,
+                                             grp_id=grp_id, seq_id=seq_id, act_id=act_id)
 
         # Filter by type value (SCIENCE, T_ACQ, CONFIRM)
         type_arr = visit_dict['type']
@@ -5834,7 +5989,8 @@ def gen_pointing_info(*args, **kwargs):
     _log.warn("Deprecated. Use `gen_jwst_pointing` function instead in the future.")
     return gen_jwst_pointing(*args, **kwargs)
 
-def gen_jwst_pointing(visit_dict, obs_params, base_std=None, dith_std=None, rand_seed=None):
+def gen_jwst_pointing(visit_dict, obs_params, base_std=None, dith_std=None, 
+                      rand_seed=None, rand_seed_base=None):
     """
     Create telescope pointing sequence for a given visit / exposure.
     """
@@ -5866,11 +6022,12 @@ def gen_jwst_pointing(visit_dict, obs_params, base_std=None, dith_std=None, rand
 
     tel_pointing = jwst_point(ap_obs_name, ap_ref_name, ra_ref, dec_ref, pos_ang=pos_ang, 
                               base_offset=base_offset, dith_offsets=dith_offsets, 
-                              base_std=base_std, dith_std=dith_std, rand_seed=rand_seed)
+                              base_std=base_std, dith_std=dith_std, 
+                              rand_seed=rand_seed, rand_seed_base=rand_seed_base)
 
     # Standard SAM or SGD
-    subpix_type = obs_params.get('subpixel_type', 'NONE')
-    tel_pointing.use_sgd = True if 'SMALL-GRID-DITHER' in subpix_type.upper() else False
+    subpixel_pattern = obs_params.get('subpixel_pattern', 'NONE')
+    tel_pointing.use_sgd = True if 'SMALL-GRID-DITHER' in subpixel_pattern.upper() else False
     
     return tel_pointing
 
@@ -5884,9 +6041,15 @@ def get_tel_angles(ra, dec, obs_date='2022-03-01', obs_time='12:00:00'):
     from .skyvec2ins import skyvec2ins
 
     # Create datetime object
-    args1 = np.array(obs_date.split('-')).astype('int')
-    args2 = np.array(obs_time.split(':')).astype('int')
-    args = args1 + args2
+    args1 = np.array(obs_date.split('-'))
+    args2 = np.array(obs_time.split(':'))
+    try:
+        sec_split = args2[-1].split('.')
+        args2[-1] = sec_split[0]
+        args3 = (np.array([sec_split[1]]).astype('float')*1e5).astype('int')
+    except:
+        args3 = np.array(['0'])
+    args = np.concatenate((args1, args2, args3)).astype('int')
     time_obs = datetime.datetime(*args)
     
     # Get array of information
@@ -5977,7 +6140,7 @@ def pitch_vs_time(xml_file, pointing_file, timing_json_file, smart_accounting_fi
     pitch_angles = np.array(pitch_angles)
     pitch_init = pitch_angles[0] if pitch_init is None else pitch_init
 
-    # Create a timing array broken up in
+    # Create a timing array broken up into events
     tmax = (visit_durations+slew_durations).cumsum()[-1]
     tarr = np.linspace(0,tmax,nvals)
 
