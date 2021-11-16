@@ -1,0 +1,1357 @@
+{
+  "proposal_id" : "1179",
+  "number_of_visits" : 10,
+  "science_time" : 7.43,
+  "charged_time" : 18.35,
+  "observations" : [ {
+    "id" : 2,
+    "charged_duration_seconds" : 7144,
+    "science_duration_seconds" : 2680,
+    "number_of_visits" : 1,
+    "instrument" : "NIRCAM",
+    "template" : "NIRCam Imaging",
+    "visits" : [ {
+      "id" : 1,
+      "scheduling_duration" : 4358,
+      "components" : [ {
+        "type" : "VISIT_SLEW",
+        "duration" : 1800
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 18
+      }, {
+        "type" : "GS_ACQ",
+        "duration" : 312
+      }, {
+        "type" : "OSS",
+        "duration" : 21
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 46
+      }, {
+        "type" : "MECH",
+        "duration" : 112
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 72
+      }, {
+        "type" : "OSS",
+        "duration" : 21
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 46
+      }, {
+        "type" : "MECH",
+        "duration" : 106
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 80
+      }, {
+        "type" : "OSS",
+        "duration" : 4
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 20
+      } ]
+    } ]
+  }, {
+    "id" : 3,
+    "charged_duration_seconds" : 6147,
+    "science_duration_seconds" : 2680,
+    "number_of_visits" : 1,
+    "instrument" : "NIRCAM",
+    "template" : "NIRCam Imaging",
+    "visits" : [ {
+      "id" : 1,
+      "scheduling_duration" : 4358,
+      "components" : [ {
+        "type" : "VISIT_SLEW",
+        "duration" : 941
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 18
+      }, {
+        "type" : "GS_ACQ",
+        "duration" : 312
+      }, {
+        "type" : "OSS",
+        "duration" : 21
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 46
+      }, {
+        "type" : "MECH",
+        "duration" : 112
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 72
+      }, {
+        "type" : "OSS",
+        "duration" : 21
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 46
+      }, {
+        "type" : "MECH",
+        "duration" : 106
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 80
+      }, {
+        "type" : "OSS",
+        "duration" : 4
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 20
+      } ]
+    } ]
+  }, {
+    "id" : 5,
+    "charged_duration_seconds" : 7422,
+    "science_duration_seconds" : 2656,
+    "number_of_visits" : 1,
+    "instrument" : "NIRCAM",
+    "template" : "NIRCam Imaging",
+    "visits" : [ {
+      "id" : 1,
+      "scheduling_duration" : 4598,
+      "components" : [ {
+        "type" : "VISIT_SLEW",
+        "duration" : 1800
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 18
+      }, {
+        "type" : "GS_ACQ",
+        "duration" : 312
+      }, {
+        "type" : "OSS",
+        "duration" : 21
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 46
+      }, {
+        "type" : "MECH",
+        "duration" : 112
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 332
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 80
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 332
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 80
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 332
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 80
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 332
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 80
+      }, {
+        "type" : "SAM",
+        "duration" : 72
+      }, {
+        "type" : "OSS",
+        "duration" : 21
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 46
+      }, {
+        "type" : "MECH",
+        "duration" : 106
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 332
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 80
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 332
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 80
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 332
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 80
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 332
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 80
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 80
+      }, {
+        "type" : "OSS",
+        "duration" : 4
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 20
+      } ]
+    } ]
+  }, {
+    "id" : 8,
+    "charged_duration_seconds" : 6426,
+    "science_duration_seconds" : 2656,
+    "number_of_visits" : 1,
+    "instrument" : "NIRCAM",
+    "template" : "NIRCam Imaging",
+    "visits" : [ {
+      "id" : 1,
+      "scheduling_duration" : 4598,
+      "components" : [ {
+        "type" : "VISIT_SLEW",
+        "duration" : 941
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 18
+      }, {
+        "type" : "GS_ACQ",
+        "duration" : 312
+      }, {
+        "type" : "OSS",
+        "duration" : 21
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 46
+      }, {
+        "type" : "MECH",
+        "duration" : 112
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 332
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 80
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 332
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 80
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 332
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 80
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 332
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 80
+      }, {
+        "type" : "SAM",
+        "duration" : 72
+      }, {
+        "type" : "OSS",
+        "duration" : 21
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 46
+      }, {
+        "type" : "MECH",
+        "duration" : 106
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 332
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 80
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 332
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 80
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 332
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 80
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 332
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 80
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 80
+      }, {
+        "type" : "OSS",
+        "duration" : 4
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 20
+      } ]
+    } ]
+  }, {
+    "id" : 10,
+    "charged_duration_seconds" : 7144,
+    "science_duration_seconds" : 2680,
+    "number_of_visits" : 1,
+    "instrument" : "NIRCAM",
+    "template" : "NIRCam Imaging",
+    "visits" : [ {
+      "id" : 1,
+      "scheduling_duration" : 4358,
+      "components" : [ {
+        "type" : "VISIT_SLEW",
+        "duration" : 1800
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 18
+      }, {
+        "type" : "GS_ACQ",
+        "duration" : 312
+      }, {
+        "type" : "OSS",
+        "duration" : 21
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 46
+      }, {
+        "type" : "MECH",
+        "duration" : 112
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 72
+      }, {
+        "type" : "OSS",
+        "duration" : 21
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 46
+      }, {
+        "type" : "MECH",
+        "duration" : 106
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 80
+      }, {
+        "type" : "OSS",
+        "duration" : 4
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 20
+      } ]
+    } ]
+  }, {
+    "id" : 11,
+    "charged_duration_seconds" : 6147,
+    "science_duration_seconds" : 2680,
+    "number_of_visits" : 1,
+    "instrument" : "NIRCAM",
+    "template" : "NIRCam Imaging",
+    "visits" : [ {
+      "id" : 1,
+      "scheduling_duration" : 4358,
+      "components" : [ {
+        "type" : "VISIT_SLEW",
+        "duration" : 941
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 18
+      }, {
+        "type" : "GS_ACQ",
+        "duration" : 312
+      }, {
+        "type" : "OSS",
+        "duration" : 21
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 46
+      }, {
+        "type" : "MECH",
+        "duration" : 112
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 72
+      }, {
+        "type" : "OSS",
+        "duration" : 21
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 46
+      }, {
+        "type" : "MECH",
+        "duration" : 106
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 80
+      }, {
+        "type" : "OSS",
+        "duration" : 4
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 20
+      } ]
+    } ]
+  }, {
+    "id" : 14,
+    "charged_duration_seconds" : 6245,
+    "science_duration_seconds" : 2680,
+    "number_of_visits" : 1,
+    "instrument" : "NIRCAM",
+    "template" : "NIRCam Imaging",
+    "visits" : [ {
+      "id" : 1,
+      "scheduling_duration" : 4358,
+      "components" : [ {
+        "type" : "VISIT_SLEW",
+        "duration" : 1025
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 18
+      }, {
+        "type" : "GS_ACQ",
+        "duration" : 312
+      }, {
+        "type" : "OSS",
+        "duration" : 21
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 46
+      }, {
+        "type" : "MECH",
+        "duration" : 112
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 72
+      }, {
+        "type" : "OSS",
+        "duration" : 21
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 46
+      }, {
+        "type" : "MECH",
+        "duration" : 106
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 80
+      }, {
+        "type" : "OSS",
+        "duration" : 4
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 20
+      } ]
+    } ]
+  }, {
+    "id" : 15,
+    "charged_duration_seconds" : 6147,
+    "science_duration_seconds" : 2680,
+    "number_of_visits" : 1,
+    "instrument" : "NIRCAM",
+    "template" : "NIRCam Imaging",
+    "visits" : [ {
+      "id" : 1,
+      "scheduling_duration" : 4358,
+      "components" : [ {
+        "type" : "VISIT_SLEW",
+        "duration" : 941
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 18
+      }, {
+        "type" : "GS_ACQ",
+        "duration" : 312
+      }, {
+        "type" : "OSS",
+        "duration" : 21
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 46
+      }, {
+        "type" : "MECH",
+        "duration" : 112
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 72
+      }, {
+        "type" : "OSS",
+        "duration" : 21
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 46
+      }, {
+        "type" : "MECH",
+        "duration" : 106
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 80
+      }, {
+        "type" : "OSS",
+        "duration" : 4
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 20
+      } ]
+    } ]
+  }, {
+    "id" : 18,
+    "charged_duration_seconds" : 7144,
+    "science_duration_seconds" : 2680,
+    "number_of_visits" : 1,
+    "instrument" : "NIRCAM",
+    "template" : "NIRCam Imaging",
+    "visits" : [ {
+      "id" : 1,
+      "scheduling_duration" : 4358,
+      "components" : [ {
+        "type" : "VISIT_SLEW",
+        "duration" : 1800
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 18
+      }, {
+        "type" : "GS_ACQ",
+        "duration" : 312
+      }, {
+        "type" : "OSS",
+        "duration" : 21
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 46
+      }, {
+        "type" : "MECH",
+        "duration" : 112
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 72
+      }, {
+        "type" : "OSS",
+        "duration" : 21
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 46
+      }, {
+        "type" : "MECH",
+        "duration" : 106
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 80
+      }, {
+        "type" : "OSS",
+        "duration" : 4
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 20
+      } ]
+    } ]
+  }, {
+    "id" : 19,
+    "charged_duration_seconds" : 6129,
+    "science_duration_seconds" : 2680,
+    "number_of_visits" : 1,
+    "instrument" : "NIRCAM",
+    "template" : "NIRCam Imaging",
+    "visits" : [ {
+      "id" : 1,
+      "scheduling_duration" : 4358,
+      "components" : [ {
+        "type" : "VISIT_SLEW",
+        "duration" : 925
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 18
+      }, {
+        "type" : "GS_ACQ",
+        "duration" : 312
+      }, {
+        "type" : "OSS",
+        "duration" : 21
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 46
+      }, {
+        "type" : "MECH",
+        "duration" : 112
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 72
+      }, {
+        "type" : "OSS",
+        "duration" : 21
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 46
+      }, {
+        "type" : "MECH",
+        "duration" : 106
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 14
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 335
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 47
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 80
+      }, {
+        "type" : "OSS",
+        "duration" : 4
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 20
+      } ]
+    } ]
+  } ]
+}
