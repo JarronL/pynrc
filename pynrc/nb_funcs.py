@@ -173,7 +173,7 @@ def disk_rim_model(a_asec, b_asec, pa=0, sig_asec=0.1, flux_frac=0.5,
 
 def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None, 
             wind_mode='WINDOW', subsize=None, fov_pix=None, verbose=False, narrow=False,
-            model_dir=None, large_grid=False, npsfs_per_axis=9, **kwargs):
+            model_dir=None, large_grid=False, **kwargs):
     """
     For a given WFE drift and series of filters, create a list of 
     NIRCam observations.
@@ -270,7 +270,7 @@ def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None,
                 
     # Generation mask position dependent PSFs
     for key in tqdm(obs_dict.keys(), desc='Obs', leave=False):
-        obs_dict[key].gen_disk_psfs(npsfs_per_axis=npsfs_per_axis)
+        obs_dict[key].gen_disk_psfs()
 
     return obs_dict
 
