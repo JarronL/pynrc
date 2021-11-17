@@ -50,6 +50,7 @@ from ..maths.image_manip import convolve_image
 from .. import conf
 
 from stdatamodels import fits_support
+import astropy.units as u
 
 # Program bar
 from tqdm.auto import trange, tqdm
@@ -61,6 +62,8 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                         dry_run=None, save_slope=None, save_dms=None):
 
     """
+    Generate Level1b DMS-like FITS files.
+
     TODO
     kwargs_det = {
         'latents': None, 
@@ -119,7 +122,7 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
     # PSF information
     kwargs_nrc = sim_config['params_webbpsf']
     kwargs_psf = sim_config['params_psfconv']
-    enable_wfedrift = sim_config['enable_wfedrift']
+    kwargs_wfedrift = sim_config.get('params_wfedrift')
     large_grid = sim_config['large_grid']
 
     # Ramp noise simulation options
@@ -166,6 +169,27 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
 
     # Unique labels for sorting
     obs_labels  = np.array([f'{a}_{f}_{t}' for a, f, t in zip(obs_apnames, obs_filters, obs_targets)])
+
+    # WFE Drift information
+    if kwargs_wfedrift is not None:
+        plot_fig = kwargs_wfedrift.get('plot', False)
+        figname = kwargs_wfedrift.get('figname', None)
+        # Update figure save name
+        if plot_fig and figname is not None:
+            fileout = os.path.basename(figname)
+            figpath = os.path.join(save_dir, fileout)
+            kwargs_wfedrift['figname'] = figpath
+
+        # Random seed info
+        rand_seed_dwfe = kwargs_wfedrift.get('rand_seed')
+        if rand_seed_dwfe is None:
+            rng = np.random.default_rng(rand_seed_init)
+            rand_seed_dwfe = rng.integers(0, 2**32-1)
+            kwargs_wfedrift['rand_seed'] = rand_seed_dwfe
+
+        wfe_dict = gen_wfe_drift(obs_input, **kwargs_wfedrift)
+    else:
+        wfe_dict = None
 
     # Select only a specific detector to generate simulations?
     if detname is None:
@@ -278,12 +302,15 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
             ap_obs_name = siaf_ap.AperName
             ap_nrc_name = ap_obs_name
 
+            # Is this a high-contrast imaging observation?
+            is_hci = ('MASK' in ap_nrc_name) or (sp_star is not None)
+
             if not dry_run:
                 # Get rid of previous instances
                 try: del nrc
                 except: pass
 
-                if ('MASK' in ap_nrc_name):
+                if is_hci:
                     print(ap_nrc_name, filt)
                     nrc = obs_hci(sp_star, dist_pc, filter=filt, apname=ap_nrc_name, 
                                   use_ap_info=True, disk_params=disk_params, 
@@ -291,7 +318,7 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
 
                     nrc.gen_psf_coeff()
                     nrc.gen_wfemask_coeff(large_grid=large_grid)
-                    if enable_wfedrift:
+                    if wfe_dict is not None:
                         nrc.gen_wfedrift_coeff()
 
                     # Create grid of PSFs
@@ -317,12 +344,14 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
 
                     nrc.gen_psf_coeff()
                     nrc.gen_wfefield_coeff()
-                    nrc.gen_wfemask_coeff(large_grid=large_grid)
-                    if enable_wfedrift:
+                    # nrc.gen_wfemask_coeff(large_grid=large_grid)
+                    if wfe_dict is not None:
                         nrc.gen_wfedrift_coeff()
 
                     # Create grid of PSFs
-                    if (src_tbl is not None):
+                    # Skip if doing WFE drifts over time, since regenerated
+                    # for each exposure.
+                    if (src_tbl is not None) and (wfe_dict is None):
                         hdul_psfs = nrc.gen_psfs_over_fov(**kwargs_psf)
 
                 # Get Zodiacal background emission.
@@ -428,6 +457,7 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                     obs_params['rand_seed_init'] = rand_seed_init
                     obs_params['rand_seed_dith'] = rand_seed_dith
                     obs_params['rand_seed_noise'] = rand_seed_noise_j
+                    obs_params['rand_seed_dwfe'] = rand_seed_dwfe
 
                     # Skip slope creation if obs_label doesn't match NIRCam class
                     a = obs_params['siaf_ap'].AperName
@@ -451,11 +481,21 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                     kwargs_pynrc['yoffset_act'] = idl_off[1]
                     kwargs_pynrc['pa_v3'] = obs_params['pa_v3']
 
+                    # WFE drift values
+                    if wfe_dict is not None:
+                        tval_exp = obs_params['texp_start_relative']  # seconds
+                        tval_all = wfe_dict['time_sec']
+                        wfe_total = wfe_dict['total']
+                        wfe_drift_exp = np.interp(tval_exp, tval_all, wfe_total)
+                    else:
+                        wfe_drift_exp = 0
+
                     # Generate dithered slope image for given exposure ID
                     if dry_run:
                         idl_off_str = f'({idl_off[0]:+0.3f}, {idl_off[1]:+0.3f})'
                         gsa_str = f'{grp_id:02d}{seq_id:01d}{act_id}'
-                        print(detname, a, f, t, vid, gsa_str, exp_num, idl_off_str)
+                        dwfe = f'{wfe_drift_exp:.2f}'
+                        print(detname, a, f, t, vid, gsa_str, exp_num, idl_off_str, dwfe, tval_exp)
 
                         # Save Level1b DMS FITS files without any data
                         if save_dms:
@@ -463,6 +503,7 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                             create_DMS_HDUList(None, None, obs_params, 
                                                save_dir=save_dir, **kwargs_pynrc)
                     else:
+
                         # Start with background
                         # im_bg was initially created above for this 
                         # aperture, filter, target but the date may have changed
@@ -479,14 +520,18 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
 
                         if src_tbl is not None:
                             # Create slope image from table
+                            hdul_psfs = None if wfe_drift_exp is not None else hdul_psfs
                             im_slope += sources_to_slope(src_tbl, nrc, obs_params, tel_pointing,
-                                                         hdul_psfs=hdul_psfs, im_bg=0)
+                                                         hdul_psfs=hdul_psfs, im_bg=0, 
+                                                         wfe_drift=wfe_drift_exp)
 
                         # Create slope image from HCI observation
-                        if isinstance(nrc, obs_hci):
+                        # if isinstance(nrc, obs_hci):
+                        if is_hci:
                             pa_v3 = obs_params['pa_v3']
                             im_slope += nrc.gen_slope_image(PA=pa_v3, xyoff_asec=idl_off, 
-                                                            zfact=0, exclude_noise=True, wfe_drift0=0)
+                                                            zfact=0, exclude_noise=True, 
+                                                            wfe_drift0=wfe_drift_exp)
 
                         # Save slope image
                         if save_slope:
@@ -732,14 +777,17 @@ def sources_to_slope(source_table, nircam_obj, obs_params, tel_pointing,
         # PSF(x,y) = trans(x,y)*psf_off + (1-trans(x,y))*psf_on
         trans = nrc.mask_images['OVERMASK']
         
+        wfe_drift = kwargs.get('wfe_drift')
+
         # Off-axis component
         hdul_sci_image_off = deepcopy(hdul_sci_image)
         hdul_sci_image_off[0].data = hdul_sci_image_off[0].data * trans
         psf_off = nrc.calc_psf_from_coeff(return_oversample=True, return_hdul=True,  
-                                          coord_vals=(10,10), coord_frame='idl')
+                                          coord_vals=(10,10), coord_frame='idl',
+                                          wfe_drift=wfe_drift)
         hdul_conv_off = convolve_image(hdul_sci_image_off, psf_off, output_sampling=1, return_hdul=True)
 
-        # On-axis component (closest PSF convolution)
+        # On-axis component (closest PSF convolution, only for bar mask)
         hdul_sci_image_on = deepcopy(hdul_sci_image)
         hdul_sci_image_on[0].data = hdul_sci_image_on[0].data * (1 - trans)
         hdul_psfs = nrc.psf_list if hdul_psfs is None else hdul_psfs
@@ -1011,6 +1059,160 @@ def slope_to_fitswriter(det, cal_obj, im_slope=None, cframe='det',
         return outHDUList
     else:
         outHDUList.close()
+
+
+def gen_wfe_drift(obs_input, case='BOL', iec_period=300, slew_init=10, rand_seed=None,
+                  plot=False, figname=None):
+    """
+    Parameters
+    ==========
+    obs_input : 
+    iec_period : float
+        IEC heater switching period in seconds.
+    """
+
+    import webbpsf
+    from webbpsf_ext.opds import OTE_WFE_Drift_Model
+
+    def plot_wfe(figname=None):
+
+        import matplotlib.pyplot as plt
+        fig, axes = plt.subplots(2,1, figsize=(12,8), sharex=True)
+        axes = axes.flatten()
+
+        tunit = 'hr'
+        tvals = t_all.to(tunit)
+
+        ax = axes[0]
+        ax.plot(tvals.value, slew_angles, marker='.')
+        ax.set_ylabel('Pitch Angle (deg)')
+        ax.set_title(f'OPD w/ Initial Slew of 5 deg (PID 1194, {case})')
+
+        ylims = ax.get_ylim()
+        dy = ylims[1]-ylims[0]
+
+        for i, texp in enumerate(exp_start):
+            t = (texp * u.s).to(tunit).value
+            label = 'NRC Exps' if i==0 else None
+            ax.plot([t,t], [ylims[0],ylims[0]+0.25*dy] , color='k', ls=':', lw=1, alpha=0.5, label=label)
+        for i, tvisit in enumerate(visit_start):
+            t = (tvisit * u.s).to(tunit).value
+            label = 'Visit Start' if i==0 else None
+            ax.plot([t,t], [ylims[0],ylims[0]+0.5*dy] , color='C2', ls='--', lw=1.5, label=label)
+        for i, tslew in enumerate(slew_start):
+            t = (tslew * u.s).to(tunit).value
+            label = 'Slew Start' if i==0 else None
+            ax.plot([t,t], [ylims[0],ylims[0]+0.75*dy] , color='C1', ls='--', lw=2, label=label)
+            
+        ax.set_ylim(ylims)
+        ax.legend()
+
+        # Plot WFE drift components
+        # Offset relative to first visit in sequence
+        wfe_dict2 = wfe_dict.copy()
+        keys = list(wfe_dict.keys())#[0:2]
+        for k in ['frill', 'thermal']:
+            wfe_val = wfe_dict[k]
+            trel = (visit_start[0]*u.s).to(tunit).value
+            wfe_dict2[k] = wfe_val - np.interp(trel, tvals.value, wfe_val)
+        # Update total RMS
+        wfe_dict2['total'] = np.sqrt(wfe_dict2['frill']**2 + wfe_dict2['thermal']**2 + wfe_dict2['iec']**2)
+
+        ax = axes[1]
+        for k in keys:
+            lw = 2 if 'total' in k else 1
+            alpha = 0.5 if 'total' in k else 1
+            ax.plot(tvals.value, wfe_dict2[k], label=k, lw=lw, alpha=alpha)
+        ax.set_xlabel(f'Time ({tunit})')
+            
+        for ax in axes[1:]:
+            ax.legend()
+            ax.set_ylabel('$\Delta$WFE (nm RMS)')
+
+        xlim = [-1,18.5]
+        ax.set_xlim(xlim)
+        ylim = ax.get_ylim()
+        if np.abs(ylim[0])>ylim[1]:
+            ylim = np.array([-1,1]) * np.max(np.abs(ylim))
+        ax.set_ylim(ylim)
+            
+        fig.tight_layout()
+        if figname is not None:
+            fig.savefig(figname)
+            print(f'Saveing: {figname}')
+    
+    # Get total time for program
+    temp, _, _, _ = obs_input.gen_pitch_array(nvals=1000)
+    total_time = temp.max()
+
+    # Create a series of time values to evolve over
+    dt = iec_period / 2 # Timing sample
+    tarr = np.arange(0, total_time, dt) # seconds
+
+    # Required size
+    nvals = len(tarr)
+
+    # Create an initial fake scenario to occur before ours
+    res = obs_input.gen_pitch_array(nvals=nvals, pitch_init=None)
+    tprior, pitch_prior, _, _ = res
+    tprior = tprior[::5] - tprior[-1]
+    pitch_prior = pitch_prior[::5][::-1] - slew_init
+    pitch_prior[0] -= slew_init
+
+    # Create desired observations
+    res = obs_input.gen_pitch_array(nvals=nvals, pitch_init=pitch_prior[-1])
+    tarr, pitch_arr, slew_start, visit_start = res
+
+    # Change anything that's outside of pitch bounds
+    pitch_prior[pitch_prior<-5] = -5
+    pitch_prior[pitch_prior>45] = 45
+    pitch_arr[pitch_arr<-5] = -5
+    pitch_arr[pitch_arr>45] = 45
+
+    # All NIRCam exposure start times
+    exp_start = []
+    for k in obs_input.program_info.keys():
+        d = obs_input.program_info[k]
+        exp_start.append(d['exp_start_times'])
+    exp_start = np.concatenate(exp_start)
+
+    webbpsf_path = webbpsf.utils.get_webbpsf_data_path()
+    pupil_file = 'jwst_pupil_RevW_npix1024.fits.gz'
+    opd_file = 'OPD_RevW_ote_for_NIRCam_requirements.fits.gz'
+
+    pupil_path = os.path.join(webbpsf_path, pupil_file)
+    opd_path = os.path.join(webbpsf_path, 'NIRCam', 'OPD', opd_file)
+
+    name = "Modified OPD from " + str(opd_file)
+
+    # Initiate OTE drift class
+    ote = OTE_WFE_Drift_Model(name=name, opd=opd_path, transmission=pupil_path)
+
+    # Generate delta OPDs for each time step
+    # Also outputs a dictionary of each component's WFE drift value (nm RMS)
+    t_all = np.concatenate([tprior, tarr]) * u.s
+    slew_angles = np.concatenate([pitch_prior, pitch_arr])
+
+    wfe_dict_all = ote.evolve_dopd(t_all, slew_angles, case=case, 
+                                   return_dopd_fin=False, random_seed=rand_seed)
+
+    tunit = 'hr'
+    tvals = t_all.to(tunit)
+
+    # Offset relative to first visit in sequence
+    wfe_dict = wfe_dict_all.copy()
+    for k in ['frill', 'thermal']:
+        wfe_val = wfe_dict[k]
+        trel = (visit_start[0]*u.s).to(tunit).value
+        wfe_dict[k] = wfe_val - np.interp(trel, tvals.value, wfe_val)
+    # Update total RMS
+    wfe_dict['total'] = np.sqrt(wfe_dict['frill']**2 + wfe_dict['thermal']**2 + wfe_dict['iec']**2)
+
+    wfe_dict['time_sec'] = tvals.to('s').value
+    if plot:
+        plot_wfe(figname=figname)
+
+    return wfe_dict
 
 def add_ipc(im, alpha_min=0.0065, alpha_max=None, kernel=None):
     """Convolve image with IPC kernel

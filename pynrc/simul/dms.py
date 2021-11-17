@@ -720,9 +720,11 @@ def update_headers_pynrc_info(filename, obs_params, **kwargs):
     rand_init  = obs_params.get('rand_seed_init')
     rand_dith  = obs_params.get('rand_seed_dith')
     rand_noise = obs_params.get('rand_seed_noise')
+    rand_dwfe  = obs_params.get('rand_seed_dwfe')
     pheader['RANDINIT'] = (rand_init, "Random seed to init program sim")
     pheader['RANDDITH'] = (rand_dith, "Random seed for dither errors")
     pheader['RANDNOIS'] = (rand_noise, "Random seed for ramp noise init")
+    pheader['RANDDWFE'] = (rand_dwfe, "Random seed for delta WFE IEC component")
 
     # Add noise parameter settings
     kw_to_hkey = {

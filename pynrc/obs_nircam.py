@@ -648,7 +648,7 @@ class obs_hci(nrc_hci):
         self._det_info_ref = merge_dicts(kw1,kw2)
 
 
-    def gen_disk_psfs(self, **kwargs):
+    def gen_disk_psfs(self, wfe_drift=0, **kwargs):
         """
         Save instances of NIRCam PSFs that are incrementally offset
         from coronagraph center to convolve with a disk image.
@@ -661,19 +661,25 @@ class obs_hci(nrc_hci):
         elif self.image_mask is None:
             # If no mask, then assume PSF looks the same at all radii
             # This return a single ndarray
-            self.psf_list = self.calc_psf_from_coeff(return_oversample=True, return_hdul=True)
+            kwargs['return_oversample'] = True
+            kwargs['return_hdul'] = True
+            kwargs['wfe_drift'] = wfe_drift
+            self.psf_list = self.calc_psf_from_coeff(**kwargs)
         elif 'WB' in self.image_mask:
             # Bar mask
             kwargs['ysci_vals'] = 0
             kwargs['xsci_vals'] = np.linspace(-8,8,9) # np.linspace(-9,9,19)
+            kwargs['wfe_drift'] = wfe_drift
             self.psf_list = self.calc_psfs_grid(osamp=self.oversample, **kwargs)
         else:
             # Circular masks, just need single on-axis PSF
-            self.psf_list = self.calc_psf_from_coeff(return_oversample=True, return_hdul=True)
-            # self.psf_list = self.gen_offset_psf(0,0, return_oversample=True, **kwargs)
+            kwargs['return_oversample'] = True
+            kwargs['return_hdul'] = True
+            kwargs['wfe_drift'] = wfe_drift
+            self.psf_list = self.calc_psf_from_coeff(**kwargs)
 
         # Generate oversampled mask transmission for mask-dependent PSFs
-        if self.image_mask is not None:
+        if (self.image_mask is not None) and (self.mask_images.get('OVERMASK') is not None):
             nx, ny = (self.det_info['xpix'], self.det_info['ypix'])
             if 'FULL' in self.det_info['wind_mode']:
                 trans = build_mask_detid(self.Detector.detid, oversample=self.oversample,
@@ -1280,7 +1286,7 @@ class obs_hci(nrc_hci):
                                           return_oversample=return_oversample, **kwargs)
         elif im_star==0:
             im_star = np.zeros([ypix_over, xpix_over])
-            
+
         # Expand to full size
         im_star = pad_or_cut_to_size(im_star, (ypix_over, xpix_over))
 
