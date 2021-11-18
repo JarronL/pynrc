@@ -679,7 +679,7 @@ class obs_hci(nrc_hci):
             self.psf_list = self.calc_psf_from_coeff(**kwargs)
 
         # Generate oversampled mask transmission for mask-dependent PSFs
-        if (self.image_mask is not None) and (self.mask_images.get('OVERMASK') is not None):
+        if (self.image_mask is not None) and (self.mask_images.get('OVERMASK') is None):
             nx, ny = (self.det_info['xpix'], self.det_info['ypix'])
             if 'FULL' in self.det_info['wind_mode']:
                 trans = build_mask_detid(self.Detector.detid, oversample=self.oversample,

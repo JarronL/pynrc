@@ -705,6 +705,7 @@ def update_headers_pynrc_info(filename, obs_params, **kwargs):
     pheader['ROLL_IN']  = (obs_params['roll_offset'], 'Roll angle relative to nominal V3 PA.')
     pheader['ELONG_IN'] = (obs_params['solar_elong'], 'Solar elongation (deg).')
     pheader['PITCH_IN'] = (obs_params['pitch_ang'], 'Telescope pitch angle relative to sun (deg).')
+    pheader['WFEDRIFT'] = (obs_params['wfe_drift'], 'Delta WFE drift from baseline OPD (nm RMS)')
 
     # Add actual dither offset information
     kw_to_hkey = {

@@ -25,6 +25,8 @@ Modification History:
     - Added linearity, flat fields, and cosmic rays
 28 Oct 2021
     - Use numpy random number generator objects to produce repeatable results.
+16 Nov 2021
+    - Add WFE drifts
 """
 import json
 import numpy as np
@@ -42,7 +44,7 @@ from pynrc.logging_utils import setup_logging
 from .dms import create_DMS_HDUList, level1b_data_model
 from .dms import update_dms_headers, update_headers_pynrc_info
 from .apt import DMS_input, gen_jwst_pointing
-from ..nrc_utils import pad_or_cut_to_size, jl_poly, get_detname
+from ..nrc_utils import pad_or_cut_to_size, frebin, jl_poly, get_detname
 from ..nrc_utils import gen_unconvolved_point_source_image
 from ..reduce.calib import ramp_resample, nircam_cal
 from ..maths.coords import det_to_sci, sci_to_det
@@ -107,7 +109,7 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
     """
 
     from ..pynrc_core import DetectorOps, NIRCam
-    from ..obs_nircam import nrc_hci, obs_hci
+    from ..obs_nircam import obs_hci
 
     # Files and output directory
     json_file     = sim_config['json_file']
@@ -171,10 +173,15 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
     obs_labels  = np.array([f'{a}_{f}_{t}' for a, f, t in zip(obs_apnames, obs_filters, obs_targets)])
 
     # WFE Drift information
-    if kwargs_wfedrift is not None:
+    if kwargs_wfedrift is None:
+        wfe_dict = None
+    elif kwargs_wfedrift.get('wfe_dict') is not None:
+        # wfe_dict already exists in passed parameters
+        wfe_dict = kwargs_wfedrift.get('wfe_dict')
+    else:
         plot_fig = kwargs_wfedrift.get('plot', False)
         figname = kwargs_wfedrift.get('figname', None)
-        # Update figure save name
+        # Update figure save location
         if plot_fig and figname is not None:
             fileout = os.path.basename(figname)
             figpath = os.path.join(save_dir, fileout)
@@ -188,8 +195,6 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
             kwargs_wfedrift['rand_seed'] = rand_seed_dwfe
 
         wfe_dict = gen_wfe_drift(obs_input, **kwargs_wfedrift)
-    else:
-        wfe_dict = None
 
     # Select only a specific detector to generate simulations?
     if detname is None:
@@ -489,6 +494,7 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                         wfe_drift_exp = np.interp(tval_exp, tval_all, wfe_total)
                     else:
                         wfe_drift_exp = 0
+                    obs_params['wfe_drift'] = wfe_drift_exp
 
                     # Generate dithered slope image for given exposure ID
                     if dry_run:
@@ -764,6 +770,7 @@ def sources_to_slope(source_table, nircam_obj, obs_params, tel_pointing,
     filt = obs_params['filter']
     mags = source_table[filt].data
     expnum = int(obs_params['obs_id_info']['exposure_number'])
+    print(kwargs)
     hdul_sci_image = gen_unconvolved_point_source_image(nrc, tel_pointing, ra_deg, dec_deg, mags, 
                                                         expnum=expnum, **kwargs)
     
@@ -776,6 +783,12 @@ def sources_to_slope(source_table, nircam_obj, obs_params, tel_pointing,
         # of coronagraphic mask transmission, off-axis, and on-axis PSFs.
         # PSF(x,y) = trans(x,y)*psf_off + (1-trans(x,y))*psf_on
         trans = nrc.mask_images['OVERMASK']
+        scale = kwargs['osamp'] / nrc.oversample
+        trans = frebin(trans, scale)
+        trans_oversized = np.ones_like(hdul_sci_image[0].data)
+        x0, y0 =( hdul_sci_image[0].header['XSCI0'], hdul_sci_image[0].header['YSCI0'])
+        # trans_oversized[]
+        # trans = pad_or_cut_to_size(trans, hdul_sci_image[0].data.shape, fill_val=1)
         
         wfe_drift = kwargs.get('wfe_drift')
 
@@ -1062,13 +1075,32 @@ def slope_to_fitswriter(det, cal_obj, im_slope=None, cframe='det',
 
 
 def gen_wfe_drift(obs_input, case='BOL', iec_period=300, slew_init=10, rand_seed=None,
-                  plot=False, figname=None):
+                  t0_offset=False, plot=False, figname=None):
     """
     Parameters
     ==========
-    obs_input : 
+    obs_input : DMS_input class
+        Class to generate a series of observation dictionaries in order to 
+        build DMS-like files. Loads APT files to generate the necessary 
+        observation information.
+    case : string
+        Either "BOL" for current best estimate at beginning of life, or
+        "EOL" for more conservative prediction at end of life.
     iec_period : float
         IEC heater switching period in seconds.
+    slew_init : float
+        Assumed slew difference relative to previous program
+    rand_seed : None or int
+        Seed value to initialize random number generator to obtain
+        repeatable values.
+    t0_offset : bool
+        Shift delta WFE drift values to 0 at time t=0 (beginning of program)? 
+        If set to False, then relative drift values correspond to beginning
+        of the previous randomly-generated program.
+    plot : bool
+        Create a plot of the slew angles and associated RMS drift components.
+    figname : string
+        Output name (path) to save plot figure.
     """
 
     import webbpsf
@@ -1201,12 +1233,13 @@ def gen_wfe_drift(obs_input, case='BOL', iec_period=300, slew_init=10, rand_seed
 
     # Offset relative to first visit in sequence
     wfe_dict = wfe_dict_all.copy()
-    for k in ['frill', 'thermal']:
-        wfe_val = wfe_dict[k]
-        trel = (visit_start[0]*u.s).to(tunit).value
-        wfe_dict[k] = wfe_val - np.interp(trel, tvals.value, wfe_val)
-    # Update total RMS
-    wfe_dict['total'] = np.sqrt(wfe_dict['frill']**2 + wfe_dict['thermal']**2 + wfe_dict['iec']**2)
+    if t0_offset:
+        for k in ['frill', 'thermal']:
+            wfe_val = wfe_dict[k]
+            trel = (visit_start[0]*u.s).to(tunit).value
+            wfe_dict[k] = wfe_val - np.interp(trel, tvals.value, wfe_val)
+        # Update total RMS
+        wfe_dict['total'] = np.sqrt(wfe_dict['frill']**2 + wfe_dict['thermal']**2 + wfe_dict['iec']**2)
 
     wfe_dict['time_sec'] = tvals.to('s').value
     if plot:
