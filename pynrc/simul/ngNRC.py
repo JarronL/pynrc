@@ -73,6 +73,8 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
         'col_noise': None,
         'out_ADU': False,
     }
+    Currently only drifting coronagraphic on-mask stars (sci and ref)
+    Also drifts non-HCI observations, generating new PSF grids each exposure
 
     Keyword Args
     ============
@@ -316,7 +318,6 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                 except: pass
 
                 if is_hci:
-                    print(ap_nrc_name, filt)
                     nrc = obs_hci(sp_star, dist_pc, filter=filt, apname=ap_nrc_name, 
                                   use_ap_info=True, disk_params=disk_params, 
                                   autogen_coeffs=False, detector=detname, **kwargs_nrc2)
@@ -328,7 +329,7 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
 
                     # Create grid of PSFs
                     if (disk_params is not None) or (src_tbl is not None):
-                        nrc.gen_disk_psfs()
+                        nrc.gen_disk_psfs(force=True)
                         hdul_psfs = nrc.psf_list
 
                     # Add planets
@@ -358,6 +359,8 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                     # for each exposure.
                     if (src_tbl is not None) and (wfe_dict is None):
                         hdul_psfs = nrc.gen_psfs_over_fov(**kwargs_psf)
+                    else:
+                        hdul_psfs = None
 
                 # Get Zodiacal background emission.
                 ra_ref, dec_ref = (op_temp['ra_ref'], op_temp['dec_ref'])
@@ -526,7 +529,8 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
 
                         if src_tbl is not None:
                             # Create slope image from table
-                            hdul_psfs = None if wfe_drift_exp is not None else hdul_psfs
+                            # res = (src_tbl, nrc, obs_params, tel_pointing, hdul_psfs, wfe_drift_exp)
+                            # return res
                             im_slope += sources_to_slope(src_tbl, nrc, obs_params, tel_pointing,
                                                          hdul_psfs=hdul_psfs, im_bg=0, 
                                                          wfe_drift=wfe_drift_exp)
@@ -549,6 +553,11 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                             obs_params['filename'] = 'pynrc_' + obs_params['filename']
                             slope_to_level1b(im_slope, obs_params, cal_obj=cal_obj, 
                                              save_dir=save_dir, **kwargs_pynrc)
+
+        # Get rid of previous instances
+        try: del nrc
+        except: pass
+
 
 
 def save_slope_image(im_slope, obs_params, save_dir=None, **kwargs):
@@ -770,7 +779,6 @@ def sources_to_slope(source_table, nircam_obj, obs_params, tel_pointing,
     filt = obs_params['filter']
     mags = source_table[filt].data
     expnum = int(obs_params['obs_id_info']['exposure_number'])
-    print(kwargs)
     hdul_sci_image = gen_unconvolved_point_source_image(nrc, tel_pointing, ra_deg, dec_deg, mags, 
                                                         expnum=expnum, **kwargs)
     
@@ -782,27 +790,27 @@ def sources_to_slope(source_table, nircam_obj, obs_params, tel_pointing,
         # For coronagraphy, assume position-dependent PSFs are a function
         # of coronagraphic mask transmission, off-axis, and on-axis PSFs.
         # PSF(x,y) = trans(x,y)*psf_off + (1-trans(x,y))*psf_on
+
+        # Get transmission mask and 
         trans = nrc.mask_images['OVERMASK']
         scale = kwargs['osamp'] / nrc.oversample
-        trans = frebin(trans, scale)
+        trans = frebin(trans, scale=scale, total=False)
         trans_oversized = np.ones_like(hdul_sci_image[0].data)
-        x0, y0 =( hdul_sci_image[0].header['XSCI0'], hdul_sci_image[0].header['YSCI0'])
-        # trans_oversized[]
-        # trans = pad_or_cut_to_size(trans, hdul_sci_image[0].data.shape, fill_val=1)
-        
-        wfe_drift = kwargs.get('wfe_drift')
+        x0, y0 = (hdul_sci_image[0].header['XSCI0'], hdul_sci_image[0].header['YSCI0'])
+        x1 = int(np.abs(x0*kwargs['osamp']))
+        y1 = int(np.abs(y0*kwargs['osamp']))
+        x2, y2 = (x1 + trans.shape[1], y1 + trans.shape[0])
+        trans_oversized[y1:y2,x1:x2] = trans
 
         # Off-axis component
         hdul_sci_image_off = deepcopy(hdul_sci_image)
-        hdul_sci_image_off[0].data = hdul_sci_image_off[0].data * trans
-        psf_off = nrc.calc_psf_from_coeff(return_oversample=True, return_hdul=True,  
-                                          coord_vals=(10,10), coord_frame='idl',
-                                          wfe_drift=wfe_drift)
+        hdul_sci_image_off[0].data = hdul_sci_image_off[0].data * trans_oversized
+        psf_off = nrc.calc_psf_from_coeff(use_bg_psf=True, return_oversample=True, return_hdul=True)
         hdul_conv_off = convolve_image(hdul_sci_image_off, psf_off, output_sampling=1, return_hdul=True)
 
         # On-axis component (closest PSF convolution, only for bar mask)
         hdul_sci_image_on = deepcopy(hdul_sci_image)
-        hdul_sci_image_on[0].data = hdul_sci_image_on[0].data * (1 - trans)
+        hdul_sci_image_on[0].data = hdul_sci_image_on[0].data * (1 - trans_oversized)
         hdul_psfs = nrc.psf_list if hdul_psfs is None else hdul_psfs
         hdul_conv_on = convolve_image(hdul_sci_image_on, hdul_psfs, output_sampling=1, return_hdul=True)
         

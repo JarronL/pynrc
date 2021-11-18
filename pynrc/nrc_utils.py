@@ -1160,6 +1160,7 @@ def gen_unconvolved_point_source_image(nrc, tel_pointing, ra_deg, dec_deg, mags,
     """
     
     from webbpsf_ext.spectra import mag_to_counts
+    from .obs_nircam import attenuate_with_coron_mask, gen_coron_mask
     
     # Observation aperture
     siaf_ap_obs = nrc.siaf_ap if siaf_ap_obs is None else siaf_ap_obs
@@ -1197,6 +1198,29 @@ def gen_unconvolved_point_source_image(nrc, tel_pointing, ra_deg, dec_deg, mags,
     xsci = xsci[xmask]
     ysci = ysci[ymask]
     im_sci = im_pom[ymask][:,xmask]
+
+    # Attenuate image by coronagraphic mask features (ND squaures and COM holder)
+    if nrc.is_coron and (not nrc.ND_acq):
+        try:
+            cmask = nrc.mask_images['OVERSAMP']
+        except:
+            mask_dict = gen_coron_mask(nrc)
+            cmask = mask_dict['OVERSAMP']
+
+        if cmask is not None:
+            # Make mask image same on-sky size as im_sci
+            ny_over, nx_over = np.array(im_sci.shape) * nrc.oversample / osamp
+            x0, y0 = (np.min(xsci), np.min(ysci))
+            x1 = int(np.abs(x0*nrc.oversample))
+            y1 = int(np.abs(y0*nrc.oversample))
+            x2, y2 = (x1 + cmask.shape[1], y1 + cmask.shape[0])
+            pad_vals = ((y1,int(ny_over-y2)), (x1,int(nx_over-x2)))
+            cmask_oversized = np.pad(cmask, pad_vals, mode='edge')
+
+            # Rebin to im_sci sampling
+            cmask_oversized = frebin(cmask_oversized, dimensions=im_sci.shape, total=False)
+            # Perform attenuation
+            im_sci = attenuate_with_coron_mask(nrc, im_sci, cmask_oversized)
     
     # Make science image HDUList from 
     hdul_sci_image = fits.HDUList([fits.PrimaryHDU(im_sci)])

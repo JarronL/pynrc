@@ -272,45 +272,31 @@ class nrc_hci(NIRCam):
             self.update_detectors(x0=x0, y0=y0)
 
     def _gen_cmask(self):
+        """ Generate coronagraphic mask transmission images.
+
+        Output images are in 'sci' coordinates.
         """
-        Generate coronagraphic mask transmission images.
+        self.mask_images = gen_coron_mask(self)
 
-        Output images are in V2/V3 coordinates.
+    def attenuate_with_mask(self, image_oversampled, cmask=None):
+        """ Image attenuation from coronagraph mask features
+
+        Multiply image data by coronagraphic mask.
+        Excludes region already affected by observed occulting mask.
+        Involves mainly ND Squares and opaque COM holder.
+        Appropriately accounts for COM substrate wavelength-dep throughput.
+        
+        WARNING: If self.ND_acq=True, then bandpass already includes
+        ND throughput, so be careful not to double count.
         """
-        mask = self.image_mask
-        pupil = self.pupil_mask
-        oversample = self.oversample
 
-        mask_dict = {}
-        if (not self.is_coron) and (not self.is_lyot):
-            mask_dict['DETSAMP'] = None
-            mask_dict['OVERSAMP'] = None
-        else:
-            detid = self.Detector.detid
-            x0, y0 = (self.det_info['x0'], self.det_info['y0'])
-            xpix, ypix = (self.det_info['xpix'], self.det_info['ypix'])
+        cmask = self.mask_images.get('OVERSAMP') if cmask is None else cmask
 
-            # im_det  = build_mask_detid(detid, oversample=1, pupil=pupil)
-            im_over = build_mask_detid(detid, oversample=oversample, 
-                                       pupil=pupil, filter=self.filter)
+        # In case of imaging
+        if cmask is None:
+            return image_oversampled
 
-            # Convert to det coords and crop
-            # im_det  = sci_to_det(im_det, detid)
-            im_over = sci_to_det(im_over, detid)
-            im_det = frebin(im_over, scale=1/oversample, total=False)
-
-            im_det = im_det[y0:y0+ypix, x0:x0+xpix]
-            # Crop oversampled image
-            ix1, iy1 = np.array([x0, y0]) * oversample
-            ix2 = ix1 + xpix * oversample
-            iy2 = iy1 + ypix * oversample
-            im_over = im_over[iy1:iy2, ix1:ix2]
-
-            # Revert to sci coords
-            mask_dict['DETSAMP'] = det_to_sci(im_det, detid)
-            mask_dict['OVERSAMP'] = det_to_sci(im_over, detid)
-
-        self.mask_images = mask_dict
+        return attenuate_with_coron_mask(self, image_oversampled, cmask)
 
     def gen_pointing_offsets(self, rand_seed=None):
         """
@@ -648,14 +634,14 @@ class obs_hci(nrc_hci):
         self._det_info_ref = merge_dicts(kw1,kw2)
 
 
-    def gen_disk_psfs(self, wfe_drift=0, **kwargs):
+    def gen_disk_psfs(self, wfe_drift=0, force=False, **kwargs):
         """
         Save instances of NIRCam PSFs that are incrementally offset
         from coronagraph center to convolve with a disk image.
         """
         from webbpsf_ext.webbpsf_ext_core import _transmission_map
 
-        if self._disk_params is None:
+        if (self._disk_params is None) and (force==False):
             # No need to generate if no disk
             self.psf_list = None
         elif self.image_mask is None:
@@ -683,7 +669,7 @@ class obs_hci(nrc_hci):
             nx, ny = (self.det_info['xpix'], self.det_info['ypix'])
             if 'FULL' in self.det_info['wind_mode']:
                 trans = build_mask_detid(self.Detector.detid, oversample=self.oversample,
-                                         pupil=self.pupil, nd_squares=False, mask_holder=False)
+                                         pupil=self.pupil_mask, nd_squares=False, mask_holder=False)
             elif self._use_ap_info:
                 siaf_ap = self.siaf_ap
                 xv = np.arange(nx)
@@ -1092,38 +1078,7 @@ class obs_hci(nrc_hci):
         # If ND_acq, then disk already multipled by ND throughput in bandpass.
         cmask = self.mask_images['OVERSAMP']
         if use_cmask and (cmask is not None) and (not self.ND_acq):
-            w_um = self.bandpass.avgwave() / 1e4
-            com_th = nircam_com_th(wave_out=w_um)
-
-            # Exclude actual coronagraphic mask since this will be
-            # taken into account during PSF convolution. Not true for
-            # all other elements within FOV, ND squares, and mask holder.
-            if 'FULL' in self.det_info['wind_mode']:
-                cmask_temp = cmask.copy()                
-                # center = cdict['cen_sci']
-                cdict = coron_ap_locs(self.module, self.channel, self.image_mask, pupil=self.pupil_mask)
-                center = np.array(cdict['cen_sci']) * self.oversample
-                # center = np.array(self.siaf_ap.reference_point('sci'))*self.oversample
-                r, th = dist_image(cmask_temp, pixscale=pixscale_over, center=center, return_theta=True)
-                x_asec, y_asec = rtheta_to_xy(r, th)
-                ind = (np.abs(y_asec)<4.5) & (cmask_temp>0)
-                cmask_temp[ind] = com_th
-            elif self.ND_acq:
-                # No modifications if ND_acq
-                cmask_temp = cmask
-            else:
-                cmask_temp = cmask.copy()
-                r, th = dist_image(cmask_temp, pixscale=pixscale_over, return_theta=True)
-                x_asec, y_asec = rtheta_to_xy(r, th)
-                # ind = (np.abs(x_asec)<10.05) & (np.abs(y_asec)<4.5)
-                ind = np.abs(y_asec)<4.5
-                cmask_temp[ind] = com_th
-            
-            # COM throughput taken into account in bandpass throughput curve
-            # so divide out
-            cmask_temp = cmask_temp / com_th
-
-            hdul_rot_shift[0].data *= cmask_temp
+            hdul_rot_shift[0].data = self.attenuate_with_mask(hdul_rot_shift[0].data, cmask=cmask)
 
         ##################################
         # Image convolution
@@ -2394,3 +2349,95 @@ def get_cen_offsets(self, idl_offset=(0,0), PA_offset=0):
     dely_asec = dely_sci * self.pixelscale
     
     return (delx_asec, dely_asec)
+
+
+def gen_coron_mask(self):
+    """
+    Generate coronagraphic mask transmission images.
+
+    Output images are in 'sci' coordinates.
+    """
+    mask = self.image_mask
+    pupil = self.pupil_mask
+    oversample = self.oversample
+
+    mask_dict = {}
+    if (not self.is_coron) and (not self.is_lyot):
+        mask_dict['DETSAMP'] = None
+        mask_dict['OVERSAMP'] = None
+    else:
+        detid = self.Detector.detid
+        x0, y0 = (self.det_info['x0'], self.det_info['y0'])
+        xpix, ypix = (self.det_info['xpix'], self.det_info['ypix'])
+
+        # im_det  = build_mask_detid(detid, oversample=1, pupil=pupil)
+        im_over = build_mask_detid(detid, oversample=oversample, 
+                                    pupil=pupil, filter=self.filter)
+        # Convert to det coords and crop
+        # im_det  = sci_to_det(im_det, detid)
+        im_over = sci_to_det(im_over, detid)
+        im_det = frebin(im_over, scale=1/oversample, total=False)
+
+        im_det = im_det[y0:y0+ypix, x0:x0+xpix]
+        # Crop oversampled image
+        ix1, iy1 = np.array([x0, y0]) * oversample
+        ix2 = ix1 + xpix * oversample
+        iy2 = iy1 + ypix * oversample
+        im_over = im_over[iy1:iy2, ix1:ix2]
+
+        # Revert to sci coords
+        mask_dict['DETSAMP'] = det_to_sci(im_det, detid)
+        mask_dict['OVERSAMP'] = det_to_sci(im_over, detid)
+
+    return mask_dict
+    
+
+def attenuate_with_coron_mask(self, image_oversampled, cmask):
+    """ Image attenuation from coronagraph mask features
+
+    Multiply image data by coronagraphic mask.
+    Excludes region already affected by observed occulting mask.
+    Involves mainly ND Squares and opaque COM holder.
+    Appropriately accounts for COM substrate wavelength-dep throughput.
+    
+    WARNING: If self.ND_acq=True, then bandpass already includes
+    ND throughput, so be careful not to double count.
+    """
+
+    # In case of imaging
+    if cmask is None:
+        return image_oversampled
+
+    w_um = self.bandpass.avgwave() / 1e4
+    com_th = nircam_com_th(wave_out=w_um)
+    pixscale_over = self.pixelscale / self.oversample
+
+    # Exclude actual coronagraphic mask since this will be
+    # taken into account during PSF convolution. Not true for
+    # all other elements within FOV, ND squares, and mask holder.
+    if 'FULL' in self.det_info['wind_mode']:
+        cmask_temp = cmask.copy()                
+        # center = cdict['cen_sci']
+        cdict = coron_ap_locs(self.module, self.channel, self.image_mask, pupil=self.pupil_mask)
+        center = np.array(cdict['cen_sci']) * self.oversample
+        # center = np.array(self.siaf_ap.reference_point('sci'))*self.oversample
+        r, th = dist_image(cmask_temp, pixscale=pixscale_over, center=center, return_theta=True)
+        x_asec, y_asec = rtheta_to_xy(r, th)
+        ind = (np.abs(y_asec)<4.5) & (cmask_temp>0)
+        cmask_temp[ind] = com_th
+    elif self.ND_acq:
+        # No modifications if ND_acq
+        cmask_temp = cmask
+    else:
+        cmask_temp = cmask.copy()
+        r, th = dist_image(cmask_temp, pixscale=pixscale_over, return_theta=True)
+        x_asec, y_asec = rtheta_to_xy(r, th)
+        # ind = (np.abs(x_asec)<10.05) & (np.abs(y_asec)<4.5)
+        ind = np.abs(y_asec)<4.5
+        cmask_temp[ind] = com_th
+    
+    # COM throughput taken into account in bandpass throughput curve
+    # so divide out
+    cmask_temp = cmask_temp / com_th
+
+    return image_oversampled * cmask_temp
