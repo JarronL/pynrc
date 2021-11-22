@@ -6,14 +6,12 @@ pyNRC is a set of Python-based tools for planning observations with JWST NIRCam,
 such as an ETC, a simple image slope simulator, and an enhanced data simulator.
 This package works for a variety of NIRCam observing modes including direct imaging, 
 coronagraphic imaging, slitless grism spectroscopy, DHS observations, 
-and weak lens imaging. All PSFs are generated via WebbPSF 
-(https://webbpsf.readthedocs.io) to reproduce realistic JWST images and spectra.
+and weak lens imaging. All PSFs are generated via webbpsf (https://webbpsf.readthedocs.io) 
+and webbpsf_ext (https://github.com/JarronL/webbpsf_ext) to reproduce realistic JWST 
+images and spectra.
 
 Developed by Jarron Leisenring and contributors at University of Arizona (2015-21).
 """
-from __future__ import absolute_import, division, print_function, unicode_literals
-
-
 from .version import __version__
 
 import astropy
@@ -50,8 +48,12 @@ class Conf(_config.ConfigNamespace):
     PYNRC_PATH = _config.ConfigItem(path, 'Directory path to data files \
                                     required for pynrc calculations.')
 
+    autoconfigure_logging = _config.ConfigItem(
+        False,
+        'Should pynrc configure logging for itself and others?'
+    )
     logging_level = _config.ConfigItem(
-        ['INFO', 'DEBUG', 'WARN', 'WARNING', 'ERROR', 'CRITICAL', 'NONE'],
+        ['INFO', 'DEBUG', 'WARN', 'ERROR', 'CRITICAL', 'NONE'],
         'Desired logging level for pyNRC.'
     )
     default_logging_level = _config.ConfigItem('INFO', 
@@ -67,28 +69,28 @@ class Conf(_config.ConfigNamespace):
 
 conf = Conf()
 
+# from webbpsf_ext import robust
 
-from .logging_utils import setup_logging#, restart_logging
+from .logging_utils import setup_logging
 setup_logging(conf.default_logging_level, verbose=False)
 
-from .nrc_utils import (read_filter, pix_noise, bp_2mass, bp_wise, \
-                        stellar_spectrum, source_spectrum, planets_sb12)
+from .nrc_utils import read_filter, bp_2mass, bp_wise
+from .nrc_utils import pix_noise
+from .nrc_utils import stellar_spectrum, source_spectrum, planets_sb12
 
-from .pynrc_core import (DetectorOps, NIRCam)
+from .pynrc_core import DetectorOps, NIRCam
 
-from .obs_nircam import (obs_hci, nrc_hci)
-
-from .detops import (multiaccum, det_timing, nrc_header)
+from .obs_nircam import obs_hci, nrc_hci
+from .detops import multiaccum, det_timing, nrc_header
 
 #from .ngNRC import slope_to_ramp, nproc_use_ng
 
-from .maths import *
-
-from .simul import ngNRC
-
+from .maths import coords, robust, fast_poly, image_manip
 from .reduce import ref_pixels
 
-from .reduce.calib import nircam_dark
+from .reduce.calib import nircam_dark, nircam_cal
+from .simul.apt import DMS_input
+from .simul import ngNRC
 
 from .testing import perform_benchmarks
 

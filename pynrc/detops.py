@@ -8,6 +8,9 @@ import datetime, time
 import logging
 _log = logging.getLogger('pynrc')
 
+from webbpsf_ext.webbpsf_ext_core import _check_list
+from .nrc_utils import pix_noise
+
 class multiaccum(object):
     """
     A class for defining MULTIACCUM ramp settings.
@@ -35,6 +38,8 @@ class multiaccum(object):
         Number of reset frames within first ramp. Default=0.
     nr2 : int
         Number of reset frames for subsequent ramps. Default=1.
+    wind_mode : str
+        Set to determine maximum number of allowed groups.
 
     Notes
     -----
@@ -57,16 +62,7 @@ class multiaccum(object):
     """
 
     def __init__(self, read_mode='RAPID', nint=1, ngroup=1, nf=1, nd1=0, nd2=0, nd3=0, 
-                 nr1=1, nr2=1, **kwargs):
-
-
-        # Pre-defined patterns
-        patterns = ['RAPID', 'BRIGHT1', 'BRIGHT2', 'SHALLOW2', 'SHALLOW4', 'MEDIUM2', 'MEDIUM8', 'DEEP2', 'DEEP8']
-        nf_arr   = [1,1,2,2,4,2,8, 2, 8]
-        nd2_arr  = [0,1,0,3,1,8,2,18,12]
-        # TODO: ng_max currently ignored, because not valid for TSO
-        ng_max   = [10,10,10,10,10,10,10,20,20]
-        self._pattern_settings = dict(zip(patterns, zip(nf_arr, nd2_arr, ng_max)))
+                 nr1=1, nr2=1, wind_mode='FULL', **kwargs):
 
         self.nint = nint
         self._ngroup_max = 10000
@@ -188,6 +184,14 @@ class multiaccum(object):
         plist = sorted(list(self._pattern_settings.keys()))
         return ['CUSTOM'] + plist
 
+    @property
+    def _pattern_settings(self):
+        patterns = ['RAPID', 'BRIGHT1', 'BRIGHT2', 'SHALLOW2', 'SHALLOW4', 'MEDIUM2', 'MEDIUM8', 'DEEP2', 'DEEP8']
+        nf_arr   = [1,1,2,2,4,2,8, 2, 8]
+        nd2_arr  = [0,1,0,3,1,8,2,18,12]
+        ng_max   = [10,10,10,10,10,10,10,20,20]
+
+        return dict(zip(patterns, zip(nf_arr, nd2_arr, ng_max)))
 
     def to_dict(self, verbose=False):
         """Export ramp settings to a dictionary."""
@@ -219,8 +223,8 @@ class multiaccum(object):
             self._nd1 = 0
             self._nd2 = nd2
             self._nd3 = 0
-            _log.info('Setting nf={}, nd1={}, nd2={}, nd3={}.'\
-                     .format(self.nf, self.nd1, self.nd2, self.nd3))
+            _log.info('Setting ngroup={}, nf={}, nd1={}, nd2={}, nd3={}.'\
+                     .format(self.ngroup, self.nf, self.nd1, self.nd2, self.nd3))
 
 
     def _check_custom(self, val_new, val_orig):
@@ -322,6 +326,7 @@ class det_timing(object):
         self._nchans = nchans
         self._nff = nff
 
+        self.multiaccum = multiaccum(wind_mode=wind_mode, **kwargs)
         self.wind_mode = wind_mode.upper()
         self._xpix = xpix; self._x0 = x0
         self._ypix = ypix; self._y0 = y0
@@ -340,8 +345,15 @@ class det_timing(object):
         self._line_overhead = loh
         # Pixel or line resets
         self._reset_type = reset_type
-        
-        self.multiaccum = multiaccum(**kwargs)
+
+    @property
+    def wind_mode(self):
+        """Window mode attribute"""
+        return self._wind_mode
+    @wind_mode.setter
+    def wind_mode(self, value):
+        """Set Window mode attribute"""
+        self._wind_mode = value
 
     @property
     def y0(self):
@@ -370,7 +382,7 @@ class det_timing(object):
 
     @property
     def nout(self):
-        """Number of simultaenous detector output channels stripes"""
+        """Number of simultaneous detector output channels stripes"""
         return 1 if self.wind_mode == 'WINDOW' else self._nchans
 
     @property
@@ -393,6 +405,32 @@ class det_timing(object):
         ref_all = np.array([lower,upper,left,right], dtype='int')
         ref_all[ref_all<0] = 0
         return ref_all
+
+    @property
+    def mask_act(self):
+        """Active pixel mask for det coordinates"""
+        # mask_act = np.zeros([self.ypix,self.xpix]).astype('bool')
+        # rb, rt, rl, rr = self.ref_info
+        # mask_act[rb:-rt,rl:-rr] = True  # This doesn't work if rr or rt are 0!!
+        return ~self.mask_ref
+    @property
+    def mask_ref(self):
+        """Reference pixel mask for det coordinates"""
+        # [bottom, upper, left, right]
+        rb, rt, rl, rr = self.ref_info
+        ref_mask = np.zeros([self.ypix,self.xpix], dtype=bool)
+        if rb>0: ref_mask[0:rb,:] = True
+        if rt>0: ref_mask[-rt:,:] = True
+        if rl>0: ref_mask[:,0:rl] = True
+        if rr>0: ref_mask[:,-rr:] = True
+        return ref_mask
+    @property
+    def mask_channels(self):
+        """Channel masks for det coordinates"""
+        ch_mask = np.zeros([self.ypix,self.xpix])
+        for ch in np.arange(self.nout):
+            ch_mask[:,ch*self.chsize:(ch+1)*self.chsize] = ch
+        return ch_mask
 
     @property
     def nff(self):
@@ -467,7 +505,7 @@ class det_timing(object):
     def _fix_precision(self, input):
         """
         Many timing calculations result from minor precision issues with very
-        small numbers (1e-16) added the real result. This function attempts
+        small numbers (1e-16) added to the real result. This function attempts
         to truncate these small innaccuracies by dividing by the clock sample
         time to get the total integer number of clock cycles.
         """
@@ -538,7 +576,7 @@ class det_timing(object):
         
     @property
     def time_frame(self):
-        """Determine frame times based on xpix, ypix, and wind_mode."""
+        """Determine frame time (sec) based on xpix, ypix, and wind_mode."""
 
         chsize = self.chsize                   # Number of x-pixels within a channel
         xticks = chsize + self._line_overhead  # Clock ticks per line
@@ -600,20 +638,20 @@ class det_timing(object):
         res = self.multiaccum.nint * self.time_ramp
         return self._fix_precision(res)
 
-#     @property
-#     def time_total_int(self):
-#         """Total time for all frames in a ramp.
-#         
-#         Includes resets and excess drops, as well as NFF Rows Reset.
-#         """
-# 
-#         ma = self.multiaccum
-#         nf = ma.nf; nd1 = ma.nd1; nd2 = ma.nd2; nd3 = ma.nd3
-#         ngroup = ma.ngroup
-#         nr = 1
-# 
-#         nframes = nr + nd1 + ngroup*nf + (ngroup-1)*nd2 + nd3        
-#         return nframes * self.time_frame + self.time_row_reset
+    # @property
+    # def time_total_int(self):
+    #     """Total time for all frames in a ramp.
+        
+    #     Includes resets and excess drops, as well as NFF Rows Reset.
+    #     """
+
+    #     ma = self.multiaccum
+    #     nf = ma.nf; nd1 = ma.nd1; nd2 = ma.nd2; nd3 = ma.nd3
+    #     ngroup = ma.ngroup
+    #     nr = 1
+
+    #     nframes = nr + nd1 + ngroup*nf + (ngroup-1)*nd2 + nd3        
+    #     return nframes * self.time_frame + self.time_row_reset
 
     @property
     def time_total_int1(self):
@@ -696,6 +734,8 @@ class det_timing(object):
             Date string of observation ('2020-02-28')
         time_start : str
             Time string of observation ('12:24:56')
+        offset_seconds : None or float
+            Time from beginning of observation until start of integration.
 
         Returns
         -------
@@ -749,12 +789,83 @@ class det_timing(object):
 
         return int_times_tab
         
+    def pixel_noise(self, ng=None, nf=None, verbose=False, **kwargs):
+        """Noise values per pixel.
+        
+        Return theoretical noise calculation for the specified MULTIACCUM exposure 
+        in terms of e-/sec. This uses the pre-defined detector-specific noise 
+        properties. Can specify flux of a source as well as background and 
+        zodiacal light (in e-/sec/pix). After getting the noise per pixel per
+        ramp (integration), value(s) are divided by the sqrt(NINT) to return
+        the final noise
+
+        Parameters
+        ----------
+        ng : None or int or image
+            Option to explicitly state number of groups. This is specifically
+            used to enable the ability of only calculating pixel noise for
+            unsaturated groups for each pixel. If a numpy array, then it should
+            be the same shape as `fsrc` image. By default will use `self.multiaccum.ngroup`.
+        nf : int
+            Option to explicitly states number of frames in each group.
+            By default will use `self.multiaccum.nf`.
+        verbose : bool
+            Print out results at the end.
+
+        Keyword Arguments
+        -----------------
+        rn : float
+            Read Noise per pixel (e-).
+        ktc : float
+            kTC noise (in e-). Only valid for single frame (n=1)
+        p_excess : array-like
+            An array or list of two elements that holds the parameters
+            describing the excess variance observed in effective noise plots.
+            By default these are both 0. For NIRCam detectors, recommended
+            values are [1.0,5.0] for SW and [1.5,10.0] for LW.
+        idark : float
+            Dark current in e-/sec/pix.
+        fsrc : float
+            Flux of source in e-/sec/pix.
+        fzodi : float
+            Zodiacal light emission in e-/sec/pix.
+        fbg : float
+            Any additional background (telescope emission or scattered light?)
+        ideal_Poisson : bool
+            If set to True, use total signal for noise estimate,
+            otherwise MULTIACCUM equation is used.
+
+        Notes
+        -----
+        fsrc, fzodi, and fbg are functionally the same as they are immediately summed.
+        They can also be single values or multiple elements (list, array, tuple, etc.).
+        If multiple inputs are arrays, make sure their array sizes match.
+        
+        """
+
+        ma = self.multiaccum
+        if ng is None:
+            ng = ma.ngroup
+        if nf is None:
+            nf = ma.nf
+
+        # Pixel noise per ramp (e-/sec/pix)
+        pn = pix_noise(ngroup=ng, nf=nf, nd2=ma.nd2, tf=self.time_frame, **kwargs)
+    
+        # Divide by sqrt(Total Integrations)
+        final = pn / np.sqrt(ma.nint)
+        if verbose:
+            print('Noise (e-/sec/pix): {}'.format(final))
+            print('Total Noise (e-/pix): {}'.format(final*self.time_exp))
+
+        return final
+
     def pix_timing_map(self, same_scan_direction=None, reverse_scan_direction=None,
                        avg_groups=False, reset_zero=False, return_flat=False):
         """Create array of pixel times for a single ramp. 
         
         Each pixel value corresponds to the precise time at which
-        that pixel was read out during the ramp acquisiton. The first
+        that pixel was read out during the ramp acquisition. The first
         pixel(s) have t=0.
         
         Parameters
@@ -934,21 +1045,7 @@ class det_timing(object):
             return data.ravel()
         else: # Get rid of dimensions of length 1
             return data.squeeze()
-        
-        
-def _check_list(value, temp_list, var_name=None):
-    """
-    Helper function to test if a value exists within a list. 
-    If not, then raise ValueError exception.
-    This is mainly used for limiting the allowed values of some variable.
-    """
-    if value not in temp_list:
-        # Replace None value with string for printing
-        if None in temp_list: temp_list[temp_list.index(None)] = 'None'
-        var_name = '' if var_name is None else var_name + ' '
-        err_str = "Invalid {}setting: {} \n\tValid values are: {}" \
-                         .format(var_name, value, ', '.join(temp_list))
-        raise ValueError(err_str)
+
 
 def tuples_to_dict(pairs, verbose=False):
     """
@@ -1367,7 +1464,10 @@ def create_detops(header, DMS=False, read_mode=None, nint=None, ngroup=None,
     from pynrc.pynrc_core import DetectorOps
 
     # Detector ID
-    detector = header['SCA_ID'] if detector is None else detector
+    if detector is None:
+        detector = header.get('SCA_ID')
+        if detector is None:
+            detector = header.get('DETECTOR')         
 
     # Detector size
     xpix = header['SUBSIZE1'] if DMS else header['NAXIS1'] if xpix is None else xpix
@@ -1382,28 +1482,9 @@ def create_detops(header, DMS=False, read_mode=None, nint=None, ngroup=None,
         y1 = header['SUBSTRT2'] if DMS else header['ROWCORNR']
         y0 = y1 - 1
 
-    # Subarray setting, Full, Stripe, or Window
-    # if wind_mode is None:
-    #     if DMS:
-    #         if 'FULL' in header['SUBARRAY']:
-    #             wind_mode = 'FULL'
-    #         elif 'GRISM' in header['SUBARRAY']:
-    #             wind_mode = 'STRIPE'
-    #         else:
-    #             wind_mode = 'WINDOW'
-    #     else:
-    #         if not header['SUBARRAY']:
-    #             wind_mode = 'FULL'
-    #         elif 'DISABLE' in header['HWINMODE']:
-    #             wind_mode = 'STRIPE'
-    #         else:
-    #             wind_mode = 'WINDOW'
-
     # Subarray setting: Full, Stripe, or Window
     if wind_mode is None:
-        if DMS and ('FULL' in header['SUBARRAY']):
-            wind_mode = 'FULL'
-        elif (not DMS) and (not header['SUBARRAY']):
+        if xpix==ypix==2048:
             wind_mode = 'FULL'
         else:
             # Test if STRIPE or WINDOW

@@ -1,10 +1,11 @@
-from __future__ import print_function
 import sys
+from webbpsf_ext.logging_utils import setup_logging as setup_logging_wext
+
+from . import conf
 
 import logging
 _log = logging.getLogger('pynrc')
 
-from . import conf
 
 _DISABLE_FILE_LOGGING_VALUE = 'none'
 
@@ -43,11 +44,11 @@ def restart_logging(verbose=True):
     root_logger = logging.getLogger()
     root_logger.handlers = []
 
-    if level in ['DEBUG', 'INFO', 'WARN', 'WARNING', 'ERROR', 'CRITICAL']:
+    if level in ['DEBUG', 'INFO', 'WARN', 'ERROR', 'CRITICAL']:
         level_id = getattr(logging, level)  # obtain one of the DEBUG, INFO, WARN,
                                             # or ERROR constants
         if verbose:
-            print("pyNRC log messages of level {0} and above will be shown.".format(level))
+            print(f"pyNRC log messages of level {level} and above will be shown.")
     elif level == 'NONE':
         root_logger.handlers = []  # n.b. this will clear any handlers other libs/users configured
         return
@@ -104,6 +105,12 @@ def setup_logging(level='INFO', filename=None, verbose=True):
     By default, this sets up log messages to be written to the screen, 
     but the user can also request logging to a file.
 
+    Editing the WebbPSF config file to set `autoconfigure_logging = True`
+    (and any of the logging settings you wish to persist) instructs
+    WebbPSF to apply your settings on import. (This is not
+    done by default in case you have configured `logging` yourself
+    and don't wish to overwrite your configuration.)
+
     For more advanced log handling, see the Python logging module's
     own documentation.
 
@@ -135,6 +142,9 @@ def setup_logging(level='INFO', filename=None, verbose=True):
     # do the actual work.
     level = str(level).upper()
 
+    if level=='WARNING':
+        level = 'WARN'
+
     # The astropy config system will enforce the limited set of values for the logging_level
     # parameter by raising a TypeError on this next line if we feed in an invalid string.
     conf.logging_level = level
@@ -145,3 +155,5 @@ def setup_logging(level='INFO', filename=None, verbose=True):
 
     conf.logging_filename = filename
     restart_logging(verbose=verbose)
+
+    setup_logging_wext(level=level, filename=filename, verbose=False)

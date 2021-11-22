@@ -1,0 +1,96 @@
+# APT Output Product
+# 
+# APT Version: Version 2021.2  JWST PRD: PRDOPSSOC-037 
+# Date: Thu Aug 05 19:56:30 GMT 2021
+
+JWST Pointing Report for JWST Approved Proposal 1073 (Unsaved)
+
+========================================
+* FULLBOX 8NIRSpec (Obs 1)
+** Visit 1:1
+Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
+  1    1   1    1 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000  -24.600  -64.100  +24.398 -557.017  -24.600  -64.100 TARGET     SCIENCE        0      0  0.000 (base)
+  1    1   1    2 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000  -24.400  -89.000  +24.247 -581.918  -24.400  -89.000 DITHER     SCIENCE        0      0 24.901          
+** Visit 1:2
+Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
+  1    1   1    3 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000  +24.600  -88.800  -24.753 -581.814  +24.600  -88.800 DITHER     SCIENCE        0      0  0.000 (base)
+  1    1   1    4 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000  +24.400  -63.900  -24.602 -556.914  +24.400  -63.900 DITHER     SCIENCE        0      0 24.901          
+** Visit 1:3
+Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
+  1    1   1    5 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000  +24.600  +64.100  -25.054 -428.914  +24.600  +64.100 DITHER     SCIENCE        0      0  0.000 (base)
+  1    1   1    6 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000  +24.400  +89.000  -24.902 -404.014  +24.400  +89.000 DITHER     SCIENCE        0      0 24.901          
+** Visit 1:4
+Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
+  1    1   1    7 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000  -24.600  +88.800  +24.098 -404.118  -24.600  +88.800 DITHER     SCIENCE        0      0  0.000 (base)
+  1    1   1    8 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000  -24.400  +63.900  +23.947 -429.018  -24.400  +63.900 DITHER     SCIENCE        0      0 24.901          
+
+========================================
+* FULLBOX 4 (Obs 2)
+** Visit 2:1
+Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
+  1    1   1    1 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000  -24.350  -12.580  +24.047 -505.498  -24.350  -12.580 TARGET     SCIENCE        0      0  0.000 (base)
+  1    1   1    2 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000  -24.550  +12.380  +24.198 -480.538  -24.550  +12.380 DITHER     SCIENCE        0      0 24.961          
+  1    1   1    3 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000  +24.350  +12.580  -24.702 -480.434  +24.350  +12.580 DITHER     SCIENCE        0      0 48.900          
+  1    1   1    4 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000  +24.550  -12.380  -24.853 -505.394  +24.550  -12.380 DITHER     SCIENCE        0      0 24.961          
+
+========================================
+* INTRAMODULEBOX 4 (Obs 3)
+** Visit 3:1
+Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
+  1    1   1    1 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   -2.900   -3.100   +2.578 -496.060   -2.900   -3.100 TARGET     SCIENCE        0      0  0.000 (base)
+  1    1   1    2 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   -3.100   +2.900   +2.767 -490.060   -3.100   +2.900 DITHER     SCIENCE        0      0  6.003          
+  1    1   1    3 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   +2.900   +3.100   -3.234 -489.872   +2.900   +3.100 DITHER     SCIENCE        0      0  6.003          
+  1    1   1    4 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   +3.100   -2.900   -3.422 -495.872   +3.100   -2.900 DITHER     SCIENCE        0      0  6.003          
+
+========================================
+* Subpixel 2 (Obs 4)
+** Visit 4:1
+Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
+  1    1   1    1 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   +0.000   +0.000   -0.328 -492.966   +0.000   +0.000 TARGET     SCIENCE        0      0  0.000 (base)
+  1    1   1    2 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   +0.226   +0.166   -0.554 -492.800   +0.226   +0.166 SUBDITHER  SCIENCE        0      0  0.281          
+
+========================================
+* Subpixel 4 (Obs 5)
+** Visit 5:1
+Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
+  1    1   1    1 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   +0.000   +0.000   -0.328 -492.966   +0.000   +0.000 TARGET     SCIENCE        0      0  0.000 (base)
+  1    1   1    2 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   +0.151   +0.136   -0.479 -492.830   +0.151   +0.136 SUBDITHER  SCIENCE        0      0  0.203          
+  1    1   1    3 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   +0.075   +0.211   -0.403 -492.755   +0.075   +0.211 SUBDITHER  SCIENCE        0      0  0.107          
+  1    1   1    4 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   +0.226   +0.045   -0.554 -492.921   +0.226   +0.045 SUBDITHER  SCIENCE        0      0  0.224          
+
+========================================
+* Subpixel 9 (Obs 6)
+** Visit 6:1
+Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
+  1    1   1    1 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   +0.000   +0.000   -0.328 -492.966   +0.000   +0.000 TARGET     SCIENCE        0      0  0.000 (base)
+  1    1   1    2 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   +0.030   +0.131   -0.358 -492.835   +0.030   +0.131 SUBDITHER  SCIENCE        0      0  0.134          
+  1    1   1    3 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   +0.060   +0.292   -0.389 -492.674   +0.060   +0.292 SUBDITHER  SCIENCE        0      0  0.164          
+  1    1   1    4 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   +0.101   +0.060   -0.428 -492.906   +0.101   +0.060 SUBDITHER  SCIENCE        0      0  0.235          
+  1    1   1    5 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   +0.161   +0.161   -0.489 -492.805   +0.161   +0.161 SUBDITHER  SCIENCE        0      0  0.117          
+  1    1   1    6 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   +0.191   +0.322   -0.519 -492.644   +0.191   +0.322 SUBDITHER  SCIENCE        0      0  0.164          
+  1    1   1    7 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   +0.262   +0.030   -0.589 -492.936   +0.262   +0.030 SUBDITHER  SCIENCE        0      0  0.300          
+  1    1   1    8 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   +0.292   +0.131   -0.619 -492.836   +0.292   +0.131 SUBDITHER  SCIENCE        0      0  0.105          
+  1    1   1    9 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   +0.322   +0.292   -0.650 -492.675   +0.322   +0.292 SUBDITHER  SCIENCE        0      0  0.164          
+
+========================================
+* INTRAMODULEBOX 4, Subpixel 2 (Obs 7)
+** Visit 7:1
+Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
+  1    1   1    1 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   -2.900   -3.100   +2.578 -496.060   -2.900   -3.100 TARGET     SCIENCE        0      0  0.000 (base)
+  1    1   1    2 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   -2.674   -2.934   +2.352 -495.895   -2.674   -2.934 SUBDITHER  SCIENCE        0      0  0.281          
+  1    1   1    3 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   -3.100   +2.900   +2.767 -490.060   -3.100   +2.900 DITHER     SCIENCE        0      0  5.850          
+  1    1   1    4 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   -2.874   +3.066   +2.540 -489.894   -2.874   +3.066 SUBDITHER  SCIENCE        0      0  0.281          
+  1    1   1    5 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   +2.900   +3.100   -3.234 -489.872   +2.900   +3.100 DITHER     SCIENCE        0      0  5.774          
+  1    1   1    6 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   +3.126   +3.266   -3.460 -489.706   +3.126   +3.266 SUBDITHER  SCIENCE        0      0  0.281          
+  1    1   1    7 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   +3.100   -2.900   -3.422 -495.872   +3.100   -2.900 DITHER     SCIENCE        0      0  6.166          
+  1    1   1    8 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   +3.326   -2.734   -3.648 -495.707   +3.326   -2.734 SUBDITHER  SCIENCE        0      0  0.281          
+  1    1   2    1 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   -2.900   -3.100   +2.578 -496.060   -2.900   -3.100 FILTER     SCIENCE        0      0  6.237          
+  1    1   2    2 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   -2.674   -2.934   +2.352 -495.895   -2.674   -2.934 SUBDITHER  SCIENCE        0      0  0.281          
+  1    1   2    3 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   -3.100   +2.900   +2.767 -490.060   -3.100   +2.900 DITHER     SCIENCE        0      0  5.850          
+  1    1   2    4 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   -2.874   +3.066   +2.540 -489.894   -2.874   +3.066 SUBDITHER  SCIENCE        0      0  0.281          
+  1    1   2    5 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   +2.900   +3.100   -3.234 -489.872   +2.900   +3.100 DITHER     SCIENCE        0      0  5.774          
+  1    1   2    6 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   +3.126   +3.266   -3.460 -489.706   +3.126   +3.266 SUBDITHER  SCIENCE        0      0  0.281          
+  1    1   2    7 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   +3.100   -2.900   -3.422 -495.872   +3.100   -2.900 DITHER     SCIENCE        0      0  6.166          
+  1    1   2    8 NRCALL_FULL               1 LMC-ASTR  +80.48750  -69.49750   +0.000   +0.000   +3.326   -2.734   -3.648 -495.707   +3.326   -2.734 SUBDITHER  SCIENCE        0      0  0.281          
+
+

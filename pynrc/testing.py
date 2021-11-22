@@ -1,4 +1,7 @@
-from .nrc_utils import *
+# from .nrc_utils import *
+import numpy as np
+from .nrc_utils import webbpsf, poppy, read_filter
+from .logging_utils import setup_logging
 from .pynrc_core import NIRCam
 
 def perform_benchmarks(filter='F430M', pupil=None, mask=None, module='A',
@@ -64,16 +67,16 @@ def perform_benchmarks(filter='F430M', pupil=None, mask=None, module='A',
         time_string = 'Took {:.2f} seconds to init WebbPSF'.format(dt)
         print(time_string)    
 
-        # PSF Geneation
-        bp = read_filter(filter, **kwargs)
+        # PSF Generation
+        nrc = NIRCam(filter=filter, **kwargs)
         tarr = []
         for i in range(5):
             t0 = time.time()
-            hdul = gen_webbpsf_psf(bp, wfe_drift=5, **kwargs)
+            _ = nrc.calc_psf()
             t1 = time.time()
             dt = t1-t0
             tarr.append(dt)
-        tdict['webbpsf_psf'] = dt = np.mean(tarr) - tdict['webbpsf_init'] 
+        tdict['webbpsf_psf'] = dt = np.mean(tarr)
         time_string = 'Took {:.2f} seconds to generate WebbPSF PSF'.format(dt)
         print(time_string)    
 
@@ -98,7 +101,7 @@ def perform_benchmarks(filter='F430M', pupil=None, mask=None, module='A',
     # WFE drift coefficient generation
     ####
     t0 = time.time()
-    nrc.wfe_drift = True
+    nrc.gen_wfedrift_coeff()
     t1 = time.time()
     dt = t1-t0
 
@@ -110,23 +113,19 @@ def perform_benchmarks(filter='F430M', pupil=None, mask=None, module='A',
     # Field coefficient generation
     ####
     t0 = time.time()
-    nrc.wfe_field = True
+    nrc.gen_wfefield_coeff()
     t1 = time.time()
 
     tdict['pynrc_field'] = dt = t1-t0
     time_string = 'Took {:.2f} seconds to generate WFE Field coefficients'.format(dt)
     print(time_string)
-
-    # Add aperture manually to save time
-    # This doesn't really matter, just needs to be something plausible
-    apname = nrc.get_siaf_apname()
-    nrc._siaf_ap = nrc.siaf_nrc[apname]
     
     tarr = []
     for i in range(10):
         t0 = time.time()
-        psf0, psf0_over = nrc.gen_psf(wfe_drift=5, coord_vals=(1024,1024), coord_frame='sci', 
-                                      return_oversample=True)
+        
+        _ = nrc.calc_psf_from_coeff(wfe_drift=5, coord_vals=(1024,1024), coord_frame='sci', 
+                                    return_oversample=True, return_hdul=False)
         t1 = time.time()
         dt = t1-t0
         tarr.append(dt)

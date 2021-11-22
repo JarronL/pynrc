@@ -1,26 +1,77 @@
-Fresh Installation
+Installation Notes
+===================
 
-WebbPSF
+Assume anaconda python >3.7 installation on Linux/Mac
 
-1. conda config --append channels http://ssb.stsci.edu/astroconda
-2. conda install pysynphot poppy jwxml pysiaf
-	- pysynphot 
-	- poppy 
-	- jwxml 
-	- pysiaf 
-3. conda update scikit-image --no-deps
-4. conda install webbpsf --no-deps
+0. Add channels:
+   conda config --add channels conda-forge
+   conda config --add channels http://ssb.stsci.edu/astroconda
+   Check .condarc
 
-JWST Background
+1. pysiaf - https://github.com/spacetelescope/pysiaf
+   Download source directly from github. Navigate to directory, 
+   then use pip's -e option to create an editable installation:
+      "pip install -e ."
+   
+2. poppy - https://github.com/spacetelescope/poppy
+   Download source directly from github. Navigate to directory, 
+   then use pip's -e option to create an editable installation:
+      "pip install -e ."
 
-1. conda config --append channels conda-forge
-2. conda install pytest-runner --no-deps -c conda-forge
-3. conda install healpy=1.11 --no-deps -c conda-forge
-4. pip install jwst_backgrounds
+3. webbpsf - https://github.com/spacetelescope/webbpsf
+   Download source directly from github. Navigate to directory, 
+   then use pip's -e option to create an editable installation:
+      "pip install -e ."
+   Note: This also install photutils via pip if not already installed
 
-Sphinx/RTD
+3a. webbpsf-data files - https://stsci.app.box.com/s/g8nq6j1lk10ml7tyxxn28rbl40h1zky2
+   Download WebbPSF data files into "webbpsf-data" directory.
+   Set the environment variable $WEBBPSF_PATH to point to that directory.
+   For example, in .bashrc shell file, add:  export WEBBPSF_PATH='$HOME/data/webbpsf-data/'
+   
+4. jwst-backgrounds - https://github.com/spacetelescope/jwst_backgrounds
+   Install healpy: conda install healpy
+      If healpy asks to downgrade any dependencies, cancel and install the 
+      missing dependencies manually, then try again  --no-deps flag:
+         conda install healpy --no_deps
+   Install jwst_backgrounds: pip install -e .
 
-1. pip install sphinx_automodapi
-2. conda install sphinx_rtd_theme
-3. conda install nbsphinx
-4. conda install twine
+5. jwst pipeline
+   Install the following git repositories in order with "pip install -e ."
+      https://github.com/spacetelescope/stcal        
+      https://github.com/spacetelescope/stdatamodels 
+      https://github.com/spacetelescope/crds         
+      https://github.com/spacetelescope/stpipe       
+      https://github.com/spacetelescope/jwst    # adds a few other dependencies
+
+6. pysynphot
+   conda install pysynphot (v2.0)
+   Download and untar http://mips.as.arizona.edu/~jleisenring/pynrc/cdbs.tar.gz
+   Set the environment variable $PYSYN_CDBS to point to that directory.
+   For example, in .bashrc shell file, add: export PYSYN_CDBS='$HOME/data/cdbs/'
+   
+7. webbpsf_ext - https://github.com/JarronL/webbpsf_ext
+   Download repository and use "pip install -e ."
+   Set the environment variable $WEBBPSF_EXT_PATH to point to that directory.
+   For example, in .bashrc shell file, add: 
+      export WEBBPSF_EXT_PATH='$HOME/data/webbpsf_ext_data/'
+   
+8. pynrc - https://github.com/JarronL/pynrc
+   Download repository and use "pip install -e ."
+
+8a. pynrc data files - http://mips.as.arizona.edu/~jleisenring/pynrc/
+   If you're planning on generating DMS simulations, download the full set of
+   data files, including detector cal information and untar (17GB):
+      http://mips.as.arizona.edu/~jleisenring/pynrc/pynrc_data_all.tar
+   If only utilizing pynrc's ETC and quick PSF creation capabilities, you only need:
+      http://mips.as.arizona.edu/~jleisenring/pynrc/pynrc_data_tarballs/sim_params.tar
+
+   Set the environment variable $PYNRC_DATA to point to that directory.
+   For example, in .bashrc shell file, add: 
+      export PYNRC_DATA='$HOME/data/pynrc_data/'
+   
+   
+Other useful programs:
+
+1. hxrg_ref_pixels - https://github.com/JarronL/hxrg_ref_pixels
+   Reference pixel correction of HxRG detectors.
