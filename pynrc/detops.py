@@ -8,8 +8,14 @@ import datetime, time
 import logging
 _log = logging.getLogger('pynrc')
 
+from . import conf
+from .logging_utils import setup_logging
+
+
 from webbpsf_ext.webbpsf_ext_core import _check_list
 from .nrc_utils import pix_noise
+
+
 
 class multiaccum(object):
     """
@@ -476,19 +482,18 @@ class det_timing(object):
         # Check some consistencies with frame sizes
         if wind_mode == 'FULL':
             if ypix != detpix:
-                _log.warn('In {0} mode, but ypix not {1}. Setting ypix={1}.'\
-                       .format(wind_mode,detpix))
+                _log.warn(f'In {wind_mode} mode, but ypix not {detpix}. Setting ypix={detpix}.')
                 ypix = detpix
             if y0 != 0:
-                _log.warn('In {0} mode, but x0 not 0. Setting y0=0.'.format(wind_mode))
+                _log.warn(f'In {wind_mode} mode, but x0 not 0. Setting y0=0.')
                 y0 = 0
 
         if (wind_mode == 'STRIPE') or (wind_mode == 'FULL'):
             if xpix != detpix:
-                _log.warn('In {0} mode, but xpix not {1}. Setting xpix={1}.'.format(wind_mode,detpix))
+                _log.warn(f'In {wind_mode} mode, but xpix not {detpix}. Setting xpix={detpix}.')
                 xpix = detpix
             if x0 != 0:
-                _log.warn('In {0} mode, but x0 not 0. Setting x0=0.'.format(wind_mode))
+                _log.warn(f'In {wind_mode} mode, but x0 not 0. Setting x0=0.')
                 x0 = 0
     
         if (x0+xpix) > detpix:
@@ -1487,12 +1492,17 @@ def create_detops(header, DMS=False, read_mode=None, nint=None, ngroup=None,
         if xpix==ypix==2048:
             wind_mode = 'FULL'
         else:
+            log_prev = conf.logging_level
+            setup_logging('ERROR', verbose=False)
+
             # Test if STRIPE or WINDOW
             det_stripe = DetectorOps(detector, 'STRIPE', xpix, ypix, x0, y0)
             det_window = DetectorOps(detector, 'WINDOW', xpix, ypix, x0, y0)
             dt_stripe = np.abs(header['TFRAME'] - det_stripe.time_frame)
             dt_window = np.abs(header['TFRAME'] - det_window.time_frame)
             wind_mode = 'STRIPE' if dt_stripe<dt_window else 'WINDOW'
+
+            setup_logging(log_prev, verbose=False)
 
 
     # Add MultiAccum info
