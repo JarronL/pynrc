@@ -5679,9 +5679,11 @@ def apply_nonlin(cube, det, coeff_dict, randomize=True, rand_seed=None):
 
             gain = np.zeros_like(frame)
             if ind1.sum()>0: # Upper values
-                gain[ind1] = pixel_linearity_gains(frame[ind1], cf_arr[:,ind1], use_legendre=use_legendre, lxmap=lxmap)
+                gain[ind1] = pixel_linearity_gains(frame[ind1], cf_arr[:,ind1], 
+                                                   use_legendre=use_legendre, lxmap=lxmap)
             if ind2.sum()>0: # Lower values
-                gain[ind2] = pixel_linearity_gains(frame[ind2], cf_low[:,ind2], use_legendre=use_legendre, lxmap=lxmap)
+                gain[ind2] = pixel_linearity_gains(frame[ind2], cf_low[:,ind2], 
+                                                   use_legendre=use_legendre, lxmap=lxmap)
 
         gain = gain.reshape([ny,nx])
         # Avoid NaNs

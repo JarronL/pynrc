@@ -63,18 +63,14 @@ _log = logging.getLogger('pynrc')
 def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visit_id=None,
                         dry_run=None, save_slope=None, save_dms=None):
 
-    """
-    Generate Level1b DMS-like FITS files.
+    """ Generate Level1b DMS-like FITS files.
 
-    TODO
-    kwargs_det = {
-        'latents': None, 
-        'include_colnoise': False, 
-        'col_noise': None,
-        'out_ADU': False,
-    }
-    Currently only drifting coronagraphic on-mask stars (sci and ref)
-    Also drifts non-HCI observations, generating new PSF grids each exposure
+    TODO:
+        - Tracking image persistence
+        - Static column noise that shifts every integration
+        - Currently only drifting coronagraphic on-mask stars (sci and ref)
+        - Also drifts non-HCI observations, generating new PSF grids each exposure
+        - Gaia query source tables
 
     Keyword Args
     ============
@@ -554,7 +550,7 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                             slope_to_level1b(im_slope, obs_params, cal_obj=cal_obj, 
                                              save_dir=save_dir, **kwargs_pynrc)
 
-        # Get rid of previous instances
+        # Get rid of previous NIRCam instances
         try: del nrc
         except: pass
 
@@ -1080,6 +1076,246 @@ def slope_to_fitswriter(det, cal_obj, im_slope=None, cframe='det',
         return outHDUList
     else:
         outHDUList.close()
+
+
+def make_gaia_source_table(coords, remove_cen_star=True, radius=6*u.arcmin):
+    """ Create source table from GAIA DR2 query
+
+    Generates a table of objects by performing a cone search around a set
+    of input coordinates. The output table includes both coordinates and
+    extrapolated photometry. All returned coordinates are for epoch=2015.5 
+    for GAIA DR2.
+
+    The process involves performing a search query around a set of input
+    coordinates, then using the GAIA magnitudes and Teff to extrapolate
+    magnitudes in the NIRCam filters. If Teff isn't supplied, then it
+    defaults to solar temperature. If an object's parallax isn't 
+    available, then the object is assumed to have a flat spectrum in
+    F_lambda.
+
+
+    Parameters
+    ==========
+    coords : SkyCoords
+        Astropy SkyCoords object.
+    remove_cen_star : bool
+        Output will exclude the star associated with the input
+        coordinates (anything with 0.1" is removed from table).
+    radius : Units
+        Radius to perfrom search. Default is 6', which should encompass
+        NIRCam's full FoV, including both Modules A and B.
+    """
+    
+    from astroquery.simbad import Simbad
+    from astroquery.gaia import Gaia
+    from astropy.table import Table
+    from astropy.time import Time
+
+    from .. import stellar_spectrum, read_filter
+    from ..nrc_utils import S
+
+    
+    Gaia.MAIN_GAIA_TABLE = "gaiadr2.gaia_source"
+    Gaia.ROW_LIMIT = -1
+    
+    # Convert to 2015.5 epoch of GAIA coordinates
+    c2015 = coords.apply_space_motion(new_obstime=Time('J2015.5'))
+    gaia_tbl = Gaia.query_object_async(c2015, radius=radius)
+    
+    # Remove items without any photometry
+    ind_nomag = gaia_tbl['phot_g_mean_mag'].data.mask
+    if remove_cen_star:
+        dist_asec = gaia_tbl['dist'].data * 3600
+        ind_dist  = dist_asec.data < 0.1
+        ind_remove = np.where(ind_nomag | ind_dist)
+    else:
+        ind_remove = np.where(ind_nomag)
+    gaia_tbl.remove_rows(ind_remove)
+
+    ra_name  = 'ra'
+    dec_name = 'dec'
+        
+    # Create new source table
+    index = np.arange(len(gaia_tbl)) + 1
+    ra = gaia_tbl[ra_name]
+    dec = gaia_tbl[dec_name]
+    gband = gaia_tbl['phot_g_mean_mag'].data.data
+    src_tbl = Table([index, ra, dec, gband], names=('index', 'ra', 'dec', 'g-band'))
+
+    # Get effective temperature for each object rounded to the nearest 100K
+    teff = (gaia_tbl['teff_val'].data.data / 100).astype('int') * 100
+    # Assume solar temperature for null data
+    teff[gaia_tbl['teff_val'].data.mask] = 5800
+    
+    # Create stellar spectra of each unique temperature
+    sp_dict = {}
+    for tval in np.unique(teff):
+        key = int(tval)
+        sp_dict[key] = stellar_spectrum('G2V', Teff=tval, log_g=4.5, metallicity=0)
+    # Add a flat spectrum for those objects without parallax measurements
+    sp_dict['flat'] = stellar_spectrum('flat')
+        
+    # SW Filters
+    filts_sw = [
+        'F070W', 'F090W', 'F115W', 'F140M', 'F150W', 'F150W2',
+        'F162M', 'F164N', 'F182M', 'F187N', 'F200W', 'F210M', 'F212N'
+    ]
+    # LW Filters
+    filts_lw = [
+        'F250M', 'F277W',  'F300M','F322W2', 'F323N', 'F335M', 'F356W', 'F360M', 
+        'F405N', 'F410M', 'F430M', 'F444W', 'F460M', 'F466N', 'F470N', 'F480M'
+    ]
+    filts_all = filts_sw + filts_lw
+    
+    # Read in all bandpasses
+    bp_dict = {}
+    for f in filts_sw:
+        bp_dict[f] = read_filter(f)
+    for f in filts_lw:
+        bp_dict[f] = read_filter(f)
+    
+    # Cycle through all filters and sources to get 0-mag values
+    # Gaia bandpass filter for normalization
+    # TODO: Read in GAIA bandpass rather than using V-Band
+    bp_gaia = S.ObsBandpass('johnson,v')
+    bp_sp_dict = {}
+    for f in tqdm(filts_all, leave=False, desc='Filters'):
+        bp = bp_dict[f]
+        d = {}
+        for k in sp_dict.keys():
+            sp = sp_dict[k]
+            sp = sp.renorm(0, 'vegamag', bp_gaia)
+            obs = S.Observation(sp, bp, binset=bp.wave)
+            d[k] = obs.effstim('vegamag')
+        bp_sp_dict[f] = d
+    
+    # Generate new columns for each filter
+    ind_nopara = gaia_tbl['parallax'].data.mask | (gaia_tbl['parallax'].data.data < 0)
+    for f in filts_all:
+
+        coldata = []
+        for i in range(len(gaia_tbl)):
+            # Select spectrum for given object
+            key = 'flat' if ind_nopara[i] else int(teff[i])
+            # Offset filter 0-mag value
+            bp_mag = bp_sp_dict[f][key] + gband[i] 
+            coldata.append(bp_mag)
+            
+        # Round to the nearest milli-mag
+        coldata = np.round(coldata, decimals=3)
+
+        # Add filter column to table
+        src_tbl.add_column(coldata, name=f)
+        src_tbl[f].unit = 'mag'
+        
+    return src_tbl
+
+
+def make_simbad_source_table(coords, remove_cen_star=True, radius=6*u.arcmin):
+    from astroquery.simbad import Simbad
+    from astropy.table import Table
+
+    from .. import stellar_spectrum, read_filter
+    from ..nrc_utils import S, bp_2mass
+
+    sim_obj = Simbad()
+    
+    sim_obj.reset_votable_fields()
+    sim_obj.remove_votable_fields('coordinates')
+    sim_obj.add_votable_fields('ra(d;ICRS)', 'dec(d;ICRS)', 'flux(K)', 'sp', 'otype(V)', 'distance_result')
+    
+    # coords = targ_dict['HR8799']['sky_coords']
+    sim_tbl = sim_obj.query_region(coords, radius=radius)
+    
+    # Remove non-stellar sources and 
+    ind_star = np.array(['Star' in val for val in sim_tbl['OTYPE_V'].data.data])
+    ind_nokband = sim_tbl['FLUX_K'].data.mask
+    if remove_cen_star:
+        ind_dist  = (sim_tbl['DISTANCE_RESULT'] < 0.1).data
+        # ind_remove = np.where((~ind_star) | ind_nok | ind_dist)
+        ind_remove = np.where(ind_nokband | ind_dist)
+    else:
+        # ind_remove = np.where((~ind_star) | ind_nok)
+        ind_remove = np.where(ind_nokband)
+    sim_tbl.remove_rows(ind_remove)
+
+    ra_name  = sim_tbl.colnames[1]
+    dec_name = sim_tbl.colnames[2]
+        
+    # Create new source table
+    index = np.arange(len(sim_tbl)) + 1
+    ra = sim_tbl[ra_name]
+    dec = sim_tbl[dec_name]
+    kmag = sim_tbl['FLUX_K']
+    src_tbl = Table([index, ra, dec, kmag], names=('index', 'ra', 'dec', 'K-Band'))
+    
+    # Get effective temperature for each object rounded to the nearest 100K
+    sptype = sim_tbl['SP_TYPE'].data.data
+    # Assume solar temperature for null data
+    sptype[sim_tbl['SP_TYPE'].data.mask] = 'G2V'
+    sptype[sim_tbl['SP_TYPE'].data==''] = 'G2V'
+
+    # Create stellar spectra of each unique temperature
+    sp_dict = {}
+    for spt in np.unique(sptype):
+        if spt=='':
+            continue
+        spt2 = spt.split('+')[0]
+        spt2 = spt2 + 'V' if len(spt2)==2 else spt2
+        sp_dict[spt2] = stellar_spectrum(spt2)
+        
+    # SW Filters
+    filts_sw = [
+        'F070W', 'F090W', 'F115W', 'F140M', 'F150W', 'F150W2',
+        'F162M', 'F164N', 'F182M', 'F187N', 'F200W', 'F210M', 'F212N'
+    ]
+    # LW Filters
+    filts_lw = [
+        'F250M', 'F277W',  'F300M','F322W2', 'F323N', 'F335M', 'F356W', 'F360M', 
+        'F405N', 'F410M', 'F430M', 'F444W', 'F460M', 'F466N', 'F470N', 'F480M'
+    ]
+    filts_all = filts_sw + filts_lw
+
+    # Read in all bandpasses
+    bp_dict = {}
+    for f in filts_sw:
+        bp_dict[f] = read_filter(f)
+    for f in filts_lw:
+        bp_dict[f] = read_filter(f)
+
+    # Cycle through all filters and sources to get 0-mag values
+    bp_k = bp_2mass('k')
+    bp_sp_dict = {}
+    for f in tqdm(filts_all, leave=False, desc='Filters'):
+        bp = bp_dict[f]
+        d = {}
+        for k in sp_dict.keys():
+            sp = sp_dict[k]
+            sp = sp.renorm(0, 'vegamag', bp_k)
+            obs = S.Observation(sp, bp, binset=bp.wave)
+            d[k] = obs.effstim('vegamag')
+        bp_sp_dict[f] = d
+
+    # Generate new columns for each filter
+    for f in filts_all:
+        bp = bp_dict[f]
+
+        coldata = []
+        for row in sim_tbl:
+            sptype = 'G2V' if row['SP_TYPE']=='' else row['SP_TYPE']
+            sptype = sptype.split('+')[0]
+            sptype = sptype + 'V' if len(sptype)==2 else sptype
+            bp_mag = bp_sp_dict[f][sptype] + row['FLUX_K']
+            coldata.append(bp_mag)
+
+        # Round to the nearest milli-mag
+        coldata = np.round(coldata, decimals=3)
+
+        # Add filter column to table
+        src_tbl.add_column(coldata, name=f)
+        src_tbl[f].unit = 'mag'
+        
+    return src_tbl
 
 
 def gen_wfe_drift(obs_input, case='BOL', iec_period=300, slew_init=10, rand_seed=None,
