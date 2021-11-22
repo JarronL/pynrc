@@ -2363,8 +2363,7 @@ class nircam_cal(nircam_dark):
     
     """ NIRCam Calibration class
     
-
-    Assumes that all cal files exist in the outdir
+    Assumes that all cal files exist in the calibration directory in PYNRC_PATH.
     """
 
     def __init__(self, scaid, same_scan_direction=False, reverse_scan_direction=False,
