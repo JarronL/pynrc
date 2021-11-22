@@ -26,7 +26,9 @@ Modification History:
 28 Oct 2021
     - Use numpy random number generator objects to produce repeatable results.
 16 Nov 2021
-    - Add WFE drifts
+    - Add WFE drifts.
+20 Nov 2021
+    - Auto-generate source tables from Gaia DR2 or Simbad queries
 """
 import json
 import numpy as np
