@@ -65,7 +65,7 @@ Assume anaconda python >3.7 installation on Linux/Mac
    For example, in .bashrc shell file, add: 
       export WEBBPSF_EXT_PATH='$HOME/data/webbpsf_ext_data/'
    
-8. pynrc - https://github.com/JarronL/pynrc
+8. pynrc - https://github.com/JarronL/pynrc/tree/develop
    Download repository and use "pip install -e ."
 
 8a. pynrc data files - http://mips.as.arizona.edu/~jleisenring/pynrc/
