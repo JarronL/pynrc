@@ -102,13 +102,13 @@ with open('HISTORY.rst') as history_file:
 
 requirements = [
           'Click>=6.0',
-          'numpy>=1.13.0',
-          'matplotlib>=3.0.0',
-          'scipy>=1.0.0',
-          'pysynphot>=0.9.7',
-          'poppy>=0.9.1',
-          'webbpsf>=0.9.1',
-          'webbpsf_ext>=0.9.1',
+          'numpy>=1.19.0',
+          'matplotlib>=3.3.0',
+          'scipy>=1.5.0',
+          'pysynphot>=2.0.0',
+          'poppy>=0.9.2',
+          'webbpsf>=0.9.2',
+          'webbpsf_ext>=1.0.0',
           'tqdm>4',
       ]
 # RTD cannot handle certain 
