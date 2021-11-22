@@ -72,6 +72,8 @@ Assume anaconda python >3.7 installation on Linux/Mac
    If you're planning on generating DMS simulations, download the full set of
    data files, including detector cal information and untar (17GB):
       http://mips.as.arizona.edu/~jleisenring/pynrc/pynrc_data_all.tar
+   Individual detector cal info can be found here (1.7GB/detector):
+      http://mips.as.arizona.edu/~jleisenring/pynrc/pynrc_data_tarballs/
    If only utilizing pynrc's ETC and quick PSF creation capabilities, you only need:
       http://mips.as.arizona.edu/~jleisenring/pynrc/pynrc_data_tarballs/sim_params.tar
 
@@ -89,7 +91,7 @@ In the end, you should have a number of new environment variables:
    export PYNRC_DATA='$HOME/data/pynrc_data/'
    
 
-   
+
 Other useful programs:
 
 1. hxrg_ref_pixels - https://github.com/JarronL/hxrg_ref_pixels
