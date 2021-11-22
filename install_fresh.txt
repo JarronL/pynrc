@@ -27,7 +27,8 @@ Assume anaconda python >3.7 installation on Linux/Mac
 3a. webbpsf-data files - https://stsci.app.box.com/s/g8nq6j1lk10ml7tyxxn28rbl40h1zky2
    Download WebbPSF data files into "webbpsf-data" directory.
    Set the environment variable $WEBBPSF_PATH to point to that directory.
-   For example, in .bashrc shell file, add:  export WEBBPSF_PATH='$HOME/data/webbpsf-data/'
+   For example, in .bashrc shell file, add:  
+      export WEBBPSF_PATH='$HOME/data/webbpsf-data/'
    
 4. jwst-backgrounds - https://github.com/spacetelescope/jwst_backgrounds
    Install healpy: conda install healpy
@@ -44,15 +45,23 @@ Assume anaconda python >3.7 installation on Linux/Mac
       https://github.com/spacetelescope/stpipe       
       https://github.com/spacetelescope/jwst    # adds a few other dependencies
 
-6. pysynphot
+5a. Configure calibration reference database (CRDS)
+   Define CRDS directory to download and save cal files.
+   For example, in .bashrc shell file:
+      export CRDS_PATH='$HOME/data/crds_cache/'
+      export CRDS_SERVER_URL='https://jwst-crds.stsci.edu'
+
+6. pysynphot - https://pysynphot.readthedocs.io/
    conda install pysynphot (v2.0)
    Download and untar http://mips.as.arizona.edu/~jleisenring/pynrc/cdbs.tar.gz
    Set the environment variable $PYSYN_CDBS to point to that directory.
-   For example, in .bashrc shell file, add: export PYSYN_CDBS='$HOME/data/cdbs/'
+   For example, in .bashrc shell file, add: 
+      export PYSYN_CDBS='$HOME/data/cdbs/'
    
 7. webbpsf_ext - https://github.com/JarronL/webbpsf_ext
    Download repository and use "pip install -e ."
-   Set the environment variable $WEBBPSF_EXT_PATH to point to that directory.
+   Set the environment variable $WEBBPSF_EXT_PATH to point to some data directory.
+   All PSF coefficients will be saved here as they are generated to be reused later.
    For example, in .bashrc shell file, add: 
       export WEBBPSF_EXT_PATH='$HOME/data/webbpsf_ext_data/'
    
@@ -70,6 +79,16 @@ Assume anaconda python >3.7 installation on Linux/Mac
    For example, in .bashrc shell file, add: 
       export PYNRC_DATA='$HOME/data/pynrc_data/'
    
+
+In the end, you should have a number of new environment variables:
+   export CRDS_PATH='$HOME/data/crds_cache/'
+   export CRDS_SERVER_URL='https://jwst-crds.stsci.edu'
+   export PYSYN_CDBS='$HOME/data/cdbs/'
+   export WEBBPSF_PATH='$HOME/data/webbpsf-data/'
+   export WEBBPSF_EXT_PATH='$HOME/data/webbpsf_ext_data/'
+   export PYNRC_DATA='$HOME/data/pynrc_data/'
+   
+
    
 Other useful programs:
 
