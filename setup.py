@@ -108,6 +108,7 @@ requirements = [
           'pysynphot>=0.9.7',
           'poppy>=0.9.1',
           'webbpsf>=0.9.1',
+          'webbpsf_ext>=0.9.1',
           'tqdm>4',
       ]
 # RTD cannot handle certain 
