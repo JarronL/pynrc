@@ -1114,15 +1114,18 @@ def make_gaia_source_table(coords, remove_cen_star=True, radius=6*u.arcmin):
     from astropy.time import Time
 
     from .. import stellar_spectrum, read_filter
-    from ..nrc_utils import S
+    from ..nrc_utils import S, bp_gaia
 
-    
     Gaia.MAIN_GAIA_TABLE = "gaiadr2.gaia_source"
     Gaia.ROW_LIMIT = -1
     
-    # Convert to 2015.5 epoch of GAIA coordinates
-    c2015 = coords.apply_space_motion(new_obstime=Time('J2015.5'))
-    gaia_tbl = Gaia.query_object_async(c2015, radius=radius)
+    try:
+        # Convert to 2015.5 epoch of GAIA coordinates
+        coord_query = coords.apply_space_motion(new_obstime=Time('J2015.5'))
+    except:
+        _log.warn('Unable to place coords in J2015.5 epoch. Continuing with default coords...')
+        coord_query = coords
+    gaia_tbl = Gaia.query_object_async(coord_query, radius=radius)
     
     # Remove items without any photometry
     ind_nomag = gaia_tbl['phot_g_mean_mag'].data.mask
@@ -1143,6 +1146,9 @@ def make_gaia_source_table(coords, remove_cen_star=True, radius=6*u.arcmin):
     dec = gaia_tbl[dec_name]
     gband = gaia_tbl['phot_g_mean_mag'].data.data
     src_tbl = Table([index, ra, dec, gband], names=('index', 'ra', 'dec', 'g-band'))
+    # Add distances
+    src_tbl.add_column(gaia_tbl['dist'].data * 3600, name='dist')
+    src_tbl['dist'].unit = 'arcsec'
 
     # Get effective temperature for each object rounded to the nearest 100K
     teff = (gaia_tbl['teff_val'].data.data / 100).astype('int') * 100
@@ -1178,15 +1184,14 @@ def make_gaia_source_table(coords, remove_cen_star=True, radius=6*u.arcmin):
     
     # Cycle through all filters and sources to get 0-mag values
     # Gaia bandpass filter for normalization
-    # TODO: Read in GAIA bandpass rather than using V-Band
-    bp_gaia = S.ObsBandpass('johnson,v')
+    bp_g = bp_gaia('g', release='DR2')
     bp_sp_dict = {}
     for f in tqdm(filts_all, leave=False, desc='Filters'):
         bp = bp_dict[f]
         d = {}
         for k in sp_dict.keys():
             sp = sp_dict[k]
-            sp = sp.renorm(0, 'vegamag', bp_gaia)
+            sp = sp.renorm(0, 'vegamag', bp_g)
             obs = S.Observation(sp, bp, binset=bp.wave)
             d[k] = obs.effstim('vegamag')
         bp_sp_dict[f] = d
@@ -1250,6 +1255,9 @@ def make_simbad_source_table(coords, remove_cen_star=True, radius=6*u.arcmin):
     dec = sim_tbl[dec_name]
     kmag = sim_tbl['FLUX_K']
     src_tbl = Table([index, ra, dec, kmag], names=('index', 'ra', 'dec', 'K-Band'))
+    # Add distances
+    src_tbl.add_column(sim_tbl['DISTANCE_RESULT'].data, name='dist')
+    src_tbl['dist'].unit = 'arcsec'
     
     # Get effective temperature for each object rounded to the nearest 100K
     sptype = sim_tbl['SP_TYPE'].data.data

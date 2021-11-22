@@ -74,7 +74,7 @@ conf = Conf()
 from .logging_utils import setup_logging
 setup_logging(conf.default_logging_level, verbose=False)
 
-from .nrc_utils import read_filter, bp_2mass, bp_wise
+from .nrc_utils import read_filter, bp_2mass, bp_wise, bp_gaia
 from .nrc_utils import pix_noise
 from .nrc_utils import stellar_spectrum, source_spectrum, planets_sb12
 

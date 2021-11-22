@@ -124,7 +124,7 @@ __epsilon = np.finfo(float).eps
 #
 ###########################################################################
 
-from webbpsf_ext.bandpasses import bp_igood, bp_wise, bp_2mass
+from webbpsf_ext.bandpasses import bp_igood, bp_wise, bp_2mass, bp_gaia
 from webbpsf_ext.bandpasses import nircam_filter as read_filter
 
 
