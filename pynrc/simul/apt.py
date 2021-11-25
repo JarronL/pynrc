@@ -1304,7 +1304,7 @@ class ReadAPTXML():
                                    ]
             if template_name not in known_APT_templates:
                 # If not, turn back now.
-                raise ValueError('No protocol written to read {} template.'.format(template_name))
+                print('No protocol written to read {} template.'.format(template_name))
 
             # Get observation label
             label_ele = obs.find(self.apt + 'Label')
@@ -4865,6 +4865,8 @@ def get_target_info(xml_file, verbose=False):
     """Target for each each exposure"""
     key_update = {
         'TargetID' : 'TargetID',
+        'TargetRA' : 'TargetRA', 
+        'TargetDec': 'TargetDec',
     }
     res = build_dict_from_xml(xml_file, key_update.keys(), verbose=verbose)
 
@@ -5483,6 +5485,9 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs='12:00:0
 
     from .dms import DMS_filename
 
+    from astropy import units as u
+    from astropy.coordinates import SkyCoord
+
     # Ensure standardized detector naming convention ("NRC[A/B][1-5]")
     det_id = get_detname(detname)
 
@@ -5522,9 +5527,18 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs='12:00:0
     if det_id not in detectors_all:
         raise ValueError(f'{det_id} ({det.detname}) not a requested observation ({detectors_all})')
     
-    target_name = visit_dict['targ2'][ind_mask][0]
-    ra          = visit_dict['ra'][ind_mask][0]
-    dec         = visit_dict['dec'][ind_mask][0]
+    # target_name = visit_dict['targ2'][ind_mask][0]
+    # ra          = visit_dict['ra'][ind_mask][0]
+    # dec         = visit_dict['dec'][ind_mask][0]
+
+    # Get target name and RA/Dec from 
+    target_name = visit_dict['TargetID'][ind_mask][0]
+    ra_str      = visit_dict['TargetRA'][ind_mask][0]
+    dec_str     = visit_dict['TargetDec'][ind_mask][0]
+    coords = SkyCoord(ra_str, dec_str, unit=(u.hourangle, u.deg), 
+                      frame='icrs', equinox='J2000', obstime='J2000')
+    ra = coords.ra.deg
+    dec = coords.dec.deg
 
     # Instrument config
     filt_key = f'{det.channel.lower()}_filters' 
