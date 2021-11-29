@@ -1194,8 +1194,14 @@ class NIRCam(NIRCam_ext):
     def update_from_SIAF(self, apname, pupil=None, **kwargs):
         """Update detector properties based on SIAF aperture"""
 
+        if apname is None:
+            _log.warn('Input apname was None. Returning...')
+            return
+
         if not (apname in self.siaf_ap_names):
-            raise ValueError(f'Cannot find {apname} in siaf.apernames list.')
+            # raise ValueError(f'Cannot find {apname} in siaf.apernames list.')
+            _log.warn(f'Cannot find {apname} in siaf.apernames list. Returing...')
+            return
             
         if ('NRCALL' in apname) or ('NRCAS' in apname) or ('NRCBS' in apname):
             raise ValueError(f'{apname} is not valid. Single detector apertures only.')
