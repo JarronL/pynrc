@@ -1304,7 +1304,7 @@ class ReadAPTXML():
                                    ]
             if template_name not in known_APT_templates:
                 # If not, turn back now.
-                print('No protocol written to read {} template.'.format(template_name))
+                _log.info(f'No protocol written to read {template_name} template.')
 
             # Get observation label
             label_ele = obs.find(self.apt + 'Label')
@@ -1733,14 +1733,22 @@ class ReadAPTXML():
                 for element in filter_config:
                     key = element.tag.split(ns)[1]
                     value = element.text
-                    if key == 'ShortFilter':
-                        ShortPupil, ShortFilter = self.separate_pupil_and_filter(value)
-                        filter_config_dict['ShortPupil'] = ShortPupil
-                        filter_config_dict['ShortFilter'] = ShortFilter
-                    elif key == 'LongFilter':
-                        LongPupil, LongFilter = self.separate_pupil_and_filter(value)
-                        filter_config_dict['LongPupil'] = LongPupil
-                        filter_config_dict['LongFilter'] = LongFilter
+
+                    # Engineering template directly sets filters and pupils separately
+                    if template_name == 'NircamEngineeringImaging':
+                        for k in ['ShortFilter', 'ShortPupil', 'LongFilter', 'LongPupil']:
+                            if key == k:
+                                filter_config_dict[k] = value
+                    else:
+                        # Imaging template needs to parse some pupil settings for paired filters
+                        if key == 'ShortFilter':
+                            ShortPupil, ShortFilter = self.separate_pupil_and_filter(value)
+                            filter_config_dict['ShortPupil'] = ShortPupil
+                            filter_config_dict['ShortFilter'] = ShortFilter
+                        elif key == 'LongFilter':
+                            LongPupil, LongFilter = self.separate_pupil_and_filter(value)
+                            filter_config_dict['LongPupil'] = LongPupil
+                            filter_config_dict['LongFilter'] = LongFilter
 
                     if key not in ['ShortFilter', 'ShortPupil', 'LongFilter', 'LongPupil']:
                         filter_config_dict[key] = value
@@ -1764,11 +1772,15 @@ class ReadAPTXML():
                         value = template_name
                     elif key == 'Tracking':
                         value = tracking
+                    elif key == 'Mode':
+                        value = 'imaging'
+                    elif key == 'NumOutputs':
+                        subarray = template.find(ns + 'Subarray').text
+                        value = 4 if subarray=='FULL' else 1
                     else:
                         value = NONE_STR
-                    if (key == 'Mode'):
-                        value = 'imaging'
                     exposures_dictionary[key].append(value)
+
 
             ##########################################################
             # If NIRCam is prime with NIRISS WFSS parallel, then a DITHER_DIRECT
@@ -4814,7 +4826,7 @@ def get_ditherinfo(xml_file, verbose=False):
     """Dither information"""
 
     keys = [
-        'PrimaryDitherType', 'PrimaryDithers', 'DitherSize', 
+        'APTTemplate', 'PrimaryDitherType', 'PrimaryDithers', 'DitherSize', 
         'SubpixelPositions', 'SubpixelDitherType',
         'SmallGridDitherType', 'DitherPatternType', 
         'ImageDithers', 'number_of_dithers'
@@ -4828,17 +4840,108 @@ def get_siaf_detectors(apname):
     str_arr = apname.split('_')
     detid = str_arr[0]
     
+
     det_amod = ['NRCA1', 'NRCA2', 'NRCA3', 'NRCA4', 'NRCA5']
     det_bmod = ['NRCB1', 'NRCB2', 'NRCB3', 'NRCB4', 'NRCB5']
 
     if detid=='NRCAS':
+        # NRCAS_FULL uses all mod A detectors
         return det_amod
-    elif detid=='det_bmod':
+    elif detid=='NRCBS': 
+        # NRCBS_FULL uses all mod B detectors
         return det_bmod
     elif detid=='NRCALL':
         return det_amod + det_bmod
     else:
         return [detid]
+
+def update_eng_detectors(visit_dict):
+    """Update detectors used for engineering templates
+    
+    Engineering templates always use all detectors operated with the
+    same subarray settings, but there are not always SIAF apertures
+    for every detector for certain subarray settings (e.g., SUBGRISM), 
+    so some of the auto-generated detector from `get_siaf_detectors`
+    will usually be incorrect.
+    """
+
+    apt_template = visit_dict.get('APTTemplate')
+    if (apt_template is not None) and ('engineering' not in apt_template.lower()):
+        _log.warn(f'APT template {apt_template} is not Engineering. Returning...')
+        return
+    
+    det_amod = ['NRCA1', 'NRCA2', 'NRCA3', 'NRCA4', 'NRCA5']
+    det_bmod = ['NRCB1', 'NRCB2', 'NRCB3', 'NRCB4', 'NRCB5']
+
+    # Update detectors used
+    detectors = []
+    for mod in visit_dict['ModuleAPT']:
+        if mod=='A':
+            dets = det_amod
+        elif mod=='B':
+            dets = det_bmod
+        else:
+            dets = det_amod + det_bmod
+        detectors.append(dets)
+    visit_dict['detectors'] = np.array(detectors)
+
+    # Update names of apertures
+    apertures = []
+    for i, subname in enumerate(visit_dict['subarray_name']):
+        mod = visit_dict['ModuleAPT'][i]
+        if subname=='FULL':
+            if mod=='A':
+                aps = 'NRCAS_FULL'
+            elif mod=='B':
+                aps = 'NRCBS_FULL'
+            else:
+                aps = 'NRCALL_FULL'
+        elif ('SUBGRISM' in subname):
+            pix = subname[8:]
+
+            # GRISMTS for SW, although some of these apertures are undefined in SIAF!
+            aps_amod = [f'NRCA{j}_GRISMTS{pix}' for j in [1,2,3,4]]
+            aps_bmod = [f'NRCB{j}_GRISMTS{pix}' for j in [1,2,3,4]]
+
+            lw_filter = visit_dict['lw_filters'][i]
+            # Only certain filters are allowed. Default to F322W2 if some other filter specified.
+            if lw_filter not in ['F322W2', 'F277W', 'F356W', 'F444W']:
+                lw_filter = 'F322W2'
+            aps_amod = aps_amod + [f'NRCA5_GRISM{pix}_{lw_filter}']
+            aps_bmod = aps_bmod + [f'NRCB5_GRISM{pix}_{lw_filter}']
+
+            if mod=='A':
+                aps = aps_amod
+            elif mod=='B':
+                aps = aps_bmod
+            else:
+                aps = aps_amod + aps_bmod
+        elif ('SUB' in subname) and ('GRISM' not in subname) and ('DHS' not in subname):
+            pix = subname[3:]
+            subp = subname[-1]=='P'
+            if subp:
+                pix = pix[:-1]
+
+            aps_amod = [f'NRCA{j}_SUB{pix}' for j in [1,2,3,4,5]]
+            aps_bmod = [f'NRCB{j}_SUB{pix}' for j in [1,2,3,4,5]]
+            if subp:
+                aps_amod[2] = aps_amod[2] + 'P'
+                aps_amod[4] = aps_amod[4] + 'P'
+                aps_bmod[0] = aps_bmod[0] + 'P'
+                aps_bmod[4] = aps_bmod[4] + 'P'
+
+            if mod=='A':
+                aps = aps_amod
+            elif mod=='B':
+                aps = aps_bmod
+            else:
+                aps = aps_amod + aps_bmod
+        else:
+            _log.warn(f'{subname} not yet supported. Setting apertures to None')
+            aps = 'NONE'
+        
+        apertures.append(aps)
+    visit_dict['aperture'] = np.array(apertures)
 
 
 def get_readmodes(xml_file, verbose=False):
@@ -4880,6 +4983,7 @@ def get_filter_info(xml_file, verbose=False):
     """Filter information for each exposure"""
 
     key_update = {
+        'Module'      : 'ModuleAPT',
         'ShortFilter' : 'sw_filters',
         'ShortPupil'  : 'sw_pupils',
         'LongFilter'  : 'lw_filters',
@@ -4892,6 +4996,34 @@ def get_filter_info(xml_file, verbose=False):
     out_dict = {}
     for k in key_update.keys():
         out_dict[key_update[k]] = res[k]
+
+    # Certain filters in pupil wheel should be stored in filter
+    # For instance filter settings 'F405N+F444W' were parsed as
+    # placing 'LongPupil':'F405N' and 'LongFilter':'F444W',
+    # but in order to correctly create pynrc observations, we want
+    # to set filter='F405N'.
+    for i, val in enumerate(out_dict['sw_pupils']):
+        if (val[0] == 'F') and (val != 'FLAT'):
+            new_pup = 'WLP4' if out_dict['sw_filters'][i]=='WLP4' else 'CLEAR'
+            out_dict['sw_filters'][i] = val
+            out_dict['sw_pupils'][i] = new_pup
+    for i, val in enumerate(out_dict['lw_pupils']):
+        if (val[0] == 'F') and (val != 'FLAT'):
+            out_dict['lw_filters'][i] = val
+            out_dict['lw_pupils'][i] = 'CLEAR'
+
+    # If filter is set to WLP4, set pupil depending on pupil setting
+    for i, val in enumerate(out_dict['sw_filters']):
+        if val=='WLP4':
+            sw_pup = out_dict['sw_pupils'][i]
+            if sw_pup=='WLP8':
+                new_pup = 'WLP12'
+            elif sw_pup=='WLM8':
+                new_pup = 'WLM4'
+            else:
+                new_pup = 'WLP4'
+            out_dict['sw_pupils'][i]  = new_pup
+            out_dict['sw_filters'][i] = 'CLEAR'
 
     return out_dict
 
@@ -5045,6 +5177,7 @@ def gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file, rand_se
                 # Only update if statment is True
                 d['roll_info'] = d_roll if (obs_num==onum1) or (obs_num==onum2) else d.get('roll_info')
 
+    template_key = 'APTTemplate'
     for key in visits_dict.keys():
         d = visits_dict[key]
 
@@ -5071,13 +5204,23 @@ def gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file, rand_se
                 else:
                     d[k] = dict_append[k][ind]
 
+        # Only need single template name
+        if template_key in d.keys():
+            d[template_key] = d[template_key][0]
+
         # Add all detectors
         apertures = d['aperture']
         detectors_all = []
         for ap in apertures:
-            detectors_all.append(get_siaf_detectors(ap))
+            detnames = get_siaf_detectors(ap)
+            detectors_all.append(detnames)
         detectors_all = np.array(detectors_all)
         d['detectors'] = detectors_all
+
+        # Update detectors and apertures if an Engineering Template
+        template_name = d.get(template_key)
+        if (template_name is not None) and ('engineering' in template_name.lower()):
+            update_eng_detectors(d)
 
     return visits_dict
 
@@ -5149,13 +5292,22 @@ def create_det_class(visit_dict, exp_id, detname, grp_id=1, seq_id=1, act_id='01
 
     # Grab indices for specified info
     ind_mask = (par_info_all == par_info_grab)
+    if ind_mask.sum()==0:
+        _log.error("d['visit_group'] + d['sequence_id'] + d['activity_id'] + '_' + d['exposure_number']")
+        print("Valid values:\n", par_info_all)
+        raise IndexError(f'Not valid: {par_info_grab}; visit_group:{grp_id}, exp_id:{exp_id}, seq_id:{seq_id}, act_id:{act_id}')
 
     # Grab indices for specified exposure number
     # exp_ids_visit = np.array([int(d['exposure_number']) for d in visit_dict['obs_id_info']])
     # ind_mask      = (exp_ids_visit == int(exp_id))
     
     # Get siaf aperture names
-    apname = visit_dict['aperture'][ind_mask][0]
+    exp_apnames = visit_dict['aperture'][ind_mask]
+    if exp_apnames.size==1:
+        apname = visit_dict['aperture'][ind_mask][0]
+    else:
+        ind_det = (visit_dict['detectors'][ind_mask] == det_id)
+        apname = visit_dict['aperture'][ind_mask][ind_det][0]
     if ('NRCAS' in apname) or ('NRCBS' in apname) or ('NRCALL' in apname):
         apname = det_id + '_FULL'
     # pysiaf aperture
@@ -5512,7 +5664,12 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs='12:00:0
     obs_label     = visit_dict['obs_label'][ind_mask][0]
 
     # Get siaf aperture names
-    apname = visit_dict['aperture'][ind_mask][0]
+    exp_apnames = visit_dict['aperture'][ind_mask]
+    if exp_apnames.size==1:
+        apname = visit_dict['aperture'][ind_mask][0]
+    else:
+        ind_det = (visit_dict['detectors'][ind_mask] == det_id)
+        apname = visit_dict['aperture'][ind_mask][ind_det][0]
     siaf_ap_ref = siaf_nrc[apname]
     if ('NRCAS' in apname) or ('NRCBS' in apname) or ('NRCALL' in apname):
         apname = det_id + '_FULL'
@@ -5525,7 +5682,7 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs='12:00:0
     # Make sure det_id exists in exposure
     detectors_all = visit_dict['detectors'][ind_mask][0]
     if det_id not in detectors_all:
-        raise ValueError(f'{det_id} ({det.detname}) not a requested observation ({detectors_all})')
+        raise ValueError(f'{det_id} not a requested observation. Valid values: {detectors_all}')
     
     # target_name = visit_dict['targ2'][ind_mask][0]
     # ra          = visit_dict['ra'][ind_mask][0]
@@ -5742,6 +5899,8 @@ def file_segmenting(det, max_size_MB=320):
     # print(nseg, nint_per_seg)
 
     return iseg_list
+
+
 
 class DMS_input():
     """
@@ -6007,6 +6166,24 @@ def gen_jwst_pointing(visit_dict, obs_params, base_std=None, dith_std=None,
                       rand_seed=None, rand_seed_base=None):
     """
     Create telescope pointing sequence for a given visit / exposure.
+
+    Keyword Args
+    ============
+    base_std : float or array-like or None
+        The 1-sigma pointing uncertainty per axis for telescope slew. 
+        If None, then standard deviation is chosen to be either 5 mas 
+        or 100 mas, depending on `use_ta` attribute (default: True).
+    dith_std : float or array-like or None
+        The 1-sigma pointing uncertainty per axis for dithers. If None,
+        then standard deviation is chosen to be either 2.5 or 5 mas, 
+        depending on `use_sgd` attribute (default: True).
+    rand_seed : None or int
+        Random seed to use for generating repeatable random offsets.
+    rand_seed_base : None or int
+        Use a separate random seed for telescope slew offset.
+        Then, `rand_seed` corresponds only to relative dithers.
+        Useful for multiple exposures with same initial slew, but
+        independent dither pattern realizations. 
     """
     
     # Reference aperture (e.g., NRCALL_FULL) for telescope pointing

@@ -316,7 +316,7 @@ class DetectorOps(det_timing):
         slowaxis = +2 if np.mod(self.scaid,2)==1 else -2
         return slowaxis
 
-    def make_header(self, filter=None, pupil=None, obs_time=None, **kwargs):
+    def make_header(self, filter=None, pupil_mask=None, obs_time=None, **kwargs):
         """
         Create a generic NIRCam FITS header.
 
@@ -324,7 +324,7 @@ class DetectorOps(det_timing):
         ----------
         filter :str
             Name of filter element.
-        pupil : str
+        pupil_mask : str
             Name of pupil element.
         obs_time : datetime 
             Specifies when the observation was considered to be executed.
@@ -333,7 +333,7 @@ class DetectorOps(det_timing):
             
             >>> datetime.datetime(2016, 5, 9, 11, 57, 5, 796686)
         """
-        return nrc_header(self, filter=filter, pupil=pupil, obs_time=obs_time, **kwargs)
+        return nrc_header(self, filter=filter, pupil=pupil_mask, obs_time=obs_time, **kwargs)
 
 
 class NIRCam(NIRCam_ext):
@@ -416,10 +416,12 @@ class NIRCam(NIRCam_ext):
         Include SI WFE measurements? Default=True.
     include_distortions : bool
         If True, will include a distorted version of the PSF.
-    tel_pupil : str
+    pupil : str
         File name or HDUList specifying telescope entrance pupil.
-    opd : tuple or HDUList
+        Can also be an OTE_Linear_Model.
+    pupilopd : tuple or HDUList
         Tuple (file, slice) or filename or HDUList specifying OPD.
+        Can also be an OTE_Linear_Model.
     wfe_drift : float
         Wavefront error drift amplitude in nm.
     offset_r : float
@@ -496,7 +498,7 @@ class NIRCam(NIRCam_ext):
             # Pair F200W throughput with WL+4
             # The F212N2 throughput is then handled in read_filter() function 
             wl_list = ['WLP12', 'WLM4', 'WLP4']
-            if (pupil_mask in wl_list) and (filter!='F200W'):
+            if (pupil_mask in wl_list) and ((filter is None) or (filter!='F200W')):
                 filter = 'F200W'
 
             # Check Grism alternate inputs
@@ -515,9 +517,9 @@ class NIRCam(NIRCam_ext):
             self._validate_wheels()
             self.update_detectors(**kwargs)
             ap_name_rec = self.get_siaf_apname()
-            self.update_from_SIAF(ap_name_rec, pupil=pupil_mask)
+            self.update_from_SIAF(ap_name_rec, pupil_mask=pupil_mask)
         else:
-            self.update_from_SIAF(apname, pupil=pupil_mask, **kwargs)
+            self.update_from_SIAF(apname, pupil_mask=pupil_mask, **kwargs)
 
             # Default to no jitter for coronagraphy
             self.options['jitter'] = None if self.is_coron else 'gaussian'
@@ -652,80 +654,80 @@ class NIRCam(NIRCam_ext):
             _log.warning(wstr)
             _log.warning('Proceed at your own risk!')
 
-        filter  = self._filter
-        pupil   = self._pupil_mask
-        mask    = self._image_mask
+        filter     = self._filter
+        pupil_mask = self._pupil_mask
+        image_mask = self._image_mask
         if self.channel=='long' or self.channel=='LW':
             channel = 'LW'
         else:
             channel = 'SW'
 
-        if mask is None: 
-            mask = ''
-        if pupil is None: 
-            pupil = ''
+        if image_mask is None: 
+            image_mask = ''
+        if pupil_mask is None: 
+            pupil_mask = ''
 
         # Weak lenses can only occur in SW modules
-        if ('WEAK LENS' in pupil) and (channel=='LW'):
-            wstr = '{} in pupil is not valid with filter {}.'.format(pupil,filter)
+        if ('WEAK LENS' in pupil_mask) and (channel=='LW'):
+            wstr = '{} in pupil is not valid with filter {}.'.format(pupil_mask,filter)
             wstr = wstr + '\nWeak lens only in SW module.'
             do_warn(wstr)
 
         # DHS in SW modules
-        if ('DHS' in pupil) and (channel=='LW'):
-            wstr = '{} in pupil is not valid with filter {}.'.format(pupil,filter)
+        if ('DHS' in pupil_mask) and (channel=='LW'):
+            wstr = '{} in pupil is not valid with filter {}.'.format(pupil_mask,filter)
             wstr = wstr + '\nDHS only in SW module.'
             do_warn(wstr)
             
         # DHS cannot be paired with F164N or F162M
         flist = ['F164N', 'F162M']
-        if ('DHS' in pupil) and (filter in flist):
-            wstr = 'Both {} and filter {} exist in same pupil wheel.'.format(pupil,filter)
+        if ('DHS' in pupil_mask) and (filter in flist):
+            wstr = 'Both {} and filter {} exist in same pupil wheel.'.format(pupil_mask,filter)
             do_warn(wstr)
 
         # Grisms in LW modules
-        if ('GRISM' in pupil) and (channel=='SW'):
-            wstr = '{} in pupil is not valid with filter {}.'.format(pupil,filter)
+        if ('GRISM' in pupil_mask) and (channel=='SW'):
+            wstr = '{} in pupil is not valid with filter {}.'.format(pupil_mask,filter)
             wstr = wstr + '\nGrisms only in LW module.'
             do_warn(wstr)
             
         # Grisms cannot be paired with any Narrowband filters
         flist = ['F323N', 'F405N', 'F466N', 'F470N']
-        if ('GRISM' in pupil) and (filter in flist):
-            wstr = 'Both {} and filter {} exist in same pupil wheel.'.format(pupil,filter)
+        if ('GRISM' in pupil_mask) and (filter in flist):
+            wstr = 'Both {} and filter {} exist in same pupil wheel.'.format(pupil_mask,filter)
             do_warn(wstr)
 
         # MASK430R falls in SW SCA gap and cannot be seen by SW module
-        if ('MASK430R' in mask) and (channel=='SW'):
-            wstr = '{} mask is no visible in SW module (filter is {})'.format(mask,filter)
+        if ('MASK430R' in image_mask) and (channel=='SW'):
+            wstr = '{} mask is no visible in SW module (filter is {})'.format(image_mask,filter)
             do_warn(wstr)
 
         # Need F200W paired with WEAK LENS +4
         # The F212N2 filter is handled in the read_filter function
         wl_list = ['WEAK LENS +12 (=4+8)', 'WEAK LENS -4 (=4-8)', 'WEAK LENS +4']
-        if (pupil in wl_list) and (filter!='F200W'):
-            wstr = '{} is only valid with filter F200W.'.format(pupil)
+        if (pupil_mask in wl_list) and (filter!='F200W'):
+            wstr = '{} is only valid with filter F200W.'.format(pupil_mask)
             do_warn(wstr)
 
         # Items in the same SW pupil wheel
         sw2 = ['WEAK LENS +8', 'WEAK LENS -8', 'F162M', 'F164N', 'CIRCLYOT', 'WEDGELYOT']
-        if (filter in sw2) and (pupil in sw2):
-            wstr = '{} and {} are both in the SW Pupil wheel.'.format(filter,pupil)
+        if (filter in sw2) and (pupil_mask in sw2):
+            wstr = '{} and {} are both in the SW Pupil wheel.'.format(filter,pupil_mask)
             do_warn(wstr)
 
         # Items in the same LW pupil wheel
         lw2 = ['F323N', 'F405N', 'F466N', 'F470N', 'CIRCLYOT', 'WEDGELYOT']
-        if (filter in lw2) and (pupil in lw2):
-            wstr = '{} and {} are both in the LW Pupil wheel.'.format(filter,pupil)
+        if (filter in lw2) and (pupil_mask in lw2):
+            wstr = '{} and {} are both in the LW Pupil wheel.'.format(filter,pupil_mask)
             do_warn(wstr)
     
         # ND_acq must have a LYOT stop, otherwise coronagraphic mask is not in FoV
-        if self.ND_acq and ('LYOT' not in pupil):
+        if self.ND_acq and ('LYOT' not in pupil_mask):
             wstr = 'CIRCLYOT or WEDGELYOT must be in pupil wheel if ND_acq=True.'
             do_warn(wstr)
 
         # ND_acq and coronagraphic mask are mutually exclusive
-        if self.ND_acq and (mask != ''):
+        if self.ND_acq and (image_mask != ''):
             wstr = 'If ND_acq is set, then mask must be None.'
             do_warn(wstr)
 
@@ -835,7 +837,7 @@ class NIRCam(NIRCam_ext):
 
     def update_psf_coeff(self, filter=None, pupil_mask=None, image_mask=None, detector=None, 
         fov_pix=None, oversample=None, include_si_wfe=None, include_distortions=None, 
-        tel_pupil=None, opd=None, offset_r=None, offset_theta=None, bar_offset=None, 
+        pupil=None, pupilopd=None, offset_r=None, offset_theta=None, bar_offset=None, 
         jitter=None, jitter_sigma=None, npsf=None, ndeg=None, nproc=None, quick=None,
         save=None, force=False, use_legendre=None, **kwargs):
 
@@ -863,10 +865,12 @@ class NIRCam(NIRCam_ext):
             Include SI WFE measurements? Default=True.
         include_distortions : bool
             If True, will include a distorted version of the PSF.
-        tel_pupil : str
+        pupil : str
             File name or HDUList specifying telescope entrance pupil.
-        opd : tuple or HDUList
+            Can also be an OTE_Linear_Model.
+        pupilopd : tuple or HDUList
             Tuple (file, slice) or filename or HDUList specifying OPD.
+            Can also be an OTE_Linear_Model.
         wfe_drift : float
             Wavefront error drift amplitude in nm.
         offset_r : float
@@ -936,12 +940,12 @@ class NIRCam(NIRCam_ext):
             self.include_distortions = include_distortions
 
         # Pupil OPD information
-        if (tel_pupil is not None) and (self.pupil != tel_pupil):
+        if (pupil is not None) and (self.pupil != pupil):
             update_coeffs = True
-            self.pupil = tel_pupil
-        if (opd is not None) and (self.pupilopd != opd):
+            self.pupil = pupil
+        if (pupilopd is not None) and (self.pupilopd != pupilopd):
             update_coeffs = True
-            self.pupilopd = opd
+            self.pupilopd = pupilopd
 
         # Source and mask offsetting
         if (offset_r is not None) and (self.options.get('source_offset_r') != offset_r):
@@ -1143,8 +1147,8 @@ class NIRCam(NIRCam_ext):
         if apname is None:
             apname = self.get_siaf_apname()
 
-        pupil = self.pupil_mask
-        mask = self.image_mask 
+        pupil_mask = self.pupil_mask
+        image_mask = self.image_mask 
         module = self.module
 
         detid = self.Detector.detid
@@ -1162,23 +1166,23 @@ class NIRCam(NIRCam_ext):
             subarray_name = f'SUBGRISM{ypix}'
         elif is_coron:
             sub_str = f'SUB{ypix}'
-            mask_str = mask[4:]
-            if ('335R' in mask) and (module == 'A'):
+            mask_str = image_mask[4:]
+            if ('335R' in image_mask) and (module == 'A'):
                 subarray_name = sub_str + module
             else:
                 subarray_name = sub_str + module + mask_str
         # Just Lyot stop without masks, assuming TA aperture
         elif is_lyot:
-            mask_str = mask[4:]
+            mask_str = image_mask[4:]
             # Faint source TA
             if not is_ndacq:
                 subarray_name = 'SUBFS' + module + mask_str
-            elif 'LWB' in mask: # ND TA
+            elif 'LWB' in image_mask: # ND TA
                 if 'LWBL' in apname:
                     subarray_name = 'SUBND' + module + 'LWBL'
                 else:
                     subarray_name = 'SUBND' + module + 'LWBS'
-            elif 'SWB' in mask: # ND TA
+            elif 'SWB' in image_mask: # ND TA
                 if 'SWBS' in apname:
                     subarray_name = 'SUBND' + module + 'LWBS'
                 else:
@@ -1191,7 +1195,7 @@ class NIRCam(NIRCam_ext):
         
         return subarray_name
         
-    def update_from_SIAF(self, apname, pupil=None, **kwargs):
+    def update_from_SIAF(self, apname, pupil_mask=None, **kwargs):
         """Update detector properties based on SIAF aperture"""
 
         if apname is None:
@@ -1227,53 +1231,53 @@ class NIRCam(NIRCam_ext):
         x0, y0 = np.array(siaf_ap.dms_corner()) - 1
               
         # Update pupil and mask info
-        mask = None
+        image_mask = None
         ND_acq = False
         filter = None
         # Coronagraphic mask observations
         if 'MASK' in apname:
             # Set default pupil
-            if pupil is None:
-                pupil = 'WEDGELYOT' if 'WB' in apname else 'CIRCLYOT'
+            if pupil_mask is None:
+                pupil_mask = 'WEDGELYOT' if 'WB' in apname else 'CIRCLYOT'
 
             # Set mask occulter for all full arrays (incl. TAs) and science subarrays
             # Treats full array TAs like a full coronagraphic observation
             if ('FULL' in apname) or ('_MASK' in apname):
                 if ('MASKSWB' in apname):
-                    mask  = 'MASKSWB'
+                    image_mask  = 'MASKSWB'
                 elif ('MASKLWB' in apname):
-                    mask  = 'MASKLWB'            
+                    image_mask  = 'MASKLWB'            
                 elif ('MASK210R' in apname):
-                    mask  = 'MASK210R'
+                    image_mask  = 'MASK210R'
                 elif ('MASK335R' in apname):
-                    mask  = 'MASK335R'
+                    image_mask  = 'MASK335R'
                 elif ('MASK430R' in apname):
-                    mask  = 'MASK430R'
+                    image_mask  = 'MASK430R'
                 if 'TA' in apname:
                     _log.info('Full TA apertures are treated similar to coronagraphic observations.')
                     _log.info("To calculate SNR, self.update_psf_coeff(image_mask='CLEAR') and set self.ND_acq.")
             elif '_TAMASK' in apname:
                 # For small TA subarray, turn off mask and enable ND square
-                mask = None
+                image_mask = None
                 ND_acq = True
             elif '_FSTAMASK in apname':
                 # Not really anything to do here
-                mask = None
+                image_mask = None
             else:
                 _log.warn(f'No mask setting for {apname}')
 
         # Grism observations
         elif 'GRISM' in apname:
             if ('_GRISMC' in apname): # GRISMC WFSS
-                pupil = 'GRISMC' if pupil is None else pupil
+                pupil_mask = 'GRISMC' if pupil_mask is None else pupil_mask
             elif ('_GRISMR' in apname): # GRISMR WFSS
-                pupil = 'GRISMR' if pupil is None else pupil
+                pupil_mask = 'GRISMR' if pupil_mask is None else pupil_mask
             elif ('_GRISMTS' in apname): # SW apertures in parallel w/ LW GRISMTS
-                pupil = 'WLP8' if pupil is None else pupil
+                pupil_mask = 'WLP8' if pupil_mask is None else pupil_mask
             elif ('_TAGRISMTS' in apname): # GRISM TA have no pupil
-                pupil = None
+                pupil_mask = None
             elif ('_GRISM' in apname): # Everything else is GRISMR
-                pupil = 'GRISMR' if pupil is None else pupil
+                pupil_mask = 'GRISMR' if pupil_mask is None else pupil_mask
             else:
                 _log.warn(f'No grism setting for {apname}')
 
@@ -1286,8 +1290,8 @@ class NIRCam(NIRCam_ext):
             filter = apname[inds[-1]+1:]
 
         # Save to internal variables
-        self.pupil_mask = pupil
-        self.image_mask = mask
+        self.pupil_mask = pupil_mask
+        self.image_mask = image_mask
         self._ND_acq = ND_acq
 
         # Filter stuff
@@ -1584,7 +1588,7 @@ class NIRCam(NIRCam_ext):
         idark = det.dark_current
         p_excess = det.p_excess
 
-        pupil = '' if self.pupil_mask is None else self.pupil_mask
+        pupil_mask = '' if self.pupil_mask is None else self.pupil_mask
 
         kw1 = self.multiaccum.to_dict()
         kw2 = {'rn':rn, 'ktc':ktc, 'idark':idark, 'p_excess':p_excess}
@@ -1597,7 +1601,7 @@ class NIRCam(NIRCam_ext):
         psf_coeff_hdr = self._nrc_bg.psf_coeff_header.copy()
         fov_pix, osamp = (psf_coeff_hdr['FOVPIX'], psf_coeff_hdr['OSAMP'])
         # We don't necessarily need the entire image, so cut down to size for speed
-        if (not ('WEAK LENS' in pupil)) and (fov_pix > 33):
+        if (not ('WEAK LENS' in pupil_mask)) and (fov_pix > 33):
             fov_pix = 33
             fov_pix_over = fov_pix * osamp
             psf_coeff = np.array([pad_or_cut_to_size(im, (fov_pix_over,fov_pix_over)) for im in psf_coeff])
@@ -1732,12 +1736,11 @@ class NIRCam(NIRCam_ext):
             _ = kwargs.pop('thisday')
 
         filter = self.filter
-        pupil  = self.pupil_mask
-        mask   = self.image_mask
+        pupil_mask = self.pupil_mask
 
         if self.is_grism:
             # sci coords
-            im_bg = grism_background_image(filter, pupil, self.module, sp_zodi, **kwargs)
+            im_bg = grism_background_image(filter, pupil=pupil_mask, module=self.module, sp_bg=sp_zodi, **kwargs)
             # Convert to det coords and crop
             im_bg = sci_to_det(im_bg, detid)
             im_bg = im_bg[y0:y0+ypix, x0:x0+xpix]
@@ -1745,7 +1748,7 @@ class NIRCam(NIRCam_ext):
             im_bg = det_to_sci(im_bg, detid)
         elif self.is_coron or self.coron_substrate:
             # Create full image, then crop based on detector configuration
-            im_bg = build_mask_detid(detid, oversample=1, pupil=pupil, filter=self.filter)
+            im_bg = build_mask_detid(detid, oversample=1, pupil=pupil_mask, filter=self.filter)
             if im_bg is None:
                 # In the event the specified detid has no coronagraphic mask
                 # This includes ['A1', 'A3', 'B2', 'B4']
@@ -1886,10 +1889,10 @@ class NIRCam(NIRCam_ext):
                 return snr[ind_snr]['snr']            
 
 
-        pupil = self.pupil_mask
+        pupil_mask = self.pupil_mask
 
         grism_obs = self.is_grism
-        dhs_obs   = (pupil is not None) and ('DHS' in pupil)
+        dhs_obs   = (pupil_mask is not None) and ('DHS' in pupil_mask)
 
         det_params_orig = self.det_info.copy()
 
@@ -2224,7 +2227,7 @@ class NIRCam(NIRCam_ext):
 
         filt = self.filter
         pupil = 'CLEAR' if self.pupil_mask is None else self.pupil_mask
-        mask = 'None' if self.image_mask is None else self. image_mask
+        mask = 'None' if self.image_mask is None else self.image_mask
         det = self.Detector
         siaf_ap_obs = self.siaf_ap
         if siaf_ap_ref is None:
@@ -2270,7 +2273,7 @@ class NIRCam(NIRCam_ext):
         nint : None or int
             Options to specify arbitrary number of integrations. 
         do_dark : bool
-            Make a dark ramp (ie., pupil='FLAT'), no external flux.
+            Make a dark ramp (ie., pupil_mask='FLAT'), no external flux.
 
         Keyword Args
         ------------
@@ -2342,7 +2345,7 @@ class NIRCam(NIRCam_ext):
         det = self.Detector
         nint = det.multiaccum.nint if nint is None else nint
 
-        pupil = 'FLAT' if do_dark else self.pupil_mask
+        pupil_mask = 'FLAT' if do_dark else self.pupil_mask
         xpix = self.det_info['xpix']
         ypix = self.det_info['ypix']
 
@@ -2362,16 +2365,16 @@ class NIRCam(NIRCam_ext):
             kw_gen_psf = {'return_oversample': False,'return_hdul': False}
 
             # Imaging+Coronagraphy
-            if pupil is None:
+            if pupil_mask is None:
                 im_slope = gen_psf(sp=sp, **kw_gen_psf)
             # No visible source
-            elif ('FLAT' in pupil) or (sp is None):
+            elif ('FLAT' in pupil_mask) or (sp is None):
                 im_slope = np.zeros([ypix,xpix])
             # Grism spec
-            elif ('GRISM' in pupil):
+            elif ('GRISM' in pupil_mask):
                 w, im_slope = gen_psf(sp=sp, **kw_gen_psf)
             # DHS spectroscopy
-            elif ('DHS' in pupil):
+            elif ('DHS' in pupil_mask):
                 raise NotImplementedError('DHS has yet to be fully included')
             # Imaging+Coronagraphy
             else:
@@ -2381,7 +2384,7 @@ class NIRCam(NIRCam_ext):
             im_slope = pad_or_cut_to_size(im_slope, (ypix,xpix))
 
             # Add in Zodi emission
-            # Returns 0 if self.pupil='FLAT'
+            # Returns 0 if self.pupil_mask='FLAT'
             im_slope += self.bg_zodi_image(**kwargs)
             
         # Minimum value of slope

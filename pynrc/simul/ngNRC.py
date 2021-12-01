@@ -1080,7 +1080,8 @@ def slope_to_fitswriter(det, cal_obj, im_slope=None, cframe='det',
         outHDUList.close()
 
 
-def make_gaia_source_table(coords, remove_cen_star=True, radius=6*u.arcmin):
+def make_gaia_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
+    teff_default=5800):
     """ Create source table from GAIA DR2 query
 
     Generates a table of objects by performing a cone search around a set
@@ -1106,6 +1107,9 @@ def make_gaia_source_table(coords, remove_cen_star=True, radius=6*u.arcmin):
     radius : Units
         Radius to perfrom search. Default is 6', which should encompass
         NIRCam's full FoV, including both Modules A and B.
+    teff_default : string
+        Default stellar effective temperature to assume for sources 
+        without GAIA information to extrapolate to longer wavelengths.
     """
     
     from astroquery.simbad import Simbad
@@ -1123,7 +1127,7 @@ def make_gaia_source_table(coords, remove_cen_star=True, radius=6*u.arcmin):
         # Convert to 2015.5 epoch of GAIA coordinates
         coord_query = coords.apply_space_motion(new_obstime=Time('J2015.5'))
     except:
-        _log.warn('Unable to place coords in J2015.5 epoch. Continuing with default coords...')
+        _log.warn(f'Unable to convert to J2015.5 epoch. Continuing with {coords.obstime}...')
         coord_query = coords
     gaia_tbl = Gaia.query_object_async(coord_query, radius=radius)
     
@@ -1153,7 +1157,7 @@ def make_gaia_source_table(coords, remove_cen_star=True, radius=6*u.arcmin):
     # Get effective temperature for each object rounded to the nearest 100K
     teff = (gaia_tbl['teff_val'].data.data / 100).astype('int') * 100
     # Assume solar temperature for null data
-    teff[gaia_tbl['teff_val'].data.mask] = 5800
+    teff[gaia_tbl['teff_val'].data.mask] = teff_default
     
     # Create stellar spectra of each unique temperature
     sp_dict = {}
@@ -1218,7 +1222,9 @@ def make_gaia_source_table(coords, remove_cen_star=True, radius=6*u.arcmin):
     return src_tbl
 
 
-def make_simbad_source_table(coords, remove_cen_star=True, radius=6*u.arcmin):
+def make_simbad_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
+    spt_default='G2V'):
+
     from astroquery.simbad import Simbad
     from astropy.table import Table
 
@@ -1262,8 +1268,8 @@ def make_simbad_source_table(coords, remove_cen_star=True, radius=6*u.arcmin):
     # Get effective temperature for each object rounded to the nearest 100K
     sptype = sim_tbl['SP_TYPE'].data.data
     # Assume solar temperature for null data
-    sptype[sim_tbl['SP_TYPE'].data.mask] = 'G2V'
-    sptype[sim_tbl['SP_TYPE'].data==''] = 'G2V'
+    sptype[sim_tbl['SP_TYPE'].data.mask] = spt_default
+    sptype[sim_tbl['SP_TYPE'].data==''] = spt_default
 
     # Create stellar spectra of each unique temperature
     sp_dict = {}
