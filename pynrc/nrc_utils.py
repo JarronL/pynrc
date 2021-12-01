@@ -352,7 +352,7 @@ def pix_noise(ngroup=2, nf=1, nd2=0, tf=10.73677, rn=15.0, ktc=29.0, p_excess=(0
 from webbpsf_ext.spectra import BOSZ_spectrum, stellar_spectrum, source_spectrum
 from webbpsf_ext.spectra import planets_sb12, sp_accr, jupiter_spec, companion_spec
 from webbpsf_ext.spectra import linder_table, linder_filter, cond_table, cond_filter
-from webbpsf_ext.spectra import bin_spectrum
+from webbpsf_ext.spectra import bin_spectrum, mag_to_counts
 
 def bin_spectrum(sp, wave, waveunits='um'):
     """Rebin spectrum
@@ -1157,9 +1157,7 @@ def gen_unconvolved_point_source_image(nrc, tel_pointing, ra_deg, dec_deg, mags,
                                        expnum=1, osamp=1, siaf_ap_obs=None, **kwargs):
     """ Create an unconvolved image with sub-pixel shifts
     
-    """
-    
-    from webbpsf_ext.spectra import mag_to_counts
+    """    
     from .obs_nircam import attenuate_with_coron_mask, gen_coron_mask
     
     # Observation aperture
