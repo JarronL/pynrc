@@ -2711,6 +2711,8 @@ def saturation_limits(inst, psf_coeff=None, psf_coeff_hdr=None, sp=None, bp_lim=
     fov_pix = psf_coeff_hdr['FOVPIX']
 
     # Generate the PSF image for analysis
+    # Use gen_image_from_coeff() rather than inst.calc_psf_from_coeff() in case we
+    # are supplying custom psf_coeff
     t0 = time.time()
     result = gen_image_from_coeff(inst, psf_coeff, psf_coeff_hdr, 
                                   sp_norm=sp_norm, return_oversample=False)
@@ -2722,9 +2724,18 @@ def saturation_limits(inst, psf_coeff=None, psf_coeff_hdr=None, sp=None, bp_lim=
     sat_level = well_frac * full_well
 
     # If grism spectroscopy
-    pupil = inst.pupil_mask
+    pupil_mask = inst.pupil_mask
     if inst.is_grism:
         wspec, spec = result
+
+        # Spectra are in 'sci' coords
+        # If GRISMC (along columns) rotate image by 90 deg CW 
+        if (pupil_mask=='GRISMC') or (pupil_mask=='GRISM90'):
+            spec = np.rot90(spec, k=1)
+        elif inst.module=='B':
+            # Flip left to right so dispersion is in same direction as mod A
+            spec = spec[:,::-1]
+            wspec = wspec[::-1]
 
          # Time to saturation for 10-mag source
         sat_time = sat_level / spec
@@ -2774,7 +2785,7 @@ def saturation_limits(inst, psf_coeff=None, psf_coeff_hdr=None, sp=None, bp_lim=
             'units':units, 'Spectrum':sp_norm.name, 'bp_lim':bp_lim.name}
 
     # DHS spectroscopy
-    elif (pupil is not None) and ('DHS' in pupil):
+    elif (pupil_mask is not None) and ('DHS' in pupil_mask):
         raise NotImplementedError('DHS not implemented')
 
     # Imaging
@@ -2947,10 +2958,10 @@ def sensitivities(inst, psf_coeff=None, psf_coeff_hdr=None, sp=None, units=None,
     from webbpsf_ext.psfs import gen_image_from_coeff
     from webbpsf_ext.bandpasses import bp_igood
 
-    pupil = inst.pupil_mask
+    pupil_mask = inst.pupil_mask
 
     grism_obs = inst.is_grism
-    dhs_obs   = (pupil is not None) and ('DHS'   in pupil)
+    dhs_obs   = (pupil_mask is not None) and ('DHS' in pupil_mask)
     lyot_obs  = inst.is_lyot
     coron_obs = inst.is_coron
 
@@ -3011,12 +3022,21 @@ def sensitivities(inst, psf_coeff=None, psf_coeff_hdr=None, sp=None, units=None,
     else:
         snr_fact = 1.0
 
-
     # If grism spectroscopy
     if grism_obs:
 
-        if units is None: units = 'uJy'
+        if units is None: 
+            units = 'uJy'
         wspec, spec = image
+
+        # Spectra are in 'sci' coords
+        # If GRISMC (along columns) rotate image by 90 deg CW 
+        if (pupil_mask=='GRISMC') or (pupil_mask=='GRISM90'):
+            spec = np.rot90(spec, k=1)
+        elif inst.module=='B':
+            # Flip left to right so dispersion is in same direction as mod A
+            spec = spec[:,::-1]
+            wspec = wspec[::-1]
 
         # Wavelengths to grab sensitivity values
         #igood2 = bp.throughput > (bp.throughput.max()/4)
