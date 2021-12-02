@@ -1200,14 +1200,21 @@ def make_gaia_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
             d[k] = obs.effstim('vegamag')
         bp_sp_dict[f] = d
     
-    # Generate new columns for each filter
+    # Add Teff data to table
+    src_tbl['Teff'] = teff
+
+    # Add type column (star or galaxy)
     ind_nopara = gaia_tbl['parallax'].data.mask | (gaia_tbl['parallax'].data.data < 0)
+    src_type = np.array(['galaxy' if v else 'star' for v in ind_nopara])
+    src_tbl['Type'] = src_type
+
+    # Generate new columns for each filter
     for f in filts_all:
 
         coldata = []
         for i in range(len(gaia_tbl)):
             # Select spectrum for given object
-            key = 'flat' if ind_nopara[i] else int(teff[i])
+            key = 'flat' if src_tbl['Type'][i]=='galaxy' else int(teff[i])
             # Offset filter 0-mag value
             bp_mag = bp_sp_dict[f][key] + gband[i] 
             coldata.append(bp_mag)
@@ -1312,16 +1319,24 @@ def make_simbad_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
             d[k] = obs.effstim('vegamag')
         bp_sp_dict[f] = d
 
+    src_tbl['SpType'] = sptype
+    for row in src_tbl:
+        spt = 'G2V' if row['SpType']=='' else row['SpType']
+        spt = spt.split('+')[0]
+        spt = spt + 'V' if len(spt)==2 else spt
+        row['SpType'] = spt
+
     # Generate new columns for each filter
     for f in filts_all:
         bp = bp_dict[f]
 
         coldata = []
-        for row in sim_tbl:
-            sptype = 'G2V' if row['SP_TYPE']=='' else row['SP_TYPE']
-            sptype = sptype.split('+')[0]
-            sptype = sptype + 'V' if len(sptype)==2 else sptype
-            bp_mag = bp_sp_dict[f][sptype] + row['FLUX_K']
+        for row in src_tbl:
+            spt = row['SpType']
+            # sptype = 'G2V' if row['SP_TYPE']=='' else row['SP_TYPE']
+            # sptype = sptype.split('+')[0]
+            # sptype = sptype + 'V' if len(sptype)==2 else sptype
+            bp_mag = bp_sp_dict[f][spt] + row['K-Band']
             coldata.append(bp_mag)
 
         # Round to the nearest milli-mag
