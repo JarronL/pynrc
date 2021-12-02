@@ -1,0 +1,71 @@
+Smart accounting uses a heuristic algorithm to try to find Observations which
+could be scheduled in sequence.  Instead of charging all Observations in a
+sequence an initial major slew only the first Observation in the sequence is
+charged an initial slew.
+
+
+Sequence   1:
+Visit ID     Smart Accounting Slew     APT Slew                  Target
+ 003:001                      1800         1800                HD-84406
+ 002:001                        54         1800                HD-84406
+ 004:001                        54         1800                HD-84406
+
+Total:                        1908         5400
+
+
+Sequence   2:
+Visit ID     Smart Accounting Slew     APT Slew                  Target
+ 009:001                      1800         1800              GCRV-21765
+ 029:001                       264         1800              GCRV-21765
+ 008:001                       265         1800              GCRV-21765
+ 018:001                       264         1800              GCRV-21765
+ 007:001                       265         1800              GCRV-21765
+
+Total:                        2858         9000
+
+
+Sequence   3:
+Visit ID     Smart Accounting Slew     APT Slew                  Target
+ 005:001                      1800         1800               BD+86-189
+
+Total:                        1800         1800
+
+
+Sequence   4:
+Visit ID     Smart Accounting Slew     APT Slew                  Target
+ 006:001                      1800         1800         TYC-8558-1141-1
+
+Total:                        1800         1800
+
+
+Sequence   5:
+Visit ID     Smart Accounting Slew     APT Slew                  Target
+ 031:001                      1800         1800                HD-84406
+ 032:001                       161         1800                HD-84406
+ 033:001                        51         1800                HD-84406
+ 034:001                        51         1800                HD-84406
+
+Total:                        2063         7200
+
+
+Sequence   6:
+Visit ID     Smart Accounting Slew     APT Slew                  Target
+ 001:001                      1800         1800                HD-84406
+ 022:001                        51         1800                HD-84406
+ 023:001                       189         1800                HD-84406
+ 024:001                       242         1800                HD-84406
+ 025:001                       211         1800                HD-84406
+ 026:001                       190         1800                HD-84406
+
+Total:                        2683        10800
+
+
+Each sequence shows the visits in the order that the smart accounting algorithm
+used to estimate the slew time.  The column 'Smart Accounting Slew' is the
+estimated slew time assigned to the visit by the smart accounting algorithm.
+The column labeled 'APT Slew' shows the original slew estimate assigned by APT.
+The 'target' column shows the target for the visit on that line.
+
+A visit marked with '**' at the end of the line is not schedulable anywhere.
+Visits which are not schedulable may be placed in their own sequence because
+there is no way to know what they might be grouped with if they could be scheduled.

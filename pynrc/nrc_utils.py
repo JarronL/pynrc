@@ -1050,7 +1050,8 @@ def pickoff_xy(ap_obs_name):
     v2_1, v3_1 = ap1.corners('tel', False)
     v2_2, v3_2 = ap2.corners('tel', False)
     v2_3, v3_3 = ap3.corners('tel', False)
-    if module == 'B': v2_3 *= -1
+    if module == 'B': 
+        v2_3 *= -1
     v2_all = np.array([v2_1, v2_2, v2_3]).flatten()
     v3_all = np.array([v3_1, v3_2, v3_3]).flatten()
 
