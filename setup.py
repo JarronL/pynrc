@@ -101,16 +101,18 @@ with open('HISTORY.rst') as history_file:
     history = history_file.read()
 
 requirements = [
-          'Click>=6.0',
-          'numpy>=1.19.0',
-          'matplotlib>=3.3.0',
-          'scipy>=1.5.0',
-          'pysynphot>=2.0.0',
-          'poppy>=0.9.2',
-          'webbpsf>=0.9.2',
-          'webbpsf_ext>=1.0.0',
-          'tqdm>4',
-      ]
+    'Click>=6.0',
+    'numpy>=1.19.0',
+    'matplotlib>=3.3.0',
+    'scipy>=1.5.0',
+    'pysynphot>=2.0.0',
+    'poppy>=1.0.1',
+    'webbpsf>=1.0.0',
+    'webbpsf_ext>=1.0.0',
+    'tqdm>4',
+    'astropy>=4.2',
+    'astroquery>=0.4.3',
+]
 # RTD cannot handle certain 
 # if not (os.environ.get('READTHEDOCS') == 'True'):
 #     # requirements.append('jwst_backgrounds>=1.1')
