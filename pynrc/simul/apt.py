@@ -5114,6 +5114,7 @@ def get_roll_info(xml_file):
         pa_min = int(orient.get('MinAngle').split(' ')[0])
         pa_max = int(orient.get('MaxAngle').split(' ')[0])
 
+        # Store PA offset link
         roll_dict[i] = {
             'PrimaryObs'    : obs1_num,
             'OrientFromObs' : obs2_num,
@@ -5125,7 +5126,34 @@ def get_roll_info(xml_file):
         return None
     else:
         return roll_dict
-        
+
+def get_orient_specreq(xml_file):
+    """ Grab V3 PA Range special requirements from XML file
+
+    TODO: Value is specified in the aperture PA, not V3 PA. Need to calculate V3 PA.
+    """
+
+    with open(xml_file) as f:
+        tree = etree.parse(f)
+
+    apt = '{http://www.stsci.edu/JWST/APT}'
+
+    orient_dict = {}
+    # Get special requirements for Orient Range
+    OrientRanges = tree.findall('.//' + apt + 'OrientRange')
+    # Loop through each orient ranges PA offset links
+    for ORange in OrientRanges:
+        obs_num = ORange.getparent().getparent().find(apt+'Number').text.zfill(3)
+        orient_dict[obs_num] = {
+            'OrientMin' : float(ORange.get('OrientMin').split(' ')[0]),
+            'OrientMax' : float(ORange.get('OrientMax').split(' ')[0]),
+        }
+
+    if len(orient_dict)==0:
+        return None
+    else:
+        return orient_dict
+
 
 def gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file, rand_seed=None):
     """
@@ -5144,6 +5172,7 @@ def gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file, rand_se
     filter_info = get_filter_info(xml_file)
     dith_info = get_ditherinfo(xml_file)
     roll_info = get_roll_info(xml_file)
+    orient_info = get_orient_specreq(xml_file)
 
     # Save visit information to its own dictionary
     visits_dict = OrderedDict()
@@ -5164,6 +5193,18 @@ def gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file, rand_se
             }
         
     # Add roll offset info to relevant visits
+    if orient_info is not None:
+        for k_obs in orient_info.keys():
+            d_orient = orient_info[k_obs]
+
+            # Cycle through each visit to find obs num matches
+            for key in visits_dict.keys():
+                d = visits_dict[key]
+                obs_num = d['obs_num']
+                # Only update if statment is True
+                d['orient_info'] = d_orient if (obs_num==int(k_obs)) else d.get('orient_info')
+
+    # Add orientation special requierment info to relevant visits
     if roll_info is not None:
         for k_roll in roll_info.keys():
             d_roll = roll_info[k_roll]
@@ -5176,6 +5217,7 @@ def gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file, rand_se
                 obs_num = d['obs_num']
                 # Only update if statment is True
                 d['roll_info'] = d_roll if (obs_num==onum1) or (obs_num==onum2) else d.get('roll_info')
+
 
     template_key = 'APTTemplate'
     for key in visits_dict.keys():
@@ -5388,7 +5430,7 @@ def create_obs_params(filt, pupil, mask, det, siaf_ap, ra_dec, date_obs, time_ob
     int_range : list
         Integration indices to use 
     filename : str or None  
-        Name of output filename. 
+        Name of output filename.
     """
 
     from .dms import populate_group_table, jw_obs_id
@@ -5420,6 +5462,8 @@ def create_obs_params(filt, pupil, mask, det, siaf_ap, ra_dec, date_obs, time_ob
     sol_elong = pitch_ang + 90
     if pa_v3 is None:
         pa_v3 = pa_v3_nom
+
+    # TODO: Maybe add an orient ranges constraint here?
 
     if siaf_ap_obs is None:
         apname = siaf_ap_ref.AperName
@@ -5727,8 +5771,10 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs='12:00:0
     sub_dith_type = visit_dict['SubpixelDitherType'][ind_mask][0]
     sgd_type      = visit_dict['SmallGridDitherType'][ind_mask][0]
     dither_points = visit_dict['number_of_dithers'][ind_mask][0]
-    try: pri_dithers = visit_dict['PrimaryDithers'][ind_mask][0] # e.g., '3TIGHT'
-    except ValueError: pri_dithers = NONE_STR
+    try: 
+        pri_dithers = visit_dict['PrimaryDithers'][ind_mask][0] # e.g., '3TIGHT'
+    except ValueError: 
+        pri_dithers = NONE_STR
     try: 
         npri_dith = int(visit_dict['PrimaryDithers'][ind_mask][0])
     except ValueError: 
@@ -5775,23 +5821,40 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs='12:00:0
         time_visit_offset=time_visit_offset, time_exp_offset=time_exp_offset, 
         segNum=segNum, segTot=segTot, int_range=int_range, filename=filename)
     
+    # Update V3 PA with Orient Ranges special requirement
     # Update V3 PA with roll information
+    orient_info = visit_dict.get('orient_info')
     roll_info = visit_dict.get('roll_info')
-    if roll_info is not None:
-        # roll_info = visit_dict['roll_info'][ind_mask][0]
-        obs_num = visit_dict['obs_num']
+    if (orient_info is not None) or (roll_info is not None):
+        pa_v3_input = pa_v3
         pa_v3 = obs_params_init['pa_v3']
 
         # Make sure we constrain within V3 PA limits within field of regard
         output = get_tel_angles(ra, dec, obs_date=date_obs, obs_time=time_obs)
-        # Check if specified pa_v3 is outside of bounds
-        if pa_v3 < output['v3pa_min']:
-            v3pa_min = output['v3pa_min']
+        if orient_info is not None:
+            v3pa_min = np.max([output['v3pa_min'], orient_info['OrientMin']])
+            v3pa_max = np.min([output['v3pa_max'], orient_info['OrientMax']])
+        else:
+            v3pa_min, v3pa_max = (output['v3pa_min'], output['v3pa_max'])
+
+        # If initial input was None, then we have free reign to calculate nominal values
+        if pa_v3_input is None:
+            # Set min value to negative if it's greater than max value
+            if v3pa_min > v3pa_max:
+                v3pa_min = v3pa_min - 360
+            # Nominal value is then average of min and max constraints
+            pa_v3 = (v3pa_min + v3pa_max) / 2
+            # Ensure PA is 0-360
+            if pa_v3 < 0:
+                pa_v3 += 360
+        # Otherwise, check if specified pa_v3 is outside of bounds
+        elif pa_v3 < v3pa_min:
             _log.warn(f'{pa_v3:.2f} is less than allowed {v3pa_min:.2f} for the given date!')
-        elif pa_v3 > output['v3pa_max']:
-            v3pa_max = output['v3pa_max']
+        elif pa_v3 > v3pa_max:
             _log.warn(f'{pa_v3:.2f} is greater than allowed {v3pa_max:.2f} for the given date!')
 
+    if roll_info is not None:
+        obs_num = visit_dict['obs_num']
 
         dpa_max = np.abs([roll_info['MinPA'], roll_info['MaxPA']]).max()
         if roll_info['MaxPA'] < 0:
@@ -5803,10 +5866,10 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs='12:00:0
         elif obs_num==roll_info['OrientFromObs']:
             pa_v3 = pa_v3 - dpa_max / 2
 
-        if pa_v3 < output['v3pa_min']:
-            pa_v3 = output['v3pa_min']
-        elif pa_v3 > output['v3pa_max']:
-            pa_v3 = output['v3pa_max']
+        if pa_v3 < v3pa_min:
+            pa_v3 = v3pa_min
+        elif pa_v3 > v3pa_max:
+            pa_v3 = v3pa_max
 
         # Update Roll and V3 PA
         obs_params_init['roll_offset'] = pa_v3 - obs_params_init['pa_v3']
@@ -6254,14 +6317,22 @@ def get_tel_angles(ra, dec, obs_date='2022-03-01', obs_time='12:00:00'):
     mask = mask_obs[:,0] 
     if mask.sum()==0:
         _log.warn(f"Source RA, Dec = ({ra:.1f}, {dec:.1f}) deg is not visible on {obs_date}!")
-        v3pa = v3pa_deg[:,0].mean()
-        v3pa_min = v3pa_deg[:,0].min()
-        v3pa_max = v3pa_deg[:,0].max()
+        v3pa_lims = np.array([v3pa_deg[0,0], v3pa_deg[-1,0]])
     else:
-        v3pa = v3pa_deg[mask,0].mean()
-        v3pa_min = v3pa_deg[mask,0].min()
-        v3pa_max = v3pa_deg[mask,0].max()
-    
+        v3pa_masked = v3pa_deg[mask,0]
+        v3pa_lims = np.array([v3pa_masked[0], v3pa_masked[-1]])
+
+    # Check if max-min is too large, indicating min should actually be negative
+    # This might be a case where the V3PA range is something like 355 to 5.
+    if np.abs(v3pa_lims[0]-v3pa_lims[1]) > 30:
+        v3pa_max = v3pa_lims.min()
+        v3pa_min = v3pa_lims.max() - 360
+    else:
+        v3pa_min = v3pa_lims.min()
+        v3pa_max = v3pa_lims.max()
+
+    v3pa = (v3pa_max + v3pa_min) / 2
+
     return {'pitch_deg': pitch, 'v3pa_deg': v3pa, 
             'v3pa_min': v3pa_min,'v3pa_max': v3pa_max}
 
@@ -6271,6 +6342,7 @@ def pitch_vs_time(xml_file, pointing_file, timing_json_file, smart_accounting_fi
     timing_info = get_timing_info(timing_json_file, smart_accounting_file)
     pointing_info = get_pointing_info(pointing_file, all_inst=True)
     roll_info = get_roll_info(xml_file)
+    orient_info = get_orient_specreq(xml_file)
 
     slew_durations  = np.array([timing_info[k]['slew_duration'] for k in timing_info.keys()])
     visit_durations = np.array([timing_info[k]['scheduling_duration'] for k in timing_info.keys()])
@@ -6291,11 +6363,26 @@ def pitch_vs_time(xml_file, pointing_file, timing_json_file, smart_accounting_fi
         pa_v3_nom = res['v3pa_deg']
         pa_v3_min, pa_v3_max = (res['v3pa_min'], res['v3pa_max'])
 
+        # print(f'Init (Obs{obs_num}): {pa_v3_nom:.2f} ({pa_v3_min:.2f}, {pa_v3_max:.2f})')
+
+        # Update V3 PA limits if Orient Ranges Special Requirement exists
+        if orient_info is not None:
+            for kobs in orient_info.keys():
+                if int(kobs)==obs_num:
+                    orient_min = orient_info[kobs]['OrientMin']
+                    orient_max = orient_info[kobs]['OrientMax']
+                    if pa_v3_min<0:
+                        orient_min = orient_min - 360
+                    pa_v3_min = np.max([orient_min, pa_v3_min])
+                    pa_v3_max = np.min([orient_max, pa_v3_max])
+                    pa_v3_nom = (pa_v3_min + pa_v3_max) / 2
+
+                    # print(f'Orient SpecReq: {pa_v3_nom:.2f} ({pa_v3_min:.2f}, {pa_v3_max:.2f})')
+
         # Update pitch angles if there is a roll angle
         if roll_info is not None:
             for kroll in roll_info.keys():
                 rdict = roll_info[kroll]
-
                 if (obs_num==rdict['PrimaryObs']) or (obs_num==rdict['OrientFromObs']):
 
                     dpa_max = np.abs([rdict['MinPA'], rdict['MaxPA']]).max()
@@ -6325,6 +6412,8 @@ def pitch_vs_time(xml_file, pointing_file, timing_json_file, smart_accounting_fi
                         pitch_angle += del_pitch
                     else:
                         pitch_angle -= del_pitch
+
+                    # print(f'Roll Link: {pa_v3_nom:.2f} ({pa_v3_min:.2f}, {pa_v3_max:.2f}); {pa_v3:.2f}')
 
         pitch_angles.append(pitch_angle)
 
