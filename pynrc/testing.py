@@ -3,6 +3,7 @@ import numpy as np
 from .nrc_utils import webbpsf, poppy, read_filter
 from .logging_utils import setup_logging
 from .pynrc_core import NIRCam
+from .opds import opd_default
 
 def perform_benchmarks(filter='F430M', pupil=None, mask=None, module='A',
                        fov_pix=33, oversample=4, include_si_wfe=True, 
@@ -21,7 +22,8 @@ def perform_benchmarks(filter='F430M', pupil=None, mask=None, module='A',
     kwargs['fov_pix'] = fov_pix
     kwargs['oversample'] = oversample
 
-    kwargs['opd'] = ('OPD_RevW_ote_for_NIRCam_predicted.fits.gz', 0)
+    # kwargs['opd'] = ('OPD_RevW_ote_for_NIRCam_predicted.fits.gz', 0)
+    kwargs['opd'] = opd_default
     kwargs['jitter'] = 'gaussian'
     kwargs['jitter_sigma'] = 0.007
 

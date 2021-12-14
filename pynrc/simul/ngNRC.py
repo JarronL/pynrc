@@ -1380,6 +1380,8 @@ def gen_wfe_drift(obs_input, case='BOL', iec_period=300, slew_init=10, rand_seed
 
     import webbpsf
     from webbpsf_ext.opds import OTE_WFE_Drift_Model
+    from webbpsf.utils import get_webbpsf_data_path
+    from ..opds import opd_default, opd_dir, pupil_file
 
     def plot_wfe(figname=None):
 
@@ -1483,17 +1485,20 @@ def gen_wfe_drift(obs_input, case='BOL', iec_period=300, slew_init=10, rand_seed
         exp_start.append(d['exp_start_times'])
     exp_start = np.concatenate(exp_start)
 
-    webbpsf_path = webbpsf.utils.get_webbpsf_data_path()
-    pupil_file = 'jwst_pupil_RevW_npix1024.fits.gz'
-    opd_file = 'OPD_RevW_ote_for_NIRCam_requirements.fits.gz'
+    # Data directories
+    # OPD directory defined above
+    webbpsf_path = get_webbpsf_data_path()
+    pupil_dir    = webbpsf_path
 
-    pupil_path = os.path.join(webbpsf_path, pupil_file)
-    opd_path = os.path.join(webbpsf_path, 'NIRCam', 'OPD', opd_file)
-
-    name = "Modified OPD from " + str(opd_file)
+    # Pupil and OPD file path names
+    opd_file, opd_slice = opd_default
+    pupil_path = os.path.join(pupil_dir, pupil_file)
+    opd_path   = os.path.join(opd_dir, opd_file)
 
     # Initiate OTE drift class
-    ote = OTE_WFE_Drift_Model(name=name, opd=opd_path, transmission=pupil_path)
+    name = "Modified OPD from " + str(opd_file)
+    ote = OTE_WFE_Drift_Model(name=name, opd=opd_path, slice=opd_slice, 
+                              transmission=pupil_path)
 
     # Generate delta OPDs for each time step
     # Also outputs a dictionary of each component's WFE drift value (nm RMS)
