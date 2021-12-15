@@ -1692,8 +1692,10 @@ class obs_hci(nrc_hci):
             hdu.header['OSAMP'] =    (osamp_out, 'Oversample compared to detector pixels')
             hdu.header['PIXELSCL'] = (pixscale_out, 'Image pixel scale (asec/pix)')
             hdu.header['FILTER']   = (self.filter, 'Filter name')
-            if self.is_lyot:  hdu.header['PUPIL']    = (self.pupil_mask, 'Pupil plane mask')
-            if self.is_coron: hdu.header['CORONMSK'] = (self.image_mask, 'Image plane mask')
+            if self.is_lyot:  
+                hdu.header['PUPIL']    = (self.pupil_mask, 'Pupil plane mask')
+            if self.is_coron: 
+                hdu.header['CORONMSK'] = (self.image_mask, 'Image plane mask')
             hdu.header['TEXP_SCI'] = (2*self.multiaccum_times['t_exp'], 'Total science exposure time (sec)')
             hdu.header['TEXP_REF'] = (0, 'Total reference exposure time (sec)')
             hdu.header['ROLL_ANG'] = (roll_angle, 'Delta roll angle (deg)')
@@ -1709,8 +1711,10 @@ class obs_hci(nrc_hci):
                 hdu.header['OSAMP'] =    (osamp_out, 'Oversample compared to detector pixels')
                 hdu.header['PIXELSCL'] = (pixscale_out, 'Image pixel scale (asec/pix)')
                 hdu.header['FILTER']   = (self.filter, 'Filter name')
-                if self.is_lyot:  hdu.header['PUPIL']    = (self.pupil_mask, 'Pupil plane mask')
-                if self.is_coron: hdu.header['CORONMSK'] = (self.image_mask, 'Image plane mask')
+                if self.is_lyot:  
+                    hdu.header['PUPIL']    = (self.pupil_mask, 'Pupil plane mask')
+                if self.is_coron: 
+                    hdu.header['CORONMSK'] = (self.image_mask, 'Image plane mask')
                 hdu.header['TEXP']     = (self.Detector.time_exp, 'Total exposure time (sec)')
                 hdu.header['PA']       = (pa_vals[ii], "Position angle (deg)")
                 dx, dy = xyoff_asec1 if ii==0 else xyoff_asec2
@@ -1917,8 +1921,10 @@ class obs_hci(nrc_hci):
         hdu.header['OSAMP'] =    (osamp_out, 'Oversample compared to detector pixels')
         hdu.header['PIXELSCL'] = (pixscale_out, 'Image pixel scale (asec/pix)')
         hdu.header['FILTER']   = (self.filter, 'Filter name')
-        if self.is_lyot: hdu.header['PUPIL'] = (self.pupil_mask, 'Pupil plane mask')
-        if self.is_coron: hdu.header['CORONMSK'] = (self.image_mask, 'Image plane mask')
+        if self.is_lyot: 
+            hdu.header['PUPIL'] = (self.pupil_mask, 'Pupil plane mask')
+        if self.is_coron: 
+            hdu.header['CORONMSK'] = (self.image_mask, 'Image plane mask')
         hdu.header['TEXP_SCI'] = (texp_sci, 'Total science exposure time (sec)')
         hdu.header['TEXP_REF'] = (self.Detector_ref.time_exp, 'Total reference exposure time (sec)')
         hdu.header['ROLL_ANG'] = (roll_angle, 'Delta roll angle (deg)')
@@ -1932,8 +1938,10 @@ class obs_hci(nrc_hci):
         hdu.header['OSAMP'] =    (osamp_out, 'Oversample compared to detector pixels')
         hdu.header['PIXELSCL'] = (pixscale_out, 'Image pixel scale (asec/pix)')
         hdu.header['FILTER']   = (self.filter, 'Filter name')
-        if self.is_lyot:  hdu.header['PUPIL']    = (self.pupil_mask, 'Pupil plane mask')
-        if self.is_coron: hdu.header['CORONMSK'] = (self.image_mask, 'Image plane mask')
+        if self.is_lyot:  
+            hdu.header['PUPIL']    = (self.pupil_mask, 'Pupil plane mask')
+        if self.is_coron: 
+            hdu.header['CORONMSK'] = (self.image_mask, 'Image plane mask')
         hdu.header['TEXP']     = (self.Detector.time_exp, 'Total exposure time (sec)')
         hdu.header['PA']       = (PA1, "Position angle (deg)")
         hdu.header['DX_ASEC']  = (xyoff_asec1[0], 'Pointing offset in x-ideal (asec)')
@@ -1950,8 +1958,10 @@ class obs_hci(nrc_hci):
             hdu.header['OSAMP']    = (osamp_out, 'Oversample compared to detector pixels')
             hdu.header['PIXELSCL'] = (pixscale_out, 'Image pixel scale (asec/pix)')
             hdu.header['FILTER']   = (self.filter, 'Filter name')
-            if self.is_lyot:  hdu.header['PUPIL']    = (self.pupil_mask, 'Pupil plane mask')
-            if self.is_coron: hdu.header['CORONMSK'] = (self.image_mask, 'Image plane mask')
+            if self.is_lyot:  
+                hdu.header['PUPIL']    = (self.pupil_mask, 'Pupil plane mask')
+            if self.is_coron: 
+                hdu.header['CORONMSK'] = (self.image_mask, 'Image plane mask')
             hdu.header['TEXP']     = (self.Detector.time_exp, 'Total exposure time (sec)')
             hdu.header['PA']       = (PA2, "Position angle (deg)")
             hdu.header['DX_ASEC']  = (xyoff_asec2[0], 'Pointing offset in x-ideal (asec)')
@@ -1970,8 +1980,10 @@ class obs_hci(nrc_hci):
             hdu.header['OSAMP']    = (osamp_out, 'Oversample compared to detector pixels')
             hdu.header['PIXELSCL'] = (pixscale_out, 'Image pixel scale (asec/pix)')
             hdu.header['FILTER']   = (self.filter, 'Filter name')
-            if self.is_lyot:  hdu.header['PUPIL']    = (self.pupil_mask, 'Pupil plane mask')
-            if self.is_coron: hdu.header['CORONMSK'] = (self.image_mask, 'Image plane mask')
+            if self.is_lyot:  
+                hdu.header['PUPIL']    = (self.pupil_mask, 'Pupil plane mask')
+            if self.is_coron: 
+                hdu.header['CORONMSK'] = (self.image_mask, 'Image plane mask')
             hdu.header['TEXP']     = (self.Detector_ref.time_exp, 'Total exposure time (sec)')
             hdu.header['PA']       = (0, "Position angle (deg)")
             hdu.header['DX_ASEC']  = (xyoff_asec_ref[0], 'Pointing offset in x-ideal (asec)')
