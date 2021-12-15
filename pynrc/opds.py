@@ -10,23 +10,22 @@ pupil_file  = 'jwst_pupil_RevW_npix1024.fits.gz'
 on_rtd = os.environ.get('READTHEDOCS') == 'True'
 if not on_rtd:
     from webbpsf.utils import get_webbpsf_data_path
-    # Check .fits or .fits.gz?
+    from webbpsf_ext.utils import check_fitsgz
 
+    # Set up initial OPD file info
     opd_file = opd_default[0]
-    if 'JWST_OTE_OPD' in opd_file:
+    try:
+        opd_file = check_fitsgz(opd_file)
+    except OSError:
+        # Fall back to RevW if cannot find newer version
+        opd_file = check_fitsgz('OPD_RevW_ote_for_NIRCam_predicted.fits')
+    opd_default = (opd_file, 0)
+
+    if 'NIRCam' in opd_file:
         opd_dir = get_webbpsf_data_path()
     else:
         opd_dir = os.path.join(get_webbpsf_data_path(),'NIRCam','OPD')
 
-    opd_fullpath = os.path.join(opd_dir, opd_file)
-    if not os.path.exists(opd_fullpath):
-        opd_file_alt = opd_file + '.gz'
-        opd_path_alt = os.path.join(opd_dir, opd_file_alt)
-        if not os.path.exists(opd_path_alt):
-            err_msg = f'Cannot find either {opd_file} or {opd_file_alt} in {opd_dir}'
-            raise OSError(err_msg)
-        else:
-            opd_default = (opd_file_alt, 0)
 else:
     opd_dir = ''
 
