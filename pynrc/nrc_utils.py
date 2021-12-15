@@ -957,10 +957,180 @@ def grism_background_com(filter, pupil='GRISM90', module='A', sp_bg=None,
     return res
 
 
+def make_grism_slope(nrc, src_tbl, tel_pointing, expnum, add_offset=None, **kwargs):
+    """ Create slope image 
+    """
+    
+    # Set SIAF aperture info
+    siaf_ap_obs = tel_pointing.siaf_ap_obs
+    ap_siaf = siaf_ap_obs
+    ap_obs = ap_siaf.AperName
+    
+    # Convert expnum to int if input as string
+    expnum = int(expnum) if isinstance(expnum, str) else expnum
+    # Grab poining info for specific exposure number
+    ind = np.where(tel_pointing.exp_nums == expnum)[0][0]
+    
+    # Include a offset shift to better reposition spectrum?
+    add_offset = np.array([0,0]) if add_offset is None else np.asarray(add_offset)
+    idl_off = np.array([(tel_pointing.position_offsets_act[ind])]) + add_offset
+    
+    ra_deg  = src_tbl['ra'].to('deg').value
+    dec_deg = src_tbl['dec'].to('deg').value
+    mags    = src_tbl[nrc.filter].data
+    try:
+        teff = src_tbl['Teff']
+        sptype = None
+    except:
+        teff = None
+        sptype = src_tbl['SpType']
+    
+    # Convert all RA/Dec values to V3/V3
+    v2_obj, v3_obj = tel_pointing.radec_to_frame((ra_deg, dec_deg), frame_out='tel', idl_offsets=idl_off)
+    
+    # Get pixel locations
+    xpix, ypix = ap_siaf.tel_to_sci(v2_obj, v3_obj)
+    # Pickoff mirror information
+    x1, x2, y1, y2 = pickoff_xy(ap_obs)
+    
+    # Mask out all sources that are outside pick-off mirror
+    mask_pom = ((xpix>x1) & (xpix<x2-1)) & ((ypix>y1) & (ypix<y2-1))
+
+    # Mask out all sources that will not contribute to final slope image
+    wspec, imspec_temp = nrc.calc_psf_from_coeff(return_oversample=False, return_hdul=False)
+    ypsf, xpsf = imspec_temp.shape
+    
+    xmin, ymin = -1*np.array([xpsf,ypsf]).astype('int') / 2 - 1
+    xmax = int(ap_siaf.XSciSize + xpsf / 2 + 1)
+    ymax = int(ap_siaf.YSciSize + ypsf / 2 + 1)
+
+    xmask = (xpix>=xmin) & (xpix<=xmax)
+    ymask = (ypix>=ymin) & (ypix<=ymax)
+
+    # Final mask
+    mask = mask_pom & xmask & ymask
+
+    # Select final positions and spectral type information
+    xpix = xpix[mask]
+    ypix = ypix[mask]
+    mags_field = mags[mask]
+    teff   = teff[mask]   if teff   is not None else None
+    sptype = sptype[mask] if sptype is not None else None
+    # src_flux = mag_to_counts(mags_field, nrc.bandpass, **kwargs)
+
+    _log.info(np.array([xpix, ypix, mags_field]).T)
+
+    # Get undeviated wavelength
+    wref = grism_wref(nrc.pupil_mask, nrc.module)
+
+    nx, ny = (nrc.Detector.xpix, nrc.Detector.ypix)
+    im_slope = np.zeros([ny,nx])
+
+    # Build final image
+    wspec_all = []
+    for i in range(xpix.size):
+        # Get stellar spectrum
+        teff_i = teff[i]   if teff   is not None else None
+        sptp_i = sptype[i] if sptype is not None else 'G2V'
+        sp = stellar_spectrum(sptp_i, mags_field[i], 'vegamag', nrc.bandpass,
+                              Teff=teff_i, metallicity=0, log_g=4.5)
+
+        # Create spectral image
+        xr, yr = xpix[i], ypix[i]
+        wspec, imspec = place_grism_spec(nrc, sp, xr, yr, wref=wref, return_oversample=False)
+
+        im_slope += imspec
+        wspec_all.append(wspec)
+        del imspec
+
+    wspec_all = np.asarray(wspec_all)
+
+    return wspec_all, im_slope
+
+def place_grism_spec(nrc, sp, xpix, ypix, wref=None, return_oversample=False):
+    """ Create spectral image and place ref wavelenght at (x,y) location 
+    
+    Given a NIRCam instrument object and input spectrum, create a dispersed
+    PSF and place the undeviated reference wavelength at the specified
+    (xpix,ypix) coordinates (assuming 'sci' coords). 
+
+    Returned values will be a tuple of (wspec, imspec) 
+
+    """
+
+    nx, ny = (nrc.Detector.xpix, nrc.Detector.ypix)
+    oversample = nrc.oversample
+    nx_over = nx * oversample
+    ny_over = ny * oversample
+
+    pupil_mask = nrc.pupil_mask
+    if pupil_mask is None:
+        _log.warn('place_grism_spec: NIRCam pupil mask set to None. Should be GRISMR or GRISMC.')
+        pupil_mask = 'NONE'
+
+    # Determine reference wavelength
+    if wref is None:
+        if 'GRISMC' in pupil_mask:
+            pupil = 'GRISMC'
+        elif 'GRISM' in pupil_mask:
+            pupil = 'GRISMR'
+        else: # generic grism
+            pupil = 'GRISM'
+        wref = grism_wref(pupil, nrc.module)
+
+    # Create image
+    wspec, imspec = nrc.calc_psf_from_coeff(sp=sp, return_hdul=False, return_oversample=True)
+
+    # Place undeviated wavelength at (xpix,ypix) location
+    xr, yr = (np.array([xpix, ypix]) - 0.5) * oversample
+    yshift = yr - ny_over/2
+
+    # Empirically determine shift value in dispersion direction
+    wnew_temp = pad_or_cut_to_size(wspec, nx_over)
+    # Index of reference wavelength associated with ref pixel
+    imask = (wnew_temp>wref-0.01) & (wnew_temp<wref+0.01)
+    ix_ref = np.interp(wref, wnew_temp[imask], np.arange(nx_over)[imask])
+    xshift = xr - ix_ref
+
+    # Shift and crop to output size
+    imspec = pad_or_cut_to_size(imspec, (ny_over,nx_over), offset_vals=(yshift,xshift), fill_val=np.nan)
+    wspec  = pad_or_cut_to_size(wspec, nx_over, offset_vals=xshift, fill_val=np.nan)
+
+    # Remove NaNs in image
+    ind_nan = np.isnan(imspec)
+    imspec[ind_nan] = np.min(imspec[~ind_nan])
+
+    # Fill NaNs in wavelength solution with linear extrapolation
+    ind_nan = np.isnan(wspec)
+    arr = np.arange(nx_over)
+    cf = jl_poly_fit(arr[~ind_nan], wspec[~ind_nan])
+    wspec[ind_nan] = jl_poly(arr[ind_nan], cf)
+
+    if return_oversample:
+        return wspec, imspec
+    else:
+        wspec = frebin(wspec, scale=1/oversample, total=False)
+        imspec = frebin(imspec, scale=1/oversample)
+        return wspec, imspec
+
+
 def place_grismr_tso(waves, imarr, siaf_ap, wref=None, im_coords='sci'):
     """
     Shift image such that undeviated wavelength sits at the
     SIAF aperture reference location.
+
+    Return image in sience coords.
+
+    Paramters
+    =========
+    waves : ndarray
+        Wavelength solution of input image
+    imarr : ndarray
+        Input dispersed grism PSF (can be multiple PSFs)
+    siaf_ap : pysiaf aperture
+        Grism-specific SIAF aperture class to determine final
+        subarray size and reference point
+    
     """
     
     from .maths.coords import det_to_sci
