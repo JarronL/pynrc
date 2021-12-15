@@ -295,7 +295,12 @@ def level1b_data_model(obs_params, sci_data=None, zero_data=None):
         sci_data  = sci_data.reshape([1,nz,ny,nx])
         zero_data = zero_data.reshape([1,ny,nx])
 
-    outModel = Level1bModel(data=sci_data, zeroframe=zero_data)
+    try:
+        # A ModuleNotFoundError bug exists in current version of jwst pipeline
+        # Should work to just try again if encountered
+        outModel = Level1bModel(data=sci_data, zeroframe=zero_data)
+    except ModuleNotFoundError:
+        outModel = Level1bModel(data=sci_data, zeroframe=zero_data)
     # Update from 'Level1bModel' to 'RampModel'
     # TODO: Is this correct??
     # outModel.meta.model_type = 'RampModel'
@@ -367,8 +372,11 @@ def level1b_data_model(obs_params, sci_data=None, zero_data=None):
 
     # Coronagraphic mask for non-TA observations
     apername = obs_params['siaf_ap'].AperName
-    if ('MASK' in obs_params['coron_mask'].upper()) and ('TA' not in apername):
-        outModel.meta.instrument.coronagraph = obs_params['coron_mask'].upper()
+    coronmsk = obs_params['coron_mask'].upper()
+    if ('MASK' in coronmsk) and ('TA' not in apername):
+        # Need to add module A or B after MASK string
+        coronmsk = coronmsk[:4] + obs_params['module'] + coronmsk[4:]
+        outModel.meta.instrument.coronagraph = coronmsk
 
     # Detector information 
     outModel.meta.subarray.name     = obs_params['subarray_name']
