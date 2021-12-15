@@ -12,19 +12,22 @@ Assume anaconda python >3.7 installation on Linux/Mac
    Download source directly from github. Navigate to directory, 
    then use pip's -e option to create an editable installation:
       "pip install -e ."
+   Branch to use: master`
    
 2. poppy - https://github.com/spacetelescope/poppy
    Download source directly from github. Navigate to directory, 
    then use pip's -e option to create an editable installation:
       "pip install -e ."
+   Branch to use: develop
 
 3. webbpsf - https://github.com/spacetelescope/webbpsf
    Download source directly from github. Navigate to directory, 
    then use pip's -e option to create an editable installation:
       "pip install -e ."
    Note: This also install photutils via pip if not already installed
+   Branch to use: develop
 
-3a. webbpsf-data files - https://stsci.app.box.com/s/g8nq6j1lk10ml7tyxxn28rbl40h1zky2
+3a. webbpsf-data files - https://stsci.box.com/shared/static/34o0keicz2iujyilg4uz617va46ks6u9.gz
    Download WebbPSF data files into "webbpsf-data" directory.
    Set the environment variable $WEBBPSF_PATH to point to that directory.
    For example, in .bashrc shell file, add:  
@@ -90,9 +93,11 @@ In the end, you should have a number of new environment variables:
    export WEBBPSF_EXT_PATH='$HOME/data/webbpsf_ext_data/'
    export PYNRC_DATA='$HOME/data/pynrc_data/'
    
+Other requirements:
+   astropy >=4.2
+   astroquery >=0.4.3
 
 
 Other useful programs:
-
 1. hxrg_ref_pixels - https://github.com/JarronL/hxrg_ref_pixels
    Reference pixel correction of HxRG detectors.
