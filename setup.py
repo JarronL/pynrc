@@ -41,7 +41,7 @@ root = path.abspath(path.dirname(__file__))
 
 # Rather than importing (which will fail due to __init__.py)
 # open and execute the file directly
-exec(open('webbpsf_ext/version.py').read())
+exec(open('pynrc/version.py').read())
 version = __version__
 
 RELEASE = 'dev' not in version
@@ -102,7 +102,7 @@ with open('README.rst') as readme_file:
 with open('HISTORY.rst') as history_file:
     history = history_file.read()
 
-requirements = [
+install_requires = [
     'Click>=6.0',
     'numpy>=1.19.0',
     'matplotlib>=3.3.0',
@@ -115,18 +115,9 @@ requirements = [
     'astropy>=4.2',
     'astroquery>=0.4.3',
 ]
-# RTD cannot handle certain 
-# if not (os.environ.get('READTHEDOCS') == 'True'):
-#     # requirements.append('jwst_backgrounds>=1.1')
-#     requirements.append('astropy>=2.0,<3.0')
-# else:
-#     requirements.append('astropy>=2.0')
-    
 
 setup_requirements = ['pytest-runner', ]
-
 test_requirements = ['pytest', ]
-
 
 setup(
     name='pynrc',
@@ -180,7 +171,7 @@ setup(
     # your project is installed. For an analysis of "install_requires" vs pip's
     # requirements files see:
     # https://packaging.python.org/en/latest/requirements.html
-    install_requires=requirements,
+    install_requires=install_requires,
 
     # List additional groups of dependencies here (e.g. development
     # dependencies). You can install these using the following syntax,
