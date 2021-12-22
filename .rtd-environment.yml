@@ -16,7 +16,7 @@ dependencies:
         - nbsphinx
         - docutils==0.16
         - astroquery>=0.4.3
-        - poppy>=1.0
-        - webbpsf>=1.0
         - pysynphot>=2.0
+        # - poppy>=1.0.1
+        - webbpsf>=1.0.0
         # - git+https://github.com/JarronL/webbpsf_ext.git
