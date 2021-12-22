@@ -19,4 +19,4 @@ dependencies:
         - poppy>=1.0
         - webbpsf>=1.0
         - pysynphot>=2.0
-        - git+https://github.com/JarronL/webbpsf_ext.git
+        # - git+https://github.com/JarronL/webbpsf_ext.git
