@@ -108,7 +108,7 @@ requirements = [
     'pysynphot>=2.0.0',
     'poppy>=1.0.1',
     'webbpsf>=1.0.0',
-    'webbpsf_ext>=1.0.0',
+    'webbpsf_ext>=1.0.2',
     'tqdm>4',
     'astropy>=4.2',
     'astroquery>=0.4.3',
