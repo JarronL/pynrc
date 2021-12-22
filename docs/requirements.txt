@@ -2,7 +2,6 @@ sphinx-automodapi
 sphinx>=3.4.1
 ipykernel
 nbsphinx
-docutils==0.16
 numpy>=1.19
 matplotlib
 Cython
@@ -14,3 +13,4 @@ poppy>=1.0.1
 webbpsf>=1.0.0
 jwst
 -e git+https://github.com/JarronL/webbpsf_ext.git
+docutils==0.16
