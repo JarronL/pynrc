@@ -1,0 +1,57 @@
+\begin{thebibliography}{9}
+\expandafter\ifx\csname natexlab\endcsname\relax\def\natexlab#1{#1}\fi
+
+\bibitem[{{Beichman} {et~al.}(2012){Beichman}, {Rieke}, {Eisenstein}, {Greene},
+  {Krist}, {McCarthy}, {Meyer}, \& {Stansberry}}]{beic12}
+{Beichman}, C.~A., {Rieke}, M., {Eisenstein}, D., {Greene}, T.~P., {Krist}, J.,
+  {McCarthy}, D., {Meyer}, M., \& {Stansberry}, J. 2012, \procspie, 8442,
+  84422N
+
+\bibitem[{{Beletic} {et~al.}(2008){Beletic}, {Blank}, {Gulbransen}, {Lee},
+  {Loose}, {Piquette}, {Sprafke}, {Tennant}, {Zandian}, \& {Zino}}]{bele08}
+{Beletic}, J.~W., {Blank}, R., {Gulbransen}, D., {Lee}, D., {Loose}, M.,
+  {Piquette}, E.~C., {Sprafke}, T., {Tennant}, W.~E., {Zandian}, M., \& {Zino},
+  J. 2008, \procspie, 7021
+
+\bibitem[{{Greene} {et~al.}(2007){Greene}, {Beichman}, {Eisenstein}, {Horner},
+  {Kelly}, {Mao}, {Meyer}, {Rieke}, \& {Shi}}]{gree07}
+{Greene}, T., {Beichman}, C., {Eisenstein}, D., {Horner}, S., {Kelly}, D.,
+  {Mao}, Y., {Meyer}, M., {Rieke}, M., \& {Shi}, F. 2007, \procspie, 6693,
+  66930G
+
+\bibitem[{{Greene} {et~al.}(2017){Greene}, {Kelly}, {Stansberry}, {Leisenring},
+  {Schlawin}, {Egami}, {Chu}, {Hodapp}, \& {Rieke}}]{gree17}
+{Greene}, T.~P., {Kelly}, D.~M., {Stansberry}, J., {Leisenring}, J.,
+  {Schlawin}, E., {Egami}, E., {Chu}, L., {Hodapp}, K.~W., \& {Rieke}, M. 2017,
+  JATIS, 3
+
+\bibitem[{{Krist} {et~al.}(2007){Krist}, {Beichman}, {Trauger}, {Rieke},
+  {Somerstein}, {Green}, {Horner}, {Stansberry}, {Shi}, {Meyer}, {Stapelfeldt},
+  \& {Roellig}}]{kris07}
+{Krist}, J.~E., {Beichman}, C.~A., {Trauger}, J.~T., {Rieke}, M.~J.,
+  {Somerstein}, S., {Green}, J.~J., {Horner}, S.~D., {Stansberry}, J.~A.,
+  {Shi}, F., {Meyer}, M.~R., {Stapelfeldt}, K.~R., \& {Roellig}, T.~L. 2007,
+  \procspie, 6693, 66930H
+
+\bibitem[{{Perrin} {et~al.}(2014){Perrin}, {Sivaramakrishnan}, {Lajoie},
+  {Elliott}, {Pueyo}, {Ravindranath}, \& {Albert}}]{perr14}
+{Perrin}, M.~D., {Sivaramakrishnan}, A., {Lajoie}, C.-P., {Elliott}, E.,
+  {Pueyo}, L., {Ravindranath}, S., \& {Albert}, L. 2014, \procspie, 9143,
+  91433X
+
+\bibitem[{{Perrin} {et~al.}(2012){Perrin}, {Soummer}, {Elliott}, {Lallo}, \&
+  {Sivaramakrishnan}}]{perr12}
+{Perrin}, M.~D., {Soummer}, R., {Elliott}, E.~M., {Lallo}, M.~D., \&
+  {Sivaramakrishnan}, A. 2012, \procspie, 8442, 84423D
+
+\bibitem[{{Rieke} {et~al.}(2005){Rieke}, {Kelly}, \& {Horner}}]{riek05}
+{Rieke}, M.~J., {Kelly}, D., \& {Horner}, S. 2005, \procspie, 5904, 1
+
+\bibitem[{{Schlawin} {et~al.}(2017){Schlawin}, {Rieke}, {Leisenring}, {Walker},
+  {Fraine}, {Kelly}, {Misselt}, {Greene}, {Line}, {Lewis}, \&
+  {Stansberry}}]{schl17}
+{Schlawin}, E., {Rieke}, M., {Leisenring}, J., {Walker}, L.~M., {Fraine}, J.,
+  {Kelly}, D., {Misselt}, K., {Greene}, T., {Line}, M., {Lewis}, N., \&
+  {Stansberry}, J. 2017, \pasp, 129, 015001
+
+\end{thebibliography}

@@ -1,0 +1,47 @@
+This is BibTeX, Version 0.99d (TeX Live 2018)
+Capacity: max_strings=100000, hash_size=100000, hash_prime=85009
+The top-level auxiliary file: ms.aux
+The style file: aasjournal.bst
+Database file #1: refs.bib
+Reallocated wiz_functions (elt_size=4) to 6000 items from 3000.
+You've used 10 entries,
+            3166 wiz_defined-function locations,
+            725 strings with 7776 characters,
+and the built_in function-call counts, 5500 in all, are:
+= -- 428
+> -- 478
+< -- 0
++ -- 161
+- -- 181
+* -- 542
+:= -- 1024
+add.period$ -- 10
+call.type$ -- 10
+change.case$ -- 65
+chr.to.int$ -- 10
+cite$ -- 10
+duplicate$ -- 169
+empty$ -- 288
+format.name$ -- 186
+if$ -- 1087
+int.to.chr$ -- 1
+int.to.str$ -- 0
+missing$ -- 10
+newline$ -- 38
+num.names$ -- 40
+pop$ -- 66
+preamble$ -- 1
+purify$ -- 65
+quote$ -- 0
+skip$ -- 160
+stack$ -- 0
+substring$ -- 229
+swap$ -- 0
+text.length$ -- 0
+text.prefix$ -- 0
+top$ -- 0
+type$ -- 90
+warning$ -- 0
+while$ -- 34
+width$ -- 0
+write$ -- 117
