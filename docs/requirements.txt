@@ -6,8 +6,9 @@ numpy>=1.19
 matplotlib
 Cython
 astropy>=4.2
+astroquery>=0.4.3
 astropy-helpers>=3.1
--e git+https://github.com/spacetelescope/poppy.git#egg=poppy
--e git+https://github.com/spacetelescope/webbpsf.git#egg=webbpsf
--e git+https://github.com/spacetelescope/pysynphot.git#egg=pysynphot
+poppy>=1.0
+webbpsf>=1.0
+pysynphot>=2.0
 -e git+https://github.com/JarronL/webbpsf_ext.git

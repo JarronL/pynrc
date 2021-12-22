@@ -16,7 +16,7 @@ dependencies:
         - nbsphinx
         - docutils==0.16
         - astroquery>=0.4.3
-        - git+https://github.com/spacetelescope/poppy.git#egg=poppy
-        - git+https://github.com/spacetelescope/webbpsf.git#egg=webbpsf
-        - git+https://github.com/spacetelescope/pysynphot.git#egg=pysynphot
+        - poppy>=1.0
+        - webbpsf>=1.0
+        - pysynphot>=2.0
         - git+https://github.com/JarronL/webbpsf_ext.git
