@@ -2,6 +2,7 @@ sphinx-automodapi
 sphinx>=3.4.1
 ipykernel
 nbsphinx
+docutils==0.16
 numpy>=1.19
 matplotlib
 Cython
