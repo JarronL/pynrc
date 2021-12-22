@@ -12,7 +12,7 @@ pyNRC requires Python 3.7+ along with the following packages:
 * `Astroquery <https://astroquery.readthedocs.io/>`_ 0.4.3+
 * `pysynphot <https://pysynphot.readthedocs.io>`_ 2.0.0+
 * `WebbPSF <https://webbpsf.readthedocs.io>`_ 1.0.0+
-* `WebbPSF Extensions <https://github.com/JarronL/webbpsf_ext>`_ 1.0.0+
+* `WebbPSF Extensions <https://github.com/JarronL/webbpsf_ext>`_ 1.0.2+
   
 **Recommended Python packages**:
   
