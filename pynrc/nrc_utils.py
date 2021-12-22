@@ -81,23 +81,23 @@ S.refs.set_default_waveset(minwave=500, maxwave=56000, num=10000.0, delta=None, 
 S.refs.setref(area = 25.78e4) # cm^2 according to jwst_pupil_RevW_npix1024.fits.gz
 
 # The following won't work on readthedocs compilation
-if not on_rtd:
-    # Grab WebbPSF assumed pixel scales
-    log_prev = conf.logging_level
-    setup_logging('WARN', verbose=False)
-    nc_temp = webbpsf_ext.NIRCam_ext()
-    setup_logging(log_prev, verbose=False)
+# if not on_rtd:
+# Grab WebbPSF assumed pixel scales
+log_prev = conf.logging_level
+setup_logging('WARN', verbose=False)
+nc_temp = webbpsf_ext.NIRCam_ext()
+setup_logging(log_prev, verbose=False)
 
-    pixscale_SW = nc_temp._pixelscale_short
-    pixscale_LW = nc_temp._pixelscale_long
-    del nc_temp
+pixscale_SW = nc_temp._pixelscale_short
+pixscale_LW = nc_temp._pixelscale_long
+del nc_temp
 
-    _jbt_exists = True
-    try:
-        from jwst_backgrounds import jbt
-    except ImportError:
-        _log.info("  jwst_backgrounds is not installed and will not be used for bg estimates.")
-        _jbt_exists = False
+_jbt_exists = True
+try:
+    from jwst_backgrounds import jbt
+except ImportError:
+    _log.info("  jwst_backgrounds is not installed and will not be used for bg estimates.")
+    _jbt_exists = False
 
 
 ###########################################################################
