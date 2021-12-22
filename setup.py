@@ -156,7 +156,6 @@ setup(
 
         # Specify the Python versions you support here. In particular, ensure
         # that you indicate whether you support Python 2, Python 3 or both.
-        'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
@@ -180,11 +179,8 @@ setup(
     #extras_require={
     #    'dev': ['check-manifest>=0.34', 'lxml>=3.6.4', 'pytest>=3.0.2'],
     #},
-    extras_require = {
-        'docs': [
-            'docutils == 0.16'
-        ],
-    },
+    # extras_require = {'docs': 
+    #     ['docutils==0.16', 'sphinx>=3.4.1']},
 
     # If there are data files included in your packages that need to be
     # installed, specify them here.  If using Python 2.6 or less, then these
