@@ -121,4 +121,5 @@ Testing
 
       $ python setup.py test
 
-   in the source directory. If there are no errors, you are good to go!    
+   in the source directory. If there are no errors, you are good to go!
+
