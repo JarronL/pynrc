@@ -14,7 +14,7 @@ dependencies:
         - sphinx-automodapi
         - ipykernel
         - nbsphinx
-        - docutils=0.16
+        - docutils==0.16
         - astroquery>=0.4.3
         - git+https://github.com/spacetelescope/poppy.git#egg=poppy
         - git+https://github.com/spacetelescope/webbpsf.git#egg=webbpsf
