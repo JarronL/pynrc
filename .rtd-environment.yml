@@ -19,4 +19,4 @@ dependencies:
         - git+https://github.com/spacetelescope/poppy.git#egg=poppy
         - git+https://github.com/spacetelescope/webbpsf.git#egg=webbpsf
         - git+https://github.com/spacetelescope/pysynphot.git#egg=pysynphot
-        - git+https://github.com/JarronL/webbpsf_ext.git#egg=webbpsf_ext
+        - git+https://github.com/JarronL/webbpsf_ext.git
