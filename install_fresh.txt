@@ -4,8 +4,8 @@ Installation Notes
 Assume anaconda python >3.7 installation on Linux/Mac
 
 0. Add channels:
-   conda config --add channels conda-forge
-   conda config --add channels http://ssb.stsci.edu/astroconda
+   conda config --append channels http://ssb.stsci.edu/astroconda
+   conda config --append channels conda-forge
    Check .condarc
 
 1. pysiaf - https://github.com/spacetelescope/pysiaf

@@ -4,7 +4,6 @@ Planned Updates
 FoV aware positions
 +++++++++++++++++++
 - Correct coronagraph field locations depending on Lyot optical wedge
-- Background roll off at grism edges
 - Filter location relative offsets
 
 Detector updates in ngNRC.py

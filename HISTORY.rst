@@ -1,12 +1,17 @@
 Revision History
 ================
 
+v1.0.1 (Dec 14, 2021)
+---------------------
+
+- Default OPD JWST_OTE_OPD_RevAA_prelaunch_predicted.fits
+
 v1.0.0 (Nov 22, 2021)
 ---------------------
 
 - Updates to work with WebbPSF v1 release candidate
 - Move PSF generation to new ``webbpsf_ext`` package (https://github.com/JarronL/webbpsf_ext)
-- Create DMS-like level1b FITS files using pipeline data models
+- Create DMS-like level1b FITS files using pipeline data models for imaging and coronagraphy
 - PSF coefficients now use Legendre polynomials by default
 - Create calibration files for each SCA (darks, IPC, noise, flats, linearity, etc)
 - Background roll-off at grism edges

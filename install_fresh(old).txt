@@ -24,3 +24,4 @@ Sphinx/RTD
 2. conda install sphinx_rtd_theme
 3. conda install nbsphinx
 4. conda install twine
+5. conda install docutils=0.16

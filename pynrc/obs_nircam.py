@@ -19,6 +19,7 @@ from tqdm.auto import tqdm, trange
 import logging
 _log = logging.getLogger('pynrc')
 
+import numpy as np
 eps = np.finfo(float).eps
 
 class nrc_hci(NIRCam):

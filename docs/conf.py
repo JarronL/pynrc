@@ -27,23 +27,28 @@ import pynrc
 
 # If your documentation needs a minimal Sphinx version, state it here.
 #
-# needs_sphinx = '1.3'
+# needs_sphinx = '3.4'
 
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = ['sphinx.ext.autodoc',
+    'sphinx.ext.autosummary',
     'sphinx.ext.doctest',
     'sphinx.ext.mathjax',
     'sphinx.ext.viewcode',
     'sphinx.ext.intersphinx',
     'sphinx.ext.inheritance_diagram',
     'sphinx_automodapi.automodapi',
+    'sphinx_automodapi.smart_resolver',
     'sphinx.ext.napoleon',
     'nbsphinx',
     'sphinx.ext.todo',
     ]
     
+# autodoc_default_options = ['members', 'imported-members']
+autosummary_generate = True
+
 # nbsphinx generates doc files from notebooks on the fly
 # By default, it will execute those notebooks with no outputs.
 # In our case, we plan to upload only pre-executed notebooks.
@@ -83,7 +88,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'pynrc'
-copyright = u'2019, Jarron Leisenring'
+copyright = u'2021, Jarron Leisenring'
 author = u'Jarron Leisenring'
 
 # The version info for the project you're documenting, acts as replacement for

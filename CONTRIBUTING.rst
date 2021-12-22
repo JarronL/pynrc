@@ -101,78 +101,73 @@ Pull Request Guidelines
 Before you submit a pull request, check that it meets these guidelines:
 
 1. The pull request should include tests.
-2. If the pull request adds functionality, the docs should be updated. Put
-   your new functionality into a function with a docstring.
-3. The pull request should work for Python 3.7, 3.8, and 3.9 for PyPy. 
-   Check https://travis-ci.org/JarronL/pynrc/pull_requests
-   and make sure that the tests pass for all supported Python versions.
+2. If the pull request adds functionality, the docs should be updated. Put your new functionality into a function with a docstring.
+3. The pull request should work for Python 3.7, 3.8, and 3.9 for PyPy. Check https://travis-ci.org/JarronL/pynrc/pull_requests and make sure that the tests pass for all supported Python versions.
 
 Tips
 ----
 
-To run a subset of tests::
+To run a subset of tests:
 
-$ py.test tests.test_pynrc
+.. code-block:: sh
+
+   $ py.test tests.test_pynrc
 
 
 Deploying
 ---------
 
-A reminder for the maintainers on how to deploy. 
-First, make sure the following packages are installed::
+A reminder for the maintainers on how to deploy. First, make sure the following packages are installed:
 
-    $ pip install sphinx_automodapi
-    $ conda install sphinx_rtd_theme
-    $ conda install nbsphinx
-    $ conda install twine
+.. code-block:: sh
 
-1. Update version info in pynrc.version.
-   Add entries to HISTORY.rst.
-   Make sure all your changes are committed to git.
-2. Generate documentation locally::
+   $ pip install sphinx_automodapi
+   $ conda install sphinx_rtd_theme
+   $ conda install nbsphinx
+   $ conda install twine
+   $ conda install docutils=0.16
 
-    $ make docs
+1. Update version info in pynrc.version. Add entries to HISTORY.rst. Make sure all your changes are committed to git.
+2. Generate documentation locally:
 
-3. Push all updates to github and make sure readthedocs generates correctly
-   before actually submitting the release.
-4. Package a distribution and test upload the release to TestPyPI::
+   .. code-block:: sh
 
-    $ make release-test
+      $ make docs
 
-5. If everything works without a hitch, then upload the release to PyPI::
+3. Push all updates to github and make sure readthedocs generates correctly before actually submitting the release.
+4. Package a distribution and test upload the release to TestPyPI:
+   
+   .. code-block:: sh
 
-    $ make release
+      $ make release-test
+
+5. If everything works without a hitch, then upload the release to PyPI:
+
+   .. code-block:: sh
+
+      $ make release
     
-   This command also tags the release on github. Make sure to have the 
-   command line token handy to enter as the requested password.
-   Double-check `stable` release of readthedocs.
+   This command also tags the release on github. Make sure to have the command line token handy to enter as the requested password. Double-check ``stable`` release of readthedocs.
    
 .. todo::
 
-    6. Release code to conda-forge
-       If you already have a conda-forge feedstock forked to your own GitHub account, first
-       edit `recipe/meta.yaml` to update the version, hash, etc. To calculate the sha256 
-       hash, run:
+      6. Release code to ``conda-forge``. If you already have a conda-forge  feedstock forked to your own GitHub account, first edit ``recipe/meta.yaml`` to update the version, hash, etc. To calculate the sha256 hash, run:
    
-       ```shell
-       openssl dgst -sha256 path/to/package_name-0.1.1.tar.gz
-       ```
+         .. code-block:: sh
+
+            openssl dgst -sha256 path/to/package_name-0.1.1.tar.gz
    
-       Then, commit and push the yaml file to GitHub:
+         Then, commit and push the yaml file to GitHub:
    
-       ```shell
-       git pull upstream master
-       git add --all
-       git commit -m 'version bump to v0.1.1'
-       git push -u origin master
-       ```
+         .. code-block:: sh
+
+            git pull upstream master
+            git add --all
+            git commit -m 'version bump to v0.1.1'
+            git push -u origin master
    
-       Finally, issue a pull request to conda-forge.
+         Finally, issue a pull request to conda-forge.
        
-7. At end of all this, double-check the build environments at
-   https://readthedocs.org/projects/pynrc/builds/. For whatever reason,
-   it is common for there to be an OSError and the build to fail.
-   Resetting the environment at https://readthedocs.org/projects/pynrc/versions/
-   tends to fix this issue. Build times take about 5 minutes.
+7. At end of all this, double-check the build environments at https://readthedocs.org/projects/pynrc/builds/. For whatever reason, it is common for there to be an OSError and the build to fail. Resetting the environment at https://readthedocs.org/projects/pynrc/versions/ tends to fix this issue. Build times take about 5 minutes.
        
 .. Travis will then deploy to PyPI if tests pass.
