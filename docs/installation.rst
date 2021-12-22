@@ -13,6 +13,7 @@ pyNRC requires Python 3.7+ along with the following packages:
 * `pysynphot <https://pysynphot.readthedocs.io>`_ 2.0.0+
 * `WebbPSF <https://webbpsf.readthedocs.io>`_ 1.0.0+
 * `WebbPSF Extensions <https://github.com/JarronL/webbpsf_ext>`_ 1.0.2+
+* `JWST Pipeline <https://github.com/spacetelescope/jwst>`_ 1.3+
   
 **Recommended Python packages**:
   

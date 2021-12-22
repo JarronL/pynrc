@@ -15,6 +15,7 @@ and has been verified on Python 3.9 using the following modules:
 * Scipy 1.7
 * Astropy 5.0
 * Astroquery 0.4.3
+* JWST 1.3
 
 -------------------------------------
 

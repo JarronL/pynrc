@@ -114,6 +114,7 @@ install_requires = [
     'tqdm>4',
     'astropy>=4.2',
     'astroquery>=0.4.3',
+    'jwst',
 ]
 
 setup_requirements = ['pytest-runner', ]
