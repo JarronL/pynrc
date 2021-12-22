@@ -8,7 +8,8 @@ dependencies:
     - tqdm>4
     - astropy>=4.2
     - Cython
-    - pip>21:
+    - pip
+    - pip:
         - sphinx>=3.4.1
         - sphinx-automodapi
         - ipykernel
