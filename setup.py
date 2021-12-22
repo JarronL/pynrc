@@ -39,7 +39,9 @@ from os import path
 
 root = path.abspath(path.dirname(__file__))
 
-from pynrc.version import __version__
+# Rather than importing (which will fail due to __init__.py)
+# open and execute the file directly
+exec(open('webbpsf_ext/version.py').read())
 version = __version__
 
 RELEASE = 'dev' not in version
