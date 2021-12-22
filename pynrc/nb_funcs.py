@@ -13,7 +13,7 @@ from copy import deepcopy
 #from .nrc_utils import read_filter, bp_2mass, channel_select, coron_ap_locs
 #from .nrc_utils import dist_image, pad_or_cut_to_size
 from .nrc_utils import *
-from .obs_nircam import model_to_hdulist, obs_hci
+from .obs_nircam import obs_hci
 #from .obs_nircam import plot_contrasts, plot_contrasts_mjup, planet_mags, plot_planet_patches
 
 from tqdm.auto import tqdm, trange
@@ -22,7 +22,7 @@ import logging
 _log = logging.getLogger('nb_funcs')
 
 import pynrc
-pynrc.setup_logging('WARNING', verbose=False)
+pynrc.setup_logging('WARN', verbose=False)
 
 """
 Common functions for notebook simulations and plotting.
@@ -44,10 +44,10 @@ def make_key(filter, pupil=None, mask=None):
 
 
 # Disk Models
-def model_info(source, filt, dist):
+def model_info(source, filt, dist, model_dir=''):
     
-    base_dir  = '/Volumes/NIRData/Andras_models_v2/'
-    model_dir = base_dir + source + '/'
+    # base_dir  = '/Volumes/NIRData/Andras_models_v2/'
+    # model_dir = base_dir + source + '/'
     
     # Match filters with model
     filt_switch = {'F182M':'F210M', 'F210M':'F210M', 'F250M':'F250M',
@@ -62,10 +62,18 @@ def model_info(source, filt, dist):
     detscale = (channel_select(bp))[0]
     model_scale = detscale / 4.
     
-    # File name, arcsec/pix, dist (pc), wavelength (um), flux units
-    args_model = (model_dir+fname, model_scale, dist, w0, 'Jy/pixel')
+    # File name, arcsec/pix, dist (pc), wavelength (um), flux units, cen_star?
+    model_dict = {
+        'file'       : model_dir+fname, 
+        'pixscale'   : model_scale, 
+        'dist'       : dist, 
+        'wavelength' : w0, 
+        'units'      : 'Jy/pixel', 
+        'cen_star'   : True
+    }
+    # args_model = (model_dir+fname, model_scale, dist, w0, 'Jy/pixel', True)
 
-    return args_model
+    return model_dict
 
 def disk_rim_model(a_asec, b_asec, pa=0, sig_asec=0.1, flux_frac=0.5,
                    flux_tot=1.0, flux_units='mJy', wave_um=None, dist_pc=None,
@@ -164,7 +172,8 @@ def disk_rim_model(a_asec, b_asec, pa=0, sig_asec=0.1, flux_frac=0.5,
 
 
 def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None, 
-            wind_mode='WINDOW', subsize=None, fov_pix=None, verbose=False, narrow=False):
+            wind_mode='WINDOW', subsize=None, fov_pix=None, verbose=False, narrow=False,
+            model_dir=None, large_grid=False, **kwargs):
     """
     For a given WFE drift and series of filters, create a list of 
     NIRCam observations.
@@ -173,20 +182,19 @@ def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None,
     if sp_ref is None: sp_ref = sp_sci
 
     obs_dict = {}
-    for filt, pupil, mask in filt_list:
+    for filt, mask, pupil in filt_list:
         # Create identification key
         key = make_key(filt, mask=mask, pupil=pupil)
         print(key)
 
         # Disk Model
         if args_disk is None:
-            hdu_disk = None
+            args_disk_temp = None
         elif 'auto' in args_disk:
             # Convert to photons/sec in specified filter
-            args_disk_temp = model_info(sp_sci.name, filt, dist)
-            hdu_disk = model_to_hdulist(args_disk_temp, sp_sci, filt, pupil=pupil, mask=mask)
+            args_disk_temp = model_info(sp_sci.name, filt, dist, model_dir=model_dir)
         else:
-            hdu_disk = model_to_hdulist(args_disk, sp_sci, filt, pupil=pupil, mask=mask)
+            args_disk_temp = args_disk
                         
         fov_pix_orig = fov_pix
         # Define the subarray readout size
@@ -215,7 +223,9 @@ def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None,
         fov_pix = subuse if fov_pix is None else fov_pix
 
         # Make sure fov_pix is odd for direct imaging
-        if (mask is None) and (np.mod(fov_pix,2)==0):
+        # if (mask is None) and (np.mod(fov_pix,2)==0):
+        #     fov_pix += 1
+        if np.mod(fov_pix,2)==0:
             fov_pix += 1
         # Other coronagraph vs direct imaging settings
         module, oversample = ('B', 4) if mask is None else ('A', 2)
@@ -229,10 +239,18 @@ def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None,
         
         # Initialize and store the observation
         # A reference observation is stored inside each parent obs_hci class.
-        obs_dict[key] = obs_hci(sp_sci, sp_ref, dist, filter=filt, mask=mask, pupil=pupil, module=module,
-                                wfe_ref_drift=wfe_ref_drift, fov_pix=fov_pix, oversample=oversample, 
-                                wind_mode=wind_mode, xpix=subuse, ypix=subuse,
-                                disk_hdu=hdu_disk, verbose=verbose, bar_offset=bar_offset)
+        obs = obs_hci(sp_sci, dist, sp_ref=sp_ref, filter=filt, image_mask=mask, pupil_mask=pupil, 
+                      module=module, wind_mode=wind_mode, xpix=subuse, ypix=subuse,
+                      wfe_ref_drift=wfe_ref_drift, fov_pix=fov_pix, oversample=oversample, 
+                      disk_params=args_disk_temp, verbose=verbose, bar_offset=bar_offset,
+                      autogen_coeffs=False, **kwargs)
+        obs.gen_psf_coeff()
+        # Enable WFE drift
+        obs.gen_wfedrift_coeff()
+        # Enable mask-dependent
+        obs.gen_wfemask_coeff(large_grid=large_grid)
+
+        obs_dict[key] = obs
         fov_pix = fov_pix_orig
 
         # if there's a disk input, then we want to remove disk 
@@ -250,6 +268,10 @@ def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None,
             if sp_ref is sp_sci:
                 obs.sp_ref = obs.sp_sci
                 
+    # Generation mask position dependent PSFs
+    for key in tqdm(obs_dict.keys(), desc='Obs', leave=False):
+        obs_dict[key].gen_disk_psfs()
+
     return obs_dict
 
 
@@ -287,20 +309,19 @@ def obs_optimize(obs_dict, sp_opt=None, well_levels=None, tacq_max=1800, **kwarg
         print(key)
 
         obs = obs_dict[key]
+        obs_ref = obs.nrc_ref
+
         sp_sci, sp_ref = (obs.sp_sci, obs.sp_ref)
         
         # SW filter piggy-back on two LW filters, so 2 x tacq
         is_SW = obs.bandpass.avgwave()/1e4 < 2.5
 
-        sci = obs
-        ref = sci.nrc_ref
-
         # Ramp optimization for both science and reference targets
-        for obs2, sp in zip([sci, ref], [sp_sci, sp_ref]):
+        for j, sp in enumerate([sp_sci, sp_ref]):
             i = nrow = 0
             while nrow==0:
                 well_max = well_levels[i]
-                tbl = obs2.ramp_optimize(sp_opt, sp, well_frac_max=well_max, tacq_max=tacq_max, **kwargs)
+                tbl = obs.ramp_optimize(sp_opt, sp, well_frac_max=well_max, tacq_max=tacq_max, **kwargs)
                 nrow = len(tbl)
                 i+=1
                 
@@ -308,7 +329,7 @@ def obs_optimize(obs_dict, sp_opt=None, well_levels=None, tacq_max=1800, **kwarg
             v1, v2, v3 = tbl['Pattern', 'NGRP', 'NINT'][0]
             
             vals = list(tbl[0])#.as_void()
-            strout = '{:8} {} {}'.format(vals[0], vals[1], vals[2])
+            strout = '{:10} {:4.0f} {:4.0f}'.format(vals[0], vals[1], vals[2])
             for v in vals[3:]:
                 strout = strout + ', {:.4f}'.format(v)
             print(strout)
@@ -319,8 +340,9 @@ def obs_optimize(obs_dict, sp_opt=None, well_levels=None, tacq_max=1800, **kwarg
             #     v3 *= 2
             
             # Coronagraphic observations have two roll positions, so cut NINT by 2
-            if obs.mask is not None: 
+            if obs.image_mask is not None: 
                 v3 = int(v3/2) 
+            obs2 = obs if j==0 else obs_ref
             obs2.update_detectors(read_mode=v1, ngroup=v2, nint=v3)
         
 
@@ -377,31 +399,34 @@ def do_contrast(obs_dict, wfe_list, filt_keys, nsig=5, roll_angle=10, verbose=Fa
     return contrast_all
 
 
-def do_gen_hdus(obs_dict, filt_keys, wfe_ref_drift, wfe_roll_drift, verbose=False, **kwargs):
+def do_gen_hdus(obs_dict, filt_keys, wfe_ref_drift, wfe_roll_drift, 
+                return_oversample=True, **kwargs):
     
     """
     kwargs to pass to gen_roll_image() and their defaults:
     
     PA1 = 0
     PA2 = 10
-    zfact         = None
-    oversample    = None
+    zfact = None
+    return_oversample = True
     exclude_disk  = False
     exclude_noise = False
     no_ref        = False
     opt_diff      = True
     use_cmask     = False
     ref_scale_all = False
-    quick_PSF     = True
+    xyoff_roll1   = None
+    xyoff_roll2   = None
+    xyoff_ref     = None
     """
     
     hdulist_dict = {}
     for key in tqdm(filt_keys):
-        if verbose: print(key)
+        # if verbose: print(key)
         obs = obs_dict[key]
-        obs.wfe_ref_drift = wfe_ref_drift
-        obs.wfe_roll_drift = wfe_roll_drift
-        hdulist = obs.gen_roll_image(**kwargs)
+        use_cmask = kwargs.pop('use_cmask', False)
+        hdulist = obs.gen_roll_image(return_oversample=return_oversample, use_cmask=use_cmask,
+            wfe_ref_drift=wfe_ref_drift, wfe_roll_drift=wfe_roll_drift, **kwargs)
         
         hdulist_dict[key] = hdulist
         
@@ -409,16 +434,19 @@ def do_gen_hdus(obs_dict, filt_keys, wfe_ref_drift, wfe_roll_drift, verbose=Fals
 
 def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True, 
                   plot=True, xylim=2.5, return_fig_axes=False):
+
+    """Only for obs.hci classes"""
     
     ng_max = obs.det_info['ngroup'] if ng_max is None else ng_max
+    kw_gen_psf = {'return_oversample': False,'return_hdul': False}
     
     # Well level of each pixel for science source
-    image = obs.gen_slope_image(exclude_noise=True, use_cmask=True, quick_PSF=True)
+    image = obs.calc_psf_from_coeff(sp=obs.sp_sci, **kw_gen_psf)
     sci_levels1 = obs.saturation_levels(ngroup=ng_min, image=image)
     sci_levels2 = obs.saturation_levels(ngroup=ng_max, image=image)
 
     # Well level of each pixel for reference source
-    image = obs.gen_slope_image(exclude_noise=True, use_cmask=True, quick_PSF=True, do_ref=True)
+    image = obs.calc_psf_from_coeff(sp=obs.sp_ref, **kw_gen_psf)
     ref_levels1 = obs.saturation_levels(ngroup=ng_min, image=image, do_ref=True)
     ref_levels2 = obs.saturation_levels(ngroup=ng_max, image=image, do_ref=True)
     
@@ -475,8 +503,8 @@ def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True,
 
         xpix, ypix = (obs.det_info['xpix'], obs.det_info['ypix'])
         bar_offpix = obs.bar_offset / obs.pixelscale
-        if ('FULL' in obs.det_info['wind_mode']) and (obs.mask is not None):
-            cdict = coron_ap_locs(obs.module, obs.channel, obs.mask, full=True)
+        if ('FULL' in obs.det_info['wind_mode']) and (obs.image_mask is not None):
+            cdict = coron_ap_locs(obs.module, obs.channel, obs.image_mask, full=True)
             xcen, ycen = cdict['cen_V23']
             xcen += bar_offpix
         else:
@@ -924,9 +952,9 @@ def plot_planet_patches(ax, obs, age=10, entropy=13, mass_list=[10,5,2,1], av_va
         ax.set_title('{} -- {}{}'.format(obs.filter,ent_str,av_str))
 
 
-def plot_hdulist(hdulist, xr=None, yr=None, ax=None, return_ax=False,
+def plot_hdulist(hdulist, ext=0, xr=None, yr=None, ax=None, return_ax=False,
     cmap=None, scale='linear', vmin=None, vmax=None, axes_color='white',
-    half_pix_shift=True, cb_label='Counts/sec', **kwargs):
+    half_pix_shift=False, cb_label='Counts/sec', **kwargs):
 
     from webbpsf import display_psf
 
@@ -941,21 +969,21 @@ def plot_hdulist(hdulist, xr=None, yr=None, ax=None, return_ax=False,
     # However, even array sizes will have (0,0) at the pixel border,
     # so this just shifts the entire image accordingly.
     if half_pix_shift:
-        oversamp = hdulist[0].header['OVERSAMP']
+        oversamp = hdulist[ext].header['OSAMP']
         shft = 0.5*oversamp
         hdul = deepcopy(hdulist)
         hdul[0].data = fshift(hdul[0].data, shft, shft)
     else:
         hdul = hdulist
 
-    data = hdul[0].data
+    data = hdul[ext].data
     if vmax is None:
         vmax = 0.75 * np.nanmax(data) if scale=='linear' else np.nanmax(data)
     if vmin is None:
         vmin = 0 if scale=='linear' else vmax/1e6
 
     
-    out = display_psf(hdul, ax=ax, title='', cmap=cmap,
+    out = display_psf(hdul, ext=ext, ax=ax, title='', cmap=cmap,
                       scale=scale, vmin=vmin, vmax=vmax, return_ax=True, **kwargs)
     try:
         ax, cb = out
@@ -1156,7 +1184,7 @@ def do_plot_contrasts(curves_ref, curves_roll, nsig, wfe_list, obs, age, age2=No
     fig.tight_layout()
     fig.subplots_adjust(top=0.85, bottom=0.1 , left=0.05, right=0.95)
 
-    fname = "{}_contrast_{}.pdf".format(name_sci.replace(" ", ""), obs.mask)
+    fname = "{}_contrast_{}.pdf".format(name_sci.replace(" ", ""), obs.image_mask)
     if save_fig: 
         fig.savefig(outdir+fname)
         
@@ -1170,7 +1198,7 @@ def do_plot_contrasts2(key1, key2, curves_all, nsig, obs_dict, wfe_list, age, sa
                        yscale2='log', yr2=None, av_vals=[0,10], curves_all2=None, 
                        c1=None, c2=None, linder_models=True, planet_patches=True, **kwargs):
 
-    fig, axes = plt.subplots(1,2, figsize=(14,5))
+    fig, axes = plt.subplots(1,2, figsize=(14,4.5))
 
     lin_vals = np.linspace(0.2,0.8,len(wfe_list))
     if c1 is None: c1 = plt.cm.Blues_r(lin_vals)
@@ -1318,7 +1346,10 @@ def plot_images(obs_dict, hdu_dict, filt_keys, wfe_drift, fov=10,
         # Max value for model
         data_mod   = hdu_mod[0].data
         header_mod = hdu_mod[0].header
-        rho_mod    = dist_image(data_mod, pixscale=header_mod['PIXELSCL'])
+
+        # Scale to data pixelscale
+        data_mod = frebin(data_mod, scale=header_mod['PIXELSCL']/header['PIXELSCL'])
+        rho_mod    = dist_image(data_mod, pixscale=header['PIXELSCL'])
         data_mod_r2 = data_mod*rho_mod**2
         vmax  = np.max(data_mod)
         vmax2 = np.max(data_mod_r2)
@@ -1335,7 +1366,7 @@ def plot_images(obs_dict, hdu_dict, filt_keys, wfe_drift, fov=10,
         scl2 = np.nanmedian(hdu_sim_r2[0].data[mask_good] / im_temp[mask_good])
         scl2 = np.abs(scl2)
 
-        vmax_vals = [vmax,vmax*scl1,vmax2*scl2]
+        vmax_vals = [vmax, vmax*scl1, vmax2*scl2]
         hdus = [hdu_mod, hdu_sim, hdu_sim_r2]
         for i, ax in enumerate(axes[j]):
             hdulist = hdus[i]
@@ -1381,7 +1412,7 @@ def plot_images(obs_dict, hdu_dict, filt_keys, wfe_drift, fov=10,
     fig.subplots_adjust(wspace=0.05, hspace=0.05, top=0.9, bottom=0.1)
     #fig.subplots_adjust(wspace=0.1, hspace=0.1, top=0.9, bottom=0.07 , left=0.05, right=0.97)
     
-    fname = "{}_images_{}.pdf".format(name_sci.replace(" ", ""), obs.mask)
+    fname = "{}_images_{}.pdf".format(name_sci.replace(" ", ""), obs.image_mask)
     if save_fig: 
         fig.savefig(outdir+fname)
         
@@ -1419,7 +1450,9 @@ def plot_images_swlw(obs_dict, hdu_dict, filt_keys, wfe_drift, fov=10,
         # Max value for model
         data_mod   = hdu_mod[0].data
         header_mod = hdu_mod[0].header
-        rho_mod    = dist_image(data_mod, pixscale=header_mod['PIXELSCL'])
+        # Scale to data pixelscale
+        data_mod = frebin(data_mod, scale=header_mod['PIXELSCL']/header['PIXELSCL'])
+        rho_mod    = dist_image(data_mod, pixscale=header['PIXELSCL'])
         data_mod_r2 = data_mod*rho_mod**2
         vmax  = np.max(data_mod)
         vmax2 = np.max(data_mod_r2)
@@ -1483,7 +1516,7 @@ def plot_images_swlw(obs_dict, hdu_dict, filt_keys, wfe_drift, fov=10,
 
     fig.subplots_adjust(wspace=0.1, hspace=0.1, top=0.9, bottom=0.07 , left=0.05, right=0.97)
     
-    fname = "{}_images_{}.pdf".format(name_sci.replace(" ", ""), obs.mask)
+    fname = "{}_images_{}.pdf".format(name_sci.replace(" ", ""), obs.image_mask)
     if save_fig: 
         fig.savefig(outdir+fname)
         

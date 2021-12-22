@@ -1,0 +1,27 @@
+In an email to Martha on 2/16/2021, Jay says:
+
+It's worth warning people that I put together the catalog in
+three different finding waves.
+
+The first is the "bright isolated" catalog, which contains stars
+that should be able to be measured well and useful for distortion-
+solving and PSF-building.  This catalog is provided in:   
+
+     master_output.xymvrdeepmeehuGAIA
+     combine_2006p39.xym
+     combine_2017p38.xym
+
+There are ~220,000 stars in this catalog, spanning 5' x 5'.
+
+I also supplemented this catalog with stars in the HST images that
+were night bright and isolated.  Finally, since HST can't find *all*
+the stars that are there, I added some artificial stars based on an
+extrapolation of the LF, so that people who want to simulate a
+realistic level of crowding and background contamination, they can do
+that.  I am imagining that the image simulators are as slow as they've
+ever been, so it'll probably be prohibitive for people to simulate
+full images with all three waves of finding (isolated, crowded, and
+simulated).  I'm guessing most people will be content with the
+isolated catalog.  Crowding really shouldn't be a problem for the vast
+majority of stars, and the few stars that have crowding issues can be
+rejected.

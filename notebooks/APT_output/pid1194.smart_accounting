@@ -1,0 +1,35 @@
+Smart accounting uses a heuristic algorithm to try to find Observations which
+could be scheduled in sequence.  Instead of charging all Observations in a
+sequence an initial major slew only the first Observation in the sequence is
+charged an initial slew.
+
+
+Sequence   1:
+Visit ID     Smart Accounting Slew     APT Slew                  Target
+ 001:001                      1800         1800                  HR8799
+ 002:001                       166         1800                  HR8799
+ 003:001                       646         1800                HD220657
+ 004:001                       166         1800                HD220657
+ 005:001                       645         1800                  HR8799
+ 006:001                       175         1800                  HR8799
+ 007:001                       314         1800                  HR8799
+ 008:001                       148         1800                  HR8799
+ 009:001                       148         1800                  HR8799
+ 010:001                       180         1800                  HR8799
+ 011:001                       642         1800               HD-218261
+ 012:001                       148         1800               HD-218261
+ 013:001                       148         1800               HD-218261
+ 014:001                       180         1800               HD-218261
+
+Total:                        5506        25200
+
+
+Each sequence shows the visits in the order that the smart accounting algorithm
+used to estimate the slew time.  The column 'Smart Accounting Slew' is the
+estimated slew time assigned to the visit by the smart accounting algorithm.
+The column labeled 'APT Slew' shows the original slew estimate assigned by APT.
+The 'target' column shows the target for the visit on that line.
+
+A visit marked with '**' at the end of the line is not schedulable anywhere.
+Visits which are not schedulable may be placed in their own sequence because
+there is no way to know what they might be grouped with if they could be scheduled.

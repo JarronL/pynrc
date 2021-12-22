@@ -10,12 +10,12 @@ from pynrc.nrc_utils import webbpsf, poppy, offset_bar
 import astropy.io.fits as fits
 import multiprocessing as mp
 
-pynrc.setup_logging('WARNING', verbose=False)
+pynrc.setup_logging('WARN', verbose=False)
 
 from poppy import zernike
 from poppy.optics import MultiHexagonAperture
 #from poppy.utils import pad_to_size
-from pynrc.maths.image_manip import pad_or_cut_to_size
+from pynrc.maths.image_manip import pad_or_cut_to_size, dist_image, binned_statistic
 
 class OPD_extract(object):
 

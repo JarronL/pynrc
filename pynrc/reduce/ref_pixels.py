@@ -1,48 +1,13 @@
-from __future__ import absolute_import, division, print_function, unicode_literals
 import numpy as np
 import logging
 _log = logging.getLogger('pynrc')
-
-# The six library is useful for Python 2 and 3 compatibility
-#import six
 
 # Import libraries
 import numpy as np
 import pynrc
 from pynrc.maths import robust
-#from pynrc.maths import nrc_utils
+from pynrc import DetectorOps, setup_logging, conf
 from scipy.signal import savgol_filter
-
-#from . import *
-#from .nrc_utils import *
-
-
-### # import matplotlib
-### # import matplotlib.pyplot as plt
-### matplotlib.rcParams['image.origin'] = 'lower'
-### matplotlib.rcParams['image.interpolation'] = 'none'
-### #matplotlib.rcParams['image.cmap'] = 'gist_heat'
-### 
-### from astropy.io import fits
-### 
-### dir = '/Volumes/NIRData/NIRCam/Char_Darks/CV3/FITS/489/'
-### f = dir + 'NRCNRCB4-DARK-60091316411_1_489_SE_2016-01-09T14h23m38.fits'
-### hdulist = fits.open(f)
-### cube = np.ndarray.astype(hdulist[0].data,np.float)
-### hdulist.close()
-### del hdulist[0].data
-### 
-### fbias = '/Volumes/NIRData/NIRCam/Char_Darks/CV3/489/SUPER_BIAS_489.FITS'
-### hdulist = fits.open(fbias)
-### bias = hdulist[0].data
-### 
-### # We need a better superbias frame.
-### # These ones did not correctly determine the intrinsic values
-### # of the reference pixels.
-### for im in cube:
-###     im -= bias
-### 
-### cube = reffix_amps(cube)
 
 class NRC_refs(object):
 
@@ -113,13 +78,13 @@ class NRC_refs(object):
         self._create_detops(**kwargs)
 
         # Reference info from header
-        self.nref_t = self.header['TREFROW']
-        self.nref_b = self.header['BREFROW']
-        self.nref_l = self.header['LREFCOL']
-        self.nref_r = self.header['RREFCOL']
+        ref_all = self.detector.ref_info
+        self.nref_t = self.header.get('TREFROW', ref_all[1])
+        self.nref_b = self.header.get('BREFROW', ref_all[0])
+        self.nref_l = self.header.get('LREFCOL', ref_all[2])
+        self.nref_r = self.header.get('RREFCOL', ref_all[3])
     
         # Check that reference pixels match up correctly between header and det class
-        ref_all = self.detector.ref_info
         assert self.nref_t == ref_all[1], 'Number of top reference rows do not match.'
         assert self.nref_b == ref_all[0], 'Number of bottom reference rows do not match.'
         assert self.nref_l == ref_all[2], 'Number of left reference columns do not match.'
@@ -139,56 +104,69 @@ class NRC_refs(object):
             self.correct_col_refs()
         
     def _create_detops(self, read_mode=None, nint=None, ngroup=None, detector=None, 
-        wind_mode=None, xpix=None, ypix=None, x0=None, y0=None, **kwargs):
+        wind_mode=None, xpix=None, ypix=None, x0=None, y0=None, nff=None, **kwargs):
         """
         Create a detector class based on header settings.
         """
     
+        from ..detops import create_detops
+
         header = self.header
         DMS = self.DMS
     
-        # Detector ID
-        detector = header['SCA_ID'] if detector is None else detector
+        det = create_detops(header, DMS=DMS, read_mode=read_mode, nint=nint, ngroup=ngroup,
+            detector=detector, wind_mode=wind_mode, xpix=xpix, ypix=ypix, x0=x0, y0=y0,
+            nff=nff, **kwargs)
+
+        self.detector = det
+
+        # # Detector ID
+        # if detector is None:
+        #     detector = header.get('SCA_ID')
+        #     if detector is None:
+        #         detector = header.get('DETECTOR')           
     
-        # Detector size
-        xpix = header['SUBSIZE1'] if DMS else header['NAXIS1'] if xpix is None else xpix
-        ypix = header['SUBSIZE2'] if DMS else header['NAXIS2'] if ypix is None else ypix
+        # # Detector size
+        # xpix = header['SUBSIZE1'] if DMS else header['NAXIS1'] if xpix is None else xpix
+        # ypix = header['SUBSIZE2'] if DMS else header['NAXIS2'] if ypix is None else ypix
     
-        # Subarray position
-        # Headers are 1-indexed, while detector class is 0-indexed
-        if x0 is None:
-            x1 = header['SUBSTRT1'] if DMS else header['COLCORNR']
-            x0 = x1 - 1
-        if y0 is None:
-            y1 = header['SUBSTRT2'] if DMS else header['ROWCORNR']
-            y0 = y1 - 1
+        # # Subarray position
+        # # Headers are 1-indexed, while detector class is 0-indexed
+        # if x0 is None:
+        #     x1 = header['SUBSTRT1'] if DMS else header['COLCORNR']
+        #     x0 = x1 - 1
+        # if y0 is None:
+        #     y1 = header['SUBSTRT2'] if DMS else header['ROWCORNR']
+        #     y0 = y1 - 1
             
-        # Subarray setting: Full, Stripe, or Window
-        if wind_mode is None:
-            if DMS and ('FULL' in header['SUBARRAY']):
-                wind_mode = 'FULL'
-            elif (not DMS) and (not header['SUBARRAY']):
-                wind_mode = 'FULL'
-            else:
-                # Test if STRIPE or WINDOW
-                det_stripe = pynrc.DetectorOps(detector, 'STRIPE', xpix, ypix, x0, y0)
-                det_window = pynrc.DetectorOps(detector, 'WINDOW', xpix, ypix, x0, y0)
-                dt_stripe = np.abs(header['TFRAME'] - det_stripe.time_frame)
-                dt_window = np.abs(header['TFRAME'] - det_window.time_frame)
-                wind_mode = 'STRIPE' if dt_stripe<dt_window else 'WINDOW'
+        # # Subarray setting: Full, Stripe, or Window
+        # if wind_mode is None:
+        #     if xpix==ypix==2048:
+        #         wind_mode = 'FULL'
+        #     else:
+        #         # Turn off log warnings
+        #         log_prev = conf.logging_level
+        #         setup_logging('ERROR', verbose=False)
+        #         # Test if STRIPE or WINDOW
+        #         det_stripe = DetectorOps(detector, 'STRIPE', xpix, ypix, x0, y0)
+        #         det_window = DetectorOps(detector, 'WINDOW', xpix, ypix, x0, y0)
+        #         dt_stripe = np.abs(header['TFRAME'] - det_stripe.time_frame)
+        #         dt_window = np.abs(header['TFRAME'] - det_window.time_frame)
+        #         wind_mode = 'STRIPE' if dt_stripe<dt_window else 'WINDOW'
+        #         # Restore previous log levels
+        #         setup_logging(log_prev, verbose=False)
 
-        # Add MultiAccum info
-        if DMS: hnames = ['READPATT', 'NINTS', 'NGROUPS']  
-        else:   hnames = ['READOUT',  'NINT',  'NGROUP']
+        # # Add MultiAccum info
+        # hnames = ['READPATT', 'NINTS', 'NGROUPS'] if DMS else ['READOUT',  'NINT',  'NGROUP']
 
-        read_mode = header[hnames[0]] if read_mode is None else read_mode
-        nint      = header[hnames[1]] if nint      is None else nint
-        ngroup    = header[hnames[2]] if ngroup    is None else ngroup
+        # read_mode = header[hnames[0]] if read_mode is None else read_mode
+        # nint      = header[hnames[1]] if nint      is None else nint
+        # ngroup    = header[hnames[2]] if ngroup    is None else ngroup
 
-        ma_args = {'read_mode':read_mode, 'nint':nint, 'ngroup':ngroup}
+        # ma_args = {'read_mode':read_mode, 'nint':nint, 'ngroup':ngroup}
                 
-        # Create detector class
-        self.detector = pynrc.DetectorOps(detector, wind_mode, xpix, ypix, x0, y0, **ma_args)
+        # # Create detector class
+        # self.detector = DetectorOps(detector, wind_mode, xpix, ypix, x0, y0, **ma_args)
 
     @property
     def multiaccum(self):
@@ -815,7 +793,7 @@ def calc_col_smooth(refvals, data_shape, perint=False, edge_wrap=False,
     delt=5.24E-4, savgol=False, winsize=31, order=3, **kwargs):
     """Perform optimal smoothing of side ref pix
     
-    Geneated smoothed version of column reference values.
+    Generates smoothed version of column reference values.
     Smooths values from calc_avg_cols() via FFT.
 
     Parameters
@@ -1288,7 +1266,8 @@ def channel_smooth_savgol(im_arr, winsize=31, order=3, per_line=False,
     mask : bool image or None
         An image mask of pixels to ignore. Should be same size as im_arr.
         This can be used to mask pixels that the filter should ignore, 
-        such as stellar sources or pixel outliers.
+        such as stellar sources or pixel outliers. A value of True indicates
+        that pixel should be ignored.
     mode : str
         Must be 'mirror', 'constant', 'nearest', 'wrap' or 'interp'.  This
         determines the type of extension to use for the padded signal to

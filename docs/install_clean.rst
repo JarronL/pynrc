@@ -1,52 +1,65 @@
-.. _clean_install:
-
 ===================================
-Install from New Conda Environment
+Install New Conda Environment
 ===================================
 
-This installation tutorial assumes a clean installation with 
-Anaconda and has been verified on both Python 2.7 and 3.6 using 
-the following modules:
+This installation tutorial assumes a clean installation with Anaconda via:
 
-* Numpy 1.14   
-* Matplotlib 2.1
-* Scipy 1.0    
-* Astropy 2.0
+.. code-block:: sh
 
+    $ conda create -n py39 python=3.9 anaconda
+
+and has been verified on Python 3.9 using the following modules:
+
+* Numpy 1.20
+* Matplotlib 3.5
+* Scipy 1.7
+* Astropy 5.0
+* Astroquery 0.4.3
+
+-------------------------------------
 
 .. _configure_astroconda_channel:
 
-Configure Conda to use the AstroConda Channel
-=============================================
+Configure Conda Channels
+========================
 
-We will be install a few packages that live in AstroConda. 
-If you're already working in an AstroConda environment, 
-then you should be all set and can probably skip this step.
+We will first install a few packages that live in the AstroConda and Conda-Forge channels. If you're already working in an AstroConda environment, then you should be all set and can probably skip most of these steps and jump to :ref:`install_wpsf_ext`.
 
-If you have some other Conda, installation, then you can simply 
-add the AstroConda channel to your ``.condarc`` file, which appends 
-the appropriate URL to Conda's channel search path::
+If you have some other Conda installation, such as indicated above, then you can simply add the AstroConda and Conda-Forge channels to your ``.condarc`` file, which appends the appropriate URL to Conda's channel search path:
 
-    $ conda config --add channels http://ssb.stsci.edu/astroconda
+.. code-block:: sh
+
     # Writes changes to ~/.condarc
+    $ conda config --append channels https://ssb.stsci.edu/astroconda
+    $ conda config --append channels conda-forge
 
+Now your ``.condarc`` file should look something like the following:
+
+.. code-block:: sh
+
+    channels:
+      - defaults
+      - https://ssb.stsci.edu/astroconda
+      - conda-forge
+
+-------------------------------------
 
 .. _install_pysynphot:
 
 Installing Pysynphot
 ====================
 
-With the AstroConda channel added, it's a simple matter to run::
+With the AstroConda channel added, it's a simple matter to run:
+
+.. code-block:: sh
 
     $ conda install pysynphot
 
-Otherwise, install the
-`standalone <https://github.com/spacetelescope/pysynphot/releases>`_ release::
+or from PyPi:
 
-    $ pip install git+https://github.com/spacetelescope/pysynphot.git@0.9.8.8
+.. code-block:: sh
 
-Pysynphot Data Files
---------------------
+    $ pip install pysynphot
 
 Data files for Pysynphot are distributed through the
 `Calibration Reference Data System <http://www.stsci.edu/hst/observatory/crds/throughput.html>`_. 
@@ -58,90 +71,144 @@ set prior to using this package.
    `cdbs.tar.gz <http://mips.as.arizona.edu/~jleisenring/pynrc/cdbs.tar.gz>`_  [approx. 760 MB]
 2. Untar into a directory of your choosing.
 3. Set the environment variable ``PYSYN_CDBS`` to point to that directory. 
-   For example, in .bashrc shell file, add::
+   For example, in .bashrc shell file, add:
 
-    export PYSYN_CDBS='$HOME/data/cdbs/'
+   .. code-block:: sh
+
+       export PYSYN_CDBS='$HOME/data/cdbs/'
 
 You should now be able to successfully ``import pysynphot`` in a Python session.
 
+-------------------------------------
 
 .. _install_webbpsf:
 
 Installing WebbPSF
 ====================
 
-The AstroConda copy of WebbPSF has a ``webbpsf-data`` installation dependency, 
-which we do not want in our slightly customized installation, because the WebbPSF 
-data files get downloaded separately. Instead, we will do this in two parts to 
-first install the most of the dependencies first, then WebbPSF with the 
-``--no-deps`` flag::
+The easiest way to install WebbPSF without inducing package conflicts is to install some of its main dependencies, then WebbPSF using the ``--no-deps`` flag. In this particular example, we use a combination of ``conda`` and ``pip``, because of minor issues installing ``photutils`` dependencies. 
 
-    $ conda install jwxml poppy
-    $ conda install webbpsf --no-deps
+.. code-block:: sh
 
-For other installation methods see the `WebbPSF documentation <https://webbpsf.readthedocs.io>`_.
+    $ conda install photutils 
+    $ pip install pysiaf poppy
+    $ pip install webbpsf --no-deps
 
-.. caution::
-    A note about backends.
-    
-    In many cases ``matplotlib`` crashes when using the default backend (at least
-    on Mac OS X and certain Linux distributions). 
-    Given the propensity for these crashes, it may be preferable to 
-    use a different graphics backend such as ``TkAgg``. This can either be
-    accomplished by setting ``matplotlib.use("TkAgg")`` after
-    importing ``matplotlib`` or setting the default backend via your 
-    `matplotlibrc file <https://matplotlib.org/users/customizing.html#the-matplotlibrc-file`.
-    The latter option is probably preferred for most cases.
+.. note::
 
+   The ``synphot`` package has been ignored in this case, because ``pynrc`` currently uses the slightly older ``pysynphot`` package. For details on installing ``synphot`` as well as other installation methods, see the `WebbPSF documentation <https://webbpsf.readthedocs.io>`_. Moving ``pynrc`` to use ``synphot`` is under development.
 
 WebbPSF Data Files
 --------------------------
 
-For the user's convenience, WebbPSF data files can be found here: 
-`webbpsf-data-0.6.0.tar.gz <http://mips.as.arizona.edu/~jleisenring/pynrc/webbpsf-data-0.6.0.tar.gz>`_  [approx. 240 MB]
-Follow the same procedure as with the Pysynphot data files, 
-setting the ``WEBBPSF_PATH`` environment variable to point 
-towards your ``webbpsf-data`` directory.
+You will also need to download and install WebbPSF data files: 
+`webbpsf-data-1.0.0.tar.gz <https://stsci.box.com/shared/static/34o0keicz2iujyilg4uz617va46ks6u9.gz>`_  [approx. 280 MB]. Follow the same procedure as with the Pysynphot data files, setting the ``WEBBPSF_PATH`` environment variable to point towards your ``webbpsf-data`` directory.
 
+
+Matplotlib Backends
+--------------------------
+
+In many cases ``matplotlib`` crashes when using the default backend (at least on Mac OS X and certain Linux distributions). Given the propensity for these crashes, it may be preferable to use a different graphics backend such as ``TkAgg``. This can either be accomplished by setting ``matplotlib.use("TkAgg")`` after importing ``matplotlib`` or setting the default backend via your `matplotlibrc file <https://matplotlib.org/stable/tutorials/introductory/customizing.html#customizing-with-matplotlibrc-files>`_. The latter option is probably preferred for most cases.
+
+-------------------------------------
 
 .. _install_jwb_clean:
 
 Installing JWST Backgrounds
 ============================
 
-``jwst_bakcgrounds`` is a a simple program to predict the levels of background emission 
-in JWST observations. It accesses a precompiled background cache prepared by Space 
-Telescope Science Institute, requiring an internet connection to access.
-However, ``pynrc`` comes a simpler background estimator in the event no there is
-no internet functionality. In this sense, ``jwst_backgrounds`` is not a strict
-requirement for running ``pynrc``. 
+``jwst_bakcgrounds`` is a a simple program to predict the levels of background emission in JWST observations. It accesses a precompiled background cache prepared by STScI, requiring an internet connection to access. However, ``pynrc`` comes with a simpler background estimator in the event ``jwst_background`` is not installed or no functioning internet. In this sense, ``jwst_backgrounds`` is not a strict requirement for running ``pynrc``.
 
-This module requires ``healpy`` to run::
+This module requires ``healpy`` to run:
 
-    $ conda config --add channels http://ssb.stsci.edu/astroconda
+.. code-block:: sh
+
     $ conda install healpy
     
-If ``healpy`` asks you to downgrade some of its dependencies, it is suggested that
-you only install the missing dependencies manually, then run conda with the ``--no-deps``
-flag. For instance::
+Then install JWST Backgrounds with pip:
 
-    $ conda install pytest-runner --no-deps
-    $ conda install healpy --no_deps
-    
-Then install JWST Backgrounds with pip::
+.. code-block:: sh
 
     $ pip install jwst_backgrounds
 
+-------------------------------------
+
+.. _install_astroquery:
+
+Installing Astroquery
+============================
+
+Astroquery is a set of tools for querying astronomical web forms and databases. It is used within ``pynrc`` to query Simbad and Gaia databases to search for sources and obtain basic astrometry, fluxes, and spectral types.
+
+Install via ``conda``:
+
+.. code-block:: sh
+
+    $ conda install astroquery
+
+-------------------------------------
+
+.. _install_pipeline:
+
+Installing JWST Pipeline
+========================
+
+In order to create DMS-like datasets, pyNRC uses data models from the JWST pipeline (https://github.com/spacetelescope/jwst). Again, easiest to install via ``pip``:
+
+.. code-block:: sh
+
+    $ pip install jwst
+
+The JWST pipeline is under significant development, so it's a good idea to keep this up-to-date with new releases by regularly running: 
+
+.. code-block:: sh
+
+    $ pip install jwst --upgrade
+
+CRDS Data Files
+---------------
+
+Configure the calibration reference database (CRDS) by defining the CRDS directory that will store downloaded cal files. For example, in ``.bashrc`` shell file:
+
+.. code-block:: sh
+
+    export CRDS_PATH='$HOME/data/crds_cache/'
+    export CRDS_SERVER_URL='https://jwst-crds.stsci.edu'
+
+-------------------------------------
+
+.. _install_wpsf_ext:
+
+Installing WebbPSF Extensions
+=============================
+
+The ``webbpsf_ext`` package calculates and stores polynomial relationships between PSFs with respect to wavelength, focal plane position, and WFE drift in order to quickly generate arbitrary NIRCam PSFs without having to simulate a new PSF on the fly.  
+
+.. code-block:: sh
+
+    pip install git+https://github.com/JarronL/webbpsf_ext.git
+
+Set the environment variable ``WEBBPSF_EXT_PATH`` to point to some data directory. All PSF coefficients will be saved here as they are generated to be reused later. For example, in ``.bashrc`` shell file, add:
+
+.. code-block:: sh
+
+   export WEBBPSF_EXT_PATH='$HOME/data/webbpsf_ext_data/'
+
+-------------------------------------
 
 .. _install_pynrc_clean:
 
 Installing pyNRC
 ====================
 
+Finally, we are ready to install ``pynrc``!
+
 Installing with pip
 --------------------
 
-You can install the ``pynrc`` package through pip::
+You can install the ``pynrc`` package through pip:
+
+.. code-block:: sh
 
     $ pip install pynrc
 
@@ -152,28 +219,29 @@ as described below.
 Installing from source
 ----------------------
 
-To get the most up to date version of ``pynrc``, install directly 
-from source, though stability is not guarenteed. The 
-`development version <https://github.com/JarronL/pynrc>`_ 
-can be found on GitHub.
+To get the most up to date version of ``pynrc``, install directly from source, though stability is not guaranteed. The `development version <https://github.com/JarronL/pynrc/tree/develop>`_ can be found on GitHub.
 
-In this case, you will need to clone the git repository::
+In this case, you will need to clone the git repository:
+
+.. code-block:: sh
 
     $ git clone https://github.com/JarronL/pynrc
 
-Then install the package with::
+Then install the package with:
+
+.. code-block:: sh
 
     $ cd pynrc
     $ pip install .
     
-For development purposes::
+For development purposes:
+
+.. code-block:: sh
 
     $ cd pynrc
     $ pip install -e .
 
-in order to create editable installations. This is great for helping
-to develop the code, create bug reports, pull requests to GitHub, etc.
-
+This creates an editable installation, which is great for helping to develop the code, create bug reports, pull requests to GitHub, etc. Make sure to switch to the ``develop`` branch after installation in order to get access to the latest code base.
 
 pyNRC Data Files
 --------------------------
@@ -185,15 +253,19 @@ files and define the ``PYNRC_PATH`` environment variable. This is
 also the location that PSF coefficients will be saved to during
 normal operations of ``pynrc``.
 
+Files containing information such as the instrument throughputs, stellar models, and exoplanet models are already distributed through ``webbpsf_ext``. 
+In addition, ``pynrc`` requires a number of files to simulate realistic detector data with DMS-like formatting and headers. In general, these are not necessary to run ``pynrc`` and use its ETC capabilities and simple simulations. 
+But, in order to create DMS and pipeline-compliant data, you must download these files and define the ``PYNRC_PATH`` environment variable. 
+
 1. Download the following file: 
-   `pynrc_data_v0.6.1.tar.gz <http://mips.as.arizona.edu/~jleisenring/pynrc/pynrc_data_v0.6.1.tar.gz>`_  [approx. 2.3 GB]
+   `pynrc_data_all_v1.0.0.tar <http://mips.as.arizona.edu/~jleisenring/pynrc/pynrc_data_all_v1.0.0.tar>`_  [approx. 17.0 GB]
 2. Untar into a directory of your choosing.
 3. Set the environment variable ``PYNRC_PATH`` to point to that directory. 
-   For example, in .bashrc shell file, add::
+   For example, in .bashrc shell file, add:
 
-    export PYNRC_PATH='$HOME/data/pynrc_data'
+   .. code-block:: sh
 
-   You will probably want to add this to your ``.bashrc``.
+       export PYNRC_PATH='$HOME/data/pynrc_data'
 
 You should now be able to successfully ``import pynrc`` in a Python session.
 

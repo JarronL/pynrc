@@ -1,10 +1,35 @@
 Revision History
 ================
 
-v0.8.0beta (ongoing)
------------------
+v1.0.1 (Dec 14, 2021)
+---------------------
 
-- Release to work with WebbPSF 0.8.0.
+- Default OPD JWST_OTE_OPD_RevAA_prelaunch_predicted.fits
+
+v1.0.0 (Nov 22, 2021)
+---------------------
+
+- Updates to work with WebbPSF v1 release candidate
+- Move PSF generation to new ``webbpsf_ext`` package (https://github.com/JarronL/webbpsf_ext)
+- Create DMS-like level1b FITS files using pipeline data models for imaging and coronagraphy
+- PSF coefficients now use Legendre polynomials by default
+- Create calibration files for each SCA (darks, IPC, noise, flats, linearity, etc)
+- Background roll-off at grism edges
+- SIAF-aware locations
+
+v0.9.0beta (no release)
+-----------------------
+
+- Updates to work with WebbPSF 0.9.0.
+- Start working on commissioning and DMS-like data
+- Add more advanced time-dependent detector effects
+- BEX model isochrones for low-mass companions from Linder et al (2019)
+- There was a pandemic...
+
+v0.8.0beta (no release)
+-----------------------
+
+- Updates to work with WebbPSF 0.8.0.
 - Phasing out support for Python 2
 - Add info on saturation limits in terms of surface brightness 
 - Include option to create grism 2nd order
@@ -36,8 +61,7 @@ v0.6.4 (Mar 2018)
 
 - Off-axis PSFs now get drifted in the same way as their on-axis
   counterparts.
-- Created an intermediate :mod:`~pynrc.nrc_hci` class to enable
-  offsets of WFE drifted PSFs.
+- Created an intermediate ``nrc_hci`` class to enable offsets of WFE drifted PSFs.
 
 
 v0.6.3 (Mar 2018)
@@ -51,7 +75,7 @@ v0.6.2 (Mar 2018)
 -----------------
 
 - Implemented coronagraphic wedges, including arbitrary offsets along bar
-- Renamed ``obs_coronagraphy`` to :mod:`~pynrc.obs_hci`
+- Renamed ``obs_coronagraphy`` to ``~pynrc.obs_hci``
 
   - Faster modeling of off-axis PSFs
   - Include coronagraphic features (e.g.: ND squares) in slope images
@@ -102,6 +126,3 @@ v0.1.0 (Aug 2016)
 - Rewrite of ``SimNRC`` and rename ``pynrc``
 - Object oriented ``multiaccum``, ``DetectorOps``, and ``NIRCam`` classes
 - Create separate detector instances in ``NIRCam`` class
-
-
------------------------

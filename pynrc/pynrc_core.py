@@ -1,26 +1,32 @@
 """pyNRC - Python ETC and Simulator for JWST NIRCam"""
 
-from __future__ import division, print_function#, unicode_literals
-
-#from astropy.convolution import convolve_fft
-
-#from scipy import fftpack
-#import pdb
 # Import libraries
+import numpy as np
+import matplotlib
+import matplotlib.pyplot as plt
+
 from astropy.table import Table
+from astropy.io import ascii
+from webbpsf_ext.webbpsf_ext_core import NIRCam_ext
 from .nrc_utils import *
-from .opds import *
-from .psfs import *
-from .detops import *
-from .detops import _check_list # hidden function
+
+from .detops import det_timing, multiaccum, nrc_header
+from webbpsf_ext.webbpsf_ext_core import _check_list
+
+from tqdm.auto import trange, tqdm
 
 import pysiaf
+from pysiaf import rotations
+
+from . import conf
+from .logging_utils import setup_logging
 
 import logging
 _log = logging.getLogger('pynrc')
 
+__epsilon = np.finfo(float).eps
+
 class DetectorOps(det_timing):
-#class DetectorOps(object):
     """ 
     Class to hold detector operations information. Includes SCA attributes such as
     detector names and IDs as well as :class:`multiaccum` class for ramp settings.
@@ -75,8 +81,8 @@ class DetectorOps(det_timing):
     def __init__(self, detector=481, wind_mode='FULL', xpix=2048, ypix=2048, 
                  x0=0, y0=0, nff=None, **kwargs):
                  
-        det_timing.__init__(self, wind_mode=wind_mode, xpix=xpix, ypix=ypix, 
-                            x0=x0, y0=y0, mode='JWST', nff=nff, **kwargs)
+        super().__init__(wind_mode=wind_mode, xpix=xpix, ypix=ypix, 
+                         x0=x0, y0=y0, mode='JWST', nff=nff, **kwargs)
 
         # Typical values for SW/LW detectors that get saved based on SCA ID.
         # After setting the SCA ID, these various parameters can be updated,
@@ -90,10 +96,10 @@ class DetectorOps(det_timing):
         #     effective noise plots.
         self._properties_SW = {'pixel_scale':pixscale_SW, 'dark_current':0.002, 'read_noise':11.5, 
                                'IPC':0.54, 'PPC':0.09, 'p_excess':(1.0,5.0), 'ktc':37.6,
-                               'well_level':100e3, 'well_level_old':81e3}
+                               'well_level':105e3, 'well_level_old':81e3}
         self._properties_LW = {'pixel_scale':pixscale_LW, 'dark_current':0.034, 'read_noise':10.0, 
                                'IPC':0.60, 'PPC':0.19, 'p_excess':(1.5,10.0), 'ktc':36.8,
-                               'well_level':80e3, 'well_level_old':75e3}
+                               'well_level':83e3, 'well_level_old':75e3}
         # Automatically set the pixel scale based on detector selection
         self.auto_pixscale = True  
 
@@ -104,16 +110,29 @@ class DetectorOps(det_timing):
                         486:'B1', 487:'B2', 488:'B3', 489:'B4', 490:'B5'}
         # Allow user to specify name using either SCA ID or Detector ID (ie., 481 or 'A1')
         try: # First, attempt to set SCA ID
-            self.scaid = detector 
+            self.scaid = detector
         except ValueError: 
             try: # If that doesn't work, then try to set Detector ID
-                self.detid = detector
+                self.detid = get_detname(detector)[3:]
             except ValueError: # If neither work, raise ValueError exception
                 raise ValueError("Invalid detector: {0} \n\tValid names are: {1},\n\t{2}" \
                       .format(detector, ', '.join(self.detid_list), \
                       ', '.join(str(e) for e in self.scaid_list)))
 
+        # For full arrays number of resets in first integration is 0
+        # self.wind_mode = wind_mode
+
         _log.info('Initializing SCA {}/{}'.format(self.scaid,self.detid))
+
+    @property
+    def wind_mode(self):
+        """Window mode attribute"""
+        return self._wind_mode
+    @wind_mode.setter
+    def wind_mode(self, value):
+        """Set Window mode attribute"""
+        self._wind_mode = value
+        self.multiaccum.nr1 = 0 if value=='FULL' else 1
 
     @property
     def scaid(self):
@@ -146,7 +165,8 @@ class DetectorOps(det_timing):
         # Select various detector properties (pixel scale, dark current, read noise, etc)
         # depending on LW or SW detector
         dtemp = self._properties_LW if self.channel=='LW' else self._properties_SW
-        if self.auto_pixscale: self.pixelscale = dtemp['pixel_scale']
+        if self.auto_pixscale: 
+            self.pixelscale = dtemp['pixel_scale']
         self.ktc          = dtemp['ktc']
         self.dark_current = dtemp['dark_current']
         self.read_noise   = dtemp['read_noise']
@@ -161,9 +181,11 @@ class DetectorOps(det_timing):
     @detid.setter
     def detid(self, value):
         """Set detector ID (A1, A2, ..., B4, B5). Automatically updates other relevant attributes."""
+        if 'NRC' in value:
+            value = value[3:]
         _check_list(value, self.detid_list, var_name='detid')
 
-        # Switch dictioary keys and values, grab the corresponding SCA ID,
+        # Switch dictionary keys and values, grab the corresponding SCA ID,
         # and then call scaid.setter
         newdict = {y:x for x,y in self._scaids.items()}
         self.scaid = newdict.get(value)
@@ -187,6 +209,17 @@ class DetectorOps(det_timing):
     def channel(self):
         """Detector channel 'SW' or 'LW' (inferred from detector ID)"""
         return 'LW' if self.detid.endswith('5') else 'SW'
+
+    def xtalk(self, file_path=None):
+        """Detector cross talk information"""
+
+        if file_path is None:
+            file = 'xtalk20150303g0.errorcut.txt'
+            file_path = os.path.join(conf.PYNRC_PATH, 'sim_params', file)
+
+        xt_coeffs = ascii.read(file_path, header_start=0)
+        ind = xt_coeffs['Det'] == self.detid
+        return xt_coeffs[ind]
 
     def pixel_noise(self, fsrc=0.0, fzodi=0.0, fbg=0.0, rn=None, ktc=None, idark=None,
         p_excess=None, ng=None, nf=None, verbose=False, **kwargs):
@@ -239,7 +272,6 @@ class DetectorOps(det_timing):
         If multiple inputs are arrays, make sure their array sizes match.
         
         """
-
         ma = self.multiaccum
         if ng is None:
             ng = ma.ngroup
@@ -279,12 +311,12 @@ class DetectorOps(det_timing):
     def slowaxis(self):
         """Slow readout direction in sci coords"""
         # https://jwst-pipeline.readthedocs.io/en/latest/jwst/references_general/references_general.html#orientation-of-detector-image
-        # 481, 3, 5, 7, 9 have fastaxis equal +2
-        # Others have fastaxis equal -2
+        # 481, 3, 5, 7, 9 have slowaxis equal +2
+        # Others have slowaxis equal -2
         slowaxis = +2 if np.mod(self.scaid,2)==1 else -2
         return slowaxis
 
-    def make_header(self, filter=None, pupil=None, obs_time=None, **kwargs):
+    def make_header(self, filter=None, pupil_mask=None, obs_time=None, **kwargs):
         """
         Create a generic NIRCam FITS header.
 
@@ -292,7 +324,7 @@ class DetectorOps(det_timing):
         ----------
         filter :str
             Name of filter element.
-        pupil : str
+        pupil_mask : str
             Name of pupil element.
         obs_time : datetime 
             Specifies when the observation was considered to be executed.
@@ -301,69 +333,46 @@ class DetectorOps(det_timing):
             
             >>> datetime.datetime(2016, 5, 9, 11, 57, 5, 796686)
         """
-        return nrc_header(self, filter=filter, pupil=pupil, obs_time=obs_time, **kwargs)
+        return nrc_header(self, filter=filter, pupil=pupil_mask, obs_time=obs_time, **kwargs)
 
 
-class NIRCam(object):
-
+class NIRCam(NIRCam_ext):
     """NIRCam base instrument class
     
     Creates a NIRCam instrument class that holds all the information pertinent to
-    an observation using a given channel/module (SWA, SWB, LWA, LWB). 
+    an observation using a given observation. This class extends the NIRCam subclass
+    `webbpsf_ext.NIRCam_ext`, to generate PSF coefficients to calculate an arbitrary
+    PSF based on wavelength, field position, and WFE drift.
 
-    The user merely inputs the filter name, pupil element, coronagraphic mask,
-    and module A or B. Based on these settings, a sequence of detector objects
-    will be created that spans the correct channel. For instance, a filter value
-    of 'F210M' paired with module='A' will generate four detector objects, one
-    for each of the four SWA SCAs 481-484 (A1-A4, if you prefer).
-
-    A number of other options are passed via the kwargs parameter that allow
-    setting of the detector readout mode, MULTIACCUM settings, and settings
-    for the PSF calculation to be passed to WebbPSF.
+    In addition to PSF generation, includes ability to estimate detector saturation 
+    limits, sensitivities, and perform ramp optimizations.
 
     Parameters
-    ----------
+    ==========
     filter : str
-        Name of NIRCam filter.
-    pupil : str, None
-        NIRCam pupil elements such as grisms or lyot stops (default: None).
-    mask : str, None
+        Name of input filter.
+    pupil_mask : str, None
+        Pupil elements such as grisms or lyot stops (default: None).
+    image_mask : str, None
         Specify which coronagraphic occulter (default: None).
-    module : str
-        NIRCam Module 'A' or 'B' (default: 'A').
-    wfe_drift : bool
-        Option to calculate and use WFE drift PSF modifications.
-        Can be turned on later with the :attr:`wfe_drift` attribute.
-    wfe_field : bool
-        Option to use measured field-dependent SI WFE.
-        Can be turned on later with the :attr:`wfe_field` attribute.
-    apname : str
-        Use SIAF aperture name insted of pupil, mask, module, etc.
     ND_acq : bool
-        ND square acquisition (default: False).
-    ice_scale : float
-        Add in additional OTE H2O absorption. This is a scale factor
-        relative to 0.0131 um thickness. No ice contributions by default.
-    nvr_scale : float
-        Add in additional NIRCam non-volatile residue. This is a scale
-        factor relative to 0.280 um thickness. If set to None, then 
-        assumes a scale factor of 1.0 as is contained in the NIRCam
-        filter curves. Setting nvr_scale=0 will remove these contributions.
-        
-    Notes
-    -----
-    **Detector Settings**
-    
-    The following keyword arguments will be passed to both the :class:`DetectorOps` and
-    :class:`multiaccum` instances. These can be set directly upon initialization of the
-    of the NIRCam instances or updated later using the :meth:`update_detectors`
-    method. All detector instances will be considered to operate in this mode.
-    
+        Add in neutral density attenuation in throughput and PSF creation?
+        Used primarily for sensitivity and saturation calculations.
+        Not recommended for simulations (TBI). 
+    detector : int or str
+        NRC[A-B][1-5] or 481-490
+    apname : str
+        Pass specific SIAF aperture name, which will update pupil mask, image mask,
+        and detector subarray information.
+    autogen_coeffs : bool
+        Automatically generate base PSF coefficients. Equivalent to performing
+        `self.gen_psf_coeff()`. Default: True
+        WFE drift and field-dependent coefficients should be run manually via
+        `gen_wfedrift_coeff`, `gen_wfefield_coeff`, and `gen_wfemask_coeff`.
+
     Keyword Args
-    ------------
-    det_list : list, None
-        List of detector names (481, 482, etc.) to consider.
-        If not set, then defaults are chosen based on observing mode.
+    ============
+
     wind_mode : str
         Window mode type 'FULL', 'STRIPE', 'WINDOW'.
     xpix : int
@@ -388,18 +397,13 @@ class NIRCam(object):
         Number of drop frames within a group (ie., groupgap). 
     nd3 : int
         Number of drop frames after final read frame in ramp. 
-        
-    Notes
-    -----
-    **PSF Settings**
+    nr1 : int
+        Number of reset frames within first ramp.
+    nr2 : int
+        Number of reset frames for subsequent ramps.
 
-    The following keyword arguments will be passed to the PSF generation function
-    :func:`~pynrc.nrc_utils.gen_psf_coeff` which calls :mod:`webbpsf`.  These can be set directly 
-    upon initialization of the of the NIRCam instances or updated later using the 
-    :meth:`update_psf_coeff` method. 
-
-    Keyword Args
-    ------------
+    PSF Keywords
+    ============
     fov_pix : int
         Size of the PSF FoV in pixels (real SW or LW pixels).
         The defaults depend on the type of observation.
@@ -408,56 +412,58 @@ class NIRCam(object):
     oversample : int
         Factor to oversample during WebbPSF calculations.
         Default 2 for coronagraphy and 4 otherwise.
+    include_si_wfe : bool
+        Include SI WFE measurements? Default=True.
+    include_distortions : bool
+        If True, will include a distorted version of the PSF.
+    pupil : str
+        File name or HDUList specifying telescope entrance pupil.
+        Can also be an OTE_Linear_Model.
+    pupilopd : tuple or HDUList
+        Tuple (file, slice) or filename or HDUList specifying OPD.
+        Can also be an OTE_Linear_Model.
+    wfe_drift : float
+        Wavefront error drift amplitude in nm.
     offset_r : float
         Radial offset from the center in arcsec.
     offset_theta :float
         Position angle for radial offset, in degrees CCW.
-    opd : tuple or HDUList
-        Tuple (file, slice) or filename or HDUList specifying OPD.
-    include_si_wfe : bool
-        Include SI WFE measurements? Default=True.
-        if :attr:`wfe_field` is `True`, then ``include_si_wfe=True``.
-    tel_pupil : str
-        File name or HDUList specifying telescope entrance pupil.
+    bar_offset : float
+        For wedge masks, option to set the PSF position across the bar.
     jitter : str or None
         Currently either 'gaussian' or None.
     jitter_sigma : float
         If ``jitter = 'gaussian'``, then this is the size of the blurring effect.
+    npsf : int
+        Number of wavelengths/PSFs to fit.
+    ndeg : int
+        Degree of polynomial fit.
+    nproc : int
+        Manual setting of number of processor cores to break up PSF calculation.
+        If set to None, this is determined based on the requested PSF size,
+        number of available memory, and hardware processor cores. The automatic
+        calculation endeavors to leave a number of resources available to the
+        user so as to not crash the user's machine. 
     save : bool
         Save the resulting PSF coefficients to a file? (default: True)
     force : bool
-        Forces a recalcuation of PSF even if saved PSF exists. (default: False)
+        Forces a recalculation of PSF even if saved PSF exists. (default: False)
     quick : bool
         Only perform a fit over the filter bandpass with a lower default polynomial degree fit.
+        (default: True)
     use_legendre : bool
-        Fit with Legendre polynomials, an orthonormal basis set.
-    
-    Examples
-    --------
-    Basic example of generating a full frame NIRCam observation:
-    
-    >>> inst = pynrc.NIRCam('F210M', module='A', read_mode='DEEP8', nint=10, ngroup=5)
-
-    is the same as:
-
-    >>> inst = pynrc.NIRCam('F210M', module='A')
-    >>> inst.update_detectors(read_mode='DEEP8', nint=10, ngroup=5)
-
-
+        Fit with Legendre polynomials, an orthonormal basis set. (default: True)
     """
 
-    # Variable indicating whether or not to warn about even/odd pixel
-    _fov_pix_warn = True
+    def __init__(self, filter=None, pupil_mask=None, image_mask=None, 
+                 ND_acq=False, detector=None, apname=None, autogen_coeffs=True, **kwargs):
 
-    def __init__(self, filter='F210M', pupil=None, mask=None, module='A', ND_acq=False,
-        apname=None, **kwargs):
-                          
-        self.siaf_nrc = pysiaf.Siaf('NIRCam')
-        self.siaf_nrc.generate_toc()
-        
+        if detector is not None:
+            detector = get_detname(detector)
+
         # Available Filters
         # Note: Certain narrowband filters reside in the pupil wheel and cannot be paired
-        # with pupil elements. This will be check for later.
+        # with pupil elements. This will be checked for later.
         self._filters_sw = ['F070W', 'F090W', 'F115W', 'F150W', 'F150W2', 'F200W',
              'F140M', 'F162M', 'F182M', 'F210M', 'F164N', 'F187N', 'F212N']
         self._filters_lw = ['F277W', 'F322W2', 'F356W', 'F444W', 'F323N', 'F405N', 'F466N', 'F470N',
@@ -465,239 +471,142 @@ class NIRCam(object):
      
         # Coronagraphic Masks
         self._coron_masks = [None, 'MASK210R', 'MASK335R', 'MASK430R', 'MASKSWB', 'MASKLWB']
-        # Define function for offseting bar position
-        self.offset_bar = offset_bar
+        # self.offset_bar = offset_bar
 
         # Pupil Wheel elements
         self._lyot_masks = ['CIRCLYOT', 'WEDGELYOT']
         # DHS in SW and Grisms in LW
         self._dhs = ['DHS0', 'DHS60']
         # Grism0/90 => GrismR/C
-        self._grism = ['GRISM0', 'GRISM90']
+        self._grism = ['GRISMR', 'GRISMC']
         # Weak lens are only in SW pupil wheel (+4 in filter wheel)
-        weak_lens = ['+4', '+8', '-8', '+12 (=4+8)', '-4 (=4-8)']
-        self._weak_lens = ['WEAK LENS '+s for s in weak_lens]
+        self._weak_lens = ['WLP4', 'WLPM4', 'WLP8', 'WLM8', 'WLP12']
 
-        # Specify ice and nvr scalings
-        self._ice_scale = kwargs['ice_scale'] if 'ice_scale' in kwargs.keys() else None
-        self._nvr_scale = kwargs['nvr_scale'] if 'nvr_scale' in kwargs.keys() else None
-        self._ote_scale = kwargs['ote_scale'] if 'ote_scale' in kwargs.keys() else None
-        self._nc_scale  = kwargs['nc_scale']  if 'nc_scale'  in kwargs.keys() else None
-
-        # WFE Drift, don't calculate coefficients by default
-        wfe_drift = kwargs.get('wfe_drift', False)
-        self._wfe_drift = wfe_drift
-        # Field-dependent WFE
-        if kwargs.get('wfe_drift', False)==True:
-            _log.warning("Setting `wfe_drift` as an input parameter is currently not supported.")
-            _log.warning("  Instead, set the class attribute: `nrc.wfe_drift = True`.")
-        self._wfe_field = False  # Don't calculate coefficients by default
-        # Max FoVs for calculationg drift and field dependnet coefficient residuals
-        # Any pixels beyond this size will be considered to have 0 residual difference
-        self._fovmax_wfedrift = 256
-        self._fovmax_wfefield = 128
-
-        self._psf_coeff_mod = {
-            'wfe_drift': None, 'wfe_drift_lxmap': None,
-            'si_field': None, 'si_field_v2grid': None, 'si_field_v3grid': None,
-            'wedge': None, #'wedge_lxmap': None
-        } 
-        self._psf_coeff_bg_mod = {
-            'wfe_drift': None, 'wfe_drift_lxmap': None,
-            'si_field': None, 'si_field_v2grid': None, 'si_field_v3grid': None
-        } 
-
-        # Bar wedge coefficient init
-        self._psf_coeff_mod_wedge = None
-
-        # self._bar_wfe_val holds bar offset value for drifted PSF to be used for
-        # generating a series of offset values such as in nrc_hci class.
-        # TODO: Is this needed??
-        self._bar_wfe_val = None
-        # Background fov pix is only for coronagraphic masks 
-        self._fov_pix_bg = 33
-
-        # Let's figure out what keywords the user has set and try to 
-        # interpret what he/she actually wants. If certain values have
-        # been set to None or don't exist, then populate with defaults
-        # and continue onward.
-        
-        # Check Weak Lens alternate inputs
-        if pupil is not None:
-            pupil = pupil.upper()
+        # Check alternate inputs
+        if pupil_mask is not None:
+            pupil_mask = pupil_mask.upper()
             # If alternate Weak Lens values are specified
-            if 'WL' in pupil:
-                wl_alt = {'WLP4' :'WEAK LENS +4', 
-                          'WLP8' :'WEAK LENS +8', 
-                          'WLP12':'WEAK LENS +12 (=4+8)', 
-                          'WLM4' :'WEAK LENS -4 (=4-8)',
-                          'WLM8' :'WEAK LENS -8'}
-                pupil = wl_alt.get(pupil, pupil)
+            if 'WL' in pupil_mask:
+                wl_alt = {
+                    'WEAK LENS +4': 'WLP4',
+                    'WEAK LENS +8': 'WLP8', 
+                    'WEAK LENS -8': 'WLM8',
+                    'WEAK LENS +12 (=4+8)': 'WLP12', 
+                    'WEAK LENS -4 (=4-8)': 'WLM4',
+                    }
+                pupil_mask = wl_alt.get(pupil_mask, pupil_mask)
             # Pair F200W throughput with WL+4
             # The F212N2 throughput is then handled in read_filter() function 
-            wl_list = ['WEAK LENS +12 (=4+8)', 'WEAK LENS -4 (=4-8)', 'WEAK LENS +4']
-            if (pupil in wl_list) and (filter!='F200W'):
+            wl_list = ['WLP12', 'WLM4', 'WLP4']
+            if (pupil_mask in wl_list) and ((filter is None) or (filter!='F200W')):
                 filter = 'F200W'
 
-        # Set filter
-        filter = filter.upper()
-        _check_list(filter, self.filter_list, 'filter')
-        self._filter = filter
+            # Check Grism alternate inputs
+            if 'GRISM0' in pupil_mask:
+                pupil_mask = 'GRISMR'
+            elif 'GRISM90' in pupil_mask: 
+                pupil_mask = 'GRISMC'
+
+        super().__init__(filter=filter, pupil_mask=pupil_mask, image_mask=image_mask, **kwargs)
 
         if apname is None:
-            self._siaf_ap = None
-
-            # Set everything to upper case first
-            pupil = 'CLEAR' if pupil is None else pupil.upper()
-            if mask is not None: mask = mask.upper()
-            module = 'A' if module is None else module.upper()
-
-            # Validate all values, set values, and update bandpass
-            # Test and set the intrinsic/hidden variables directly rather than through setters
-            _check_list(module, ['A','B'], 'module')
-            _check_list(pupil, self.pupil_list, 'pupil')
-            _check_list(mask, self.mask_list, 'mask')
-
-            self._module = module
-            self._pupil = pupil
-            self._mask = mask
+            if detector is not None:
+                self.detector = detector
             self._ND_acq = ND_acq
 
-            self._update_bp()		
             self._validate_wheels()
             self.update_detectors(**kwargs)
-            self.update_psf_coeff(**kwargs)
+            ap_name_rec = self.get_siaf_apname()
+            self.update_from_SIAF(ap_name_rec, pupil_mask=pupil_mask)
         else:
-            self.update_from_SIAF(apname, pupil=pupil, **kwargs)
+            self.update_from_SIAF(apname, pupil_mask=pupil_mask, **kwargs)
+
+            # Default to no jitter for coronagraphy
+            self.options['jitter'] = None if self.is_coron else 'gaussian'
+
+        # Generate PSF coefficients
+        if autogen_coeffs:
+            self.gen_psf_coeff(**kwargs)
+
+        # Background fov pix is only for coronagraphic masks
+        # Create a background reference class
+        self._fov_pix_bg = 33
+        self._fov_bg_match = False
+        # if autogen_coeffs:
+        self._update_bg_class(**kwargs)
+
+        # Check aperture info is consistent if not explicitly specified
+        ap_name_rec = self.get_siaf_apname()
+        if ((apname is None) and (ap_name_rec != self.aperturename) and
+            not (('FULL' in self.aperturename) and ('TAMASK' in self.aperturename))):
+            # Warning strings
+            out_str1 = f'Current aperture {self.aperturename} does not match recommendation ({ap_name_rec}).'
+            out_str2 = f'Perhaps try self.aperturename = self.get_siaf_apname()'
+            _log.info(out_str1)
+            _log.info(out_str2)
+        
+
+    def _update_bg_class(self, fov_bg_match=None, **kwargs):
+        """
+        If there is a coronagraphic spot or bar, then we may need to
+        generate another background PSF for sensitivity information.
+        It's easiest just to ALWAYS do a small footprint without the
+        coronagraphic mask and save the PSF coefficients. 
+
+        WARNING: This assumes throughput of the coronagraphic substrate
+        for observations with a Lyot pupil mask.
+
+        Parameters
+        ==========
+        fov_bg_match : bool or None
+            Determines whether or not to match bg FoV to sci FoV for
+            coronagraphic observations. If set to None, default to 
+            `self._fov_bg_match` property. If a boolean value is
+            provided, then `self._fov_bg_match` is updated.
+        """
+
+        try:
+            # Make sure we don't inadvertently delete base object
+            if self._nrc_bg is not self: 
+                del self._nrc_bg
+        except AttributeError: 
+            pass
+
+        # Update background PSF size if fov_bg_match is True
+        if fov_bg_match is not None:
+            self._fov_bg_match = fov_bg_match
 
 
+        self._fov_pix_bg = self.fov_pix if self._fov_bg_match else self._fov_pix_bg
+        if self._image_mask is None:
+            self._nrc_bg = self
+        else:
+            log_prev = conf.logging_level
+            setup_logging('WARN', verbose=False)
+
+            nrc_bg = NIRCam_ext(filter=self.filter, pupil_mask=self.pupil_mask,
+                                fov_pix=self._fov_pix_bg, oversample=self._oversample)
+
+            # Generate coefficients
+            nrc_bg.gen_psf_coeff(**kwargs)
+            setup_logging(log_prev, verbose=False)
+
+            # Save as attribute
+            self._nrc_bg = nrc_bg
 
     # Allowed values for filters, coronagraphic masks, and pupils
-    @property
-    def filter_list(self):
-        """List of allowable filters."""
-        return self._filters_sw + self._filters_lw
-    @property
-    def mask_list(self):
-        """List of allowable coronagraphic mask values."""
-        return self._coron_masks
-    @property
-    def pupil_list(self):
-        """List of allowable pupil mask values."""
-        return ['CLEAR','FLAT'] + self._lyot_masks + self._grism + self._dhs + self._weak_lens
-
-    @property
-    def filter(self):
-        """Name of filter bandpass"""
-        # return self._filter
-        return self.bandpass.name
-    @filter.setter
-    def filter(self, value):
-        """Set the filter name"""
-        value = value.upper()
-        _check_list(value, self.filter_list, 'filter')
-
-        # Store original settings of filter name and SW or LW channel
-        vold = self._filter; ch_old = self.channel
-        # Changes to the new filter and update filter curve and bandpass
-        self._filter = value
-        if vold != self._filter: 
-            self._update_bp()
-            self.update_psf_coeff()
-        if ch_old != self.channel: 
-            self.update_detectors()
-
-        self._validate_wheels()
-
-    @property
-    def pupil(self):
-        """Name of pupil element"""
-        return self._pupil
-    @pupil.setter
-    def pupil(self, value):
-        """Set the pupil name"""
-        value = 'CLEAR' if value is None else value.upper()
-        
-        # If alternate Weak Lens values are specified
-        if 'WL' in value:
-            wl_alt = {'WLP4' :'WEAK LENS +4', 
-                      'WLP8' :'WEAK LENS +8', 
-                      'WLP12':'WEAK LENS +12 (=4+8)', 
-                      'WLM4' :'WEAK LENS -4 (=4-8)',
-                      'WLM8' :'WEAK LENS -8'}
-            value = wl_alt.get(value, value)
-        
-        _check_list(value, self.pupil_list, 'pupil')
-        vold = self._pupil; self._pupil = value
-        if vold != self._pupil: 
-            self._update_bp()
-            self.update_psf_coeff()
-        self._validate_wheels()
-
-    @property
-    def mask(self):
-        """Name of coronagraphic mask element"""
-        return self._mask
-    @mask.setter
-    def mask(self, value):
-        """Set the coronagraphic mask"""
-        if value is not None: value = value.upper()
-        _check_list(value, self.mask_list, 'mask')
-        vold = self._mask; self._mask = value
-        if vold != self._mask: 
-            self._update_bp()
-            self.update_psf_coeff()
-            self.update_detectors()
-        self._validate_wheels()
-
-    @property
-    def module(self):
-        """NIRCam modules A or B"""
-        return self._module
-    @module.setter
-    def module(self, value):
-        """Set the which NIRCam module (A or B)"""
-        _check_list(value, ['A','B'], 'module')
-        vold = self._module; self._module = value
-        if vold != self._module:
-            self._update_bp()
-            self.update_detectors()
-            self.update_psf_coeff()
-    
-    @property
-    def ND_acq(self):
-        """Use Coronagraphic ND acquisition square?"""
-        return self._ND_acq
-    @ND_acq.setter
-    def ND_acq(self, value):
-        """Set whether or not we're placed on an ND acquisition square."""
-        _check_list(value, [True, False], 'ND_acq')
-        vold = self._ND_acq; self._ND_acq = value
-        if vold != self._ND_acq:
-            self._update_bp()
-        self._validate_wheels()
-
-    @property
-    def channel(self):
-        """NIRCam wavelength channel ('SW' or 'LW')."""
-        if self._filter in self._filters_sw: return 'SW'
-        if self._filter in self._filters_lw: return 'LW'
-
-        # If we got this far, then something went wrong.
-        err_str = 'Something went wrong. Do not recognize filter {}'.format(self._filter)
-        _log.error(err_str)
-        raise ValueError(err_str)
-
-    @property
-    def bandpass(self):
-        """The wavelength dependent bandpass."""
-        return self._bandpass
-    def _update_bp(self):
-        """Update bandpass based on filter, pupil, and module, etc."""
-        self._bandpass = read_filter(self._filter, self._pupil, self._mask, 
-                                     self.module, self.ND_acq,
-                                     ice_scale=self._ice_scale, nvr_scale=self._nvr_scale,
-                                     ote_scale=self._ote_scale, nc_scale=self._nc_scale)
+    # @property
+    # def filter_list(self):
+    #     """List of allowable filters."""
+    #     return self._filters_sw + self._filters_lw
+    # @property
+    # def image_mask_list(self):
+    #     """List of allowable coronagraphic mask values."""
+    #     return self._coron_masks
+    # @property
+    # def pupil_mask_list(self):
+    #     """List of allowable pupil mask values."""
+    #     return ['CLEAR','FLAT'] + self._lyot_masks + self._grism + self._dhs + self._weak_lens
 
     def plot_bandpass(self, ax=None, color=None, title=None, **kwargs):
         """
@@ -721,330 +630,113 @@ class NIRCam(object):
 
         if ax is None:
             f, ax = plt.subplots(**kwargs)
-        color='indianred' if color is None else color
+        color='C2' if color is None else color
 
         bp = self.bandpass
         w = bp.wave / 1e4; f = bp.throughput
         ax.plot(w, f, color=color, label=bp.name+' Filter', **kwargs)
-        ax.set_xlabel(r'Wavelength ($\mu m$)')
+        ax.set_xlabel('Wavelength ($\mathdefault{\mu m}$)')
         ax.set_ylabel('Throughput')
 
         if title is None:
-            title = bp.name + ' - Mod' + self.module
+            title = bp.name + ' - Module ' + self.module
         ax.set_title(title)
     
         return ax
 
+    # Check consistencies
+    def _validate_wheels(self):
+        """ 
+        Validation to make sure the selected filters and pupils are allowed to be in parallel.
+        """
+        
+        def do_warn(wstr):
+            _log.warning(wstr)
+            _log.warning('Proceed at your own risk!')
+
+        filter     = self._filter
+        pupil_mask = self._pupil_mask
+        image_mask = self._image_mask
+        if self.channel=='long' or self.channel=='LW':
+            channel = 'LW'
+        else:
+            channel = 'SW'
+
+        if image_mask is None: 
+            image_mask = ''
+        if pupil_mask is None: 
+            pupil_mask = ''
+
+        # Weak lenses can only occur in SW modules
+        if ('WEAK LENS' in pupil_mask) and (channel=='LW'):
+            wstr = '{} in pupil is not valid with filter {}.'.format(pupil_mask,filter)
+            wstr = wstr + '\nWeak lens only in SW module.'
+            do_warn(wstr)
+
+        # DHS in SW modules
+        if ('DHS' in pupil_mask) and (channel=='LW'):
+            wstr = '{} in pupil is not valid with filter {}.'.format(pupil_mask,filter)
+            wstr = wstr + '\nDHS only in SW module.'
+            do_warn(wstr)
+            
+        # DHS cannot be paired with F164N or F162M
+        flist = ['F164N', 'F162M']
+        if ('DHS' in pupil_mask) and (filter in flist):
+            wstr = 'Both {} and filter {} exist in same pupil wheel.'.format(pupil_mask,filter)
+            do_warn(wstr)
+
+        # Grisms in LW modules
+        if ('GRISM' in pupil_mask) and (channel=='SW'):
+            wstr = '{} in pupil is not valid with filter {}.'.format(pupil_mask,filter)
+            wstr = wstr + '\nGrisms only in LW module.'
+            do_warn(wstr)
+            
+        # Grisms cannot be paired with any Narrowband filters
+        flist = ['F323N', 'F405N', 'F466N', 'F470N']
+        if ('GRISM' in pupil_mask) and (filter in flist):
+            wstr = 'Both {} and filter {} exist in same pupil wheel.'.format(pupil_mask,filter)
+            do_warn(wstr)
+
+        # MASK430R falls in SW SCA gap and cannot be seen by SW module
+        if ('MASK430R' in image_mask) and (channel=='SW'):
+            wstr = '{} mask is no visible in SW module (filter is {})'.format(image_mask,filter)
+            do_warn(wstr)
+
+        # Need F200W paired with WEAK LENS +4
+        # The F212N2 filter is handled in the read_filter function
+        wl_list = ['WEAK LENS +12 (=4+8)', 'WEAK LENS -4 (=4-8)', 'WEAK LENS +4']
+        if (pupil_mask in wl_list) and (filter!='F200W'):
+            wstr = '{} is only valid with filter F200W.'.format(pupil_mask)
+            do_warn(wstr)
+
+        # Items in the same SW pupil wheel
+        sw2 = ['WEAK LENS +8', 'WEAK LENS -8', 'F162M', 'F164N', 'CIRCLYOT', 'WEDGELYOT']
+        if (filter in sw2) and (pupil_mask in sw2):
+            wstr = '{} and {} are both in the SW Pupil wheel.'.format(filter,pupil_mask)
+            do_warn(wstr)
+
+        # Items in the same LW pupil wheel
+        lw2 = ['F323N', 'F405N', 'F466N', 'F470N', 'CIRCLYOT', 'WEDGELYOT']
+        if (filter in lw2) and (pupil_mask in lw2):
+            wstr = '{} and {} are both in the LW Pupil wheel.'.format(filter,pupil_mask)
+            do_warn(wstr)
     
-    @property
-    def multiaccum(self):
-        """:class:`multiaccum` object"""
-        return self.Detectors[0].multiaccum
-    @property
-    def multiaccum_times(self):
-        """Exposure timings in dictionary
-        
-        t_frame   : Time of a single frame.
-        t_group   : Time of a single group (read frames + drop frames).
-        t_int     : Photon collection time for a single ramp/integration.
-        t_int_tot1: Total time for all frames (reset+read+drop) in a first ramp.
-        t_int_tot2: Total time for all frames (reset+read+drop) in a subsequent ramp.
-        t_exp     : Total photon collection time for all ramps.
-        t_acq     : Total acquisition time to complete exposure with all overheads.
-        """
-        return self.Detectors[0].times_to_dict()
+        # ND_acq must have a LYOT stop, otherwise coronagraphic mask is not in FoV
+        if self.ND_acq and ('LYOT' not in pupil_mask):
+            wstr = 'CIRCLYOT or WEDGELYOT must be in pupil wheel if ND_acq=True.'
+            do_warn(wstr)
 
-    @property
-    def det_info(self):
-        """Dictionary housing detector info parameters and keywords."""
-        return self._det_info
+        # ND_acq and coronagraphic mask are mutually exclusive
+        if self.ND_acq and (image_mask != ''):
+            wstr = 'If ND_acq is set, then mask must be None.'
+            do_warn(wstr)
 
-    @property
-    def pix_scale(self):
-        """Pixel scale in arcsec/pixel (deprecated)"""
-        return self.pixelscale
-    @property
-    def pixelscale(self):
-        """Pixel scale in arcsec/pixel"""
-        return self.Detectors[0].pixelscale
-    @property
-    def well_level(self):
-        """Detector well level in units of electrons"""
-        return self.Detectors[0].well_level
+    def update_detectors(self, verbose=False, **kwargs):
+        """ Update detector operation parameters
 
-    @property
-    def siaf_ap(self):
-        """Science Instrument aperture info class"""
-        return self._siaf_ap
-    @siaf_ap.setter
-    def siaf_ap(self, apname):
-        self.update_from_SIAF(apname)
-        
-    @property
-    def siaf_ap_names(self):
-        """Give all possible SIAF aperture names"""
-        return list(self.siaf_nrc.apernames)
-
-    def get_siaf_apname(self, override=False):
-        """Get SIAF aperture based on instrument settings"""
-
-        # Return already defined ap name
-        if (self._siaf_ap is not None) and (not override):
-            return self.siaf_ap.AperName
-        else:
-            detid = self.Detectors[0].detid
-            wind_mode = self.Detectors[0].wind_mode
-
-            is_lyot = (self.pupil is not None) and ('LYOT' in self.pupil)
-            is_coron = is_lyot and ((self.mask is not None) and ('MASK' in self.mask))
-            
-            is_grism = (self.pupil is not None) and ('GRISM' in self.pupil)
-
-            # Time series filters
-            ts_filters = ['F277W','F356W','F444W','F322W2']
-            # Coronagraphic bar filters
-            swb_filters = ['F182M','F187N','F210M','F212N','F200W']
-            lwb_filters = ['F250M','F300M','F277W','F335M','F360M','F356W','F410M','F430M','F460M','F480M','F444W']
-            # Time series filter
-            ts_filter = ['F277W','F356W','F444W','F322W2']
-
-            # Coronagraphy
-            if is_coron:
-                wstr = 'FULL_' if wind_mode=='FULL' else ''
-                key = 'NRC{}_{}{}'.format(detid,wstr,self.mask)
-                if ('WB' in self.mask) and (self.module=='A') and (self.filter in swb_filters+lwb_filters):
-                    key = key + '_{}'.format(self.filter)
-                if wind_mode=='STRIPE':
-                    key = None
-            # Just Lyot stop without masks, assuming TA aperture
-            elif is_lyot: #and self.ND_acq:
-                tastr = 'TA' if self.ND_acq else 'FSTA'
-                key = 'NRC{}_{}'.format(detid,tastr)
-                if ('CIRC' in self._pupil) and ('SW' in self.channel):
-                    key = key + 'MASK210R'
-                elif ('CIRC' in self._pupil) and ('LW' in self.channel):
-                    key = key + 'MASK430R'
-                elif ('WEDGE' in self._pupil) and ('SW' in self.channel):
-                    key = key + 'MASKSWB'
-                elif ('WEDGE' in self._pupil) and ('LW' in self.channel):
-                    key = key + 'MASKLWB'
-            # Time series grisms
-            elif is_grism and ('GRISM0' in self.pupil) and (self.filter in ts_filters):
-                if wind_mode=='FULL':
-                    key = f'NRC{detid}_GRISM_{self.filter}'
-                elif wind_mode=='STRIPE':
-                    key = 'NRC{}_GRISM{}_{}'.format(detid,self.det_info['ypix'],self.filter)
-                else:
-                    key = None
-            # SW Time Series with LW grism
-            elif wind_mode=='STRIPE':
-                key = 'NRC{}_GRISMTS{:.0f}'.format(detid,self.det_info['ypix'])
-            # WFSS
-            elif is_grism and (wind_mode=='FULL'):
-                gstr = 'GRISMR' if self.pupil=='GRISM0' else 'GRISMC'
-                key = 'NRC{}_FULL_{}_WFSS'.format(detid, gstr)
-            # Subarrays
-            elif wind_mode=='WINDOW':
-                key = 'NRC{}_SUB{}P'.format(detid,self.det_info['xpix'])
-                if key not in self.siaf_ap_names:
-                    key = 'NRC{}_TAPSIMG{}'.format(detid,self.det_info['xpix'])
-                if key not in self.siaf_ap_names:
-                    key = 'NRC{}_TAGRISMTS{}'.format(detid,self.det_info['xpix'])
-                if key not in self.siaf_ap_names:
-                    key = 'NRC{}_TAGRISMTS_SCI_{}'.format(detid,self.filter)
-                if key not in self.siaf_ap_names:
-                    key = 'NRC{}_SUB{}'.format(detid,self.det_info['xpix'])
-            # Full frame generic
-            elif wind_mode=='FULL':
-                key = 'NRC{}_FULL'.format(self.Detectors[0].detid)
-            else:
-                key = None
-
-            # Check if key exists
-            if key in self.siaf_ap_names:
-                _log.info('Suggested SIAF aperture name: {}'.format(key))
-                return key
-            else:
-                _log.warning("Suggested SIAF aperture name '{}' is not defined".format(key))
-                return None
-
-    def get_subarray_name(self, apname=None):
-        """Get JWST NIRCam subarray name"""
-
-        if apname is None:
-            apname = self.get_siaf_apname()
-
-        pupil = self.pupil
-        mask = self.mask 
-        module = self.module
-
-        detid = self.Detectors[0].detid
-        wind_mode = self.Detectors[0].wind_mode
-        ypix = self.det_info['ypix']
-
-        is_lyot = (pupil is not None) and ('LYOT' in pupil)
-        is_coron = is_lyot and ((mask is not None) and ('MASK' in mask))
-        is_ndacq = self.ND_acq
-        is_grism = (pupil is not None) and ('GRISM' in pupil)
-
-        if 'FULL' in wind_mode:
-            subarray_name = 'FULLP' if apname[-1] == 'P' else 'FULL'
-        elif 'STRIPE' in wind_mode:
-            subarray_name = f'SUBGRISM{ypix}'
-        elif is_coron:
-            sub_str = f'SUB{ypix}'
-            mask_str = mask[4:]
-            if ('335R' in mask) and (module == 'A'):
-                subarray_name = sub_str + module
-            else:
-                subarray_name = sub_str + module + mask_str
-        # Just Lyot stop without masks, assuming TA aperture
-        elif is_lyot:
-            mask_str = mask[4:]
-            # Faint source TA
-            if not is_ndacq:
-                subarray_name = 'SUBFS' + module + mask_str
-            elif 'LWB' in mask: # ND TA
-                if 'LWBL' in apname:
-                    subarray_name = 'SUBND' + module + 'LWBL'
-                else:
-                    subarray_name = 'SUBND' + module + 'LWBS'
-            elif 'SWB' in mask: # ND TA
-                if 'SWBS' in apname:
-                    subarray_name = 'SUBND' + module + 'LWBS'
-                else:
-                    subarray_name = 'SUBND' + module + 'LWBL'
-            else:
-                subarray_name = 'SUBND' + module + mask_str
-        else:
-            subarray_name = f'SUB{ypix}P' if apname[-1] == 'P' else f'SUB{ypix}'
-        # TODO: Grism TS TA, Fine phasing (FP), and DHS
-        
-        return subarray_name
-        
-    def update_from_SIAF(self, apname, pupil=None, **kwargs):
-        """Update detector properties based on SIAF aperture"""
-
-        #allap = list(self.siaf_nrc.apernames)
-        if not (apname in self.siaf_ap_names):
-            _log.warning('Cannot find {} in siaf.apernames list.'.format(apname))
-            return
-            
-        if ('NRCALL' in apname) or ('NRCAS' in apname) or ('NRCBS' in apname):
-            _log.warning('{} is not valid. Single detector apertures only.'.format(apname))
-            return
-            
-        # Convert SCA name to detector ID
-        scaname = apname[0:5]
-        module = scaname[3]
-        channel = 'LW' if scaname[-1]=='5' else 'SW'
-        detid = 480 + int(scaname[4]) if module=='A' else 485 + int(scaname[4]) 
-        
-        ap = self.siaf_nrc[apname]
-        xpix = int(ap.XSciSize)
-        ypix = int(ap.YSciSize)
-        if (xpix >= 2048) and (ypix>=2048):
-            wind_mode = 'FULL'
-        elif (xpix >= 2048):
-            wind_mode = 'STRIPE'
-        else:
-            wind_mode = 'WINDOW'
-        
-        xcorn, ycorn = ap.corners('det')
-        indmin = np.where(xcorn+ycorn == np.min(xcorn+ycorn))
-        x0 = int(xcorn[indmin[0][0]])
-        y0 = int(ycorn[indmin[0][0]])
-              
-        # Update pupil and mask info
-        mask = None
-        ND_acq = False
-        filter = None
-        if '_MASKSWB' in apname:
-            pupil = 'WEDGELYOT' if pupil is None else pupil
-            mask  = 'MASKSWB'
-        elif '_MASKLWB' in apname:
-            pupil = 'WEDGELYOT' if pupil is None else pupil
-            mask  = 'MASKLWB'            
-        elif '_MASK210R' in apname:
-            pupil = 'CIRCLYOT' if pupil is None else pupil
-            mask  = 'MASK210R'
-        elif '_MASK335R' in apname:
-            pupil = 'CIRCLYOT' if pupil is None else pupil
-            mask  = 'MASK335R'
-        elif '_MASK430R' in apname:
-            pupil = 'CIRCLYOT' if pupil is None else pupil
-            mask  = 'MASK430R'
-        elif '_GRISMC' in apname:
-            pupil = 'GRISM90' if pupil is None else pupil
-        elif '_GRISM' in apname:
-            pupil = 'GRISM0' if pupil is None else pupil
-
-        # ND Square
-        if '_TAMASK' in apname:
-            ND_acq = True
-            if pupil is None:
-                pupil = 'WEDGELYOT' if 'WB' in apname else 'CIRCLYOT'
-
-        # Look for filter specified in aperture name
-        if ('_F1' in apname) or ('_F2' in apname) or ('_F3' in apname) or ('_F4' in apname):
-            # Find all instances of "_"
-            inds = [pos for pos, char in enumerate(apname) if char == '_']
-            # Filter is always appended to end, but can have different string sizes (F322W2)
-            filter = apname[inds[-1]+1:]
-
-        # Make everything upper case
-        if filter is not None: filter = filter.upper()
-        pupil = 'CLEAR' if pupil is None else pupil.upper()
-        if mask is not None: mask = mask.upper()
-        module = 'A' if module is None else module.upper()
-
-        # Validate all values, set values, and update bandpass
-        # Test and set the intrinsic/hidden variables directly rather than through setters
-        if filter is not None: _check_list(filter, self.filter_list, 'filter')
-        _check_list(pupil, self.pupil_list, 'pupil')
-        _check_list(mask, self.mask_list, 'mask')
-        _check_list(module, ['A','B'], 'module')
-
-        # Save to internal variables
-        self._pupil  = pupil
-        self._mask   = mask
-        self._module = module
-        self._ND_acq = ND_acq
-
-        # Filter stuff
-        fsw_def, flw_def = ('F210M', 'F430M') # Defaults
-        if filter is not None: self._filter = filter
-        try:
-            if self._filter is None:
-                self._filter = fsw_def if 'SW' in channel else flw_def
-        except AttributeError:
-            self._filter = fsw_def if 'SW' in channel else flw_def
-        # If filter doesn't make sense with channel
-        if channel=='SW' and self._filter not in self._filters_sw:
-            self._filter = fsw_def
-        if channel=='LW' and self._filter not in self._filters_lw:
-            self._filter = flw_def
-
-        self._update_bp()		
-        self._validate_wheels()
-        
-        det_kwargs = {'xpix': xpix, 'ypix': ypix, 'x0': x0, 'y0': y0, 
-                      'wind_mode':wind_mode, 'det_list':[detid]}
-        kwargs = merge_dicts(kwargs, det_kwargs)
-        self.update_detectors(**kwargs)
-        self.update_psf_coeff(**kwargs)
-        
-        self._siaf_ap = ap
-
-
-    def update_detectors(self, verbose=False, det_list=None, **kwargs):
-        """
-        Generates a list of detector objects depending on module and channel.
-        This function will get called any time a filter, pupil, mask, or
-        module is modified by the user directly:
-        
-        >>> nrc = pynrc.NIRCam('F430M', ngroup=10, nint=5)
-        >>> nrc.filter = 'F444W'
+        Creates detector object based on :attr:`detector` attribute.
+        This function should be called any time a filter, pupil, mask, or
+        module is modified by the user.
 
         If the user wishes to change any properties of the multiaccum ramp
         or detector readout mode, pass those arguments through this function
@@ -1058,9 +750,6 @@ class NIRCam(object):
         
         Parameters
         ----------
-        det_list : list, None
-            List of detector names (481, 482, etc.) to consider.
-            If not set, then defaults are chosen based on observing mode.
         verbose : bool
             Print out ramp and detector settings.
         
@@ -1094,84 +783,39 @@ class NIRCam(object):
             Number of reset frames within first ramp.
         nr2 : int
             Number of reset frames for subsequent ramps.
-
         """
-
-        # First check if self.det_list already exists
-        # Keep the same if not specified as input parameter
-        if det_list is None:
-            try:
-                det_list = self.det_list
-            except AttributeError: 
-                pass
-
-        # if det_list is still None, set defaults
-        if det_list is None:
-            if self.module=='A':
-                if self.channel=='LW': # Any LW A
-                    det_list = [485]
-                elif (self.mask is None) and ('CLEAR' in self.pupil): # SW A Imaging
-                    det_list = [481] #[481,482,483,484]
-                elif (self.mask is None) and ('WEAK' in self.pupil): # Weak Lens
-                    det_list = [481] #[481,482,483,484]
-                elif ('WEDGELYOT' in self.pupil) or ((self.mask is not None) and ('WB' in self.mask)):
-                    # SW A Bar coronagraph
-                    det_list = [484]
-                elif ('CIRCLYOT' in self.pupil) or ((self.mask is not None) and (('210R' in self.mask) or ('335R' in self.mask))):
-                    det_list = [482]
-                else:
-                    errmsg = 'No detector makes sense here ({} {} {}).'\
-                        .format(self._filter, self._pupil, self._mask)
-                    raise ValueError(errmsg)
-                    
-            if self.module=='B':
-                if self.channel=='LW':
-                    det_list = [490]
-                elif (self.mask is None) and ('CLEAR' in self.pupil):
-                    det_list = [486] #[486,487,488,489]
-                elif (self.mask is None) and ('WEAK' in self.pupil): # Weak Lens
-                    det_list = [486] #[486,487,488,489]
-                elif ('WEDGELYOT' in self.pupil) or ((self.mask is not None) and ('WB' in self.mask)):
-                    det_list = [488]
-                elif ('CIRCLYOT' in self.pupil) or ((self.mask is not None) and (('210R' in self.mask) or ('335R' in self.mask))):
-                    det_list = [486]
-                else:
-                    errmsg = 'No detector makes sense here ({} {} {}).'\
-                        .format(self._filter, self._pupil, self._mask)
-                    raise ValueError(errmsg)
-
-        # Save det_list to self.det_list
-        # This stores the name and order of those in self.Detectros
-        self.det_list = det_list
-
         # Check if kwargs is empty
         if not kwargs:
-            try: kwargs = self.det_info
-            except AttributeError: kwargs = {}
+            try: 
+                kwargs = self.det_info
+            except AttributeError: 
+                kwargs = {}
         else:
-            try: self._det_info.update(kwargs)
-            except AttributeError: self._det_info = kwargs
+            try: 
+                self._det_info.update(kwargs)
+            except AttributeError: 
+                self._det_info = kwargs
             kwargs = self.det_info
 
         # Update detector class
         # For now, it's just easier to delete old instances and start from scratch
         # rather than tracking changes and updating only the changes. That could 
         # get complicated, and I don't think there is a memory leak from deleting
-        # the Detectors instances.
-        try: 
-            del self.Detectors
+        # the Detector instances.
+        try:
+            del self.Detector
         except AttributeError: 
             pass
-        self.Detectors = [DetectorOps(det, **kwargs) for det in det_list]
+        self.Detector = DetectorOps(detector=self.detector, **kwargs)
 
         # Update stored kwargs
-        kw1 = self.Detectors[0].to_dict()
+        kw1 = self.Detector.to_dict()
         _ = kw1.pop('detector', None)
         kw2 = self.multiaccum.to_dict()
         self._det_info = merge_dicts(kw1,kw2)
 
         if verbose:
-            print('New Ramp Settings:')
+            print('New Ramp Settings')
             keys = ['read_mode', 'nf', 'nd2', 'ngroup', 'nint']
             for k in keys:
                 v = self.det_info[k]
@@ -1191,183 +835,24 @@ class NIRCam(object):
             for k in keys:
                 print('  {:<10} : {:>8.3f}'.format(k, ma[k]))
 
+    def update_psf_coeff(self, filter=None, pupil_mask=None, image_mask=None, detector=None, 
+        fov_pix=None, oversample=None, include_si_wfe=None, include_distortions=None, 
+        pupil=None, pupilopd=None, offset_r=None, offset_theta=None, bar_offset=None, 
+        jitter=None, jitter_sigma=None, npsf=None, ndeg=None, nproc=None, quick=None,
+        save=None, force=False, use_legendre=None, **kwargs):
 
-    # Check consistencies with pre-defined readout patterns
-    def _validate_wheels(self):
-        """ 
-        Validation to make sure the selected filters and pupils are allowed to be in parallel.
-        """
-        
-        def do_warn(wstr):
-            _log.warning(wstr)
-            _log.warning('Proceed at your own risk!')
-
-        filter  = self._filter
-        pupil   = self._pupil
-        mask    = self._mask
-        channel = self.channel
-
-        if mask is None: mask = ''
-
-        warn_flag = False
-        # Weak lenses can only occur in SW modules
-        if ('WEAK LENS' in pupil) and (channel=='LW'):
-            wstr = '{} in pupil is not valid with filter {}.'.format(pupil,filter)
-            wstr = wstr + '\nWeak lens only in SW module.'
-            do_warn(wstr)
-
-        # DHS in SW modules
-        if ('DHS' in pupil) and (channel=='LW'):
-            wstr = '{} in pupil is not valid with filter {}.'.format(pupil,filter)
-            wstr = wstr + '\nDHS only in SW module.'
-            do_warn(wstr)
-            
-        # DHS cannot be paird with F164N or F162M
-        flist = ['F164N', 'F162M']
-        if ('DHS' in pupil) and (filter in flist):
-            wstr = 'Both {} and filter {} exist in same pupil wheel.'.format(pupil,filter)
-            do_warn(wstr)
-
-        # Grisms in LW modules
-        if ('GRISM' in pupil) and (channel=='SW'):
-            wstr = '{} in pupil is not valid with filter {}.'.format(pupil,filter)
-            wstr = wstr + '\nGrisms only in LW module.'
-            do_warn(wstr)
-            
-        # Grisms cannot be paired with any Narrowband filters
-        flist = ['F323N', 'F405N', 'F466N', 'F470N']
-        if ('GRISM' in pupil) and (filter in flist):
-            wstr = 'Both {} and filter {} exist in same pupil wheel.'.format(pupil,filter)
-            do_warn(wstr)
-
-        # MASK430R falls in SW SCA gap and cannot be seen by SW module
-        if ('MASK430R' in mask) and (channel=='SW'):
-            wstr = '{} mask is no visible in SW module (filter is {})'.format(mask,filter)
-            do_warn(wstr)
-
-        # Ned F200W paired with WEAK LENS +4
-        # The F212N2 filter is handled in the read_filter function
-        wl_list = ['WEAK LENS +12 (=4+8)', 'WEAK LENS -4 (=4-8)', 'WEAK LENS +4']
-        if (pupil in wl_list) and (filter!='F200W'):
-            wstr = '{} is only valid with filter F200W.'.format(pupil)
-            do_warn(wstr)
-
-        # Items in the same SW pupil wheel
-        sw2 = ['WEAK LENS +8', 'WEAK LENS -8', 'F162M', 'F164N', 'CIRCLYOT', 'WEDGELYOT']
-        if (filter in sw2) and (pupil in sw2):
-            wstr = '{} and {} are both in the SW Pupil wheel.'.format(filter,pupil)
-            do_warn(wstr)
-
-        # Items in the same LW pupil wheel
-        lw2 = ['F323N', 'F405N', 'F466N', 'F470N', 'CIRCLYOT', 'WEDGELYOT']
-        if (filter in lw2) and (pupil in lw2):
-            wstr = '{} and {} are both in the LW Pupil wheel.'.format(filter,pupil)
-            do_warn(wstr)
-    
-        # ND_acq must have a LYOT stop, otherwise coronagraphic mask is not in FoV
-        if self.ND_acq and ('LYOT' not in pupil):
-            wstr = 'CIRCLYOT or WEDGELYOT must be in pupil wheel if ND_acq=True.'
-            do_warn(wstr)
-
-        # ND_acq and coronagraphic mask are mutually exclusive
-        if self.ND_acq and (mask != ''):
-            wstr = 'If ND_acq is set, then mask must be None.'
-            do_warn(wstr)
-
-
-    @property
-    def psf_coeff(self):
-        """Cube of polynomial coefficients used to generate a PSF."""
-        return self._psf_coeff
-    @property
-    def psf_info(self):
-        """Info used to create psf_coeff."""
-        return self._psf_info
-
-    @property
-    def psf_coeff_bg(self):
-        """Cube of polynomial coefficients used to generate a PSF."""
-        return self._psf_coeff_bg
-    @property
-    def psf_info_bg(self):
-        """Info used to create psf_coeff for faint background sources."""
-        return self._psf_info_bg
-
-    @property
-    def wfe_drift(self):
-        """Enable/Disable WFE Drift calculation"""
-        return self._wfe_drift
-    @wfe_drift.setter
-    def wfe_drift(self, value):
-        """Enable/Disable WFE Drift calculation"""
-        # Only update if the value is boolean and it changes
-        if isinstance(value, (bool)):
-            vold = self._wfe_drift; self._wfe_drift = value
-            if vold != self._wfe_drift: 
-                self.update_psf_coeff()
-
-    @property
-    def wfe_field(self):
-        """Enable/Disable Field-depdendent calculation"""
-        return self._wfe_field
-    @wfe_field.setter
-    def wfe_field(self, value):
-        """Enable/Disable Field-depdendent calculation"""
-        # Only update if the value is boolean and it changes
-        if isinstance(value, (bool)):
-            vold = self._wfe_field; self._wfe_field = value
-            if vold != self._wfe_field: 
-                self.update_psf_coeff(include_si_wfe=True)
-
-    # @property
-    # def bar_offset(self):
-    #     """Offset position along bar mask (arcsec)."""
-    #     return self._bar_offset
-    # @bar_offset.setter
-    # def bar_offset(self, value):
-    #     """Set the bar offset position and update coefficients"""
-    #     # Only update if the value changes
-    #     if self.mask is None:
-    #         self._bar_offset = 0 #None
-    #     elif self.mask[-2:]=='WB':
-    #         vold = self._bar_offset
-    #         # Value limits between -10 and 10
-    #         if np.abs(value)>10:
-    #             value = 10 if value>0 else -10
-    #             msg1 = 'bar_offset value must be between -10 and 10.'
-    #             msg2 = 'Setting to {}.'.format(value)
-    #             _log.warning('{} {}'.format(msg1,msg2))
-            
-    #         self._bar_offset = value
-    #         if vold != self._bar_offset: 
-    #             self.update_psf_coeff(bar_offset=self._bar_offset)
-    #     else:
-    #         self._bar_offset = 0
-                        
-    def update_psf_coeff(self, fov_pix=None, oversample=None, 
-        offset_r=None, offset_theta=None, tel_pupil=None, opd=None,
-        include_si_wfe=None, jitter=None, jitter_sigma=None,
-        bar_offset=None, save=None, force=False, use_legendre=None,
-        quick=None, nproc=None, **kwargs):
-        """Create new PSF coefficients.
-        
-        Generates a set of PSF coefficients from a sequence of WebbPSF images.
-        These coefficients can then be used to generate a sequence of
-        monochromatic PSFs (useful if you need to make hundreds of PSFs
-        for slitless grism or DHS observations) that are subsequenty
-        convolved with the the instrument throughput curves and stellar
-        spectrum. The coefficients are stored in :attr:`psf_coeff` attribute.
-
-        A corresponding dictionary :attr:`psf_info` is also saved that contains
-        the size of the FoV (in detector pixels) and oversampling factor 
-        that was used to generate the coefficients.
-
-        While originally created for coronagraphy, grism, and DHS observations,
-        this method is actually pretty quick, so it has become the default
-        for imaging as well.
+        """ Update properties and create new set of PSF coefficients
 
         Parameters
         ----------
+        filter : str
+            Name of NIRCam filter.
+        pupil_mask : str, None
+            NIRCam pupil elements such as grisms or lyot stops (default: None).
+        image_mask : str, None
+            Specify which coronagraphic occulter (default: None).
+        detector : str
+            Name of detector (e.g., "NRCA5")
         fov_pix : int
             Size of the PSF FoV in pixels (real SW or LW pixels).
             The defaults depend on the type of observation.
@@ -1376,249 +861,503 @@ class NIRCam(object):
         oversample : int
             Factor to oversample during WebbPSF calculations.
             Default 2 for coronagraphy and 4 otherwise.
-        offset_r : float
-            Radial offset from the center in arcsec.
-        offset_theta : float
-            Position angle for radial offset, in degrees CCW.
-        opd : tuple, str, or HDUList
-            Tuple (file, slice) or filename or HDUList specifying OPD.
         include_si_wfe : bool
             Include SI WFE measurements? Default=True.
-        tel_pupil : str or HDUList
+        include_distortions : bool
+            If True, will include a distorted version of the PSF.
+        pupil : str
             File name or HDUList specifying telescope entrance pupil.
-        jitter : str
-            Either 'gaussian' or 'none'.
+            Can also be an OTE_Linear_Model.
+        pupilopd : tuple or HDUList
+            Tuple (file, slice) or filename or HDUList specifying OPD.
+            Can also be an OTE_Linear_Model.
+        wfe_drift : float
+            Wavefront error drift amplitude in nm.
+        offset_r : float
+            Radial offset from the center in arcsec.
+        offset_theta :float
+            Position angle for radial offset, in degrees CCW.
+        bar_offset : float
+            For wedge masks, option to set the PSF position across the bar.
+        jitter : str or None
+            Currently either 'gaussian' or None.
         jitter_sigma : float
             If ``jitter = 'gaussian'``, then this is the size of the blurring effect.
+        npsf : int
+            Number of wavelengths/PSFs to fit.
+        ndeg : int
+            Degree of polynomial fit.
+        nproc : int
+            Manual setting of number of processor cores to break up PSF calculation.
+            If set to None, this is determined based on the requested PSF size,
+            number of available memory, and hardware processor cores. The automatic
+            calculation endeavors to leave a number of resources available to the
+            user so as to not crash the user's machine. 
         save : bool
             Save the resulting PSF coefficients to a file? (default: True)
         force : bool
             Forces a recalcuation of PSF even if saved PSF exists. (default: False)
         quick : bool
-            Only perform a fit over the filter bandpass with a lower default 
-            polynomial degree fit. Default is True for narroband, False otherwise.
+            Only perform a fit over the filter bandpass with a lower default polynomial degree fit.
+            (default: True)
         use_legendre : bool
-            Fit with Legendre polynomials, an orthonormal basis set.
+            Fit with Legendre polynomials, an orthonormal basis set. (default: True)
         """
 
-        if oversample is None: 
-            # Check if oversample has already been saved
-            try: oversample = self._psf_info['oversample']
-            except (AttributeError, KeyError):
-                oversample = 2 if 'LYOT' in self.pupil else 4
+        update_coeffs = False
+        update_bg_coeffs = False
 
-        # Default size is 33 pixels
-        fov_default = 33
-        # Use dictionary as case/switch statement
-        pup_switch = {
-            'WEAK LENS +4': 101,
-            'WEAK LENS +8': 161,
-            'WEAK LENS -8': 161,
-            'WEAK LENS +12 (=4+8)': 221,
-            'WEAK LENS -4 (=4-8)': 101,
-            'GRISM0': 33,
-            'GRISM90': 33,
-            'CIRCLYOT': 33,
-            'WEDGELYOT': 33,
+        # filter, pupil mask, and image mask
+        if (filter is not None) and (filter != self.filter):
+            update_coeffs = True
+            update_bg_coeffs = True
+            self.filter = filter
+        if (pupil_mask is not None) and (pupil_mask != self.pupil_mask):
+            update_coeffs = True
+            update_bg_coeffs = True
+            if (pupil_mask.upper()=="CLEAR") or (pupil_mask.upper()=="NONE"):
+                pupil_mask = None
+            self.pupil_mask = pupil_mask
+        if (image_mask is not None) and (image_mask != self.image_mask):
+            update_coeffs = True
+            update_bg_coeffs = True
+            if (image_mask.upper()=="CLEAR") or (image_mask.upper()=="NONE"):
+                image_mask = None
+            self.image_mask = image_mask
+        if (fov_pix is not None) and (fov_pix != self.fov_pix):
+            update_coeffs = True
+            self.fov_pix = fov_pix
+        if (oversample is not None) and (oversample != self.oversample):
+            update_coeffs = True
+            self.oversample = oversample
+
+        # SI WFE and distortions
+        if (include_si_wfe is not None) and (include_distortions != self.include_distortions):
+            update_coeffs = True
+            self.include_si_wfe = include_si_wfe
+        if (include_distortions is not None) and (include_distortions != self.include_distortions):
+            update_coeffs = True
+            self.include_distortions = include_distortions
+
+        # Pupil OPD information
+        if (pupil is not None) and (self.pupil != pupil):
+            update_coeffs = True
+            self.pupil = pupil
+        if (pupilopd is not None) and (self.pupilopd != pupilopd):
+            update_coeffs = True
+            self.pupilopd = pupilopd
+
+        # Source and mask offsetting
+        if (offset_r is not None) and (self.options.get('source_offset_r') != offset_r):
+            update_coeffs = True
+            self.options['source_offset_r'] = offset_r
+        if (offset_theta is not None) and (self.options.get('source_offset_theta') != offset_theta):
+            update_coeffs = True
+            self.options['source_offset_theta'] = offset_theta
+        if (bar_offset is not None) and (self.options.get('bar_offset') != bar_offset):
+            update_coeffs = True
+            self.options['bar_offset'] = bar_offset
+
+        # Jitter
+        if (jitter is not None) and (self.options.get('jitter') != jitter):
+            update_coeffs = True
+            self.options['jitter'] = jitter
+        if (jitter_sigma is not None) and (self.options.get('jitter_sigma') != jitter_sigma):
+            update_coeffs = True
+            self.options['jitter_sigma'] = jitter_sigma
+
+        # Misecellaneous
+        if (npsf is not None) and (self.npsf != npsf):
+            update_coeffs = True
+            self.npsf = npsf
+        if (ndeg is not None) and (self.ndeg != ndeg):
+            update_coeffs = True
+            self.ndeg = ndeg
+        if (quick is not None) and (self.quick != quick):
+            update_coeffs = True
+            self.quick = quick
+        if (use_legendre is not None) and (self.use_legendre != use_legendre):
+            update_coeffs = True
+            self.use_legendre = use_legendre
+
+        # Detector update
+        if detector is not None:
+            update_coeffs = True
+            self.detector = get_detname(detector)
+            self.update_detectors()
+
+        # Regenerate PSF coefficients
+        if update_coeffs:
+            del self.psf_coeff, self.psf_coeff_header
+            save = True if save is None else save
+            self.gen_psf_coeff(save=save, force=force, nproc=nproc, **kwargs)
+
+            # Update drift, field, and mask-dependent coefficients
+            if self._psf_coeff_mod['wfe_drift'] is not None:
+                self.gen_wfedrift_coeff()
+            if self._psf_coeff_mod['si_field'] is not None:
+                self.gen_wfefield_coeff()
+            if self._psf_coeff_mod['si_mask'] is not None:
+                self.gen_wfemask_coeff()
+
+        # Update bg class if filter or pupil mask is changed
+        if update_bg_coeffs:
+            self._update_bg_class()
+
+    @property
+    def psf_info(self):
+        """PSF parameters"""
+        d_options = self.options
+
+        d = {
+            'fov_pix': self.fov_pix, 'oversample': self.oversample,
+            'npsf': self.npsf, 'ndeg': self.ndeg, 'include_si_wfe': self.include_si_wfe,
+            'include_distortions': self.include_distortions,
+            'jitter': d_options.get('jitter'), 'jitter_sigma': d_options.get('jitter_sigma'), 
+            'offset_r': d_options.get('source_offset_r', 0), 'offset_theta': d_options.get('source_offset_theta', 0),
+            'bar_offset': d_options.get('bar_offset', None), 
+            'pupil': self.pupil, 'pupilopd': self.pupilopd, 
         }
-        # If fov_pix was not set, then choose here
-        if fov_pix is None:
-            try: 
-                fov_pix = self._psf_info['fov_pix']
-            except (AttributeError, KeyError): 
-                fov_pix = pup_switch.get(self.pupil, fov_default)
 
-        oversample = int(oversample)
-        fov_pix = int(fov_pix)
-        # Only want to throw this warning once based on self._fov_pix_warn status
-        # Skip if weak lens or coronagraphic mask
-        do_warn = True
-        do_warn = False if  'WEAK' in self.pupil else do_warn
-        do_warn = False if self.mask is not None else do_warn
+        return d
+
+    @property
+    def multiaccum(self):
+        """:class:`multiaccum` object"""
+        return self.Detector.multiaccum
+    @property
+    def multiaccum_times(self):
+        """Exposure timings in dictionary
         
-        if (np.mod(fov_pix,2)==0) and (self._fov_pix_warn==True) and (do_warn): 
-            _log.warning('fov_pix specified as even; PSF is centered at pixel corners.')
-            self._fov_pix_warn = False
-            
-        _log.info('Updating PSF coeff with fov_pix={} and oversample={}'.\
-            format(fov_pix,oversample))
-    
-        if offset_r is None:
-            try: offset_r = self._psf_info['offset_r']
-            except (AttributeError, KeyError): offset_r = 0
-        if offset_theta is None:
-            try: offset_theta = self._psf_info['offset_theta']
-            except (AttributeError, KeyError): offset_theta = 0
-        if tel_pupil is None:
-            try: tel_pupil = self._psf_info['tel_pupil']
-            except (AttributeError, KeyError): tel_pupil = None
-        if include_si_wfe is None:
-            try: include_si_wfe = self._psf_info['include_si_wfe']
-            except (AttributeError, KeyError): include_si_wfe = True
-        if use_legendre is None:
-            try: use_legendre = self._psf_info['use_legendre']
-            except (AttributeError, KeyError): use_legendre = True
-        if jitter is None:
-            try: jitter = self._psf_info['jitter']
-            except (AttributeError, KeyError): jitter = 'gaussian'
-        if jitter_sigma is None:
-            try: jitter_sigma = self._psf_info['jitter_sigma']
-            except (AttributeError, KeyError): jitter_sigma = 0.007
-        if opd is None:
-            try: opd = self._psf_info['opd']
-            except (AttributeError, KeyError): opd = opd_default
-        if save is None:
-            try: save = self._psf_info['save']
-            except (AttributeError, KeyError): save = True
-        if nproc is None:
-            try: nproc = self._psf_info['nproc']
-            except (AttributeError, KeyError): nproc = None
-        if quick is None:
-            try: quick = self._psf_info['quick']
-            except (AttributeError, KeyError): 
-                # Turn on `quick` narrowband filter
-                quick = True if 'N' in self.filter else False        
-            
-        if jitter=='none':
-            jitter = None
+        t_frame   : Time of a single frame.
+        t_group   : Time of a single group (read frames + drop frames).
+        t_int     : Photon collection time for a single ramp/integration.
+        t_int_tot1: Total time for all frames (reset+read+drop) in a first ramp.
+        t_int_tot2: Total time for all frames (reset+read+drop) in a subsequent ramp.
+        t_exp     : Total photon collection time for all ramps.
+        t_acq     : Total acquisition time to complete exposure with all overheads.
+        """
+        return self.Detector.times_to_dict()
 
-        self._psf_info={'fov_pix':fov_pix, 'oversample':oversample, 'quick':quick, 'nproc':nproc,
-            'offset_r':offset_r, 'offset_theta':offset_theta, 
-            'tel_pupil':tel_pupil, 'save':save, 'force':force, 'use_legendre':use_legendre,
-            'include_si_wfe':include_si_wfe, 'opd':opd, 'jitter':jitter, 'jitter_sigma':jitter_sigma}
-        self._psf_coeff, self._psf_coeff_hdr = gen_psf_coeff(self.bandpass, self.pupil, self.mask, self.module, 
-            **self._psf_info)
+    @property
+    def det_info(self):
+        """Dictionary housing detector info parameters and keywords."""
+        return self._det_info
+    @property
+    def well_level(self):
+        """Detector well level in units of electrons"""
+        return self.Detector.well_level
 
-        # WFE Drift is handled differently than the rest of the parameters
-        # This is because we use wfed_coeff() to determine the resid values
-        # for the PSF coefficients to generate a drifted PSF in gen_psf().
-        if self._wfe_drift:
-            _log.info('Calculating WFE Drift for fov_pix={} and oversample={}'.\
-                      format(fov_pix,oversample))
-            wfe_kwargs = dict(self._psf_info)
-            wfe_kwargs['pupil']  = self._pupil
-            wfe_kwargs['mask']   = self._mask
-            wfe_kwargs['module'] = self.module
-            wfe_kwargs['bar_offset'] = 0
+    @property
+    def siaf_ap_names(self):
+        """Give all possible SIAF aperture names"""
+        return list(self.siaf.apernames)
 
-            # fov_pix should not be more than some size to preserve memory
-            fov_max = self._fovmax_wfedrift if wfe_kwargs['oversample']<=4 else self._fovmax_wfedrift / 2 
-            if wfe_kwargs['fov_pix']>fov_max:
-                wfe_kwargs['fov_pix'] = fov_max if (wfe_kwargs['fov_pix'] % 2 == 0) else fov_max + 1
-            
-            res1, res2 = wfed_coeff(self.bandpass, **wfe_kwargs)
-            self._psf_coeff_mod['wfe_drift'] = res1
-            self._psf_coeff_mod['wfe_drift_lxmap'] = res2
+    def get_siaf_apname(self):
+        """Get SIAF aperture based on instrument settings"""
+
+        # Return already defined ap name
+        # if (self.siaf_ap is not None) and (not override):
+        #     return self.siaf_ap.AperName
+        # else:
+        detid = self.Detector.detid
+        wind_mode = self.Detector.wind_mode
+
+        is_lyot = self.is_lyot
+        is_coron = self.is_coron
+        is_grism = self.is_grism
+
+        pupil_mask = self.pupil_mask
+        if self.channel=='long' or self.channel=='LW':
+            channel = 'LW'
         else:
-            self._psf_coeff_mod['wfe_drift'] = None
-            self._psf_coeff_mod['wfe_drift_lxmap'] = None
+            channel = 'SW'
 
-        # Field dependent coefficient modifications
-        # Don't do this for masked PSFs
-        if (self._mask is None) and self._wfe_field:
-            _log.info('Calculating SI WFE Field for fov_pix={} and oversample={}'.\
-                      format(fov_pix,oversample))
-            field_kwargs = dict(self._psf_info)
-            field_kwargs['pupil']  = self._pupil
-            field_kwargs['mask']   = self._mask
-            field_kwargs['module'] = self.module
+        # Time series filters
+        ts_filters = ['F277W','F356W','F444W','F322W2']
+        # Coronagraphic bar filters
+        swb_filters = ['F182M','F187N','F210M','F212N','F200W']
+        lwb_filters = [
+            'F250M','F300M','F277W','F335M','F360M',
+            'F356W','F410M','F430M','F460M','F480M','F444W'
+        ]
 
-            # fov_pix should not be more than some size, otherwise memory issues
-            fov_max = self._fovmax_wfefield if field_kwargs['oversample']<=4 else self._fovmax_wfefield / 2
-            if field_kwargs['fov_pix']>fov_max:
-                field_kwargs['fov_pix'] = fov_max if (field_kwargs['fov_pix'] % 2 == 0) else fov_max + 1
-                
-                new_shape = field_kwargs['fov_pix']*field_kwargs['oversample']
-                coeff0 = np.array([pad_or_cut_to_size(im, new_shape) for im in self._psf_coeff])
+        # Coronagraphy
+        if is_coron:
+            wstr = 'FULL_' if wind_mode=='FULL' else ''
+            key = 'NRC{}_{}{}'.format(detid,wstr,self.image_mask)
+            if ('WB' in self.image_mask) and (self.module=='A') and (self.filter in swb_filters+lwb_filters):
+                key = key + '_{}'.format(self.filter)
+            if wind_mode=='STRIPE':
+                key = None
+        # Just Lyot stop without masks, assuming TA aperture
+        elif is_lyot: #and self.ND_acq:
+            tastr = 'TA' if self.ND_acq else 'FSTA'
+            key = 'NRC{}_{}'.format(detid,tastr)
+            if ('CIRC' in pupil_mask) and ('SW' in channel):
+                key = key + 'MASK210R'
+            elif ('CIRC' in pupil_mask) and ('LW' in channel):
+                key = key + 'MASK430R' if ('F4' in self.filter) else key + 'MASK335R'
+            elif ('WEDGE' in pupil_mask) and ('SW' in channel):
+                key = key + 'MASKSWB'
+            elif ('WEDGE' in pupil_mask) and ('LW' in channel):
+                key = key + 'MASKLWB'
+        # Time series grisms
+        elif is_grism and ('GRISMR' in pupil_mask) and (self.filter in ts_filters):
+            if wind_mode=='FULL':
+                key = f'NRC{detid}_GRISM_{self.filter}'
+            elif wind_mode=='STRIPE':
+                key = 'NRC{}_GRISM{}_{}'.format(detid,self.det_info['ypix'],self.filter)
             else:
-                coeff0 = self._psf_coeff
-
-            res, v2grid, v3grid = field_coeff_resid(self.bandpass, coeff0, **field_kwargs)
-            self._psf_coeff_mod['si_field'] = res
-            self._psf_coeff_mod['si_field_v2grid'] = v2grid
-            self._psf_coeff_mod['si_field_v3grid'] = v3grid
+                key = None
+        # SW Time Series with LW grism
+        elif wind_mode=='STRIPE':
+            key = 'NRC{}_GRISMTS{:.0f}'.format(detid,self.det_info['ypix'])
+        # WFSS
+        elif is_grism and (wind_mode=='FULL'):
+            key = 'NRC{}_FULL_{}_WFSS'.format(detid, pupil_mask)
+        # Subarrays
+        elif wind_mode=='WINDOW':
+            key = 'NRC{}_SUB{}P'.format(detid,self.det_info['xpix'])
+            if key not in self.siaf_ap_names:
+                key = 'NRC{}_TAPSIMG{}'.format(detid,self.det_info['xpix'])
+            if key not in self.siaf_ap_names:
+                key = 'NRC{}_TAGRISMTS{}'.format(detid,self.det_info['xpix'])
+            if key not in self.siaf_ap_names:
+                key = 'NRC{}_TAGRISMTS_SCI_{}'.format(detid,self.filter)
+            if key not in self.siaf_ap_names:
+                key = 'NRC{}_SUB{}'.format(detid,self.det_info['xpix'])
+        # Full frame generic
+        elif wind_mode=='FULL':
+            key = 'NRC{}_FULL'.format(detid)
         else:
-            self._psf_coeff_mod['si_field'] = None
-            self._psf_coeff_mod['si_field_v2grid'] = None 
-            self._psf_coeff_mod['si_field_v3grid'] = None 
+            key = None
 
-        # Bar masks can have offsets
-        if (self.mask is not None) and ('WB' in self.mask):            
-            wedge_kwargs = dict(self._psf_info)
-            wedge_kwargs['module'] = self.module
-            self._psf_coeff_mod_wedge = wedge_coeff(self._filter, self._pupil, self._mask, **wedge_kwargs)
-
+        # Check if key exists
+        if key in self.siaf_ap_names:
+            _log.info('Suggested SIAF aperture name: {}'.format(key))
+            return key
         else:
-            self._psf_coeff_mod_wedge = None
+            _log.warning("Suggested SIAF aperture name '{}' is not defined".format(key))
+            return None
 
+    def get_subarray_name(self, apname=None):
+        """Get JWST NIRCam subarray name"""
 
-        # If there is a coronagraphic spot or bar, then we may need to
-        # generate another background PSF for sensitivity information.
-        # It's easiest just to ALWAYS do a small footprint without the
-        # coronagraphic mask and save the PSF coefficients. 
-        # WARNING: This assumes throughput of the coronagraphic substrate
-        if self._mask is not None:
-            self._psf_info_bg = {'fov_pix':self._fov_pix_bg, 'oversample':oversample, 
-                'offset_r':0, 'offset_theta':0, 'bar_offset': 0, 'tel_pupil':tel_pupil, 
-                'opd':opd, 'jitter':jitter, 'jitter_sigma':jitter_sigma, 'use_legendre':use_legendre, 
-                'include_si_wfe':include_si_wfe, 'save':save, 'force':force}
-            self._psf_coeff_bg, self._psf_coeff_bg_hdr = gen_psf_coeff(self.bandpass, self.pupil, None, self.module, 
-                **self._psf_info_bg)
+        if apname is None:
+            apname = self.get_siaf_apname()
 
-            # Update off-axis WFE drift
-            if self._wfe_drift:
-                _log.info('Calculating WFE Drift for fov_pix={} and oversample={}'.\
-                        format(self._fov_pix_bg, oversample))
-                wfe_kwargs = dict(self._psf_info_bg)
-                wfe_kwargs['pupil']  = self._pupil
-                wfe_kwargs['mask']   = None
-                wfe_kwargs['module'] = self.module
+        pupil_mask = self.pupil_mask
+        image_mask = self.image_mask 
+        module = self.module
 
-                # fov_pix should not be more than some size, otherwise memory issues
-                fov_max = self._fovmax_wfedrift if wfe_kwargs['oversample']>4 else self._fovmax_wfedrift / 2 
-                if wfe_kwargs['fov_pix']>fov_max:
-                    wfe_kwargs['fov_pix'] = fov_max if (wfe_kwargs['fov_pix'] % 2 == 0) else fov_max + 1
+        detid = self.Detector.detid
+        wind_mode = self.Detector.wind_mode
+        ypix = self.det_info['ypix']
 
-                res1, res2 = wfed_coeff(self.bandpass, **wfe_kwargs)
-                self._psf_coeff_bg_mod['wfe_drift'] = res1
-                self._psf_coeff_bg_mod['wfe_drift_lxmap'] = res2
+        is_lyot = self.is_lyot
+        is_coron = self.is_coron
+        is_grism = self.is_grism
+        is_ndacq = self.ND_acq
+
+        if 'FULL' in wind_mode:
+            subarray_name = 'FULLP' if apname[-1] == 'P' else 'FULL'
+        elif 'STRIPE' in wind_mode:
+            subarray_name = f'SUBGRISM{ypix}'
+        elif is_coron:
+            sub_str = f'SUB{ypix}'
+            mask_str = image_mask[4:]
+            if ('335R' in image_mask) and (module == 'A'):
+                subarray_name = sub_str + module
             else:
-                self._psf_coeff_bg_mod['wfe_drift'] = None
-                self._psf_coeff_bg_mod['wfe_drift_lxmap'] = None
-
-            if self._wfe_field:
-                _log.info('Calculating SI WFE Field for fov_pix={} and oversample={}'.\
-                        format(self._fov_pix_bg, oversample))
-                field_kwargs = dict(self._psf_info)
-                field_kwargs['pupil']  = self._pupil
-                field_kwargs['mask']   = None
-                field_kwargs['module'] = self.module
-
-                # fov_pix should not be more than some size, otherwise memory issues
-                fov_max = self._fovmax_wfefield if field_kwargs['oversample']>4 else self._fovmax_wfefield / 2
-                if field_kwargs['fov_pix']>fov_max:
-                    field_kwargs['fov_pix'] = fov_max if (field_kwargs['fov_pix'] % 2 == 0) else fov_max + 1
-                    
-                    new_shape = field_kwargs['fov_pix']*field_kwargs['oversample']
-                    coeff0 = np.array([pad_or_cut_to_size(im, new_shape) for im in self._psf_coeff])
+                subarray_name = sub_str + module + mask_str
+        # Just Lyot stop without masks, assuming TA aperture
+        elif is_lyot:
+            mask_str = image_mask[4:]
+            # Faint source TA
+            if not is_ndacq:
+                subarray_name = 'SUBFS' + module + mask_str
+            elif 'LWB' in image_mask: # ND TA
+                if 'LWBL' in apname:
+                    subarray_name = 'SUBND' + module + 'LWBL'
                 else:
-                    coeff0 = self._psf_coeff
-
-                res, v2grid, v3grid = field_coeff_resid(self.bandpass, coeff0, **field_kwargs)
-                self._psf_coeff_bg_mod['si_field'] = res
-                self._psf_coeff_bg_mod['si_field_v2grid'] = v2grid 
-                self._psf_coeff_bg_mod['si_field_v3grid'] = v3grid 
+                    subarray_name = 'SUBND' + module + 'LWBS'
+            elif 'SWB' in image_mask: # ND TA
+                if 'SWBS' in apname:
+                    subarray_name = 'SUBND' + module + 'LWBS'
+                else:
+                    subarray_name = 'SUBND' + module + 'LWBL'
             else:
-                self._psf_coeff_bg_mod['si_field'] = None
-                self._psf_coeff_bg_mod['si_field_v2grid'] = None 
-                self._psf_coeff_bg_mod['si_field_v3grid'] = None 
-
+                subarray_name = 'SUBND' + module + mask_str
         else:
-            # Background info is the same as main foreground PSF
-            self._psf_info_bg  = self._psf_info
-            self._psf_coeff_bg = self._psf_coeff
-            self._psf_coeff_bg_hdr = self._psf_coeff_hdr
-            self._psf_coeff_bg_mod = self._psf_coeff_mod
+            subarray_name = f'SUB{ypix}P' if apname[-1] == 'P' else f'SUB{ypix}'
+        # TODO: Grism TS TA, Fine phasing (FP), and DHS
+        
+        return subarray_name
+        
+    def update_from_SIAF(self, apname, pupil_mask=None, **kwargs):
+        """Update detector properties based on SIAF aperture"""
+
+        if apname is None:
+            _log.warn('Input apname was None. Returning...')
+            return
+
+        if not (apname in self.siaf_ap_names):
+            # raise ValueError(f'Cannot find {apname} in siaf.apernames list.')
+            _log.warn(f'Cannot find {apname} in siaf.apernames list. Returing...')
+            return
+            
+        if ('NRCALL' in apname) or ('NRCAS' in apname) or ('NRCBS' in apname):
+            raise ValueError(f'{apname} is not valid. Single detector apertures only.')
+            
+        # Convert SCA name to detector ID
+        scaname = apname[0:5]
+        module = scaname[3]
+        channel = 'LW' if scaname[-1]=='5' else 'SW'
+        detid = 480 + int(scaname[4]) if module=='A' else 485 + int(scaname[4]) 
+        
+        siaf_ap = self.siaf[apname]
+        xpix = int(siaf_ap.XSciSize)
+        ypix = int(siaf_ap.YSciSize)
+        if (xpix >= 2048) and (ypix>=2048):
+            wind_mode = 'FULL'
+        elif (xpix >= 2048):
+            wind_mode = 'STRIPE'
+        else:
+            wind_mode = 'WINDOW'
+        
+        # Get lower left corner from siaf info
+        # This is in full frame detector coordinates
+        x0, y0 = np.array(siaf_ap.dms_corner()) - 1
+              
+        # Update pupil and mask info
+        image_mask = None
+        ND_acq = False
+        filter = None
+        # Coronagraphic mask observations
+        if 'MASK' in apname:
+            # Set default pupil
+            if pupil_mask is None:
+                pupil_mask = 'WEDGELYOT' if 'WB' in apname else 'CIRCLYOT'
+
+            # Set mask occulter for all full arrays (incl. TAs) and science subarrays
+            # Treats full array TAs like a full coronagraphic observation
+            if ('FULL' in apname) or ('_MASK' in apname):
+                if ('MASKSWB' in apname):
+                    image_mask  = 'MASKSWB'
+                elif ('MASKLWB' in apname):
+                    image_mask  = 'MASKLWB'            
+                elif ('MASK210R' in apname):
+                    image_mask  = 'MASK210R'
+                elif ('MASK335R' in apname):
+                    image_mask  = 'MASK335R'
+                elif ('MASK430R' in apname):
+                    image_mask  = 'MASK430R'
+                if 'TA' in apname:
+                    _log.info('Full TA apertures are treated similar to coronagraphic observations.')
+                    _log.info("To calculate SNR, self.update_psf_coeff(image_mask='CLEAR') and set self.ND_acq.")
+            elif '_TAMASK' in apname:
+                # For small TA subarray, turn off mask and enable ND square
+                image_mask = None
+                ND_acq = True
+            elif '_FSTAMASK in apname':
+                # Not really anything to do here
+                image_mask = None
+            else:
+                _log.warn(f'No mask setting for {apname}')
+
+        # Grism observations
+        elif 'GRISM' in apname:
+            if ('_GRISMC' in apname): # GRISMC WFSS
+                pupil_mask = 'GRISMC' if pupil_mask is None else pupil_mask
+            elif ('_GRISMR' in apname): # GRISMR WFSS
+                pupil_mask = 'GRISMR' if pupil_mask is None else pupil_mask
+            elif ('_GRISMTS' in apname): # SW apertures in parallel w/ LW GRISMTS
+                pupil_mask = 'WLP8' if pupil_mask is None else pupil_mask
+            elif ('_TAGRISMTS' in apname): # GRISM TA have no pupil
+                pupil_mask = None
+            elif ('_GRISM' in apname): # Everything else is GRISMR
+                pupil_mask = 'GRISMR' if pupil_mask is None else pupil_mask
+            else:
+                _log.warn(f'No grism setting for {apname}')
+
+
+        # Look for filter specified in aperture name
+        if ('_F1' in apname) or ('_F2' in apname) or ('_F3' in apname) or ('_F4' in apname):
+            # Find all instances of "_"
+            inds = [pos for pos, char in enumerate(apname) if char == '_']
+            # Filter is always appended to end, but can have different string sizes (F322W2)
+            filter = apname[inds[-1]+1:]
+
+        # Save to internal variables
+        self.pupil_mask = pupil_mask
+        self.image_mask = image_mask
+        self._ND_acq = ND_acq
+
+        # Filter stuff
+        # Defaults
+        fsw_def, flw_def = ('F210M', 'F430M') 
+        if filter is not None: 
+            self.filter = filter
+        try:
+            if self._filter is None:
+                self._filter = fsw_def if 'SW' in channel else flw_def
+        except AttributeError:
+            self._filter = fsw_def if 'SW' in channel else flw_def
+        # If filter doesn't make sense with channel
+        if channel=='SW' and self._filter not in self._filters_sw:
+            self._filter = fsw_def
+        if channel=='LW' and self._filter not in self._filters_lw:
+            self._filter = flw_def
+	
+        self._validate_wheels()
+        
+        # Update detector
+        det_kwargs = {'xpix': xpix, 'ypix': ypix, 'x0': x0, 'y0': y0, 'wind_mode':wind_mode}
+        kwargs = merge_dicts(kwargs, det_kwargs)
+        self.detector = get_detname(scaname)
+        self.update_detectors(**kwargs)
+
+        # Update aperture
+        self.siaf_ap = siaf_ap
+
+    def calc_psf_from_coeff(self, sp=None, return_oversample=True, return_hdul=True,
+        wfe_drift=None, coord_vals=None, coord_frame='tel', use_bg_psf=False, **kwargs):
+
+        kwargs['sp'] = sp
+        kwargs['return_oversample'] = return_oversample
+        kwargs['return_hdul'] = return_hdul
+        kwargs['wfe_drift'] = wfe_drift
+        kwargs['coord_vals'] = coord_vals
+        kwargs['coord_frame'] = coord_frame
+
+        if use_bg_psf:
+            return self._nrc_bg.calc_psf_from_coeff(**kwargs)
+        else:
+            return super().calc_psf_from_coeff(**kwargs)
+
+    def calc_psf(self, sp=None, return_oversample=True, return_hdul=True,
+        wfe_drift=None, coord_vals=None, coord_frame='tel', use_bg_psf=False, 
+        **kwargs):
+
+        kwargs['sp'] = sp
+        kwargs['return_oversample'] = return_oversample
+        kwargs['return_hdul'] = return_hdul
+        kwargs['wfe_drift'] = wfe_drift
+        kwargs['coord_vals'] = coord_vals
+        kwargs['coord_frame'] = coord_frame
+
+        _log.info("Calculating PSF from WebbPSF parent function")
+        log_prev = conf.logging_level
+        setup_logging('WARN', verbose=False)
+
+        if use_bg_psf:
+            res = self._nrc_bg.calc_psf(**kwargs)
+        else:
+            res = super().calc_psf(**kwargs)
+
+        setup_logging(log_prev, verbose=False)
+        return res
 
 
     def sat_limits(self, sp=None, bp_lim=None, units='vegamag', well_frac=0.8,
@@ -1669,7 +1408,10 @@ class NIRCam(object):
         Returns K-Band Limiting Magnitude for F430M assuming A0V source.
         """	
 
-        if bp_lim is None: bp_lim = self.bandpass
+        from webbpsf_ext.psfs import gen_image_from_coeff
+        from copy import deepcopy
+
+        bp_lim = self.bandpass if bp_lim is None else bp_lim
         quiet = False if verbose else True
 
         # Total time spent integrating minus the reset frame
@@ -1684,25 +1426,32 @@ class NIRCam(object):
                 nf = ma.nf; nd1 = ma.nd1; nd2 = ma.nd2
                 t_sat = (nd1 + ngroup*nf + (ngroup-1)*nd2) * t_frame
 
-        well_level = self.Detectors[0].well_level
+        # Full well level
+        well_level = self.well_level
 
-        kwargs = merge_dicts(kwargs, self._psf_info)
+        # kwargs = merge_dicts(kwargs, self._psf_info)
 
         # We don't necessarily need the entire image, so cut down to size
         # 1. Create a temporary image at bp avg wavelength (monochromatic)
         # 2. Find x,y position of max PSF
         # 3. Cut out postage stamp region around that PSF coeff
-        psf_coeff = self._psf_coeff
-        psf_coeff_hdr = self._psf_coeff_hdr.copy()
-        if (trim_psf is not None) and (trim_psf < kwargs['fov_pix']):
+        psf_coeff = self.psf_coeff
+        psf_coeff_hdr = deepcopy(self.psf_coeff_header)
+        fov_pix, osamp = (psf_coeff_hdr['FOVPIX'], psf_coeff_hdr['OSAMP'])
+        if (trim_psf is not None) and (trim_psf < fov_pix):
             
             # Quickly create a temporary PSF to find max value location
             wtemp = np.array([bp_lim.wave[0], bp_lim.avgwave(), bp_lim.wave[-1]])
             ttemp = np.array([bp_lim.sample(w) for w in wtemp])
             bptemp = S.ArrayBandpass(wave=wtemp, throughput=ttemp)
-            psf_temp, psf_temp_over = gen_image_coeff(bptemp, coeff=psf_coeff, coeff_hdr=psf_coeff_hdr, \
-                fov_pix=kwargs['fov_pix'], oversample=kwargs['oversample'], \
-                return_oversample=True)
+            # psf_temp, psf_temp_over = gen_image_coeff(bptemp, coeff=psf_coeff, coeff_hdr=psf_coeff_hdr, \
+            #     fov_pix=fov_pix, oversample=osamp, return_oversample=True)
+
+            res = gen_image_from_coeff(self, psf_coeff, psf_coeff_hdr, nwaves=3, return_oversample=True)
+            if self.is_grism:
+                _, psf_temp_over = res
+            else:
+                psf_temp_over = res
 
             # Amount to shift PSF
             yind, xind = np.argwhere(psf_temp_over==psf_temp_over.max())[0]
@@ -1710,43 +1459,109 @@ class NIRCam(object):
             ysh = int(yind - ypix/2)
             xsh = int(xind - xpix/2)
 
-            fov_pix_over = trim_psf * kwargs['oversample']
+            fov_pix_over = trim_psf * osamp
             coeff = []
             for im in psf_coeff:
-                im = fshift(im, -xsh, -ysh)
+                im = fshift(im, -xsh, -ysh, interp='cubic')
                 im = pad_or_cut_to_size(im, (fov_pix_over,fov_pix_over))
                 coeff.append(im)
             psf_coeff = np.array(coeff)
-            kwargs['fov_pix'] = trim_psf
             psf_coeff_hdr['FOVPIX'] = trim_psf
 
-        satlim = sat_limit_webbpsf(self.bandpass, pupil=self.pupil, mask=self.mask,
-            module=self.module, full_well=well_level, well_frac=well_frac,
-            sp=sp, bp_lim=bp_lim, int_time=t_sat, quiet=quiet, units=units, 
-            pix_scale=self.pix_scale, coeff=psf_coeff, coeff_hdr=psf_coeff_hdr, **kwargs)
+        satlim = saturation_limits(self, psf_coeff=psf_coeff, psf_coeff_hdr=psf_coeff_hdr, sp=sp, units=units, 
+                                   bp_lim=bp_lim, int_time=t_sat, full_well=well_level, well_frac=well_frac,
+                                   verbose=verbose, **kwargs)
 
         return satlim
+
+
+    def saturation_levels(self, sp, full_size=True, ngroup=2, image=None, **kwargs):
+        """ Saturation levels
+        
+        Create image showing level of saturation for each pixel.
+        Can either show the saturation after one frame (default)
+        or after the ramp has finished integrating (ramp_sat=True).
+        
+        Parameters
+        ----------
+        sp : :mod:`pysynphot.spectrum`
+            A pysynphot spectral object (normalized).
+        full_size : bool
+            Expand (or contract) to size of detector array?
+            If False, use fov_pix size.
+        ngroup : int
+            How many group times to determine saturation level?
+            If this number is higher than the total groups in ramp, 
+            then a warning is produced. The default is ngroup=2, 
+            A value of 0 corresponds to the so-called "zero-frame," 
+            which is the very first frame that is read-out and saved 
+            separately. This is the equivalent to ngroup=1 for RAPID
+            and BRIGHT1 observations.
+        image : ndarray
+            Rather than generating an image on the fly, pass a pre-computed
+            slope image. Overrides `sp` and `full_size`
+        
+        """
+        
+        assert ngroup >= 0
+        
+        is_grism = self.is_grism
+
+        t_frame = self.multiaccum_times['t_frame']
+        t_int = self.multiaccum_times['t_int']
+        if ngroup==0:
+            t_sat = t_frame
+        else:
+            ma = self.multiaccum
+            nf = ma.nf; nd1 = ma.nd1; nd2 = ma.nd2
+            t_sat = (nd1 + ngroup*nf + (ngroup-1)*nd2) * t_frame
+        
+        if t_sat>t_int:
+            _log.warning('ngroup*t_group is greater than t_int.')
+    
+        # Slope image of input 
+        if image is not None:
+            return image * t_sat / self.well_level
+        else:
+
+            image = self.calc_psf_from_coeff(sp=sp, return_oversample=False, return_hdul=False)
+            if is_grism: 
+                wave, image = image
+            
+            if full_size:
+                shape = (self.det_info['ypix'], self.det_info['xpix'])
+                image = pad_or_cut_to_size(image, shape)
+            
+            # Add in zodi background to full image
+            image += self.bg_zodi(**kwargs)
+
+            # Well levels after "saturation time"
+            sat_level = image * t_sat / self.well_level
+    
+            if is_grism:
+                return (wave, sat_level)
+            else:
+                return sat_level
 
     def sensitivity(self, nsig=10, units=None, sp=None, verbose=False, **kwargs):
         """Sensitivity limits.
         
         Convenience function for returning the point source (and surface brightness)
-        sensitivity for the given instrument setup. See bg_sensitivity() for more
-        details.
+        sensitivity for the given instrument setup. See `sensitivities` function 
+        for more details.
 
         Parameters
         ----------
-        sp : :mod:`pysynphot.spectrum`
-            Input spectrum to use for determining sensitivity.
-            Only the spectral shape matters, unless ``forwardSNR=True``.
         nsig : int, float
             Desired nsigma sensitivity (default 10).
         units : str
             Output units (defaults to uJy for grisms, nJy for imaging).
+        sp : :mod:`pysynphot.spectrum`
+            Input spectrum to use for determining sensitivity.
+            Only the spectral shape matters, unless ``forwardSNR=True``.
         verbose : bool
             Print result details.
             
-
         Keyword Args
         ------------
         forwardSNR : bool
@@ -1765,43 +1580,36 @@ class NIRCam(object):
             Takes priority over dw_bin. Value will get rounded up to nearest int.
         """	
 
-        quiet = False if verbose else True
-
-        pix_scale = self.pix_scale
-        well_level = self.well_level
         tf = self.multiaccum_times['t_frame']
 
-        det = self.Detectors[0]
+        det = self.Detector
         ktc = det.ktc
         rn = det.read_noise
         idark = det.dark_current
         p_excess = det.p_excess
 
+        pupil_mask = '' if self.pupil_mask is None else self.pupil_mask
 
         kw1 = self.multiaccum.to_dict()
-        kw2 = self._psf_info_bg
-        kw3 = {'rn':rn, 'ktc':ktc, 'idark':idark, 'p_excess':p_excess}
-        kwargs = merge_dicts(kwargs,kw1,kw2,kw3)
+        kw2 = {'rn':rn, 'ktc':ktc, 'idark':idark, 'p_excess':p_excess}
+        kwargs = merge_dicts(kwargs,kw1,kw2)
         if 'ideal_Poisson' not in kwargs.keys():
             kwargs['ideal_Poisson'] = True
             
         # Always use the bg coeff
-        psf_coeff = self._psf_coeff_bg
-        psf_coeff_hdr = self._psf_coeff_bg_hdr.copy()
+        psf_coeff = self._nrc_bg.psf_coeff
+        psf_coeff_hdr = self._nrc_bg.psf_coeff_header.copy()
+        fov_pix, osamp = (psf_coeff_hdr['FOVPIX'], psf_coeff_hdr['OSAMP'])
         # We don't necessarily need the entire image, so cut down to size for speed
-        if not ('WEAK LENS' in self.pupil):
+        if (not ('WEAK LENS' in pupil_mask)) and (fov_pix > 33):
             fov_pix = 33
-            fov_pix_over = fov_pix * kwargs['oversample']
-            coeff = []
-            for im in psf_coeff:
-                coeff.append(pad_or_cut_to_size(im, (fov_pix_over,fov_pix_over)))
-            psf_coeff = np.array(coeff)
+            fov_pix_over = fov_pix * osamp
+            psf_coeff = np.array([pad_or_cut_to_size(im, (fov_pix_over,fov_pix_over)) for im in psf_coeff])
             kwargs['fov_pix'] = fov_pix
             psf_coeff_hdr['FOVPIX'] = fov_pix
 
-        bglim = bg_sensitivity(self.bandpass, self.pupil, self.mask, self.module,
-            pix_scale=pix_scale, sp=sp, units=units, nsig=nsig, tf=tf, quiet=quiet, 
-            coeff=psf_coeff, coeff_hdr=psf_coeff_hdr, **kwargs)
+        bglim = sensitivities(self, psf_coeff=psf_coeff, psf_coeff_hdr=psf_coeff_hdr,
+            sp=sp, units=units, nsig=nsig, tf=tf, verbose=verbose, **kwargs)
     
         return bglim
 
@@ -1843,55 +1651,104 @@ class NIRCam(object):
         """
     
         # Dark image
-        if ('FLAT' in self.pupil):
+        if self.is_dark:
             return 0
 
         bp = self.bandpass
         waveset   = bp.wave
         sp_zodi   = zodi_spec(zfact, **kwargs)
         obs_zodi  = S.Observation(sp_zodi, bp, waveset)
-        fzodi_pix = obs_zodi.countrate() * (self.pix_scale/206265.0)**2
+        fzodi_pix = obs_zodi.countrate() * (self.pixelscale/206265.0)**2
         
         # Recommend a zfact value if ra, dec, and thisday specified
         if 'ra' in kwargs.keys():
             sp_zodi_temp   = zodi_spec(zfact=1)
             obs_zodi_temp  = S.Observation(sp_zodi_temp, bp, waveset)
-            fzodi_pix_temp = obs_zodi_temp.countrate() * (self.pix_scale/206265.0)**2
+            fzodi_pix_temp = obs_zodi_temp.countrate() * (self.pixelscale/206265.0)**2
             zf_rec = fzodi_pix / fzodi_pix_temp
             str1 = 'Using ra,dec,thisday keywords can be relatively slow. \n'
             str2 = '\tFor your specified loc and date, we recommend using zfact={:.1f}'.format(zf_rec)
-            _log.warning(str1 + str2)
+            _log.warn(str1 + str2)
 
         # Don't forget about Lyot mask attenuation (not in bandpass throughput)
-        if ('LYOT' in self.pupil):
+        if self.is_lyot:
             fzodi_pix *= 0.19
 
         return fzodi_pix
 
-    def bg_zodi_image(self, zfact=None, **kwargs):
+    def bg_zodi_image(self, zfact=None, frame='sci', **kwargs):
         """Zodiacal light image
         
         Returns an image of background Zodiacal light emission
-        in e-/sec/pix. 
+        in e-/sec in specified coordinate frame.
+
+        Parameters
+        ----------
+        zfact : float
+            Factor to scale Zodiacal spectrum (default 2.5)
+        frame : str
+            Return in 'sci' or 'det' coordinates?
+
+        Keyword Args
+        ------------
+        ra : float
+            Right ascension in decimal degrees
+        dec : float
+            Declination in decimal degrees
+        thisday : int
+            Calendar day to use for background calculation.  
+            If not given, will use the average of visible calendar days.
+
+        Notes
+        -----
+        Representative values for zfact:
+
+            * 0.0 - No zodiacal emission
+            * 1.0 - Minimum zodiacal emission from JWST-CALC-003894
+            * 1.2 - Required NIRCam performance
+            * 2.5 - Average (default)
+            * 5.0 - High
+            * 10.0 - Maximum
         """
 
+        detid = self.Detector.detid
         x0, y0 = (self.det_info['x0'], self.det_info['y0'])
         xpix, ypix = (self.det_info['xpix'], self.det_info['ypix'])
-        sp_zodi = zodi_spec(zfact, **kwargs)
 
-        detid = self.Detectors[0].detid
+        # Dark image
+        if self.is_dark:
+            return np.zeros([ypix,xpix])
 
-        if ('GRISM' in self.pupil):
+        bp = self.bandpass
+        waveset   = bp.wave
+        sp_zodi   = zodi_spec(zfact, **kwargs)
+        obs_zodi  = S.Observation(sp_zodi, bp, waveset)
+        fzodi_pix = obs_zodi.countrate() * (self.pixelscale/206265.0)**2
+
+        # Get equivalent 
+        if 'ra' in kwargs.keys():
+            sp_zodi_temp   = zodi_spec(zfact=1)
+            obs_zodi_temp  = S.Observation(sp_zodi_temp, bp, waveset)
+            fzodi_pix_temp = obs_zodi_temp.countrate() * (self.pixelscale/206265.0)**2
+            zfact = fzodi_pix / fzodi_pix_temp
+            _ = kwargs.pop('ra')
+            _ = kwargs.pop('dec')
+            _ = kwargs.pop('thisday')
+
+        filter = self.filter
+        pupil_mask = self.pupil_mask
+
+        if self.is_grism:
             # sci coords
-            im_bg = grism_background_image(self.filter, self.pupil, self.module, sp_zodi, **kwargs)
+            im_bg = grism_background_image(filter, pupil=pupil_mask, module=self.module, sp_bg=sp_zodi, **kwargs)
             # Convert to det coords and crop
             im_bg = sci_to_det(im_bg, detid)
             im_bg = im_bg[y0:y0+ypix, x0:x0+xpix]
             # Back to sci coords
             im_bg = det_to_sci(im_bg, detid)
-        elif (self.mask is not None) and ('LYOT' in self.pupil):
+        elif self.is_coron or self.coron_substrate:
             # Create full image, then crop based on detector configuration
-            im_bg = build_mask_detid(detid, oversample=1, ref_mask=self.mask, pupil=self.pupil)
+            im_bg = build_mask_detid(detid, oversample=1, pupil=pupil_mask, filter=self.filter)
             if im_bg is None:
                 # In the event the specified detid has no coronagraphic mask
                 # This includes ['A1', 'A3', 'B2', 'B4']
@@ -1909,559 +1766,20 @@ class NIRCam(object):
             # No spatial structures for direct imaging an certain Lyot masks.
             im_bg = np.ones([ypix,xpix]) * self.bg_zodi(zfact, **kwargs)
 
-        return im_bg
-        
-    def saturation_levels(self, sp, full_size=True, ngroup=2, image=None, **kwargs):
-        """ Saturation levels
-        
-        Create image showing level of saturation for each pixel.
-        Can either show the saturation after one frame (default)
-        or after the ramp has finished integrating (ramp_sat=True).
-        
-        Parameters
-        ----------
-        sp : :mod:`pysynphot.spectrum`
-            A pysynphot spectral object (normalized).
-        full_size : bool
-            Expand (or contract) to size of detector array?
-            If False, use fov_pix size.
-        ngroup : int
-            How many group times to determine saturation level?
-            If this number is higher than the total groups in ramp, 
-            then a warning is produced. The default is ngroup=2, 
-            A value of 0 corresponds to the so-called "zero-frame," 
-            which is the very first frame that is read-out and saved 
-            separately. This is the equivalent to ngroup=1 for RAPID
-            and BRIGHT1 observations.
-        image : ndarray
-            Rather than generating an image on the fly, pass a pre-computed
-            slope image. Overrides `sp` and `full_size`
-        
-        """
-        
-        assert ngroup >= 0
-        
-        if (self.pupil is not None) and ('GRISM' in self.pupil): 
-            is_grism = True
+        # Clear reference pixels
+        # im_bg = sci_to_det(im_bg, detid)
+        # mask_ref = self.Detector.mask_ref
+        # im_bg[mask_ref] = 0
+        # im_bg = det_to_sci(im_bg, detid)
+
+        if frame=='det':
+            return sci_to_det(im_bg, detid)
+        elif frame=='sci':
+            return im_bg
         else:
-            is_grism = False
+            raise ValueError(f"frame {frame} not recognized. Use either 'sci' or 'det'.")
 
-        t_frame = self.multiaccum_times['t_frame']
-        t_int = self.multiaccum_times['t_int']
-        if ngroup==0:
-            t_sat = t_frame
-        else:
-            ma = self.multiaccum
-            nf = ma.nf; nd1 = ma.nd1; nd2 = ma.nd2
-            t_sat = (nd1 + ngroup*nf + (ngroup-1)*nd2) * t_frame
         
-        if t_sat>t_int:
-            _log.warning('ngroup*t_group is greater than t_int.')
-    
-        # Slope image of input 
-        if image is not None:
-            return image * t_sat / self.well_level
-        else:
-
-            image = self.gen_psf(sp)
-            if is_grism: 
-                wave, image = image
-            
-            if full_size:
-                shape = (self.det_info['ypix'], self.det_info['xpix'])
-                image = pad_or_cut_to_size(image, shape)
-            
-            # Add in zodi background to full image
-            image += self.bg_zodi(**kwargs)
-
-            # Well levels after "saturation time"
-            sat_level = image * t_sat / self.well_level
-    
-            if is_grism:
-                return (wave, sat_level)
-            else:
-                return sat_level
-                
-    def siafap_sci_coords(self, coord_vals=None, coord_frame='tel'):
-        """
-        Return the detector, sci position, and full frame aperture name
-        for a set of coordiante values.
-        """
-
-        # Get a refernece point if coord_vals not set
-        if coord_vals is None:
-            try:
-                coord_vals = self.siaf_ap.reference_point(coord_frame)
-            except:
-                _log.warning("`self.siaf_ap` may not be set")
-                apname = self.get_siaf_apname()
-                if apname is None:
-                    _log.warning('No suitable aperture name defined to determine ref coords')
-                    return None, None, None
-                else:
-                    _log.warning('`self.siaf_ap` not defined; assuming {}'.format(apname))
-                    ap = self.siaf_nrc[apname]
-                    coord_vals = ap.reference_point(coord_frame)
-
-
-        # Determine V2/V3 coordinates
-        detector = detector_position = apname = None
-        v2 = v3 = None
-        cframe = coord_frame.lower()
-        if cframe=='tel':
-            v2, v3 = coord_vals
-        elif cframe in ['det', 'sci', 'idl']:
-            x, y = coord_vals[0], coord_vals[1]
-            try:
-                v2, v3 = self.siaf_ap.convert(x,y, cframe, 'tel')
-            except: 
-                apname = self.get_siaf_apname()
-                if apname is None:
-                    _log.warning('No suitable aperture name defined to determine V2/V3 coordinates')
-                else:
-                    _log.warning('`self.siaf_ap` not defined; assuming {}'.format(apname))
-                    ap = self.siaf_nrc[apname]
-                    v2, v3 = ap.convert(x,y,cframe, 'tel')
-                _log.warning('Update `self.siaf_ap` for more specific conversions to V2/V3.')
-        else:
-            _log.warning("coord_frame setting '{}' not recognized.".format(coord_frame))
-
-        # Update detector, pixel position, and apname to pass to 
-        if v2 is not None:
-            res = Tel2Sci_info(self.channel, (v2, v3), output='sci', return_apname=True)
-            detector, detector_position, apname = res
-
-        return (detector, detector_position, apname)
-
-
-    def gen_webbpsf(self, sp=None, return_oversample=False, use_bg_psf=False, 
-                    wfe_drift=None, coord_vals=None, coord_frame='tel', 
-                    bar_offset=None, return_hdul=False, **kwargs):
-
-        """
-        Anything in psf_info can be overridden by directly setting a keyword
-        in this function.
-        """
-
-        if use_bg_psf:
-            psf_info = self._psf_info_bg.copy()
-        else:
-            psf_info = self._psf_info.copy()
-
-        psf_info['pupil'] = self.pupil
-        psf_info['mask'] = self.mask
-        psf_info['module'] = self.module
-
-        psf_info['wfe_drift'] = wfe_drift
-        psf_info['bar_offset'] = bar_offset
-
-        psf_info['sp_norm'] = sp
-
-        # Determine V2/V3 coordinates
-        if coord_vals is not None:
-            detector, detector_position, apname = self.siafap_sci_coords(coord_vals, coord_frame)
-        else:
-            detector = detector_position = apname = None
-
-        if (coord_vals is not None) and (detector is None):
-            _log.warning("`gen_webbpsf` will continue with default PSF.")
-
-        psf_info['detector'] = detector
-        psf_info['detector_position'] = detector_position
-        psf_info['apname'] = apname
-
-        # Merge kwargs into psf_info
-        for k in list(kwargs.keys()):
-            psf_info[k] = kwargs[k]
-        
-        hdul = gen_webbpsf_psf(self.bandpass, **psf_info)
-
-        psf, psf_over = (hdul[1].data, hdul[0].data)
- 
-        if return_hdul: # Return HDUList
-            return hdul
-        elif return_oversample: # Return just PSF (detector and oversampled versions)
-            return psf, psf_over
-        else: # Return just detector sampled version
-            return psf
-
-
-    def gen_psf(self, sp=None, return_oversample=False, use_bg_psf=False, 
-                wfe_drift=None, coord_vals=None, coord_frame='tel', 
-                bar_offset=None, return_hdul=False, **kwargs):
-        """PSF image
-        
-        Create a PSF image from instrument settings. The image is noiseless and
-        doesn't take into account any non-linearity or saturation effects, but is
-        convolved with the instrument throughput. Pixel values are in counts/sec.
-        The result is effectively an idealized slope image (no background).
-
-        If no spectral dispersers (grisms or DHS), then this returns a single
-        image or list of images if sp is a list of spectra. By default, it returns
-        only the detector-sampled PSF, but setting return_oversample=True will
-        also return a set of oversampled images as a second output.
-
-        Parameters
-        ----------
-        sp : :mod:`pysynphot.spectrum`
-            If not specified, the default is flat in phot lam 
-            (equal number of photons per spectral bin).
-            The default is normalized to produce 1 count/sec within that bandpass,
-            assuming the telescope collecting area and instrument bandpass. 
-            Coronagraphic PSFs will further decrease this due to the smaller pupil
-            size and coronagraphic spot. 
-        return_oversample : bool
-            If True, then also returns the oversampled version of the PSF
-        use_bg_psf : bool
-            If a coronagraphic observation, off-center PSF is different.
-        wfe_drift : float or None
-            Wavefront error drift amplitude in nm.
-            The attribute :attr:`wfe_drift` needs to be set to True.
-        coord_vals : tuple or None
-            Coordinates (in arcsec or pixels) to calculate field-dependent PSF.
-            The attribute :attr:`wfe_field` must be True.
-        coord_frame : str
-            Type of desired output coordinates. 
-
-                * 'tel': arcsecs V2,V3
-                * 'sci': pixels, in conventional DMS axes orientation
-                * 'det': pixels, in raw detector read out axes orientation
-                * 'idl': arcsecs relative to aperture reference location.
-
-        bar_offset : float or None
-            For bar masks, the position along the bar to place the PSF (arcsec).
-            Use :func:`~pynrc.nrc_utils.offset_bar` for filter-dependent locations.
-            If both set to None, then decide location based on selected filter. 
-            A positive value will move the source to the right when viewing 
-            V2 to the left and V3 up.
-        return_hdul : bool
-            TODO: Return PSFs in an HDUList rather than set of arrays
-        """
-
-        if use_bg_psf:
-            psf_coeff_hdr = self._psf_coeff_bg_hdr
-            psf_coeff     = self._psf_coeff_bg
-            psf_info      = self._psf_info_bg
-        else:
-            psf_coeff_hdr = self._psf_coeff_hdr
-            psf_coeff     = self._psf_coeff
-            psf_info      = self._psf_info
-
-        # Coeff modification variable
-        psf_coeff_mod = 0 
-
-        # Modify PSF coefficients based on WFE drift
-        if wfe_drift is None: 
-            wfe_drift = 0
-        if (wfe_drift>0) and (self.wfe_drift==False):
-            _log.warning("`wfe_drift` keyword is set, but `self.wfe_drift` is False. Toggle `self.wfe_drift=True` to use this feature.")
-            _log.warning("`gen_psf` will continue with `wfe_drift=0`.")
-        elif (wfe_drift>0) and self.wfe_drift:
-            if use_bg_psf:
-                cf_fit = self._psf_coeff_bg_mod['wfe_drift'] 
-                lxmap  = self._psf_coeff_bg_mod['wfe_drift_lxmap'] 
-            else:
-                cf_fit = self._psf_coeff_mod['wfe_drift'] 
-                lxmap  = self._psf_coeff_mod['wfe_drift_lxmap'] 
-
-            cf_fit_shape = cf_fit.shape
-            cf_fit = cf_fit.reshape([cf_fit.shape[0], -1])
-            cf_mod = jl_poly(np.array([wfe_drift]), cf_fit, use_legendre=True, lxmap=lxmap)
-            cf_mod = cf_mod.reshape(cf_fit_shape[1:])
-            # Pad cf_mod array with 0s if undersized
-            if not np.allclose(psf_coeff.shape, cf_mod.shape):
-                new_shape = psf_coeff.shape[1:]
-                cf_mod_resize = np.array([pad_or_cut_to_size(im, new_shape) for im in cf_mod])
-                cf_mod = cf_mod_resize
-            psf_coeff_mod += cf_mod
-
-        # Modify PSF coefficients based on field-dependent
-        nfield = 1
-        if (coord_vals is not None) and (self.wfe_field==False):
-            _log.warning("coord_vals keyword is set, but `self.wfe_field` is False. Toggle `self.wfe_field=True` to use this feature.")
-            _log.warning("`gen_psf` will continue with default PSF.")
-        elif (coord_vals is not None) and self.wfe_field:
-            if use_bg_psf:
-                cf_fit = self._psf_coeff_bg_mod['si_field'] 
-                v2grid  = self._psf_coeff_bg_mod['si_field_v2grid'] 
-                v3grid  = self._psf_coeff_bg_mod['si_field_v3grid']
-            else:
-                cf_fit = self._psf_coeff_mod['si_field'] 
-                v2grid  = self._psf_coeff_mod['si_field_v2grid'] 
-                v3grid  = self._psf_coeff_mod['si_field_v3grid'] 
-
-            if cf_fit is None:
-                _log.warning('No field dependence for this PSF; on-axis coronagraphy???')
-            else:
-                # Determine V2/V3 coordinates
-                v2 = v3 = None
-                cframe = coord_frame.lower()
-                if cframe=='tel':
-                    v2, v3 = coord_vals
-                    v2, v3 = (v2/60., v3/60.) # convert to arcmin
-                elif cframe in ['det', 'sci', 'idl']:
-                    x, y = coord_vals[0], coord_vals[1]
-                    try:
-                        v2, v3 = self.siaf_ap.convert(x,y, cframe, 'tel')
-                        v2, v3 = (v2/60., v3/60.) # convert to arcmin
-                    except: 
-                        apname = self.get_siaf_apname()
-                        if apname is None:
-                            _log.warning('No suitable aperture name defined to determine V2/V3 coordiantes')
-                        else:
-                            _log.warning('self.siaf_ap not defined; assuming {}'.format(apname))
-                            ap = self.siaf_nrc[apname]
-                            v2, v3 = ap.convert(x,y,cframe, 'tel')
-                            v2, v3 = (v2/60., v3/60.)
-                        _log.warning('Update self.siaf_ap for more specific conversions to V2/V3.')
-                else:
-                    _log.warning("coord_frame setting '{}' not recognized.".format(coord_frame))
-                    _log.warning("`gen_psf` will continue with default PSF.")
-
-                # PSF Modifications
-                if (v2 is not None):
-                    # print(v2,v3)
-                    nfield = np.size(v2)
-                    cf_mod = field_coeff_func(v2grid, v3grid, cf_fit, v2, v3)
-                    # Pad cf_mod array with 0s if undersized
-                    psf_cf_dim = len(psf_coeff.shape)
-                    if not np.allclose(psf_coeff.shape, cf_mod.shape[-psf_cf_dim:]):
-                        new_shape = psf_coeff.shape[1:]
-                        cf_mod_resize = np.array([pad_or_cut_to_size(im, new_shape) for im in cf_mod])
-                        cf_mod = cf_mod_resize
-                    psf_coeff_mod += cf_mod 
-
-        # Add PSF coefficient modifications due to wedge/bar offset
-        if (use_bg_psf==False) and (self.mask is not None) and ('WB' in self.mask):
-            # Automatically determine offset position based on filter
-            if bar_offset is None:
-                r_bar, th_bar = self.offset_bar(self._filter, self.mask)
-                # Want th_bar to be -90 so that r_bar matches webbpsf
-                ### Has been added to nrc_util.offset_bar() ###
-                # if th_bar>0: 
-                #     r_bar  = -1 * r_bar
-                #     th_bar = -1 * th_bar
-                bar_offset = r_bar # arcsec
-
-            # Interpolate coefficient offset if not 0
-            if bar_offset != 0:
-                cf_fit = self._psf_coeff_mod_wedge
-                cf_fit = cf_fit.reshape([cf_fit.shape[0], -1])
-                cf_mod = jl_poly(np.array([bar_offset]), cf_fit)
-                cf_mod = cf_mod.reshape(psf_coeff.shape)
-                psf_coeff_mod += cf_mod
-                
-        psf_coeff = psf_coeff + psf_coeff_mod
-        del psf_coeff_mod
-
-        # if multiple field points were present, we want to return PSF for each
-        if nfield>1:
-            psf_all = []
-            for ii in range(nfield):
-                coeff = psf_coeff[ii]
-                psf = gen_image_coeff(self.bandpass, sp_norm=sp,
-                                    pupil=self.pupil, mask=self.mask, module=self.module,
-                                    coeff=coeff, coeff_hdr=psf_coeff_hdr, 
-                                    fov_pix=psf_info['fov_pix'], oversample=psf_info['oversample'],
-                                    return_oversample=return_oversample, **kwargs)
-                psf_all.append(psf)
-            return psf_all
-        else:
-            psf = gen_image_coeff(self.bandpass, sp_norm=sp,
-                                pupil=self.pupil, mask=self.mask, module=self.module,
-                                coeff=psf_coeff, coeff_hdr=psf_coeff_hdr, 
-                                fov_pix=psf_info['fov_pix'], oversample=psf_info['oversample'],
-                                return_oversample=return_oversample, **kwargs)
-            return psf
-    
-
-    def gen_exposures(self, sp=None, im_slope=None, file_out=None, return_results=None,
-                      targ_name=None, timeFileNames=False, DMS=True, det_name=None, 
-                      dark=True, bias=True, det_noise=True, nproc=None, **kwargs):
-        """Generate raw mock data.
-        
-        Create a series of ramp integration saved to FITS files based on
-        the current NIRCam settings. This method calls the :func:`gen_fits`
-        function, which in turn calls the detector noise generator 
-        :mod:`~pynrc.simul.ngNRC`.
-
-        Only works on one detector at a time.
-
-        Currently, this image simulator does NOT take into account:
-        
-            - QE variations across a pixel's surface
-            - Intrapixel Capacitance (IPC)
-            - Post-pixel Coupling (PPC) due to ADC "smearing"
-            - Pixel non-linearity
-            - Persistence/latent image
-            - Optical distortions
-            - Zodiacal background roll off for grism edges
-            - Cosmic Rays
-            
-        TODO: Double-check the output for grism data w.r.t sci_to_det().
-
-
-        Parameters
-        ----------
-        im_slope : numpy array, None
-            Pass the slope image directly. If not set, then a slope
-            image will be created from the input spectrum keyword. This
-            should include zodiacal light emission, but not dark current.
-            Make sure this array is in detector coordinates.
-        sp : :mod:`pysynphot.spectrum`, None
-            A pysynphot spectral object. If not specified, then it is
-            assumed that we're looking at blank sky.
-        targ_name : str, None
-            A target name for the exposure file's header.
-        file_out : str, None
-            Path and name of output FITs files. Time stamps will
-            be automatically inserted for unique file names if
-            ``timeFileNames=True``.
-        timeFileNames : bool
-            Save the exposure times in the file name? This is useful to see 
-            the timing, but also makes it a little harder to combine INTs 
-            later for DMS simulations.
-        DMS : bool
-            Create DMS data file and header format? Otherwise, the output is
-            more similar to ISIM CV2/3 and OTIS campaigns.
-        return_results : bool, None
-            By default, we return results if file_out is not set and
-            the results are not returned if file_out is set. This decision
-            is based on the large amount of data and memory usage this 
-            method may incur if the results were always returned by default.
-            Instead, it's better to save the FITs to disk, especially if 
-            NINTs is large. We include the return_results keyword if the 
-            user would like to do both (or neither).
-        det_name : str, None
-            Name of detector (A1-B5). If not found or set to None, then the 
-            first detector in `self.det_list` and `self.Detectors` is used.
-        dark : bool
-            Include the dark current?
-        bias : bool
-            Include the bias frame?
-        nproc : int
-            Advanced usage to explicitly specify the number of processors to use. 
-            Otherwise, a function is called to determine the optimum number of 
-            processes based on available memory and number of ramps being generated.
-        det_noise: bool
-            Include detector noise components? If set to False, then only 
-            perform Poisson noise. Darks and biases are also excluded.
-
-        Keyword Args
-        ------------
-        zfact : float
-            Factor to scale Zodiacal spectrum (default 2.5)
-        ra : float
-            Right ascension in decimal degrees
-        dec : float
-            Declination in decimal degrees
-        thisday : int
-            Calendar day to use for background calculation.  If not given, will use the
-            average of visible calendar days.
-
-        """
-
-        if det_name is not None:
-            arr = np.array([det.detname for det in self.Detectors])
-            ind = np.where(arr == det_name)[0][0]
-            if ind.size==1:
-                det = self.Detectors[ind]
-            else:
-                det = self.Detectors[0]
-        else:
-            det = self.Detectors[0]
-
-        filter = self._filter
-        pupil = self._pupil
-        xpix = self.det_info['xpix']
-        ypix = self.det_info['ypix']
-
-        # If slope image is not specified
-        if im_slope is None:
-            # No visible source
-            if ('FLAT' in pupil) or (sp is None):
-                im_slope = np.zeros([ypix,xpix])
-            # Grism spec
-            elif ('GRISM' in pupil):
-                w, im_slope = self.gen_psf(sp)
-            # DHS spectroscopy
-            elif ('DHS' in pupil):
-                raise NotImplementedError('DHS has yet to be fully included')
-            # Imaging+Coronagraphy
-            else:
-                im_slope = self.gen_psf(sp)
-    
-            # Add in Zodi emission
-            # Returns 0 if self.pupil='FLAT'
-            im_slope += self.bg_zodi_image(**kwargs)
-            
-            targ_name = sp.name if targ_name is None else targ_name
-            
-            # Image coordinates have +V3 up and +V2 to left
-            # Want to convert to detector coordinates
-            # Need to double-check the output for grism data.
-            #im_slope = sci_to_det(im_slope, det.detid)
-
-        # Minimum value of slope
-        im_min = im_slope[im_slope>=0].min()
-        # Expand or cut to detector size
-        im_slope = pad_or_cut_to_size(im_slope, (ypix,xpix))
-        # Make sure there are no negative numbers
-        im_slope[im_slope<=0] = im_min
-
-        # Create times indicating start of new ramp
-        t0 = datetime.datetime.now()
-        time_list = [t0] # First ramp time start
-        nint = self.multiaccum.nint
-        if nint>1: # Second ramp time start
-            dt = self.multiaccum_times['t_int_tot1'] if timeFileNames == True else 0
-            time_list.append(time_list[0] + datetime.timedelta(seconds=dt))
-        if nint>2: # Successive ramp time starts
-            dt = self.multiaccum_times['t_int_tot2'] if timeFileNames == True else 0
-            for i in range(2, nint):
-                time_list.append(time_list[i-1] + datetime.timedelta(seconds=i*dt))
-        
-
-        # Create list of file names for each INT
-        if file_out is None:
-            if return_results is None: return_results=True
-            file_list = [None]*nint
-        else:
-            if return_results is None: return_results=False
-            file_list = []
-            #file_out = '/Volumes/NIRData/grism_sim/grism_sim.fits'
-            if file_out.lower()[-5:] == '.fits':
-                file_out = file_out[:-5]
-            if file_out[-1:] == '_':
-                file_out = file_out[:-1]
-
-            for fileInd, t in enumerate(time_list):
-                file_time = t.isoformat()[:-7]
-                file_time = file_time.replace(':', 'h', 1)
-                file_time = file_time.replace(':', 'm', 1)
-                file_list.append(file_out + '_' + file_time + "_{0:04d}".format(fileInd) + '.fits')
-
-        # Create a list of arguments to pass
-        worker_arguments = [(det, im_slope, True, fout, filter, pupil, otime, \
-                             targ_name, DMS, dark, bias, return_results) \
-                            for fout,otime in zip(file_list, time_list)]
-
-        nproc = nproc_use_ng(det) if nproc is None else nproc
-        if nproc<=1:
-            #map(gen_fits, worker_arguments)
-            res = [gen_fits(wa) for wa in worker_arguments]
-        else:
-            pool = mp.Pool(nproc)
-            try:
-                res = pool.map(gen_fits, worker_arguments)
-            except Exception as e:
-                print('Caught an exception during multiprocess:')
-                raise e
-            finally:
-                pool.close()
-        
-        if return_results: return res
-
 
     def ramp_optimize(self, sp, sp_bright=None, is_extended=False, patterns=None,
         snr_goal=None, snr_frac=0.02, tacq_max=None, tacq_frac=0.1,
@@ -2571,10 +1889,10 @@ class NIRCam(object):
                 return snr[ind_snr]['snr']            
 
 
-        pupil = self.pupil
-        grism_obs = (pupil is not None) and ('GRISM' in pupil)
-        dhs_obs   = (pupil is not None) and ('DHS'   in pupil)
-        coron_obs = (pupil is not None) and ('LYOT'  in pupil)
+        pupil_mask = self.pupil_mask
+
+        grism_obs = self.is_grism
+        dhs_obs   = (pupil_mask is not None) and ('DHS' in pupil_mask)
 
         det_params_orig = self.det_info.copy()
 
@@ -2592,23 +1910,26 @@ class NIRCam(object):
         if sp_bright is None:
             sp_bright = sp
 
+        gen_psf = self.calc_psf_from_coeff
+        kw_gen_psf = {'return_oversample': False,'return_hdul': False}
+
         # Generate PSFs for faint and bright objects and get max pixel flux
         # Only necessary for point sources
         if is_extended:
             ind_snr = 1
             obs = S.Observation(sp, self.bandpass, binset=self.bandpass.wave)
-            psf_faint = obs.countrate() * self.pix_scale**2
-            psf_bright = self.gen_psf(sp_bright, use_bg_psf=False)
+            psf_faint = obs.countrate() * self.pixelscale**2
+            psf_bright = gen_psf(sp=sp_bright, use_bg_psf=False, **kw_gen_psf)
             pix_count_rate = np.max([psf_bright.max(), psf_faint])
         else:
             ind_snr = 0
 
             if grism_obs:
-                _, psf_bright = self.gen_psf(sp_bright, use_bg_psf=False)
-                _, psf_faint  = self.gen_psf(sp, use_bg_psf=True)
+                _, psf_bright = gen_psf(sp=sp_bright, use_bg_psf=False, **kw_gen_psf)
+                _, psf_faint  = gen_psf(sp=sp, use_bg_psf=True, **kw_gen_psf)
             else:
-                psf_bright = self.gen_psf(sp_bright, use_bg_psf=False)
-                psf_faint  = self.gen_psf(sp, use_bg_psf=True)
+                psf_bright = gen_psf(sp=sp_bright, use_bg_psf=False, **kw_gen_psf)
+                psf_faint  = gen_psf(sp=sp, use_bg_psf=True, **kw_gen_psf)
             pix_count_rate = np.max([psf_bright.max(), psf_faint.max()])
 
         image = self.sensitivity(sp=sp, forwardSNR=True, return_image=True, **kwargs)
@@ -2632,9 +1953,11 @@ class NIRCam(object):
     
         patterns.sort()
 
+        log_prev = conf.logging_level
+        setup_logging("WARN", verbose=False)
+
         rows = []
         if tacq_max is not None:
-            snr_goal_list = []
             # Cycle through each readout pattern
             for read_mode in patterns:
                 if verbose: print(read_mode)
@@ -2645,8 +1968,7 @@ class NIRCam(object):
                     ngroup_max = ng_max
                 nng = ngroup_max - ng_min + 1
                 if nng>30:
-                    _log.warning('Cycling through {} NGRPs. This may take a while!'\
-                        .format(nng))
+                    _log.warning(f'Cycling through {nng} NGROUPs. This may take a while!')
                 for ng in range(ng_min,ngroup_max+1):
                     self.update_detectors(read_mode=read_mode, ngroup=ng, nint=1)
                     mtimes = self.multiaccum_times
@@ -2660,7 +1982,6 @@ class NIRCam(object):
                     # Also, all subsequent values of ng will be too high
                     # so just break out of for loop.
                     if well_frac > well_frac_max:
-                        #continue
                         break
             
                     # Approximate integrations needed to obtain required t_acq
@@ -2680,10 +2001,10 @@ class NIRCam(object):
                         i2 = i1 + 5
                         nint_all = nint_all[i1:i2]
                 
-            
                     #print(len(nint_all))
                     for nint in nint_all:
-                        if nint > nint_max: break
+                        if nint > nint_max: 
+                            break
                         self.update_detectors(nint=nint)
                         mtimes = self.multiaccum_times
                         sen = self.sensitivity(sp=sp, forwardSNR=True, image=image, **kwargs)
@@ -2702,8 +2023,7 @@ class NIRCam(object):
                     ngroup_max = ng_max #np.min([ng_max,ngroup_max])
                 nng = ngroup_max - ng_min + 1
                 if nng>20:
-                    _log.warning('Cycling through {} NGRPs. This may take a while!'\
-                        .format(nng))
+                    _log.warning(f'Cycling through {nng} NGROUPs. This may take a while!')
                         
                 ng_saved = False
                 for ng in range(ng_min,ngroup_max+1):
@@ -2751,8 +2071,7 @@ class NIRCam(object):
                     rows.append((read_mode, ng, nint, mtimes['t_int'], mtimes['t_exp'], \
                         mtimes['t_acq'], snr, well_frac))
                     ng_saved = True
-                    
-    
+
                     # Increment NINT until SNR > 1.05 snr_goal
                     # Add each NINT to table output
                     while (snr < ((1+snr_frac)*snr_goal)) and (nint<=nint_max):
@@ -2767,6 +2086,7 @@ class NIRCam(object):
                 
         # Return to detector mode to original parameters
         self.update_detectors(**det_params_orig)
+        setup_logging(log_prev, verbose=False)
 
         names = ('Pattern', 'NGRP', 'NINT', 't_int', 't_exp', 't_acq', 'SNR', 'Well')
         if len(rows)==0:
@@ -2779,8 +2099,8 @@ class NIRCam(object):
         t_all['t_int'].format = '9.2f'
         t_all['t_exp'].format = '9.2f'
         t_all['t_acq'].format = '9.2f'
-        t_all['SNR'].format = '8.1f'
-        t_all['Well'].format = '8.3f'
+        t_all['SNR'].format   = '8.1f'
+        t_all['Well'].format  = '8.3f'
 
         t_all['eff'] = t_all['SNR'] / np.sqrt(t_all['t_acq'])
         # Round to 3 sig digits
@@ -2807,6 +2127,333 @@ class NIRCam(object):
             if verbose: print(t_all)
 
         return t_all
+
+    def gen_psfs_over_fov(self, sptype='G0V', wfe_drift=0, osamp=1, npsf_per_full_fov=15,
+                          return_coords=None, use_coeff=True, **kwargs):
+        """Create PSF grid over full field of view
+        
+        Wrapper around `calc_psfs_grid` that returns normalized PSFs across 
+        the field of view. 
+        
+        Create a grid of PSFs across instrument aperture FoV. By default,
+        imaging observations will be for full detector FoV with regularly
+        spaced grid. Coronagraphic observations will cover nominal 
+        coronagraphic mask region (usually 10s of arcsec) and will have
+        logarithmically spaced values where appropriate.
+
+        Parameters
+        ==========
+        sptype : str
+            Spectral type, such as 'A0V' or 'K2III'.
+        wfe_drift : float
+            Desired WFE drift value relative to default OPD.
+        osamp : int
+            Sampling of output PSF relative to detector sampling.
+        npsf_per_full_fov : int
+            Number of PSFs across one dimension of the instrument's field of 
+            view. If a coronagraphic observation, then this is for the nominal
+            coronagrahic field of view.
+        return_coords : None or str
+            Option to also return coordinate values in desired frame 
+            ('det', 'sci', 'tel', 'idl'). Output is then xvals, yvals, hdul_psfs.
+        use_coeff : bool
+            If True, uses `calc_psf_from_coeff`, other WebbPSF's built-in `calc_psf`.
+
+        Keyword Args
+        ============
+        xsci_vals: None or ndarray
+            Option to pass a custom grid values along x-axis in 'sci' coords.
+            If coronagraph, this instead corresponds to coronagraphic mask axis, 
+            which has a slight rotation in MIRI.
+        ysci_vals: None or ndarray
+            Option to pass a custom grid values along y-axis in 'sci' coords.
+            If coronagraph, this instead corresponds to coronagraphic mask axis, 
+            which has a slight rotation in MIRI.
+        """
+
+        # Create input spectrum that is star normalized by unit response
+        bp = self.bandpass
+        sp = stellar_spectrum(sptype, bp.unit_response(), 'flam', bp)
+
+        return self.calc_psfs_grid(sp=sp, wfe_drift=wfe_drift, osamp=osamp,
+                                   return_coords=return_coords, use_coeff=use_coeff,
+                                   npsf_per_full_fov=npsf_per_full_fov, **kwargs)
+
+    def _gen_obs_params(self, target_name, ra, dec, date_obs, time_obs, pa_v3=0, 
+        siaf_ap_ref=None, xyoff_idl=(0,0), visit_type='SCIENCE', time_series=False,
+        time_exp_offset=0, segNum=None, segTot=None, int_range=None, filename=None, **kwargs):
+
+        """ Generate a simple obs_params dictionary
+
+        An obs_params dictionary is used to create a jwst data model (e.g., Level1bModel).
+        Additional **kwargs will add/update elements to the final output dictionary.
+
+        Parameters
+        ==========
+        ra : float
+            RA in degrees associated with observation pointing
+        dec : float
+            RA in degrees associated with observation pointing
+        data_obs : str
+            YYYY-MM-DD
+        time_obs : str
+            HH:MM:SS
+
+        Keyword Arg
+        ===========
+        pa_v3 : float
+            Telescope V3 position angle.
+        siaf_ap_ref : pysiaf Aperture
+            SIAF aperture class used for telescope pointing (if different than self.siaf_ap)
+        xyoff_idl : tuple, list
+            (x,y) offset in arcsec ('idl' coords) to dither observation
+        visit_type : str
+            'T_ACQ', 'CONFIRM', or 'SCIENCE'
+        time_series : bool
+            Is this a time series observation?
+        time_exp_offset : float
+            Exposure start time (in seconds) relative to beginning of observation execution. 
+        segNum : int
+            The segment number of the current product. Only for TSO.
+        segTot : int
+            The total number of segments. Only for TSO.
+        int_range : list
+            Integration indices to use 
+        filename : str or None  
+            Name of output filename. If set to None, then auto generates a dummy name.
+        """
+        from .simul.apt import create_obs_params
+        from .simul.dms import DMS_filename
+
+        filt = self.filter
+        pupil = 'CLEAR' if self.pupil_mask is None else self.pupil_mask
+        mask = 'None' if self.image_mask is None else self.image_mask
+        det = self.Detector
+        siaf_ap_obs = self.siaf_ap
+        if siaf_ap_ref is None:
+            siaf_ap_ref = self.siaf_ap
+        ra_dec = (ra, dec)
+
+        kwargs['target_name'] = target_name
+
+        obs_params = create_obs_params(filt, pupil, mask, det, siaf_ap_ref, ra_dec, date_obs, time_obs,
+            pa_v3=pa_v3, siaf_ap_obs=siaf_ap_obs, xyoff_idl=xyoff_idl, time_exp_offset=time_exp_offset, 
+            visit_type=visit_type, time_series=time_series, segNum=segNum, segTot=segTot, int_range=int_range,
+            filename=filename, **kwargs)
+
+        if filename is None:
+            obs_id_info = obs_params['obs_id_info']
+            detname = det.detid
+            filename = DMS_filename(obs_id_info, detname, segNum=segNum, prodType='uncal')
+            obs_params['filename'] = filename
+
+        return obs_params
+
+
+    def simulate_ramps(self, sp=None, im_slope=None, cframe='sci', nint=None, 
+        do_dark=False, rand_seed=None, **kwargs):
+        """ Simulate Ramp Data
+
+        Create a series of ramp data based on the current NIRCam settings. 
+        This method calls the :func:`gen_ramp` function, which in turn calls 
+        the detector noise generator :func:`~pynrc.simul.simulate_detector_ramp`.
+
+        Parameters
+        ----------
+        im_slope : numpy array, None
+            Pass the slope image directly. If not set, then a slope
+            image will be created from the input spectrum keyword. This
+            should include zodiacal light emission, but not dark current.
+            Make sure this array is in detector coordinates.
+        sp : :mod:`pysynphot.spectrum`, None
+            A pysynphot spectral object. If not specified, then it is
+            assumed that we're looking at blank sky.
+        cframe : str
+            Output coordinate frame, 'sci' or 'det'.
+        nint : None or int
+            Options to specify arbitrary number of integrations. 
+        do_dark : bool
+            Make a dark ramp (ie., pupil_mask='FLAT'), no external flux.
+
+        Keyword Args
+        ------------
+        zfact : float
+            Factor to scale Zodiacal spectrum (default 2.5)
+        ra : float
+            Right ascension in decimal degrees
+        dec : float
+            Declination in decimal degrees
+        thisday : int
+            Calendar day to use for background calculation.  If not given, will use the
+            average of visible calendar days.
+
+        return_full_ramp : bool
+            By default, we average groups and drop frames as specified in the
+            `det` input. If this keyword is set to True, then return all raw
+            frames within the ramp. The last set of `nd2` frames will be omitted.
+        out_ADU : bool
+            If true, divide by gain and convert to 16-bit UINT.
+        include_dark : bool
+            Add dark current?
+        include_bias : bool
+            Add detector bias?
+        include_ktc : bool
+            Add kTC noise?
+        include_rn : bool
+            Add readout noise per frame?
+        include_cpink : bool
+            Add correlated 1/f noise to all amplifiers?
+        include_upink : bool
+            Add uncorrelated 1/f noise to each amplifier?
+        include_acn : bool
+            Add alternating column noise?
+        apply_ipc : bool
+            Include interpixel capacitance?
+        apply_ppc : bool
+            Apply post-pixel coupling to linear analog signal?
+        include_refoffsets : bool
+            Include reference offsts between amplifiers and odd/even columns?
+        include_refinst : bool
+            Include reference/active pixel instabilities?
+        include_colnoise : bool
+            Add in column noise per integration?
+        col_noise : ndarray or None
+            Option to explicitly specifiy column noise distribution in
+            order to shift by one for subsequent integrations
+        amp_crosstalk : bool
+            Crosstalk between amplifiers?
+        add_crs : bool
+            Add cosmic ray events? See Robberto et al 2010 (JWST-STScI-001928).
+        cr_model: str
+            Cosmic ray model to use: 'SUNMAX', 'SUNMIN', or 'FLARES'.
+        cr_scale: float
+            Scale factor for probabilities.
+        apply_nonlinearity : bool
+            Apply non-linearity?
+        random_nonlin : bool
+            Add randomness to the linearity coefficients?
+        apply_flats: bool
+            Apply sub-pixel QE variations (crosshatching)?
+        latents : None or ndarray
+            (TODO) Apply persistence from previous integration.
+
+        """
+        from .reduce.calib import nircam_cal
+
+        rng = np.random.default_rng(rand_seed)
+
+        det = self.Detector
+        nint = det.multiaccum.nint if nint is None else nint
+
+        pupil_mask = 'FLAT' if do_dark else self.pupil_mask
+        xpix = self.det_info['xpix']
+        ypix = self.det_info['ypix']
+
+        # Set logging to WARNING to suppress messages
+        log_prev = conf.logging_level
+        setup_logging('WARN', verbose=False)
+
+        det_cal_obj = nircam_cal(self.scaid, verbose=False)
+
+        # If requesting dark images
+        if do_dark:
+            im_slope = np.zeros([ypix,xpix])
+        # If slope image is not specified
+        elif im_slope is None:
+            # Detector sampled images
+            gen_psf = self.calc_psf_from_coeff
+            kw_gen_psf = {'return_oversample': False,'return_hdul': False}
+
+            # Imaging+Coronagraphy
+            if pupil_mask is None:
+                im_slope = gen_psf(sp=sp, **kw_gen_psf)
+            # No visible source
+            elif ('FLAT' in pupil_mask) or (sp is None):
+                im_slope = np.zeros([ypix,xpix])
+            # Grism spec
+            elif ('GRISM' in pupil_mask):
+                w, im_slope = gen_psf(sp=sp, **kw_gen_psf)
+            # DHS spectroscopy
+            elif ('DHS' in pupil_mask):
+                raise NotImplementedError('DHS has yet to be fully included')
+            # Imaging+Coronagraphy
+            else:
+                im_slope = gen_psf(sp=sp, **kw_gen_psf)
+
+            # Expand or cut to detector size
+            im_slope = pad_or_cut_to_size(im_slope, (ypix,xpix))
+
+            # Add in Zodi emission
+            # Returns 0 if self.pupil_mask='FLAT'
+            im_slope += self.bg_zodi_image(**kwargs)
+            
+        # Minimum value of slope
+        im_min = im_slope[im_slope>=0].min()
+        # Expand or cut to detector size
+        im_slope = pad_or_cut_to_size(im_slope, (ypix,xpix))
+        # Make sure there are no negative numbers
+        im_slope[im_slope<=0] = im_min
+
+        # Create a list of arguments to pass
+        worker_arguments = []
+        for i in range(nint):
+            rseed_i = rng.integers(0,2**32-1)
+            kw = {'im_slope': im_slope, 'cframe': cframe, 
+                  'return_zero_frame': True, 'rand_seed': rseed_i}
+            kws = merge_dicts(kw, kwargs)
+
+            args = (det, det_cal_obj)
+            worker_arguments.append((args, kws))
+
+        res_zeros = []
+        res_ramps = []
+        for wa in tqdm(worker_arguments, desc='Ramps', leave=False):
+            out = gen_ramps(wa)
+            res_ramps.append(out[0])
+            res_zeros.append(out[1])
+        
+        setup_logging(log_prev, verbose=False)
+
+        return np.asarray(res_ramps), np.asarray(res_zeros)
+
+    def simulate_level1b(self, target_name, ra, dec, date_obs, time_obs, 
+        sp=None, im_slope=None, cframe='sci', nint=None, do_dark=False, 
+        save_dir=None, return_model=False, return_hdul=False, **kwargs):
+
+        """ Simulate DMS Level 1b data model """
+
+        from .simul.dms import level1b_data_model, save_level1b_fits
+        from stdatamodels import fits_support
+
+        # Update total number of integrations
+        if nint is not None:
+            nint_orig = self.Detector.multiaccum.nint
+            self.update_detectors(nint=nint)
+
+        kwargs['out_ADU'] = True
+        sci_data, zero_data = self.simulate_ramps(sp=sp, im_slope=im_slope, cframe=cframe, nint=nint, 
+            do_dark=do_dark, **kwargs)
+
+        obs_params = self._gen_obs_params(target_name, ra, dec, date_obs, time_obs, **kwargs)
+        obs_params['save_dir'] = save_dir
+
+        outModel = level1b_data_model(obs_params, sci_data=sci_data, zero_data=zero_data)
+        if save_dir:
+            save_level1b_fits(outModel, obs_params, save_dir=save_dir)
+
+        # Return number of integrations
+        if nint is not None:
+            self.update_detectors(nint=nint_orig)
+
+        if return_hdul:
+            out_hdul, out_asdf = fits_support.to_fits(outModel._instance, outModel._schema)
+
+        if return_model and return_hdul:
+            return outModel, out_hdul
+        elif return_model:
+            return outModel
+        elif return_hdul:
+            return out_hdul
 
 
 def table_filter(t, topn=None, **kwargs):
@@ -2874,7 +2521,6 @@ def table_filter(t, topn=None, **kwargs):
 
     return tnew
 
-
 def merge_dicts(*dict_args):
     """
     Given any number of dicts, shallow copy and merge into a new dict.
@@ -2887,17 +2533,15 @@ def merge_dicts(*dict_args):
     return result
 
 
-def gen_fits(args):
+def gen_ramps(args):
     """
     Helper function for generating FITs integrations from a slope image
     """
-    from .simul.ngNRC import slope_to_ramp
+    from .simul.ngNRC import simulate_detector_ramp
 
-    # Must call np.random.seed() for multiprocessing, otherwise 
-    # random numbers for parallel processes start in the same seed state!
-    np.random.seed()
+    args_orig, kwargs = args
     try:
-        res = slope_to_ramp(*args)
+        res = simulate_detector_ramp(*args_orig, **kwargs)
     except Exception as e:
         print('Caught exception in worker thread:')
         # This prints the type, value, and stack trace of the
@@ -2909,7 +2553,7 @@ def gen_fits(args):
 
     return res
 
-def nproc_use_ng(det):
+def nproc_use_ng(det, nint=None):
     """Optimize processor usage.
     
     Attempt to estimate a reasonable number of processes to use for multiple 
@@ -2939,7 +2583,7 @@ def nproc_use_ng(det):
     nd2     = ma.nd2
     nf      = ma.nf
     ngroup  = ma.ngroup
-    nint    = ma.nint
+    nint    = ma.nint if nint is None else nint
     naxis3  = nd1 + ngroup*nf + (ngroup-1)*nd2
 
     # Compute the number of time steps per integration, per output
@@ -2975,3 +2619,676 @@ def nproc_use_ng(det):
     if nproc < 1: nproc = 1
 
     return int(nproc)
+
+
+def saturation_limits(inst, psf_coeff=None, psf_coeff_hdr=None, sp=None, bp_lim=None, 
+              int_time=21.47354, full_well=None, well_frac=0.8, units='vegamag', 
+              verbose=False, **kwargs):
+    """Saturation limits
+
+    Estimate the saturation limit of a point source for some bandpass.
+    By default, it outputs the max K-Band magnitude assuming a G2V star,
+    following the convention on the UA NIRCam webpage. This can be useful if
+    one doesn't know how bright a source is in the selected NIRCam filter
+    bandpass. Returns the saturation limit in Vega magnitudes by default,
+    however, any flux unit supported by Pysynphot is possible via the 'units'
+    keyword.
+
+    Parameters
+    ==========
+
+    inst : NIRCam class
+        pynrc or webbpsf_ext or webbpsf
+    psf_coeff : ndarray
+        A cube of polynomial coefficients for generating PSFs. This is generally 
+        oversampled with a shape (fov_pix*oversamp, fov_pix*oversamp, deg).
+        If not set, defaults to `inst.psf_coeff`.
+    psf_coeff_hdr : FITS header
+        Header information saved while generating coefficients.
+    sp : Pysynphot spectrum
+        Spectrum to calculate saturation (default: G2V star).
+    bp_lim : Pysynphot bandpass
+        The bandpass at which we report the magnitude that will saturate the NIRCam 
+        band assuming some spectrum sp (default: 2MASS K-Band).
+    int_time : float
+        Integration time in seconds (default corresponds to 2 full frames).
+    full_well : float
+        Detector full well level in electrons. If not set, defaults to `inst.well_level`.
+    well_frac : float
+        Fraction of full well to consider "saturated." 0.8 by default.
+    units : str
+        Output units for saturation limit.
+    """
+
+    from webbpsf_ext.psfs import gen_image_from_coeff
+
+    # Instrument bandpass
+    bp = inst.bandpass
+
+    # bandpass at which we report the magnitude that will saturate the NIRCam band assuming some spectrum sp
+    if bp_lim is None:
+        bp_lim = bp_2mass('k')
+        bp_lim.name = 'K-Band'
+
+    # Spectrum and bandpass to report magnitude that saturates NIRCam band
+    if sp is None: 
+        sp = stellar_spectrum('G2V')
+
+    # Just for good measure, make sure we're all in the same wave units
+    bp_lim.convert(bp.waveunits)
+    sp.convert(bp.waveunits)
+
+    # Renormalize to 10th magnitude star (Vega mags)
+    mag_norm = 10.0
+    sp_norm = sp.renorm(mag_norm, 'vegamag', bp_lim)
+    sp_norm.name = sp.name
+
+    # Set up an observation of the spectrum using the specified bandpass
+    # Use the bandpass wavelengths to bin the fluxes
+    obs = S.Observation(sp_norm, bp, binset=bp.wave)
+    # Convert observation to counts (e/sec)
+    obs.convert('counts')
+
+    # Zodiacal Light contributions to background
+    sp_zodi = zodi_spec(**kwargs)
+    pix_scale = inst.pixelscale
+    obs_zodi = S.Observation(sp_zodi, bp, binset=bp.wave)
+    fzodi_pix = obs_zodi.countrate() * (pix_scale/206265.0)**2  # e-/sec/pixel
+    # Collecting area gets reduced for coronagraphic (Lyot pupil) observations
+    # This isn't accounted for later, because zodiacal light doesn't use PSF information
+    if inst.is_lyot: 
+        fzodi_pix *= 0.19
+
+    # Total stellar flux and associated magnitude
+    star_flux = obs.countrate() # e/sec
+    mag_nrc = obs.effstim('vegamag')
+    _log.debug('Total Source Count Rate for {0} = {1:0.1f} mags: {2:.0f} e-/sec'.\
+        format(bp_lim.name, mag_norm, star_flux))
+    _log.debug('Magnitude in {0} band: {1:.2f}'.format(bp.name, mag_nrc))
+
+    # The number of pixels to span spatially
+    if psf_coeff is None:
+        psf_coeff = inst.psf_coeff
+    if psf_coeff_hdr is None:
+        psf_coeff_hdr = inst.psf_coeff_header
+    fov_pix = psf_coeff_hdr['FOVPIX']
+
+    # Generate the PSF image for analysis
+    # Use gen_image_from_coeff() rather than inst.calc_psf_from_coeff() in case we
+    # are supplying custom psf_coeff
+    t0 = time.time()
+    result = gen_image_from_coeff(inst, psf_coeff, psf_coeff_hdr, 
+                                  sp_norm=sp_norm, return_oversample=False)
+    t1 = time.time()
+    _log.debug('Took %.2f seconds to generate images' % (t1-t0))
+
+    # Saturation level (some fraction of full well) in electrons
+    full_well = inst.well_level if full_well is None else full_well
+    sat_level = well_frac * full_well
+
+    # If grism spectroscopy
+    pupil_mask = inst.pupil_mask
+    if inst.is_grism:
+        wspec, spec = result
+
+        # Spectra are in 'sci' coords
+        # If GRISMC (along columns) rotate image by 90 deg CW 
+        if (pupil_mask=='GRISMC') or (pupil_mask=='GRISM90'):
+            spec = np.rot90(spec, k=1)
+        elif inst.module=='B':
+            # Flip left to right so dispersion is in same direction as mod A
+            spec = spec[:,::-1]
+            wspec = wspec[::-1]
+
+         # Time to saturation for 10-mag source
+        sat_time = sat_level / spec
+        _log.debug('Approximate Time to {1:.2f} of Saturation: {0:.1f} sec'.\
+            format(sat_time.min(),well_frac))
+
+        # Magnitude necessary to saturate a given pixel
+        ratio = int_time / sat_time
+        ratio[ratio < __epsilon] = __epsilon
+        sat_mag = mag_norm + 2.5*np.log10(ratio)
+
+        # Wavelengths to grab saturation values
+        igood2 = bp.throughput > (bp.throughput.max()/4)
+        wgood2 = bp.wave[igood2] / 1e4
+        wsat_arr = np.unique((wgood2*10 + 0.5).astype('int')) / 10
+        wdel = wsat_arr[1] - wsat_arr[0]
+        msat_arr = []
+        for w in wsat_arr:
+            l1 = w - wdel / 4
+            l2 = w + wdel / 4
+            ind = ((wspec > l1) & (wspec <= l2))
+            msat = sat_mag[fov_pix//2-1:fov_pix//2+2, ind].max()
+            sp_temp = sp.renorm(msat, 'vegamag', bp_lim)
+            obs_temp = S.Observation(sp_temp, bp_lim, binset=bp_lim.wave)
+            msat_arr.append(obs_temp.effstim(units))
+
+        msat_arr = np.array(msat_arr)
+
+        # Print verbose information
+        if verbose:
+            if bp_lim.name == bp.name:
+                print('{0} Saturation Limit assuming {1} source:'.\
+                    format(bp_lim.name,sp.name))
+            else:
+                print('{0} Saturation Limit for {1} assuming {2} source:'.\
+                    format(bp_lim.name,bp.name,sp.name))
+
+            names = ('Wave','Sat Limit ({})'.format(units))
+            tbl = Table([wsat_arr,msat_arr], names=names)
+            for k in tbl.keys():
+                tbl[k].format = '9.2f'
+            print(tbl)
+
+
+        # Return saturation list along with corresponding wavelengths to dictionary
+        return {'wave':wsat_arr.tolist(), 'satmag':msat_arr.tolist(),
+            'units':units, 'Spectrum':sp_norm.name, 'bp_lim':bp_lim.name}
+
+    # DHS spectroscopy
+    elif (pupil_mask is not None) and ('DHS' in pupil_mask):
+        raise NotImplementedError('DHS not implemented')
+
+    # Imaging
+    else:
+        psf = result
+
+         # Time to saturation for 10-mag source
+         # Only need the maximum pixel value
+        sat_time = sat_level / psf.max()
+        _log.debug(f'Point source approximate Time to {well_frac:.2f} of Saturation: {sat_time:.2f} sec')
+
+        # Magnitude necessary to saturate a given pixel
+        ratio = int_time/sat_time
+        sat_mag = mag_norm + 2.5*np.log10(ratio)
+
+        # Convert to desired unit
+        sp_temp = sp.renorm(sat_mag, 'vegamag', bp_lim)
+        obs_temp = S.Observation(sp_temp, bp_lim, binset=bp_lim.wave)
+        res1 = obs_temp.effstim(units)
+        
+        out1 = {'satlim':res1, 'units':units, 'bp_lim':bp_lim.name, 'Spectrum':sp_norm.name}
+
+        # For surface brightness saturation (extended object)
+        # Assume the fiducial (sp_norm) to be in terms of mag/arcsec^2
+        # Multiply countrate() by pix_scale^2 to get in terms of per pixel (area)
+        # This is the count rate per pixel for the fiducial starting point
+        image_ext = obs.countrate() * pix_scale**2 # e-/sec/pixel
+        
+        sat_time = sat_level / image_ext
+        _log.debug(f'Extended object approximate Time to {well_frac:.2f} of Saturation: {sat_time:.2f} sec')
+        
+        # Magnitude necessary to saturate a given pixel
+        ratio = int_time / sat_time
+        sat_mag_ext = mag_norm + 2.5*np.log10(ratio)
+
+        # Convert to desired units
+        sp_temp = sp.renorm(sat_mag_ext, 'vegamag', bp_lim)
+        obs_temp = S.Observation(sp_temp, bp_lim, binset=bp_lim.wave)
+        res2 = obs_temp.effstim(units)
+
+        out2 = out1.copy()
+        out2['satlim'] = res2
+        out2['units']  = units + '/arcsec^2'
+
+        # Print verbose information
+        if verbose:
+            if bp_lim.name == bp.name:
+                print('{} Saturation Limit assuming {} source (point source): {:.2f} {}'.\
+                    format(bp_lim.name, sp_norm.name, out1['satlim'], out1['units']) )
+                print('{} Saturation Limit assuming {} source (extended): {:.2f} {}'.\
+                    format(bp_lim.name, sp_norm.name, out2['satlim'], out2['units']) )
+            else:
+                print('{} Saturation Limit for {} assuming {} source (point source): {:.2f} {}'.\
+                    format(bp_lim.name, bp.name, sp_norm.name, out1['satlim'], out1['units']) )
+                print('{} Saturation Limit for {} assuming {} source (extended): {:.2f} {}'.\
+                    format(bp_lim.name, bp.name, sp_norm.name, out2['satlim'], out2['units']) )
+
+        return out1, out2
+
+def _mlim_helper(sub_im, mag_norm=10, mag_arr=np.arange(5,35,1),
+    nsig=5, nint=1, snr_fact=1, forwardSNR=False, **kwargs):
+    """Helper function for determining grism sensitivities"""
+
+    sub_im_sum = sub_im.sum()
+
+    # Just return the SNR for the input sub image
+    if forwardSNR:
+        im_var = pix_noise(fsrc=sub_im, **kwargs)**2
+        ns_sum = np.sqrt(np.sum(im_var) / nint)
+        return snr_fact * sub_im_sum / ns_sum
+
+    fact_arr = 10**((mag_arr-mag_norm)/2.5)
+    snr_arr = []
+
+    for f in fact_arr:
+        im = sub_im / f
+        im_var = pix_noise(fsrc=im, **kwargs)**2
+        im_sum = sub_im_sum / f
+        ns_sum = np.sqrt(np.sum(im_var) / nint)
+
+        snr_arr.append(im_sum / ns_sum)
+    snr_arr = snr_fact*np.asarray(snr_arr)
+    return np.interp(nsig, snr_arr[::-1], mag_arr[::-1])
+
+
+def sensitivities(inst, psf_coeff=None, psf_coeff_hdr=None, sp=None, units=None, 
+                  forwardSNR=False, nsig=10, tf=10.737, ngroup=2, nf=1, nd2=0, nint=1,
+                  return_image=False, image=None, cr_noise=True, 
+                  dw_bin=None, ap_spec=None, rad_EE=None, verbose=False, **kwargs):
+    """Sensitivity Estimates
+
+    Estimates the sensitivity for a set of instrument parameters.
+    By default, a flat spectrum is convolved with the specified bandpass.
+    For imaging, this function also returns the surface brightness sensitivity.
+
+    The number of photo-electrons are computed for a source at some magnitude
+    as well as the noise from the detector readout and some average zodiacal
+    background flux. Detector readout noise follows an analytical form that
+    matches extensive long dark observations during cryo-vac testing.
+
+    This function returns the n-sigma background limit in units of uJy (unless
+    otherwise specified; valid units can be found on the Pysynphot webpage at
+    https://pysynphot.readthedocs.io/).
+
+    For imaging, a single value is given assuming aperture photometry with a
+    radius of ~1 FWHM rounded to the next highest integer pixel (or 2.5 pixels,
+    whichever is larger). For spectral observations, this function returns an
+    array of sensitivities at 0.1um intervals with apertures corresponding to
+    2 spectral pixels and a number of spatial pixels equivalent to 1 FWHM rounded
+    to the next highest integer (minimum of 5 spatial pixels).
+
+    Parameters
+    ==========
+
+    Instrument Settings
+    -------------------
+    filter_or_bp : Either the name of the filter or pre-computed Pysynphot bandpass.
+    pupil  : NIRCam pupil elements such as grisms or lyot stops
+    mask   : Specify the coronagraphic occulter (spots or bar)
+    module : 'A' or 'B'
+    pix_scale : Pixel scale in arcsec/pixel
+
+    Spectrum Settings
+    -------------------
+    sp         : A pysynphot spectral object to calculate sensitivity
+                 (default: Flat spectrum in photlam)
+    nsig       : Desired nsigma sensitivity
+    units      : Output units (defaults to uJy for grisms, nJy for imaging)
+    forwardSNR : Find the SNR of the input spectrum instead of determining sensitivity.
+
+    Ramp Settings
+    -------------------
+    tf     : Time per frame
+    ngroup : Number of groups per integration
+    nf     : Number of averaged frames per group
+    nd2    : Number of dropped frames per group
+    nint   : Number of integrations/ramps to consider
+
+    PSF Information
+    -------------------
+    coeff : A cube of polynomial coefficients for generating PSFs. This is
+            generally oversampled with a shape (fov_pix*oversamp, fov_pix*oversamp, deg).
+            If not set, this will be calculated using :func:`gen_psf_coeff`.
+    coeff_hdr    : Header associated with coeff cube.
+    fov_pix      : Number of detector pixels in the image coefficient and PSF.
+    oversample   : Factor of oversampling of detector pixels.
+    offset_r     : Radial offset of the target from center.
+    offset_theta : Position angle for that offset, in degrees CCW (+Y).
+
+    Misc.
+    -------------------
+    image        : Explicitly pass image data rather than calculating from coeff.
+    return_image : Instead of calculating sensitivity, return the image calced from coeff.
+                   Useful if needing to calculate sensitivities for many different settings.
+    rad_EE       : Extraction aperture radius (in pixels) for imaging mode.
+    dw_bin       : Delta wavelength to calculate spectral sensitivities (grisms & DHS).
+    ap_spec      : Instead of dw_bin, specify the spectral extraction aperture in pixels.
+                   Takes priority over dw_bin. Value will get rounded up to nearest int.
+    cr_noise     : Include noise from cosmic ray hits?
+
+    Keyword Args
+    -------------------
+    zodi_spec     - zfact, ra, dec, thisday, [locstr, year, day]
+    pix_noise     - rn, ktc, idark, and p_excess
+    gen_psf_coeff - npsf and ndeg
+    read_filter   - ND_acq
+    """
+
+    # PSF coefficients
+    from webbpsf_ext.psfs import gen_image_from_coeff
+    from webbpsf_ext.bandpasses import bp_igood
+
+    pupil_mask = inst.pupil_mask
+
+    grism_obs = inst.is_grism
+    dhs_obs   = (pupil_mask is not None) and ('DHS' in pupil_mask)
+    lyot_obs  = inst.is_lyot
+    coron_obs = inst.is_coron
+
+    # Get filter throughput and create bandpass
+    bp = inst.bandpass
+    filter = inst.filter
+    waveset = np.copy(bp.wave)
+
+    # Pixel scale (arcsec/pixel)
+    pix_scale = inst.pixelscale
+
+    # Spectrum and bandpass to report magnitude that saturates NIRCam band
+    if sp is None:
+        sp = S.ArraySpectrum(waveset, 0*waveset + 10.)
+        sp.name = 'Flat spectrum in photlam'
+
+    if forwardSNR:
+        sp_norm = sp
+    else:
+        # Renormalize to 10th magnitude star
+        mag_norm = 10
+        sp_norm = sp.renorm(mag_norm, 'vegamag', bp)
+        sp_norm.name = sp.name
+
+    # Zodiacal Light Stuff
+    sp_zodi = zodi_spec(**kwargs)
+    obs_zodi = S.Observation(sp_zodi, bp, binset=waveset)
+    fzodi_pix = obs_zodi.countrate() * (pix_scale/206265.0)**2  # e-/sec/pixel
+    # Collecting area gets reduced for coronagraphic observations
+    # This isn't accounted for later, because zodiacal light doesn't use PSF information
+    if coron_obs: 
+        fzodi_pix *= 0.19
+
+    # The number of pixels to span spatially for WebbPSF calculations
+    fov_pix    = psf_coeff_hdr['FOVPIX']
+    oversample = psf_coeff_hdr['OSAMP']
+
+    # Generate the PSF image for analysis.
+    # This process can take a while if being done over and over again.
+    # Let's provide the option to skip this with a pre-generated image.
+    # Skip image generation if `image` keyword is not None.
+    # Remember, this is for a very specific NORMALIZED spectrum
+    t0 = time.time()
+    if image is None:
+        image = gen_image_from_coeff(inst, psf_coeff, psf_coeff_hdr, 
+                                     sp_norm=sp_norm, return_oversample=False)
+    t1 = time.time()
+    _log.debug(f'fov_pix={fov_pix}, oversample={oversample}')
+    _log.debug('Took {:.2f} seconds to generate images'.format(t1-t0))
+    if return_image:
+        return image
+
+    # Cosmic Ray Loss (JWST-STScI-001721)
+    # SNR with cosmic ray events depends directly on ramp integration time
+    if cr_noise:
+        tint = (ngroup*nf + (ngroup-1)*nd2) * tf
+        snr_fact = 1.0 - tint*6.7781e-5
+    else:
+        snr_fact = 1.0
+
+    # If grism spectroscopy
+    if grism_obs:
+
+        if units is None: 
+            units = 'uJy'
+        wspec, spec = image
+
+        # Spectra are in 'sci' coords
+        # If GRISMC (along columns) rotate image by 90 deg CW 
+        if (pupil_mask=='GRISMC') or (pupil_mask=='GRISM90'):
+            spec = np.rot90(spec, k=1)
+        elif inst.module=='B':
+            # Flip left to right so dispersion is in same direction as mod A
+            spec = spec[:,::-1]
+            wspec = wspec[::-1]
+
+        # Wavelengths to grab sensitivity values
+        #igood2 = bp.throughput > (bp.throughput.max()/4)
+        igood2 = bp_igood(bp, min_trans=bp.throughput.max()/3, fext=0)
+        wgood2 = waveset[igood2] / 1e4
+        wsen_arr = np.unique((wgood2*10 + 0.5).astype('int')) / 10
+
+        # Add an addition 0.1 on either side
+        dw = 0.1
+        wsen_arr = np.concatenate(([wsen_arr.min()-dw],wsen_arr,[wsen_arr.max()+dw]))
+
+        #wdel = wsen_arr[1] - wsen_arr[0]
+
+        # FWHM at each pixel position
+        #fwhm_pix_arr = np.ceil(wsen_arr * 0.206265 / 6.5 / pix_scale)
+        # Make sure there's at least 5 total pixels in spatial dimension
+        #temp = fwhm_pix_arr.repeat(2).reshape([fwhm_pix_arr.size,2])
+        #temp[:,0] = 2
+        #rad_arr = temp.max(axis=1)
+        # Ignore the above, let's always do a 5pix spatial aperture
+        rad_arr = np.zeros(wsen_arr.size) + 2 # (2*2+1)
+
+        # Spatial aperture size at each wavelength
+        ap_spat = (2*rad_arr+1).astype('int')
+        # Indices with spectral image
+        ispat1 = (fov_pix - ap_spat) // 2
+        ispat2 = ispat1 + ap_spat
+
+        # Get spectral indices on the spectral image
+        if (dw_bin is None) and (ap_spec is None):
+            ap_spec = 2
+        elif (dw_bin is not None) and (ap_spec is None):
+            ap_spec = wspec.size * dw_bin / (wspec.max() - wspec.min())
+            ap_spec = int(ap_spec+0.5)
+        else:
+            ap_spec = int(ap_spec+0.5)
+        diff = abs(wspec.reshape(wspec.size,1) - wsen_arr)
+        ind_wave = []
+        for i in np.arange(wsen_arr.size):
+            ind = (np.where(diff[:,i]==min(diff[:,i])))[0]
+            ind_wave.append(ind[0])
+        ispec1 = np.asarray(ind_wave) - ap_spec // 2
+        ispec2 = ispec1 + ap_spec
+
+        # At each wavelength, grab a sub image and find the limiting magnitude
+        bglim_arr = []
+        for i in np.arange(wsen_arr.size):
+            sub_im = spec[ispat1[i]:ispat2[i],ispec1[i]:ispec2[i]]
+
+            if forwardSNR:
+                snr = _mlim_helper(sub_im, nint=nint, forwardSNR=forwardSNR,
+                    ngroup=ngroup, nf=nf, nd2=nd2, tf=tf, fzodi=fzodi_pix,
+                    snr_fact=snr_fact, **kwargs)
+                bglim_arr.append(snr)
+
+            else:
+                # Interpolate over a coarse magnitude grid
+                mag_arr=np.arange(5,35,1)
+                mag_lim = _mlim_helper(sub_im, mag_norm, mag_arr, nsig=nsig, nint=nint,
+                    ngroup=ngroup, nf=nf, nd2=nd2, tf=tf, fzodi=fzodi_pix,
+                    snr_fact=snr_fact, **kwargs)
+
+                # Zoom in and interoplate over finer grid
+                mag_arr = np.arange(mag_lim-1,mag_lim+1,0.05)
+                mag_lim = _mlim_helper(sub_im, mag_norm, mag_arr, nsig=nsig, nint=nint,
+                    ngroup=ngroup, nf=nf, nd2=nd2, tf=tf, fzodi=fzodi_pix,
+                    snr_fact=snr_fact, **kwargs)
+
+                # Renormalize spectrum to magnitude limit and convert to desired units
+                sp_norm2 = sp.renorm(mag_lim, 'vegamag', bp)
+                sp_norm2.convert(units)
+                bglim = np.interp(wsen_arr[i],sp_norm2.wave/1e4, sp_norm2.flux)
+                bglim_arr.append(bglim)
+
+        bglim_arr = np.asarray(bglim_arr)
+
+        # Return sensitivity list along with corresponding wavelengths to dictionary
+        if forwardSNR:
+            sp_norm.convert(units)
+            fvals = np.interp(wsen_arr, sp_norm.wave/1e4, sp_norm.flux)
+            out = {'wave':wsen_arr.tolist(), 'snr':bglim_arr.tolist(),
+                   'flux_units':units, 'flux':fvals.tolist(), 'Spectrum':sp.name}
+
+            if verbose:
+                print('{0} SNR for {1} source'.format(bp.name,sp.name))
+                names = ('Wave','SNR','Flux ({})'.format(units))
+                tbl = Table([wsen_arr,bglim_arr, fvals], names=names)
+                for k in tbl.keys():
+                    tbl[k].format = '9.2f'
+                print(tbl)
+
+        else:
+            out = {'wave':wsen_arr.tolist(), 'sensitivity':bglim_arr.tolist(),
+                   'units':units, 'nsig':nsig, 'Spectrum':sp.name}
+
+            if verbose:
+                print('{} Background Sensitivity ({}-sigma) for {} source'.\
+                    format(bp.name,nsig,sp.name))
+
+                names = ('Wave','Limit ({})'.format(units))
+                tbl = Table([wsen_arr,bglim_arr], names=names)
+                for k in tbl.keys():
+                    tbl[k].format = '9.2f'
+                print(tbl)
+
+        return out
+
+    # DHS spectroscopy
+    elif dhs_obs:
+        raise NotImplementedError('DHS has yet to be fully included')
+
+    # Imaging (includes coronagraphy)
+    else:
+        if units is None: 
+            units = 'nJy'
+
+        # Wavelength to grab sensitivity values
+        obs = S.Observation(sp_norm, bp, binset=waveset)
+        efflam = obs.efflam()*1e-4 # microns
+
+        # Encircled energy
+        rho_pix = dist_image(image)
+        bins = np.arange(rho_pix.min(), rho_pix.max() + 1, 1)
+        # Groups indices for each radial bin
+        igroups, _, rad_pix = hist_indices(rho_pix, bins, True)
+        # Sum of each radial annulus
+        sums = binned_statistic(igroups, image, func=np.sum)
+        # Encircled energy within each radius
+        EE_flux = np.cumsum(sums)
+
+        # How many pixels do we want?
+        fwhm_pix = 1.2 * efflam * 0.206265 / 6.5 / pix_scale
+        if rad_EE is None:
+            rad_EE = np.max([fwhm_pix,2.5])
+        npix_EE = np.pi * rad_EE**2
+
+        # For surface brightness sensitivity (extended object)
+        # Assume the fiducial (sp_norm) to be in terms of mag/arcsec^2
+        # Multiply countrate() by pix_scale^2 to get in terms of per pixel (area)
+        # This is the count rate per pixel for the fiducial starting point
+        image_ext = obs.countrate() * pix_scale**2 # e-/sec/pixel
+        #print(image_ext)
+
+        if forwardSNR:
+            im_var = pix_noise(ngroup=ngroup, nf=nf, nd2=nd2, tf=tf,
+                fzodi=fzodi_pix, fsrc=image, **kwargs)**2
+
+            # root squared sum of noise within each radius
+            sums = binned_statistic(igroups, im_var, func=np.sum)
+            EE_var = np.cumsum(sums)
+            EE_sig = np.sqrt(EE_var / nint)
+
+            EE_snr = snr_fact * EE_flux / EE_sig
+            snr_rad = np.interp(rad_EE, rad_pix, EE_snr)
+            flux_val = obs.effstim(units)
+            out1 = {'type':'Point Source', 'snr':snr_rad, 'Spectrum':sp.name,
+                'flux':flux_val, 'flux_units':units}
+
+            # Extended object surfrace brightness
+            im_var = pix_noise(ngroup=ngroup, nf=nf, nd2=nd2, tf=tf,
+                fzodi=fzodi_pix, fsrc=image_ext, **kwargs)**2
+            im_sig = np.sqrt(im_var*npix_EE / nint)
+            # Total number of pixels within r=fwhm or 2.5 pixels
+            fsum2 = image_ext * npix_EE
+            snr2 = snr_fact * fsum2 / im_sig # SNR per "resolution element"ish
+            out2 = {'type':'Surface Brightness', 'snr':snr2, 'Spectrum':sp.name,
+                'flux':flux_val, 'flux_units':units+'/arcsec^2'}
+
+            if verbose:
+                for out in [out1,out2]:
+                    print('{} SNR ({:.2f} {}): {:.2f} sigma'.\
+                        format(out['type'], out['flux'], out['flux_units'], out['snr']))
+
+        else:
+            # Interpolate over a coarse magnitude grid to get SNR
+            # Then again over a finer grid
+            for ii in np.arange(2):
+                if ii==0: mag_arr = np.arange(5,35,1)
+                else: mag_arr = np.arange(mag_lim-1,mag_lim+1,0.05)
+
+                fact_arr = 10**((mag_arr-mag_norm)/2.5)
+                snr_arr = []
+                for f in fact_arr:
+                    #im_var = image/f/tint + var_const
+
+                    im_var = pix_noise(ngroup=ngroup, nf=nf, nd2=nd2, tf=tf,
+                        fzodi=fzodi_pix, fsrc=image/f, **kwargs)**2
+
+                    # root squared sum of noise within each radius
+                    sums = binned_statistic(igroups, im_var, func=np.sum)
+                    EE_var = np.cumsum(sums)
+                    EE_sig = np.sqrt(EE_var / nint)
+
+                    EE_snr = snr_fact * (EE_flux/f) / EE_sig
+                    snr_rad = np.interp(rad_EE, rad_pix, EE_snr)
+                    snr_arr.append(snr_rad)
+
+                snr_arr = np.asarray(snr_arr)
+                mag_lim = np.interp(nsig, snr_arr[::-1], mag_arr[::-1])
+
+                _log.debug('Mag Limits [{0:.2f},{1:.2f}]; {2:.0f}-sig: {3:.2f}'.\
+                    format(mag_arr.min(),mag_arr.max(),nsig,mag_lim))
+
+            # Renormalize spectrum at given magnitude limit
+            sp_norm2 = sp.renorm(mag_lim, 'vegamag', bp)
+            # Determine effective stimulus
+            obs2 = S.Observation(sp_norm2, bp, binset=waveset)
+            bglim = obs2.effstim(units)
+
+            out1 = {'sensitivity':bglim, 'units':units, 'nsig':nsig, 'Spectrum':sp.name}
+
+            # Same thing as above, but for surface brightness
+            for ii in np.arange(2):
+                if ii==0: mag_arr = np.arange(5,35,1)
+                else: mag_arr = np.arange(mag_lim-1,mag_lim+1,0.05)
+
+                fact_arr = 10**((mag_arr-mag_norm)/2.5)
+                snr_arr = []
+                for f in fact_arr:
+                    im_var = pix_noise(ngroup=ngroup, nf=nf, nd2=nd2, tf=tf,
+                        fzodi=fzodi_pix, fsrc=image_ext/f, **kwargs)**2
+
+                    im_sig = np.sqrt(im_var*npix_EE / nint)
+                    fsum2 = image_ext * npix_EE / f
+                    snr2 = snr_fact * fsum2 / im_sig
+                    #print('{:.5f} {:.5f} {:.2f}'.format(fsum2,im_sig,snr2))
+
+                    snr_arr.append(snr2)
+
+                snr_arr = np.asarray(snr_arr)
+                mag_lim = np.interp(nsig, snr_arr[::-1], mag_arr[::-1])
+
+                _log.debug('Mag Limits (mag/asec^2) [{0:.2f},{1:.2f}]; {2:.0f}-sig: {3:.2f}'.\
+                    format(mag_arr.min(),mag_arr.max(),nsig,mag_lim))
+
+            # mag_lim is in terms of mag/arcsec^2 (same as mag_norm)
+            sp_norm2 = sp.renorm(mag_lim, 'vegamag', bp)
+            obs2 = S.Observation(sp_norm2, bp, binset=waveset)
+            bglim2 = obs2.effstim(units) # units/arcsec**2
+
+            out2 = out1.copy()
+            out2['sensitivity'] = bglim2
+            out2['units'] = units+'/arcsec^2'
+
+            if verbose:
+                print('{} Sensitivity ({}-sigma): {:.2f} {}'.\
+                       format('Point Source', nsig, bglim, out1['units']))
+                print('{} Sensitivity ({}-sigma): {:.2f} {}'.\
+                       format('Surface Brightness', nsig, bglim2, out2['units']))
+
+        return out1, out2
+

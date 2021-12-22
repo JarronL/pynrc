@@ -1,0 +1,18 @@
+
+master_output.xymvrdeepmeehuGAIA             - master isolated-star catalog
+
+combine_2006p39.xym                          - catalog from the 2006 observations
+combine_2017p38.xym                          - catalog from the 2017 observations
+                                               * the errors in these two lists could be used to 
+                                                 determine the cross-term errors in the proper
+                                                 motion and parallax measurements.
+
+LMC_JWSTCAL_2006.fits                        - stack of the 2006 observations
+LMC_JWSTCAL_2017.fits                        - stack of the 2017 observations
+
+COMPREHENSIVE_2006p39.XYVHJKLM_OBS_EST_W_RDF - comprehensive list:  include bright HST, faint HST, and extrapolated
+COMPREHENSIVE_2007p38.XYVHJKLM_OBS_EST_W_RDF - comprehensive list:  include bright HST, faint HST, and extrapolated
+                                               w = 1 stars were in the bright, isolated list
+                                               w = 2 stars were in the supplemental deep-finding list
+                                               w = 0 stars are artificial stars, representaive of stars that could
+                                                     not be found

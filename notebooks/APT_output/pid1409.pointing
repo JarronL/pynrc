@@ -1,0 +1,146 @@
+# APT Output Product
+# 
+# APT Version: Version 2021.3  JWST PRD: PRDOPSSOC-039 
+# Date: Sun Nov 28 21:59:45 GMT 2021
+
+JWST Pointing Report for JWST Approved Proposal 1409 (pid1409.aptx)
+
+========================================
+* Pointing Pre-Check (Obs 31)
+** Visit 31:1
+Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
+  1    1   1    1 NRCAS_FULL                13 HD-8440 +146.87624  +63.24721  +20.000  -20.000   +0.000   +0.000  +61.271 -518.152  +20.000  -20.000 TARGET     SCIENCE      177    177  0.000 (base)
+  1    1   2    1 NRCAS_FULL                13 HD-8440 +146.87624  +63.24721  +20.000  -20.000   +0.000   +0.000  +61.271 -518.152  +20.000  -20.000 FILTER     SCIENCE      177    177  0.000          
+
+========================================
+* Bgrd Levels Sub256 Pre-Check (Obs 32)
+** Visit 32:1
+Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
+  1    1   1    1 NRCA5_GRISM256_F322W2     13 HD-8440 +146.87624  +63.24721   +0.000   +0.000   +0.029   -4.095  +50.723 -560.571   +0.029   -4.095 TARGET     SCIENCE       98    246  0.000 (base)
+  1    2   1    1 NRCA5_GRISM256_F322W2     13 HD-8440 +146.87624  +63.24721   +0.000   +0.000   -0.029   +4.095  +50.813 -552.382   -0.029   +4.095 TILE       SCIENCE       98      0  8.190          
+
+========================================
+* Star Levels Sub256 Pre-Check (Obs 33)
+** Visit 33:1
+Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
+  1    1   1    1 NRCA5_GRISM256_F322W2     13 HD-8440 +146.87624  +63.24721   +0.000   +5.000   +0.029   -4.095  +50.742 -555.571   +0.029   +0.905 TARGET     SCIENCE       98    246  0.000 (base)
+  1    2   1    1 NRCA5_GRISM256_F322W2     13 HD-8440 +146.87624  +63.24721   +0.000   +5.000   -0.029   +4.095  +50.832 -547.382   -0.029   +9.095 TILE       SCIENCE       98      0  8.190          
+
+========================================
+* Bgrd Levels Sub64 Pre-Check (Obs 34)
+** Visit 34:1
+Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
+  1    1   1    1 NRCA5_GRISM64_F322W2      13 HD-8440 +146.87624  +63.24721   +0.000   +0.000   +0.000   +0.000  +50.768 -556.476   +0.000   +0.000 TARGET     SCIENCE       73     73  0.000 (base)
+
+========================================
+* LW Grism Ice Monitor #1 Mod-A 256 subarray (Obs 1)
+** Visit 1:1
+Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
+  1    1   1    1 NRCA5_GRISM256_F322W2     13 HD-8440 +146.87624  +63.24721   +0.000   +5.000   +0.052   -7.370  +50.706 -558.847   +0.052   -2.370 TARGET     SCIENCE      386    822  0.000 (base)
+  1    2   1    1 NRCA5_GRISM256_F322W2     13 HD-8440 +146.87624  +63.24721   +0.000   +5.000   -0.052   +7.370  +50.869 -544.106   -0.052  +12.370 TILE       SCIENCE      386      0 14.741          
+
+========================================
+* Module A GrismR -V2 1 column 2 pts (Obs 22)
+** Visit 22:1
+Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
+  1    1   1    1 NRCAS_FULL                13 HD-8440 +146.87624  +63.24721  +30.000   +5.000   +0.697  -52.507  +50.662 -545.693  +30.697  -47.507 TARGET     SCIENCE      478   1162  0.000 (base)
+  1    2   1    1 NRCAS_FULL                13 HD-8440 +146.87624  +63.24721  +30.000   +5.000   -0.697  +52.507  +51.719 -440.675  +29.303  +57.507 TILE       SCIENCE      478      0 105.023         
+
+========================================
+* Module A GrismC +V2 1 pt (Obs 23)
+** Visit 23:1
+Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
+  1    1   1    1 NRCAS_FULL                13 HD-8440 +146.87624  +63.24721  -50.000  +50.000   +0.000   +0.000 +131.045 -447.927  -50.000  +50.000 TARGET     SCIENCE      478    478  0.000 (base)
+
+========================================
+* Module B GrismR 256 subarray (Obs 24)
+** Visit 24:1
+Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
+  1    1   1    1 NRCB5_GRISM256_F322W2     13 HD-8440 +146.87624  +63.24721   +0.000   -5.500   +0.054   -4.034  -54.967 -438.612   +0.054   -9.534 TARGET     SCIENCE      386    822  0.000 (base)
+  1    2   1    1 NRCB5_GRISM256_F322W2     13 HD-8440 +146.87624  +63.24721   +0.000   -5.500   -0.054   +4.034  -54.920 -430.544   -0.054   -1.466 TILE       SCIENCE      386      0  8.068          
+
+========================================
+* Module B GrismR +V2 1 column 2 pts (Obs 25)
+** Visit 25:1
+Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
+  1    1   1    1 NRCBS_FULL                13 HD-8440 +146.87624  +63.24721  -30.000   +5.000   +0.644  -52.919  -52.789 -543.973  -29.356  -47.919 TARGET     SCIENCE      478   1162  0.000 (base)
+  1    2   1    1 NRCBS_FULL                13 HD-8440 +146.87624  +63.24721  -30.000   +5.000   -0.644  +52.919  -51.447 -438.136  -30.644  +57.919 TILE       SCIENCE      478      0 105.845         
+
+========================================
+* Module B GrismC -V2 1 pt (Obs 26)
+** Visit 26:1
+Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
+  1    1   1    1 NRCBS_FULL                13 HD-8440 +146.87624  +63.24721  +50.000  +50.000   +0.000   +0.000 -132.095 -446.013  +50.000  +50.000 TARGET     SCIENCE      478    478  0.000 (base)
+
+========================================
+* LW Grism Ice Monitor #2 (Obs 2)
+** Visit 2:1
+Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
+  1    1   1    1 NRCAS_FULL                13 HD-8440 +146.87624  +63.24721  +35.000  -45.000   +0.000   +0.000  +46.352 -543.200  +35.000  -45.000 TARGET     SCIENCE      392    392  0.000 (base)
+
+========================================
+* LW Grism Ice Monitor #3 (Obs 3)
+** Visit 3:1
+Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
+  1    1   1    1 NRCAS_FULL                13 HD-8440 +146.87624  +63.24721  +35.000  -25.000   +0.000   +0.000  +46.287 -523.200  +35.000  -25.000 TARGET     SCIENCE      392    392  0.000 (base)
+
+========================================
+* LW Grism Ice Monitor #4 (Obs 4)
+** Visit 4:1
+Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
+  1    1   1    1 NRCAS_FULL                13 HD-8440 +146.87624  +63.24721  +35.000  -25.000   +0.000   +0.000  +46.287 -523.200  +35.000  -25.000 TARGET     SCIENCE      392    392  0.000 (base)
+
+========================================
+* LW Grism Ice Monitor #5 (Obs 5)
+** Visit 5:1
+Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
+  1    1   1    1 NRCA5_GRISM256_F322W2     9 BD+86-18 +197.22276  +85.65225   +0.000   +5.000   +0.029   -4.095  +50.742 -555.571   +0.029   +0.905 TARGET     SCIENCE      386    822  0.000 (base)
+  1    2   1    1 NRCA5_GRISM256_F322W2     9 BD+86-18 +197.22276  +85.65225   +0.000   +5.000   -0.029   +4.095  +50.832 -547.382   -0.029   +9.095 TILE       SCIENCE      386      0  8.190          
+
+========================================
+* LW Grism Ice Monitor #6 (Obs 6)
+** Visit 6:1
+Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
+  1    1   1    1 NRCA5_GRISM256_F322W2     7 TYC-8558 +107.35645  -57.50212   +0.000   +0.000   +0.029   -4.095  +50.723 -560.571   +0.029   -4.095 TARGET     SCIENCE      386    822  0.000 (base)
+  1    2   1    1 NRCA5_GRISM256_F322W2     7 TYC-8558 +107.35645  -57.50212   +0.000   +0.000   -0.029   +4.095  +50.813 -552.382   -0.029   +4.095 TILE       SCIENCE      386      0  8.190          
+
+========================================
+* LW Grism Ice Monitor #7 (Obs 7)
+** Visit 7:1
+Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
+  1    1   1    1 NRCA5_GRISM256_F322W2     11 GCRV-21  +87.47263  -64.54000   +0.000   +5.000   +0.029   -4.095  +50.742 -555.571   +0.029   +0.905 TARGET     SCIENCE      386    845  0.000 (base)
+  1    2   1    1 NRCA5_GRISM256_F322W2     11 GCRV-21  +87.47263  -64.54000   +0.000   +5.000   -0.029   +4.095  +50.832 -547.382   -0.029   +9.095 TILE       SCIENCE      386      0  8.190          
+
+========================================
+* NIRSpec Ice Monitoring Observation (w NC#8) (Obs 18)
+** Visit 18:1
+Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
+  1    1   1    1 NRS_FULL_IFU              11 GCRV-21  +87.47263  -64.54000   +0.000   +0.000   -0.875   -0.725 +299.014 -498.154   -0.875   -0.725 TARGET     SCIENCE      105    602  0.000 (base)
+  1    1   1    2 NRS_FULL_IFU              11 GCRV-21  +87.47263  -64.54000   +0.000   +0.000   +0.775   +0.825 +301.276 -498.237   +0.775   +0.825 DITHER     SCIENCE      105      0  2.264          
+  1    1   1    3 NRS_FULL_IFU              11 GCRV-21  +87.47263  -64.54000   +0.000   +0.000   +0.625   -0.775 +300.112 -497.130   +0.625   -0.775 DITHER     SCIENCE      105      0  1.607          
+  1    1   1    4 NRS_FULL_IFU              11 GCRV-21  +87.47263  -64.54000   +0.000   +0.000   -0.725   +0.875 +300.179 -499.261   -0.725   +0.875 DITHER     SCIENCE      105      0  2.132          
+
+========================================
+* LW Grism Ice Monitor #8 (Obs 8)
+** Visit 8:1
+Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
+  1    1   1    1 NRCA5_GRISM256_F322W2     11 GCRV-21  +87.47263  -64.54000   +0.000   +5.000   +0.029   -4.095  +50.742 -555.571   +0.029   +0.905 TARGET     SCIENCE      386    845  0.000 (base)
+  1    2   1    1 NRCA5_GRISM256_F322W2     11 GCRV-21  +87.47263  -64.54000   +0.000   +5.000   -0.029   +4.095  +50.832 -547.382   -0.029   +9.095 TILE       SCIENCE      386      0  8.190          
+
+========================================
+* NIRSpec Ice Monitoring Observation (w NC#9) (Obs 29)
+** Visit 29:1
+Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
+  1    1   1    1 NRS_FULL_IFU              11 GCRV-21  +87.47263  -64.54000   +0.000   +0.000   -0.875   -0.725 +299.014 -498.154   -0.875   -0.725 TARGET     SCIENCE      105    602  0.000 (base)
+  1    1   1    2 NRS_FULL_IFU              11 GCRV-21  +87.47263  -64.54000   +0.000   +0.000   +0.775   +0.825 +301.276 -498.237   +0.775   +0.825 DITHER     SCIENCE      105      0  2.264          
+  1    1   1    3 NRS_FULL_IFU              11 GCRV-21  +87.47263  -64.54000   +0.000   +0.000   +0.625   -0.775 +300.112 -497.130   +0.625   -0.775 DITHER     SCIENCE      105      0  1.607          
+  1    1   1    4 NRS_FULL_IFU              11 GCRV-21  +87.47263  -64.54000   +0.000   +0.000   -0.725   +0.875 +300.179 -499.261   -0.725   +0.875 DITHER     SCIENCE      105      0  2.132          
+
+========================================
+* LW Grism Ice Monitor #9 (Obs 9)
+** Visit 9:1
+Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
+  1    1   1    1 NRCA5_GRISM256_F322W2     11 GCRV-21  +87.47263  -64.54000   +0.000   +5.000   +0.029   -4.095  +50.742 -555.571   +0.029   +0.905 TARGET     SCIENCE      386    845  0.000 (base)
+  1    2   1    1 NRCA5_GRISM256_F322W2     11 GCRV-21  +87.47263  -64.54000   +0.000   +5.000   -0.029   +4.095  +50.832 -547.382   -0.029   +9.095 TILE       SCIENCE      386      0  8.190          
+
+

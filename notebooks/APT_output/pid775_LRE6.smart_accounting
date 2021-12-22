@@ -1,0 +1,25 @@
+Smart accounting uses a heuristic algorithm to try to find Observations which
+could be scheduled in sequence.  Instead of charging all Observations in a
+sequence an initial major slew only the first Observation in the sequence is
+charged an initial slew.
+
+
+Sequence   1:
+Visit ID     Smart Accounting Slew     APT Slew                  Target
+ 034:001                      1800         1800                HD-42525
+ 033:001                        54         1800                HD-42525
+ 035:001                       181         1800                HD-42525
+ 032:001                        56         1800                HD-42525
+
+Total:                        2091         7200
+
+
+Each sequence shows the visits in the order that the smart accounting algorithm
+used to estimate the slew time.  The column 'Smart Accounting Slew' is the
+estimated slew time assigned to the visit by the smart accounting algorithm.
+The column labeled 'APT Slew' shows the original slew estimate assigned by APT.
+The 'target' column shows the target for the visit on that line.
+
+A visit marked with '**' at the end of the line is not schedulable anywhere.
+Visits which are not schedulable may be placed in their own sequence because
+there is no way to know what they might be grouped with if they could be scheduled.
