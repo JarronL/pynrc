@@ -15,7 +15,6 @@ and has been verified on Python 3.9 using the following modules:
 * Scipy 1.7
 * Astropy 5.0
 * Astroquery 0.4.3
-* JWST 1.3
 
 -------------------------------------
 
@@ -97,7 +96,8 @@ The easiest way to install WebbPSF without inducing package conflicts is to inst
 
 .. note::
 
-   The ``synphot`` package has been ignored in this case, because ``pynrc`` currently uses the slightly older ``pysynphot`` package. For details on installing ``synphot`` as well as other installation methods, see the `WebbPSF documentation <https://webbpsf.readthedocs.io>`_. Moving ``pynrc`` to use ``synphot`` is under development.
+   The ``synphot`` package has been ignored in this case, because ``pynrc`` currently uses the slightly older ``pysynphot`` package. For details on installing ``synphot`` as well as other installation methods, see the `WebbPSF documentation <https://webbpsf.readthedocs.io/en/stable/installation.html#installing-or-updating-synphot>`_. 
+   Configuring ``pynrc`` to use ``synphot`` is under development.
 
 WebbPSF Data Files
 --------------------------
@@ -255,7 +255,7 @@ also the location that PSF coefficients will be saved to during
 normal operations of ``pynrc``.
 
 Files containing information such as the instrument throughputs, stellar models, and exoplanet models are already distributed through ``webbpsf_ext``. 
-In addition, ``pynrc`` requires a number of files to simulate realistic detector data with DMS-like formatting and headers. In general, these are not necessary to run ``pynrc`` and use its ETC capabilities and simple simulations. 
+In addition, ``pynrc`` requires a number of files to simulate realistic detector data with DMS-like formatting and headers. In general, these are not necessary to run ``pynrc``'s ETC capabilities and simple simulations. 
 But, in order to create DMS and pipeline-compliant data, you must download these files and define the ``PYNRC_PATH`` environment variable. 
 
 1. Download the following file: 
@@ -270,3 +270,16 @@ But, in order to create DMS and pipeline-compliant data, you must download these
 
 You should now be able to successfully ``import pynrc`` in a Python session.
 
+Environment Variables
+=============================
+
+In the end, you should have a number of environment variables in your ``.bashrc`` (or equivalnet):
+
+.. code-block:: sh
+
+   export CRDS_PATH='$HOME/data/crds_cache/'
+   export CRDS_SERVER_URL='https://jwst-crds.stsci.edu'
+   export PYSYN_CDBS='$HOME/data/cdbs/'
+   export WEBBPSF_PATH='$HOME/data/webbpsf-data/'
+   export WEBBPSF_EXT_PATH='$HOME/data/webbpsf_ext_data/'
+   export PYNRC_DATA='$HOME/data/pynrc_data/'
