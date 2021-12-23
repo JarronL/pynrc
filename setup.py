@@ -179,8 +179,8 @@ setup(
     #extras_require={
     #    'dev': ['check-manifest>=0.34', 'lxml>=3.6.4', 'pytest>=3.0.2'],
     #},
-    # extras_require = {'docs': 
-    #     ['docutils==0.16', 'sphinx>=3.4.1']},
+    extras_require = {'docs': 
+        ['docutils==0.16', 'sphinx>=3.4.1']},
 
     # If there are data files included in your packages that need to be
     # installed, specify them here.  If using Python 2.6 or less, then these
