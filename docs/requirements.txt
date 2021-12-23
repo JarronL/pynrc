@@ -13,4 +13,4 @@ pysynphot>=2.0.0
 poppy>=1.0.1
 webbpsf>=1.0.0
 jwst
--e git+https://github.com/JarronL/webbpsf_ext.git
+webbpsf_ext

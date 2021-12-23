@@ -187,7 +187,7 @@ The ``webbpsf_ext`` package calculates and stores polynomial relationships betwe
 
 .. code-block:: sh
 
-    pip install git+https://github.com/JarronL/webbpsf_ext.git
+    pip install webbpsf_ext
 
 Set the environment variable ``WEBBPSF_EXT_PATH`` to point to some data directory. All PSF coefficients will be saved here as they are generated to be reused later. For example, in ``.bashrc`` shell file, add:
 

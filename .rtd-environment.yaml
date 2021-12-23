@@ -20,4 +20,4 @@ dependencies:
         - poppy>=1.0.1
         - webbpsf>=1.0.0
         - jwst>=1.2
-        - git+https://github.com/JarronL/webbpsf_ext.git
+        - webbpsf_ext>=1.0.3
