@@ -18,6 +18,11 @@ Developed by Jarron Leisenring and contributors at University of Arizona (2015 -
    :maxdepth: 1
    
    readme.rst
+
+.. toctree::
+   :caption: Install Instructions
+   :maxdepth: 1
+
    installation.rst
    install_clean.rst
 

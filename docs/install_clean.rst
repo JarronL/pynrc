@@ -1,5 +1,5 @@
 ===================================
-Install New Conda Environment
+Install with new Conda Environment
 ===================================
 
 This installation tutorial assumes a clean installation with Anaconda via:

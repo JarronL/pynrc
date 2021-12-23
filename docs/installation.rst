@@ -49,7 +49,7 @@ You can install the ``pynrc`` package through pip:
 
     $ pip install pynrc
 
-If you want to make sure that none of your existing dependencies get upgraded, instead you can do:
+If you want to make sure that none of your existing dependencies get upgraded, instead you can do (assuming all dependencies are met!):
 
 .. code-block:: sh
 
