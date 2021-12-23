@@ -1,6 +1,6 @@
-*********************
-Installation Overview
-*********************
+******************
+Basic Installation
+******************
 
 Requirements
 ============
