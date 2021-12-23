@@ -7,8 +7,10 @@ include README.rst
 recursive-include tests *
 recursive-exclude * __pycache__
 recursive-exclude * *.py[co]
+global-exclude .DS_Store
+
+recursive-include docs *.rst conf.py Makefile make.bat *.jpg *.png *.gif
 
 prune notebooks
 prune dev_utils
-
-recursive-include docs *.rst conf.py Makefile make.bat *.jpg *.png *.gif
+prune docs/build

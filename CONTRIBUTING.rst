@@ -126,22 +126,29 @@ A reminder for the maintainers on how to deploy. First, make sure the following 
    $ conda install nbsphinx
    $ conda install twine
    $ conda install docutils=0.16
+   $ conda install bump2version
 
-1. Update version info in pynrc.version. Add entries to HISTORY.rst. Make sure all your changes are committed to git.
-2. Generate documentation locally:
+1. Add entries to HISTORY.rst. Make sure all your changes are committed to git.
+2. Update version using ``bumpversion``, which automatically updates ``pynrc.version``. Usage: ``bump2version [options] part [file]``, where "part" is either major, minor, or patch (e.g., major.minor.patch). See https://github.com/c4urself/bump2version for more details.
+
+   .. code-block:: sh
+
+      $ bumpversion patch
+
+3. Generate documentation locally:
 
    .. code-block:: sh
 
       $ make docs
 
-3. Push all updates to github and make sure readthedocs generates correctly before actually submitting the release.
-4. Package a distribution and test upload the release to TestPyPI:
+4. Push all updates to github and make sure readthedocs generates correctly before actually submitting the release.
+5. Package a distribution and test upload the release to TestPyPI:
    
    .. code-block:: sh
 
       $ make release-test
 
-5. If everything works without a hitch, then upload the release to PyPI:
+6. If everything works without a hitch, then upload the release to PyPI:
 
    .. code-block:: sh
 
