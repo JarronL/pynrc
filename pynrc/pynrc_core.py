@@ -2235,6 +2235,7 @@ class NIRCam(NIRCam_ext):
         ra_dec = (ra, dec)
 
         kwargs['target_name'] = target_name
+        kwargs['nexposures'] = 1
 
         obs_params = create_obs_params(filt, pupil, mask, det, siaf_ap_ref, ra_dec, date_obs, time_obs,
             pa_v3=pa_v3, siaf_ap_obs=siaf_ap_obs, xyoff_idl=xyoff_idl, time_exp_offset=time_exp_offset, 
