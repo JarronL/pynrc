@@ -92,12 +92,12 @@ if not on_rtd:
     pixscale_LW = nc_temp._pixelscale_long
     del nc_temp
 
-    _jbt_exists = True
-    try:
-        from jwst_backgrounds import jbt
-    except ImportError:
-        _log.info("  jwst_backgrounds is not installed and will not be used for bg estimates.")
-        _jbt_exists = False
+_jbt_exists = True
+try:
+    from jwst_backgrounds import jbt
+except ImportError:
+    _log.info("  jwst_backgrounds is not installed and will not be used for bg estimates.")
+    _jbt_exists = False
 
 
 ###########################################################################
@@ -1600,7 +1600,7 @@ def coron_trans(name, module='A', pixelscale=None, npix=None, oversample=1,
     return im
 
 
-def build_mask(module='A', pixscale=pixscale_LW, filter=None, nd_squares=True):
+def build_mask(module='A', pixscale=None, filter=None, nd_squares=True):
     """Create coronagraphic mask image
 
     Return a truncated image of the full coronagraphic mask layout
@@ -1612,6 +1612,9 @@ def build_mask(module='A', pixscale=pixscale_LW, filter=None, nd_squares=True):
         names = ['MASK210R', 'MASK335R', 'MASK430R', 'MASKSWB', 'MASKLWB']
     elif module=='B':
         names = ['MASKSWB', 'MASKLWB', 'MASK430R', 'MASK335R', 'MASK210R']
+
+    if pixscale is None:
+        pixscale=pixscale_LW
 
     npix = int(20 / pixscale + 0.5)
     allims = []

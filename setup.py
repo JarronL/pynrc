@@ -39,7 +39,9 @@ from os import path
 
 root = path.abspath(path.dirname(__file__))
 
-from pynrc.version import __version__
+# Rather than importing (which will fail due to __init__.py)
+# open and execute the file directly
+exec(open('pynrc/version.py').read())
 version = __version__
 
 RELEASE = 'dev' not in version
@@ -100,7 +102,7 @@ with open('README.rst') as readme_file:
 with open('HISTORY.rst') as history_file:
     history = history_file.read()
 
-requirements = [
+install_requires = [
     'Click>=6.0',
     'numpy>=1.19.0',
     'matplotlib>=3.3.0',
@@ -112,19 +114,11 @@ requirements = [
     'tqdm>4',
     'astropy>=4.2',
     'astroquery>=0.4.3',
+    'jwst',
 ]
-# RTD cannot handle certain 
-# if not (os.environ.get('READTHEDOCS') == 'True'):
-#     # requirements.append('jwst_backgrounds>=1.1')
-#     requirements.append('astropy>=2.0,<3.0')
-# else:
-#     requirements.append('astropy>=2.0')
-    
 
 setup_requirements = ['pytest-runner', ]
-
 test_requirements = ['pytest', ]
-
 
 setup(
     name='pynrc',
@@ -151,7 +145,7 @@ setup(
         #   3 - Alpha
         #   4 - Beta
         #   5 - Production/Stable
-        'Development Status :: 4 - Beta',
+        'Development Status :: 5 - Production/Stable',
 
         # Indicate who your project is intended for
         'Intended Audience :: Developers',
@@ -162,23 +156,22 @@ setup(
 
         # Specify the Python versions you support here. In particular, ensure
         # that you indicate whether you support Python 2, Python 3 or both.
-        #'Programming Language :: Python :: 2',
-        #'Programming Language :: Python :: 2.7',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
     ],
 
     # You can just specify the packages manually here if your project is
     # simple. Or you can use find_packages().
     #packages=find_packages(exclude=['contrib', 'docs', 'tests']),
-    packages=find_packages(include=['pynrc*']),
+    packages=find_packages(include=['pynrc*'], exclude=['notebooks', 'dev_utils']),
 
     # List run-time dependencies here.  These will be installed by pip when
     # your project is installed. For an analysis of "install_requires" vs pip's
     # requirements files see:
     # https://packaging.python.org/en/latest/requirements.html
-    install_requires=requirements,
+    install_requires=install_requires,
 
     # List additional groups of dependencies here (e.g. development
     # dependencies). You can install these using the following syntax,
@@ -187,6 +180,8 @@ setup(
     #extras_require={
     #    'dev': ['check-manifest>=0.34', 'lxml>=3.6.4', 'pytest>=3.0.2'],
     #},
+    extras_require = {'docs': 
+        ['docutils==0.16', 'sphinx>=3.4.1']},
 
     # If there are data files included in your packages that need to be
     # installed, specify them here.  If using Python 2.6 or less, then these

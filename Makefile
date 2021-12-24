@@ -75,7 +75,7 @@ docs: ## generate Sphinx HTML documentation, including API docs
 dist: clean ## builds source and wheel package
 	python setup.py sdist
 	python setup.py bdist_wheel
-	ls -l dist
+	ls -lh dist
 
 release-test: dist ## package and upload a release to TestPyPI
 	twine upload --repository pypitest dist/*
