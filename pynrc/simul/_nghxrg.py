@@ -1,6 +1,8 @@
 """
 NGHXRG - Teledyne HxRG Noise Generator
 
+**DEPRECATED FOR ngNRC.py**
+
 Modification History:
 
 8-15 April 2015, B.J. Rauscher, NASA/GSFC
