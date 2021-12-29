@@ -2456,7 +2456,8 @@ class nircam_cal(nircam_dark):
 def get_fits_data(fits_file, return_header=False, bias=None, reffix=False, 
                   DMS=False, int_ind=0, grp_ind=None, **kwargs):
     
-    """
+    """ Read in FITS file data
+
     Parameters
     ==========
     fname : str
@@ -2479,8 +2480,8 @@ def get_fits_data(fits_file, return_header=False, bias=None, reffix=False,
         For instance `grp_ind=[0:10]` will select only
         the first 10 groups from the FITS cube.
     
-    reffix Args
-    ===========
+    Keyword Args
+    ============
     altcol : bool
         Calculate separate reference values for even/odd columns. (default: True)
     supermean : bool
@@ -2510,6 +2511,7 @@ def get_fits_data(fits_file, return_header=False, bias=None, reffix=False,
     avg_type :str
         Type of side column averaging to perform to determine ref pixel drift. 
         Allowed values are 'pixel', 'frame', or 'int' (default: 'frame'):
+        
             * 'int'   : Subtract the avg value of all side ref pixels in ramp.
             * 'frame' : For each frame, get avg of side ref pixels and subtract framewise.
             * 'pixel' : For each ref pixel, subtract its avg value from all frames.

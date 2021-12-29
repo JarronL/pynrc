@@ -400,7 +400,6 @@ def reffix_hxrg(cube, nchans=4, in_place=True, fixcol=False, **kwargs):
         Specify the number of top reference rows.
     nbot : int
         Specify the number of bottom reference rows.
-
     left_ref : bool
         Include left reference cols when correcting 1/f noise.
     right_ref : bool
@@ -414,6 +413,7 @@ def reffix_hxrg(cube, nchans=4, in_place=True, fixcol=False, **kwargs):
     avg_type :str
         Type of side column averaging to perform to determine ref pixel drift. 
         Allowed values are 'pixel', 'frame', or 'int':
+
             * 'int'   : Subtract the avg value of all side ref pixels in ramp.
             * 'frame' : For each frame, get avg of side ref pixels and subtract framewise.
             * 'pixel' : For each ref pixel, subtract its avg value from all frames.
@@ -424,7 +424,6 @@ def reffix_hxrg(cube, nchans=4, in_place=True, fixcol=False, **kwargs):
         Size of the window filter.
     order : int
         Order of the polynomial used to fit the samples.
-
     """
 
     # Check the number of dimensions are valid.
@@ -1226,11 +1225,11 @@ def channel_smooth_fft(im_arr, winsize=64):
     return np.array(res_arr).squeeze()
 
 def mask_helper():
-    """Helper to handle indices and logical indices of a mask.
+    """Helper to handle indices and logical indices of a mask
 
-    Output:
-        - index, a function, with signature indices = index(logical_indices),
-          to convert logical indices of a mask to 'equivalent' indices
+    Output: index, a function, with signature indices = index(logical_indices),
+    to convert logical indices of a mask to 'equivalent' indices
+
     Example:
         >>> # linear interpolation of NaNs
         >>> mask = np.isnan(y)

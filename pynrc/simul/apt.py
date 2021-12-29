@@ -1,3 +1,5 @@
+"""APT conversion procedures"""
+
 import copy
 import os
 import logging
@@ -613,8 +615,8 @@ class AptInput:
         given crossing filter is used, find the appropriate aperture to
         use.
 
-        Paramters
-        ---------
+        Parameters
+        ----------
         apertures : list
             List of possible grism apertures
 
@@ -1002,13 +1004,13 @@ class AptInput:
 def read_subarray_definition_file(filename):
     """Read in the file that contains a list of subarray names and related information
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     filename : str
         Name of the ascii file containing the table of subarray information
 
-    Returns:
-    --------
+    Returns
+    -------
     data : astropy.table.Table
         Table containing subarray information
     """
@@ -5389,7 +5391,7 @@ def create_obs_params(filt, pupil, mask, det, siaf_ap, ra_dec, date_obs, time_ob
     """ Generate obs_params dictionary
 
     An obs_params dictionary is used to create a jwst data model (e.g., Level1bModel).
-    Additional **kwargs will add/update elements to the final output dictionary.
+    Additional ``**kwargs`` will add/update elements to the final output dictionary.
     
     Parameters
     ==========
@@ -5646,8 +5648,8 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs='12:00:0
     """ Create obs_params from visit dictionary
 
     An obs_params dictionary is used to create a jwst data model (e.g., Level1bModel).
-    If passing `obs_params` parameter, this gets updated based on the input arguments.
-    Additional **kwargs will add/update elements to the final output dictionary
+    If passing ``obs_params`` parameter, this gets updated based on the input arguments.
+    Additional ``**kwargs`` will add/update elements to the final output dictionary
     
     Parameters
     ==========
@@ -6218,7 +6220,7 @@ class DMS_input():
 
 def gen_pointing_info(*args, **kwargs):
     """
-    *** Deprecated. Use `gen_jwst_pointing` instead. ***
+    **Deprecated. Use ``gen_jwst_pointing`` instead.**
     Create telescope pointing sequence for a given visit / exposure.
     """
 

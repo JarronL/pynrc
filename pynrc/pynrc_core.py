@@ -341,7 +341,7 @@ class NIRCam(NIRCam_ext):
     
     Creates a NIRCam instrument class that holds all the information pertinent to
     an observation using a given observation. This class extends the NIRCam subclass
-    `webbpsf_ext.NIRCam_ext`, to generate PSF coefficients to calculate an arbitrary
+    ``webbpsf_ext.NIRCam_ext``, to generate PSF coefficients to calculate an arbitrary
     PSF based on wavelength, field position, and WFE drift.
 
     In addition to PSF generation, includes ability to estimate detector saturation 
@@ -366,9 +366,9 @@ class NIRCam(NIRCam_ext):
         and detector subarray information.
     autogen_coeffs : bool
         Automatically generate base PSF coefficients. Equivalent to performing
-        `self.gen_psf_coeff()`. Default: True
+        ``self.gen_psf_coeff()``. Default: True
         WFE drift and field-dependent coefficients should be run manually via
-        `gen_wfedrift_coeff`, `gen_wfefield_coeff`, and `gen_wfemask_coeff`.
+        ``gen_wfedrift_coeff``, ``gen_wfefield_coeff``, and ``gen_wfemask_coeff``.
 
     Keyword Args
     ============
@@ -404,6 +404,7 @@ class NIRCam(NIRCam_ext):
 
     PSF Keywords
     ============
+
     fov_pix : int
         Size of the PSF FoV in pixels (real SW or LW pixels).
         The defaults depend on the type of observation.
@@ -420,7 +421,7 @@ class NIRCam(NIRCam_ext):
         File name or HDUList specifying telescope entrance pupil.
         Can also be an OTE_Linear_Model.
     pupilopd : tuple or HDUList
-        Tuple (file, slice) or filename or HDUList specifying OPD.
+        Tuple (file, index) or filename or HDUList specifying OPD.
         Can also be an OTE_Linear_Model.
     wfe_drift : float
         Wavefront error drift amplitude in nm.
@@ -869,7 +870,7 @@ class NIRCam(NIRCam_ext):
             File name or HDUList specifying telescope entrance pupil.
             Can also be an OTE_Linear_Model.
         pupilopd : tuple or HDUList
-            Tuple (file, slice) or filename or HDUList specifying OPD.
+            Tuple (file, index) or filename or HDUList specifying OPD.
             Can also be an OTE_Linear_Model.
         wfe_drift : float
             Wavefront error drift amplitude in nm.
@@ -1199,12 +1200,12 @@ class NIRCam(NIRCam_ext):
         """Update detector properties based on SIAF aperture"""
 
         if apname is None:
-            _log.warn('Input apname was None. Returning...')
+            _log.warn('update_from_SIAF: Input apname was None. Returning...')
             return
 
         if not (apname in self.siaf_ap_names):
             # raise ValueError(f'Cannot find {apname} in siaf.apernames list.')
-            _log.warn(f'Cannot find {apname} in siaf.apernames list. Returing...')
+            _log.warn(f'update_from_SIAF: Cannot find {apname} in siaf.apernames list. Returing...')
             return
             
         if ('NRCALL' in apname) or ('NRCAS' in apname) or ('NRCBS' in apname):
