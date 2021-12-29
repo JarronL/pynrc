@@ -1,6 +1,21 @@
 Revision History
 ================
 
+v1.0.4 (Dec 28, 2021)
+---------------------
+
+ - check if ``im_star`` is int or float if not None
+ - set ``nexposures = 1`` for level1b using ``NIRCam()`` class function
+ - deprecate nghxrg.py
+ - add tutorial ipynb files
+ - update api docs auto generation
+ - use ``webbpsf_ext`` v1.0.4
+
+v1.0.3 (Dec 23, 2021)
+---------------------
+
+- Minor updates to seamlessly generate new releases on PyPI and new docs on readthedocs
+
 v1.0.1 (Dec 14, 2021)
 ---------------------
 
