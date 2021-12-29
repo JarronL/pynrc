@@ -34,11 +34,13 @@ Developed by Jarron Leisenring and contributors at University of Arizona (2015 -
    tutorials/Ramp_Optimization_Examples.ipynb
    tutorials/Coronagraph_Basics.ipynb
    tutorials/Coronagraph_Wedges.ipynb
+   tutorials/HR8799_DMS_Level1b.ipynb
 
 .. toctree::
    :caption: Reference Info
    :maxdepth: 1
    
+   api.rst
    change_log.rst
    license.rst
    contributing.rst
@@ -54,4 +56,12 @@ see :ref:`LICENSE <license>`.
 
    If you make use of pyNRC in your work, please cite the following paper: 
    *Leisenring et al., "pyNRC: A NIRCam ETC and Simulation Toolset"* (in prep).
+
+
+Indices and Tables
+------------------
+
+* :ref:`genindex`
+* :ref:`modindex`
+* :ref:`search`
 
