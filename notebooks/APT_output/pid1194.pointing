@@ -1,7 +1,7 @@
 # APT Output Product
 # 
 # APT Version: Version 2021.3  JWST PRD: PRDOPSSOC-039 
-# Date: Tue Sep 14 06:24:06 GMT 2021
+# Date: Mon Dec 27 21:07:16 GMT 2021
 
 JWST Pointing Report for JWST Approved Proposal 1194 (pid1194.aptx)
 
@@ -12,8 +12,8 @@ Tar Tile Exp Dith Aperture Name             Target       RA         Dec        B
   0    0   0    0 NRCA5_TAMASK430R          1 HR8799   +346.86965  +21.13425   +0.000   +0.000   +0.000   +0.000  +97.015 -413.027   +0.000   +0.000 TARGET     T_ACQ          0      0  0.000 (base)
   1    1   1    1 NRCA5_FULL_TAMASK430R     1 HR8799   +346.86965  +21.13425   +0.000   +0.000   +0.000   +0.000  +97.015 -413.027   +0.000   +0.000 TARGET     CONFIRM      102    102  0.000          
   1    1   2    1 NRCA5_FULL_MASK430R       1 HR8799   +346.86965  +21.13425   +0.000   +0.000   +0.000   +0.000  +87.102 -405.291   +0.000   +0.000 TARGET     CONFIRM      102    102 12.574          
-  1    1   3    1 NRCA5_MASK430R            1 HR8799   +346.86965  +21.13425   +0.000   +0.000   +0.000   +0.000  +87.102 -405.291   +0.000   +0.000 TARGET     SCIENCE      514    514  0.000          
-  1    1   4    1 NRCA5_MASK430R            1 HR8799   +346.86965  +21.13425   +0.000   +0.000   +0.000   +0.000  +87.102 -405.291   +0.000   +0.000 FILTER     SCIENCE      969    969  0.000          
+  1    1   3    1 NRCA5_MASK430R            1 HR8799   +346.86965  +21.13425   +0.000   +0.000   +0.000   +0.000  +87.102 -405.291   +0.000   +0.000 TARGET     SCIENCE      509    509  0.000          
+  1    1   4    1 NRCA5_MASK430R            1 HR8799   +346.86965  +21.13425   +0.000   +0.000   +0.000   +0.000  +87.102 -405.291   +0.000   +0.000 FILTER     SCIENCE      990    990  0.000          
 
 ========================================
 * HR 8799 bcde - NIRCam - Roll 1 - MASKLWB (Obs 2)
@@ -34,16 +34,16 @@ Tar Tile Exp Dith Aperture Name             Target       RA         Dec        B
 ** Visit 3:1
 Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
   0    0   0    0 NRCA5_TAMASK430R          2 HD220657 +351.34493  +23.40410   +0.000   +0.000   +0.000   +0.000  +97.015 -413.027   +0.000   +0.000 TARGET     T_ACQ          0      0  0.000 (base)
-  1    1   1    1 NRCA5_MASK430R            2 HD220657 +351.34493  +23.40410   +0.000   +0.000   +0.000   +0.000  +87.102 -405.291   +0.000   +0.000 TARGET     SCIENCE      124    544 12.574          
-  1    1   1    2 NRCA5_MASK430R            2 HD220657 +351.34493  +23.40410   +0.000   +0.000   +0.015   +0.015  +87.087 -405.276   +0.015   +0.015 SUBDITHER  SCIENCE       93      0  0.021          
-  1    1   1    3 NRCA5_MASK430R            2 HD220657 +351.34493  +23.40410   +0.000   +0.000   -0.015   +0.015  +87.117 -405.276   -0.015   +0.015 SUBDITHER  SCIENCE       93      0  0.030          
-  1    1   1    4 NRCA5_MASK430R            2 HD220657 +351.34493  +23.40410   +0.000   +0.000   -0.015   -0.015  +87.117 -405.306   -0.015   -0.015 SUBDITHER  SCIENCE       93      0  0.030          
-  1    1   1    5 NRCA5_MASK430R            2 HD220657 +351.34493  +23.40410   +0.000   +0.000   +0.015   -0.015  +87.087 -405.306   +0.015   -0.015 SUBDITHER  SCIENCE       93      0  0.030          
-  1    1   2    1 NRCA5_MASK430R            2 HD220657 +351.34493  +23.40410   +0.000   +0.000   +0.000   +0.000  +87.102 -405.291   +0.000   +0.000 FILTER     SCIENCE      197    909  0.021          
-  1    1   2    2 NRCA5_MASK430R            2 HD220657 +351.34493  +23.40410   +0.000   +0.000   +0.015   +0.015  +87.087 -405.276   +0.015   +0.015 SUBDITHER  SCIENCE      166      0  0.021          
-  1    1   2    3 NRCA5_MASK430R            2 HD220657 +351.34493  +23.40410   +0.000   +0.000   -0.015   +0.015  +87.117 -405.276   -0.015   +0.015 SUBDITHER  SCIENCE      166      0  0.030          
-  1    1   2    4 NRCA5_MASK430R            2 HD220657 +351.34493  +23.40410   +0.000   +0.000   -0.015   -0.015  +87.117 -405.306   -0.015   -0.015 SUBDITHER  SCIENCE      166      0  0.030          
-  1    1   2    5 NRCA5_MASK430R            2 HD220657 +351.34493  +23.40410   +0.000   +0.000   +0.015   -0.015  +87.087 -405.306   +0.015   -0.015 SUBDITHER  SCIENCE      166      0  0.030          
+  1    1   1    1 NRCA5_MASK430R            2 HD220657 +351.34493  +23.40410   +0.000   +0.000   +0.000   +0.000  +87.102 -405.291   +0.000   +0.000 TARGET     SCIENCE      127    559 12.574          
+  1    1   1    2 NRCA5_MASK430R            2 HD220657 +351.34493  +23.40410   +0.000   +0.000   +0.015   +0.015  +87.087 -405.276   +0.015   +0.015 SUBDITHER  SCIENCE       96      0  0.021          
+  1    1   1    3 NRCA5_MASK430R            2 HD220657 +351.34493  +23.40410   +0.000   +0.000   -0.015   +0.015  +87.117 -405.276   -0.015   +0.015 SUBDITHER  SCIENCE       96      0  0.030          
+  1    1   1    4 NRCA5_MASK430R            2 HD220657 +351.34493  +23.40410   +0.000   +0.000   -0.015   -0.015  +87.117 -405.306   -0.015   -0.015 SUBDITHER  SCIENCE       96      0  0.030          
+  1    1   1    5 NRCA5_MASK430R            2 HD220657 +351.34493  +23.40410   +0.000   +0.000   +0.015   -0.015  +87.087 -405.306   +0.015   -0.015 SUBDITHER  SCIENCE       96      0  0.030          
+  1    1   2    1 NRCA5_MASK430R            2 HD220657 +351.34493  +23.40410   +0.000   +0.000   +0.000   +0.000  +87.102 -405.291   +0.000   +0.000 FILTER     SCIENCE      188    864  0.021          
+  1    1   2    2 NRCA5_MASK430R            2 HD220657 +351.34493  +23.40410   +0.000   +0.000   +0.015   +0.015  +87.087 -405.276   +0.015   +0.015 SUBDITHER  SCIENCE      157      0  0.021          
+  1    1   2    3 NRCA5_MASK430R            2 HD220657 +351.34493  +23.40410   +0.000   +0.000   -0.015   +0.015  +87.117 -405.276   -0.015   +0.015 SUBDITHER  SCIENCE      157      0  0.030          
+  1    1   2    4 NRCA5_MASK430R            2 HD220657 +351.34493  +23.40410   +0.000   +0.000   -0.015   -0.015  +87.117 -405.306   -0.015   -0.015 SUBDITHER  SCIENCE      157      0  0.030          
+  1    1   2    5 NRCA5_MASK430R            2 HD220657 +351.34493  +23.40410   +0.000   +0.000   +0.015   -0.015  +87.087 -405.306   +0.015   -0.015 SUBDITHER  SCIENCE      157      0  0.030          
 
 ========================================
 * Ref star - NIRCam - MASKLWB (Obs 4)
@@ -102,8 +102,8 @@ Tar Tile Exp Dith Aperture Name             Target       RA         Dec        B
   0    0   0    0 NRCA5_TAMASK430R          1 HR8799   +346.86965  +21.13425   +0.000   +0.000   +0.000   +0.000  +97.015 -413.027   +0.000   +0.000 TARGET     T_ACQ          0      0  0.000 (base)
   1    1   1    1 NRCA5_FULL_TAMASK430R     1 HR8799   +346.86965  +21.13425   +0.000   +0.000   +0.000   +0.000  +97.015 -413.027   +0.000   +0.000 TARGET     CONFIRM      102    102  0.000          
   1    1   2    1 NRCA5_FULL_MASK430R       1 HR8799   +346.86965  +21.13425   +0.000   +0.000   +0.000   +0.000  +87.102 -405.291   +0.000   +0.000 TARGET     CONFIRM      102    102 12.574          
-  1    1   3    1 NRCA5_MASK430R            1 HR8799   +346.86965  +21.13425   +0.000   +0.000   +0.000   +0.000  +87.102 -405.291   +0.000   +0.000 TARGET     SCIENCE      514    514  0.000          
-  1    1   4    1 NRCA5_MASK430R            1 HR8799   +346.86965  +21.13425   +0.000   +0.000   +0.000   +0.000  +87.102 -405.291   +0.000   +0.000 FILTER     SCIENCE      969    969  0.000          
+  1    1   3    1 NRCA5_MASK430R            1 HR8799   +346.86965  +21.13425   +0.000   +0.000   +0.000   +0.000  +87.102 -405.291   +0.000   +0.000 TARGET     SCIENCE      509    509  0.000          
+  1    1   4    1 NRCA5_MASK430R            1 HR8799   +346.86965  +21.13425   +0.000   +0.000   +0.000   +0.000  +87.102 -405.291   +0.000   +0.000 FILTER     SCIENCE      990    990  0.000          
 
 ========================================
 * HR8799 1065C (Obs 7)
@@ -157,15 +157,8 @@ Tar Tile Exp Dith Aperture Name             Target       RA         Dec        B
   1    1   1    9 MIRIM_MASK1550            1 HR8799   +346.86965  +21.13425   +0.000   +0.000   -0.010   -0.010 -389.883 -372.191   -0.010   -0.010 DITHER     SCIENCE        0      0  0.010          
 
 ========================================
-* HR8799 2100W (Obs 10)
+* REF 1065C (Obs 10)
 ** Visit 10:1
-Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
-  1    1   1    1 MIRIM_SUB256              1 HR8799   +346.86965  +21.13425   +0.000   +0.000   +1.330   -1.620 -441.312 -413.582   +1.330   -1.620 TARGET     SCIENCE      673   1396  0.000 (base)
-  1    1   1    2 MIRIM_SUB256              1 HR8799   +346.86965  +21.13425   +0.000   +0.000   -1.384   +1.620 -438.335 -410.582   -1.384   +1.620 DITHER     SCIENCE      662      0  4.226          
-
-========================================
-* REF 1065C (Obs 11)
-** Visit 11:1
 Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
   0    0   0    0 MIRIM_TABLOCK             3 HD-21826 +346.63286  +19.91085   +0.000   +0.000   +0.000   +0.000 -407.464 -387.100   +0.000   +0.000 TARGET     T_ACQ          0      0  0.000 (base)
   0    0   0    0 MIRIM_TA1065_UR           3 HD-21826 +346.63286  +19.91085   +0.000   +0.000   +0.000   +0.000 -399.582 -414.272   +0.000   +0.000 TARGET     T_ACQ          0      0 28.293          
@@ -181,8 +174,8 @@ Tar Tile Exp Dith Aperture Name             Target       RA         Dec        B
   1    1   1    9 MIRIM_MASK1065            3 HD-21826 +346.63286  +19.91085   +0.000   +0.000   -0.010   -0.010 -393.852 -420.950   -0.010   -0.010 DITHER     SCIENCE        0      0  0.010          
 
 ========================================
-* REF 1140C (Obs 12)
-** Visit 12:1
+* REF 1140C (Obs 11)
+** Visit 11:1
 Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
   0    0   0    0 MIRIM_TABLOCK             3 HD-21826 +346.63286  +19.91085   +0.000   +0.000   +0.000   +0.000 -407.464 -387.100   +0.000   +0.000 TARGET     T_ACQ          0      0  0.000 (base)
   0    0   0    0 MIRIM_TA1140_UR           3 HD-21826 +346.63286  +19.91085   +0.000   +0.000   +0.000   +0.000 -397.372 -389.742   +0.000   +0.000 TARGET     T_ACQ          0      0 10.433          
@@ -198,8 +191,8 @@ Tar Tile Exp Dith Aperture Name             Target       RA         Dec        B
   1    1   1    9 MIRIM_MASK1140            3 HD-21826 +346.63286  +19.91085   +0.000   +0.000   -0.010   -0.010 -391.812 -396.564   -0.010   -0.010 DITHER     SCIENCE        0      0  0.010          
 
 ========================================
-* REF 1550C (Obs 13)
-** Visit 13:1
+* REF 1550C (Obs 12)
+** Visit 12:1
 Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
   0    0   0    0 MIRIM_TABLOCK             3 HD-21826 +346.63286  +19.91085   +0.000   +0.000   +0.000   +0.000 -407.464 -387.100   +0.000   +0.000 TARGET     T_ACQ          0      0  0.000 (base)
   0    0   0    0 MIRIM_TA1550_UR           3 HD-21826 +346.63286  +19.91085   +0.000   +0.000   +0.000   +0.000 -395.471 -365.842   +0.000   +0.000 TARGET     T_ACQ          0      0 24.407          
@@ -215,10 +208,17 @@ Tar Tile Exp Dith Aperture Name             Target       RA         Dec        B
   1    1   1    9 MIRIM_MASK1550            3 HD-21826 +346.63286  +19.91085   +0.000   +0.000   -0.010   -0.010 -389.883 -372.191   -0.010   -0.010 DITHER     SCIENCE        0      0  0.010          
 
 ========================================
-* REF 2100W (Obs 14)
-** Visit 14:1
+* REF 2100W (Obs 13)
+** Visit 13:1
 Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
   1    1   1    1 MIRIM_SUB256              3 HD-21826 +346.63286  +19.91085   +0.000   +0.000   +1.330   -1.620 -441.312 -413.582   +1.330   -1.620 TARGET     SCIENCE      673   1396  0.000 (base)
   1    1   1    2 MIRIM_SUB256              3 HD-21826 +346.63286  +19.91085   +0.000   +0.000   -1.384   +1.620 -438.335 -410.582   -1.384   +1.620 DITHER     SCIENCE      662      0  4.226          
+
+========================================
+* HR8799 2100W (Obs 14)
+** Visit 14:1
+Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
+  1    1   1    1 MIRIM_SUB256              1 HR8799   +346.86965  +21.13425   +0.000   +0.000   +1.330   -1.620 -441.312 -413.582   +1.330   -1.620 TARGET     SCIENCE      673   1396  0.000 (base)
+  1    1   1    2 MIRIM_SUB256              1 HR8799   +346.86965  +21.13425   +0.000   +0.000   -1.384   +1.620 -438.335 -410.582   -1.384   +1.620 DITHER     SCIENCE      662      0  4.226          
 
 
