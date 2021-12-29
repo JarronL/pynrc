@@ -1121,8 +1121,8 @@ def place_grismr_tso(waves, imarr, siaf_ap, wref=None, im_coords='sci'):
 
     Return image in sience coords.
 
-    Paramters
-    =========
+    Parameters
+    ==========
     waves : ndarray
         Wavelength solution of input image
     imarr : ndarray

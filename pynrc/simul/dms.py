@@ -1,3 +1,5 @@
+"""DMS data format routines"""
+
 import numpy as np
 import os
 

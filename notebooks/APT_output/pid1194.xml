@@ -471,16 +471,16 @@ Kmag=5.14</Comments>
                         <ncc:Filters>
                             <ncc:FilterConfig>
                                 <ncc:Filter>F356W</ncc:Filter>
-                                <ncc:ReadoutPattern>MEDIUM2</ncc:ReadoutPattern>
-                                <ncc:Groups>2</ncc:Groups>
-                                <ncc:Integrations>33</ncc:Integrations>
+                                <ncc:ReadoutPattern>BRIGHT2</ncc:ReadoutPattern>
+                                <ncc:Groups>8</ncc:Groups>
+                                <ncc:Integrations>25</ncc:Integrations>
                                 <ncc:EtcId>40833.6</ncc:EtcId>
                             </ncc:FilterConfig>
                             <ncc:FilterConfig>
                                 <ncc:Filter>F444W</ncc:Filter>
-                                <ncc:ReadoutPattern>MEDIUM8</ncc:ReadoutPattern>
-                                <ncc:Groups>2</ncc:Groups>
-                                <ncc:Integrations>45</ncc:Integrations>
+                                <ncc:ReadoutPattern>SHALLOW4</ncc:ReadoutPattern>
+                                <ncc:Groups>5</ncc:Groups>
+                                <ncc:Integrations>35</ncc:Integrations>
                                 <ncc:EtcId>40833.7</ncc:EtcId>
                             </ncc:FilterConfig>
                         </ncc:Filters>
@@ -489,7 +489,7 @@ Kmag=5.14</Comments>
                         <ncc:PsfJustification>false</ncc:PsfJustification>
                     </ncc:NircamCoron>
                 </Template>
-                <ScienceDuration>1376</ScienceDuration>
+                <ScienceDuration>1412</ScienceDuration>
                 <CoordinatedParallel>false</CoordinatedParallel>
                 <SpecialRequirements/>
                 <ObservingWindowsContainer>
@@ -602,16 +602,16 @@ Kmag=5.14</Comments>
                         <ncc:Filters>
                             <ncc:FilterConfig>
                                 <ncc:Filter>F356W</ncc:Filter>
-                                <ncc:ReadoutPattern>MEDIUM2</ncc:ReadoutPattern>
-                                <ncc:Groups>2</ncc:Groups>
-                                <ncc:Integrations>5</ncc:Integrations>
+                                <ncc:ReadoutPattern>BRIGHT2</ncc:ReadoutPattern>
+                                <ncc:Groups>8</ncc:Groups>
+                                <ncc:Integrations>4</ncc:Integrations>
                                 <ncc:EtcId>40833.12</ncc:EtcId>
                             </ncc:FilterConfig>
                             <ncc:FilterConfig>
                                 <ncc:Filter>F444W</ncc:Filter>
-                                <ncc:ReadoutPattern>MEDIUM8</ncc:ReadoutPattern>
-                                <ncc:Groups>2</ncc:Groups>
-                                <ncc:Integrations>7</ncc:Integrations>
+                                <ncc:ReadoutPattern>SHALLOW4</ncc:ReadoutPattern>
+                                <ncc:Groups>5</ncc:Groups>
+                                <ncc:Integrations>5</ncc:Integrations>
                                 <ncc:EtcId>40833.13</ncc:EtcId>
                             </ncc:FilterConfig>
                         </ncc:Filters>
@@ -619,7 +619,7 @@ Kmag=5.14</Comments>
                         <ncc:PsfJustification>false</ncc:PsfJustification>
                     </ncc:NircamCoron>
                 </Template>
-                <ScienceDuration>1000</ScienceDuration>
+                <ScienceDuration>990</ScienceDuration>
                 <CoordinatedParallel>false</CoordinatedParallel>
                 <SpecialRequirements/>
                 <ObservingWindowsContainer>
@@ -812,16 +812,16 @@ Kmag=5.14</Comments>
                         <ncc:Filters>
                             <ncc:FilterConfig>
                                 <ncc:Filter>F356W</ncc:Filter>
-                                <ncc:ReadoutPattern>MEDIUM2</ncc:ReadoutPattern>
-                                <ncc:Groups>2</ncc:Groups>
-                                <ncc:Integrations>33</ncc:Integrations>
+                                <ncc:ReadoutPattern>BRIGHT2</ncc:ReadoutPattern>
+                                <ncc:Groups>8</ncc:Groups>
+                                <ncc:Integrations>25</ncc:Integrations>
                                 <ncc:EtcId>40833.6</ncc:EtcId>
                             </ncc:FilterConfig>
                             <ncc:FilterConfig>
                                 <ncc:Filter>F444W</ncc:Filter>
-                                <ncc:ReadoutPattern>MEDIUM8</ncc:ReadoutPattern>
-                                <ncc:Groups>2</ncc:Groups>
-                                <ncc:Integrations>45</ncc:Integrations>
+                                <ncc:ReadoutPattern>SHALLOW4</ncc:ReadoutPattern>
+                                <ncc:Groups>5</ncc:Groups>
+                                <ncc:Integrations>35</ncc:Integrations>
                                 <ncc:EtcId>40833.7</ncc:EtcId>
                             </ncc:FilterConfig>
                         </ncc:Filters>
@@ -830,7 +830,7 @@ Kmag=5.14</Comments>
                         <ncc:PsfJustification>false</ncc:PsfJustification>
                     </ncc:NircamCoron>
                 </Template>
-                <ScienceDuration>1376</ScienceDuration>
+                <ScienceDuration>1412</ScienceDuration>
                 <CoordinatedParallel>false</CoordinatedParallel>
                 <SpecialRequirements/>
                 <ObservingWindowsContainer>
@@ -867,14 +867,14 @@ Kmag=5.14</Comments>
                             </mc:FilterConfig>
                         </mc:Filters>
                         <mc:PsfReference>false</mc:PsfReference>
-                        <mc:PsfReferenceObservation>REF 1065C (Obs 11)</mc:PsfReferenceObservation>
+                        <mc:PsfReferenceObservation>REF 1065C (Obs 10)</mc:PsfReferenceObservation>
                         <mc:PsfJustification>false</mc:PsfJustification>
                     </mc:MiriCoron>
                 </Template>
                 <ScienceDuration>1080</ScienceDuration>
                 <CoordinatedParallel>false</CoordinatedParallel>
                 <SpecialRequirements>
-                    <OrientRange OrientMin="89.50443176 Degrees" OrientMax="103.50443176 Degrees" MsaSelectedAngle="false"/>
+                    <OrientRange OrientMin="95 Degrees" OrientMax="105 Degrees" MsaSelectedAngle="false"/>
                     <NoParallel/>
                 </SpecialRequirements>
                 <ObservingWindowsContainer>
@@ -911,14 +911,14 @@ Kmag=5.14</Comments>
                             </mc:FilterConfig>
                         </mc:Filters>
                         <mc:PsfReference>false</mc:PsfReference>
-                        <mc:PsfReferenceObservation>REF 1140C (Obs 12)</mc:PsfReferenceObservation>
+                        <mc:PsfReferenceObservation>REF 1140C (Obs 11)</mc:PsfReferenceObservation>
                         <mc:PsfJustification>false</mc:PsfJustification>
                     </mc:MiriCoron>
                 </Template>
                 <ScienceDuration>1080</ScienceDuration>
                 <CoordinatedParallel>false</CoordinatedParallel>
                 <SpecialRequirements>
-                    <OrientRange OrientMin="89.50443176 Degrees" OrientMax="103.50443176 Degrees" MsaSelectedAngle="false"/>
+                    <OrientRange OrientMin="95 Degrees" OrientMax="105 Degrees" MsaSelectedAngle="false"/>
                     <NoParallel/>
                 </SpecialRequirements>
                 <ObservingWindowsContainer>
@@ -955,14 +955,14 @@ Kmag=5.14</Comments>
                             </mc:FilterConfig>
                         </mc:Filters>
                         <mc:PsfReference>false</mc:PsfReference>
-                        <mc:PsfReferenceObservation>REF 1550C (Obs 13)</mc:PsfReferenceObservation>
+                        <mc:PsfReferenceObservation>REF 1550C (Obs 12)</mc:PsfReferenceObservation>
                         <mc:PsfJustification>false</mc:PsfJustification>
                     </mc:MiriCoron>
                 </Template>
                 <ScienceDuration>4320</ScienceDuration>
                 <CoordinatedParallel>false</CoordinatedParallel>
                 <SpecialRequirements>
-                    <OrientRange OrientMin="89.50443176 Degrees" OrientMax="103.50443176 Degrees" MsaSelectedAngle="false"/>
+                    <OrientRange OrientMin="95 Degrees" OrientMax="105 Degrees" MsaSelectedAngle="false"/>
                     <NoParallel/>
                 </SpecialRequirements>
                 <ObservingWindowsContainer>
@@ -974,57 +974,6 @@ Kmag=5.14</Comments>
             </Observation>
             <Observation AutoTarget="false">
                 <Number>10</Number>
-                <TargetID>1 HR8799</TargetID>
-                <Label>HR8799 2100W</Label>
-                <Instrument>MIRI</Instrument>
-                <Template>
-                    <mi:MiriImaging>
-                        <mi:Subarray>SUB256</mi:Subarray>
-                        <mi:Dithers>
-                            <mi:DitherSpecification>
-                                <mi:DitherType>2-Point</mi:DitherType>
-                                <mi:PatternSize>DEFAULT</mi:PatternSize>
-                            </mi:DitherSpecification>
-                        </mi:Dithers>
-                        <mi:Filters>
-                            <mi:FilterConfig>
-                                <mi:Exposures>1</mi:Exposures>
-                                <mi:Filter>F2100W</mi:Filter>
-                                <mi:ReadoutPattern>FASTR1</mi:ReadoutPattern>
-                                <mi:Groups>20</mi:Groups>
-                                <mi:Integrations>100</mi:Integrations>
-                                <mi:EtcId></mi:EtcId>
-                                <mi:Dither>Dither 1</mi:Dither>
-                            </mi:FilterConfig>
-                        </mi:Filters>
-                    </mi:MiriImaging>
-                </Template>
-                <ScienceDuration>1200</ScienceDuration>
-                <CoordinatedParallel>false</CoordinatedParallel>
-                <SpecialRequirements>
-                    <OrientRange OrientMin="89.50443176 Degrees" OrientMax="103.50443176 Degrees" MsaSelectedAngle="false"/>
-                </SpecialRequirements>
-                <MosaicParameters>
-                    <Rows>1</Rows>
-                    <Columns>1</Columns>
-                    <RowOverlapPercent>10.0</RowOverlapPercent>
-                    <ColumnOverlapPercent>10.0</ColumnOverlapPercent>
-                    <SkewDegreesX>0.0</SkewDegreesX>
-                    <SkewDegreesY>0.0</SkewDegreesY>
-                    <MosaicTiles TileNumber="1">
-                        <TileState>Tile Included</TileState>
-                    </MosaicTiles>
-                    <MosaicTileOrder>DEFAULT</MosaicTileOrder>
-                </MosaicParameters>
-                <ObservingWindowsContainer>
-                    <MOSSStartDate></MOSSStartDate>
-                    <MOSSEndDate></MOSSEndDate>
-                    <MOSSShowWindows>false</MOSSShowWindows>
-                </ObservingWindowsContainer>
-                <Visit Number="1"/>
-            </Observation>
-            <Observation AutoTarget="false">
-                <Number>11</Number>
                 <TargetID>3 HD-218261</TargetID>
                 <Label>REF 1065C</Label>
                 <Instrument>MIRI</Instrument>
@@ -1066,7 +1015,7 @@ Kmag=5.14</Comments>
                 <Visit Number="1"/>
             </Observation>
             <Observation AutoTarget="false">
-                <Number>12</Number>
+                <Number>11</Number>
                 <TargetID>3 HD-218261</TargetID>
                 <Label>REF 1140C</Label>
                 <Instrument>MIRI</Instrument>
@@ -1108,7 +1057,7 @@ Kmag=5.14</Comments>
                 <Visit Number="1"/>
             </Observation>
             <Observation AutoTarget="false">
-                <Number>13</Number>
+                <Number>12</Number>
                 <TargetID>3 HD-218261</TargetID>
                 <Label>REF 1550C</Label>
                 <Instrument>MIRI</Instrument>
@@ -1150,9 +1099,58 @@ Kmag=5.14</Comments>
                 <Visit Number="1"/>
             </Observation>
             <Observation AutoTarget="false">
-                <Number>14</Number>
+                <Number>13</Number>
                 <TargetID>3 HD-218261</TargetID>
                 <Label>REF 2100W</Label>
+                <Instrument>MIRI</Instrument>
+                <Template>
+                    <mi:MiriImaging>
+                        <mi:Subarray>SUB256</mi:Subarray>
+                        <mi:Dithers>
+                            <mi:DitherSpecification>
+                                <mi:DitherType>2-Point</mi:DitherType>
+                                <mi:PatternSize>DEFAULT</mi:PatternSize>
+                            </mi:DitherSpecification>
+                        </mi:Dithers>
+                        <mi:Filters>
+                            <mi:FilterConfig>
+                                <mi:Exposures>1</mi:Exposures>
+                                <mi:Filter>F2100W</mi:Filter>
+                                <mi:ReadoutPattern>FASTR1</mi:ReadoutPattern>
+                                <mi:Groups>20</mi:Groups>
+                                <mi:Integrations>100</mi:Integrations>
+                                <mi:EtcId></mi:EtcId>
+                                <mi:Dither>Dither 1</mi:Dither>
+                            </mi:FilterConfig>
+                        </mi:Filters>
+                    </mi:MiriImaging>
+                </Template>
+                <ScienceDuration>1200</ScienceDuration>
+                <CoordinatedParallel>false</CoordinatedParallel>
+                <SpecialRequirements/>
+                <MosaicParameters>
+                    <Rows>1</Rows>
+                    <Columns>1</Columns>
+                    <RowOverlapPercent>10.0</RowOverlapPercent>
+                    <ColumnOverlapPercent>10.0</ColumnOverlapPercent>
+                    <SkewDegreesX>0.0</SkewDegreesX>
+                    <SkewDegreesY>0.0</SkewDegreesY>
+                    <MosaicTiles TileNumber="1">
+                        <TileState>Tile Included</TileState>
+                    </MosaicTiles>
+                    <MosaicTileOrder>DEFAULT</MosaicTileOrder>
+                </MosaicParameters>
+                <ObservingWindowsContainer>
+                    <MOSSStartDate></MOSSStartDate>
+                    <MOSSEndDate></MOSSEndDate>
+                    <MOSSShowWindows>false</MOSSShowWindows>
+                </ObservingWindowsContainer>
+                <Visit Number="1"/>
+            </Observation>
+            <Observation AutoTarget="false">
+                <Number>14</Number>
+                <TargetID>1 HR8799</TargetID>
+                <Label>HR8799 2100W</Label>
                 <Instrument>MIRI</Instrument>
                 <Template>
                     <mi:MiriImaging>
@@ -1208,14 +1206,20 @@ Kmag=5.14</Comments>
             <Observation>Ref star - NIRCam - MASKLWB (Obs 4)</Observation>
             <Observation>HR 8799 bcde - NIRCam - Roll 2 - MASKLWB (Obs 5)</Observation>
             <Observation>HR 8799 - NIRCam - Roll 2 - MASK430R (Obs 6)</Observation>
+            <Time></Time>
+        </GroupWithinLink>
+        <GroupWithinLink Sequence="true" NonInterruptible="true">
             <Observation>HR8799 1065C (Obs 7)</Observation>
             <Observation>HR8799 1140C (Obs 8)</Observation>
             <Observation>HR8799 1550C (Obs 9)</Observation>
-            <Observation>HR8799 2100W (Obs 10)</Observation>
-            <Observation>REF 1065C (Obs 11)</Observation>
-            <Observation>REF 1140C (Obs 12)</Observation>
-            <Observation>REF 1550C (Obs 13)</Observation>
-            <Observation>REF 2100W (Obs 14)</Observation>
+            <Observation>REF 1065C (Obs 10)</Observation>
+            <Observation>REF 1140C (Obs 11)</Observation>
+            <Observation>REF 1550C (Obs 12)</Observation>
+            <Time></Time>
+        </GroupWithinLink>
+        <GroupWithinLink Sequence="true" NonInterruptible="true">
+            <Observation>REF 2100W (Obs 13)</Observation>
+            <Observation>HR8799 2100W (Obs 14)</Observation>
             <Time></Time>
         </GroupWithinLink>
         <OrientFromLink Mode="Aperture" PrimaryObs="HR 8799 - NIRCam - Roll 1 - MASK430R (Obs 1)" OrientFromObs="HR 8799 - NIRCam - Roll 2 - MASK430R (Obs 6)" MinAngle="-7 Degrees" MaxAngle="-14 Degrees"/>

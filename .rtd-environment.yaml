@@ -20,4 +20,4 @@ dependencies:
         - poppy>=1.0.1
         - webbpsf>=1.0.0
         - jwst>=1.2
-        - webbpsf_ext>=1.0.3
+        - webbpsf_ext>=1.0.4

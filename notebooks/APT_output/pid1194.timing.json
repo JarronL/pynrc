@@ -1,18 +1,18 @@
 {
   "proposal_id" : "1194",
   "number_of_visits" : 14,
-  "science_time" : 10.54,
-  "charged_time" : 20.89,
+  "science_time" : 10.55,
+  "charged_time" : 21.2,
   "observations" : [ {
     "id" : 1,
-    "charged_duration_seconds" : 5509,
-    "science_duration_seconds" : 1376,
+    "charged_duration_seconds" : 5528,
+    "science_duration_seconds" : 1412,
     "number_of_visits" : 1,
     "instrument" : "NIRCAM",
     "template" : "NIRCam Coronagraphic Imaging",
     "visits" : [ {
       "id" : 1,
-      "scheduling_duration" : 2949,
+      "scheduling_duration" : 2965,
       "components" : [ {
         "type" : "VISIT_SLEW",
         "duration" : 1800
@@ -84,10 +84,10 @@
         "duration" : 69
       }, {
         "type" : "SCIENCE",
-        "duration" : 424
+        "duration" : 428
       }, {
         "type" : "EXPOSURE_OVERHEAD",
-        "duration" : 49
+        "duration" : 40
       }, {
         "type" : "OSS",
         "duration" : 21
@@ -99,10 +99,10 @@
         "duration" : 69
       }, {
         "type" : "SCIENCE",
-        "duration" : 866
+        "duration" : 898
       }, {
         "type" : "EXPOSURE_OVERHEAD",
-        "duration" : 62
+        "duration" : 51
       }, {
         "type" : "VISIT_OVERHEADS",
         "duration" : 86
@@ -287,14 +287,14 @@
     } ]
   }, {
     "id" : 3,
-    "charged_duration_seconds" : 3736,
-    "science_duration_seconds" : 1000,
+    "charged_duration_seconds" : 3701,
+    "science_duration_seconds" : 990,
     "number_of_visits" : 1,
     "instrument" : "NIRCAM",
     "template" : "NIRCam Coronagraphic Imaging",
     "visits" : [ {
       "id" : 1,
-      "scheduling_duration" : 2574,
+      "scheduling_duration" : 2544,
       "components" : [ {
         "type" : "VISIT_SLEW",
         "duration" : 646
@@ -339,10 +339,10 @@
         "duration" : 69
       }, {
         "type" : "SCIENCE",
-        "duration" : 65
+        "duration" : 69
       }, {
         "type" : "EXPOSURE_OVERHEAD",
-        "duration" : 18
+        "duration" : 17
       }, {
         "type" : "SAM",
         "duration" : 12
@@ -351,10 +351,10 @@
         "duration" : 10
       }, {
         "type" : "SCIENCE",
-        "duration" : 65
+        "duration" : 69
       }, {
         "type" : "EXPOSURE_OVERHEAD",
-        "duration" : 18
+        "duration" : 17
       }, {
         "type" : "SAM",
         "duration" : 12
@@ -363,10 +363,10 @@
         "duration" : 10
       }, {
         "type" : "SCIENCE",
-        "duration" : 65
+        "duration" : 69
       }, {
         "type" : "EXPOSURE_OVERHEAD",
-        "duration" : 18
+        "duration" : 17
       }, {
         "type" : "SAM",
         "duration" : 12
@@ -375,10 +375,10 @@
         "duration" : 10
       }, {
         "type" : "SCIENCE",
-        "duration" : 65
+        "duration" : 69
       }, {
         "type" : "EXPOSURE_OVERHEAD",
-        "duration" : 18
+        "duration" : 17
       }, {
         "type" : "SAM",
         "duration" : 12
@@ -387,10 +387,10 @@
         "duration" : 10
       }, {
         "type" : "SCIENCE",
-        "duration" : 65
+        "duration" : 69
       }, {
         "type" : "EXPOSURE_OVERHEAD",
-        "duration" : 18
+        "duration" : 17
       }, {
         "type" : "SAM",
         "duration" : 24
@@ -405,10 +405,10 @@
         "duration" : 69
       }, {
         "type" : "SCIENCE",
-        "duration" : 135
+        "duration" : 129
       }, {
         "type" : "EXPOSURE_OVERHEAD",
-        "duration" : 21
+        "duration" : 18
       }, {
         "type" : "SAM",
         "duration" : 12
@@ -417,10 +417,10 @@
         "duration" : 10
       }, {
         "type" : "SCIENCE",
-        "duration" : 135
+        "duration" : 129
       }, {
         "type" : "EXPOSURE_OVERHEAD",
-        "duration" : 21
+        "duration" : 18
       }, {
         "type" : "SAM",
         "duration" : 12
@@ -429,10 +429,10 @@
         "duration" : 10
       }, {
         "type" : "SCIENCE",
-        "duration" : 135
+        "duration" : 129
       }, {
         "type" : "EXPOSURE_OVERHEAD",
-        "duration" : 21
+        "duration" : 18
       }, {
         "type" : "SAM",
         "duration" : 12
@@ -441,10 +441,10 @@
         "duration" : 10
       }, {
         "type" : "SCIENCE",
-        "duration" : 135
+        "duration" : 129
       }, {
         "type" : "EXPOSURE_OVERHEAD",
-        "duration" : 21
+        "duration" : 18
       }, {
         "type" : "SAM",
         "duration" : 12
@@ -453,10 +453,10 @@
         "duration" : 10
       }, {
         "type" : "SCIENCE",
-        "duration" : 135
+        "duration" : 129
       }, {
         "type" : "EXPOSURE_OVERHEAD",
-        "duration" : 21
+        "duration" : 18
       }, {
         "type" : "VISIT_OVERHEADS",
         "duration" : 70
@@ -1088,14 +1088,14 @@
     } ]
   }, {
     "id" : 6,
-    "charged_duration_seconds" : 3404,
-    "science_duration_seconds" : 1376,
+    "charged_duration_seconds" : 3422,
+    "science_duration_seconds" : 1412,
     "number_of_visits" : 1,
     "instrument" : "NIRCAM",
     "template" : "NIRCam Coronagraphic Imaging",
     "visits" : [ {
       "id" : 1,
-      "scheduling_duration" : 2759,
+      "scheduling_duration" : 2775,
       "components" : [ {
         "type" : "VISIT_SLEW",
         "duration" : 175
@@ -1167,10 +1167,10 @@
         "duration" : 69
       }, {
         "type" : "SCIENCE",
-        "duration" : 424
+        "duration" : 428
       }, {
         "type" : "EXPOSURE_OVERHEAD",
-        "duration" : 49
+        "duration" : 40
       }, {
         "type" : "OSS",
         "duration" : 21
@@ -1182,10 +1182,10 @@
         "duration" : 69
       }, {
         "type" : "SCIENCE",
-        "duration" : 866
+        "duration" : 898
       }, {
         "type" : "EXPOSURE_OVERHEAD",
-        "duration" : 62
+        "duration" : 51
       }, {
         "type" : "VISIT_OVERHEADS",
         "duration" : 86
@@ -1199,23 +1199,23 @@
     } ]
   }, {
     "id" : 7,
-    "charged_duration_seconds" : 3395,
+    "charged_duration_seconds" : 2991,
     "science_duration_seconds" : 1080,
     "number_of_visits" : 1,
     "instrument" : "MIRI",
     "template" : "MIRI Coronagraphic Imaging",
     "visits" : [ {
       "id" : 1,
-      "scheduling_duration" : 2612,
+      "scheduling_duration" : 2422,
       "components" : [ {
         "type" : "VISIT_SLEW",
-        "duration" : 314
+        "duration" : 156
       }, {
         "type" : "VISIT_OVERHEADS",
         "duration" : 18
       }, {
         "type" : "GS_ACQ",
-        "duration" : 312
+        "duration" : 122
       }, {
         "type" : "TA_LOCATE",
         "duration" : 102
@@ -1775,63 +1775,6 @@
     } ]
   }, {
     "id" : 10,
-    "charged_duration_seconds" : 2157,
-    "science_duration_seconds" : 1200,
-    "number_of_visits" : 1,
-    "instrument" : "MIRI",
-    "template" : "MIRI Imaging",
-    "visits" : [ {
-      "id" : 1,
-      "scheduling_duration" : 1679,
-      "components" : [ {
-        "type" : "VISIT_SLEW",
-        "duration" : 180
-      }, {
-        "type" : "VISIT_OVERHEADS",
-        "duration" : 18
-      }, {
-        "type" : "GS_ACQ",
-        "duration" : 122
-      }, {
-        "type" : "OSS",
-        "duration" : 22
-      }, {
-        "type" : "MECH",
-        "duration" : 50
-      }, {
-        "type" : "EXPOSURE_OVERHEAD",
-        "duration" : 27
-      }, {
-        "type" : "SCIENCE",
-        "duration" : 600
-      }, {
-        "type" : "EXPOSURE_OVERHEAD",
-        "duration" : 46
-      }, {
-        "type" : "SAM",
-        "duration" : 60
-      }, {
-        "type" : "EXPOSURE_OVERHEAD",
-        "duration" : 16
-      }, {
-        "type" : "SCIENCE",
-        "duration" : 600
-      }, {
-        "type" : "EXPOSURE_OVERHEAD",
-        "duration" : 46
-      }, {
-        "type" : "VISIT_OVERHEADS",
-        "duration" : 54
-      }, {
-        "type" : "OSS",
-        "duration" : 6
-      }, {
-        "type" : "VISIT_OVERHEADS",
-        "duration" : 12
-      } ]
-    } ]
-  }, {
-    "id" : 11,
     "charged_duration_seconds" : 5028,
     "science_duration_seconds" : 2160,
     "number_of_visits" : 1,
@@ -2023,7 +1966,7 @@
       } ]
     } ]
   }, {
-    "id" : 12,
+    "id" : 11,
     "charged_duration_seconds" : 4073,
     "science_duration_seconds" : 2160,
     "number_of_visits" : 1,
@@ -2215,7 +2158,7 @@
       } ]
     } ]
   }, {
-    "id" : 13,
+    "id" : 12,
     "charged_duration_seconds" : 4080,
     "science_duration_seconds" : 2160,
     "number_of_visits" : 1,
@@ -2407,24 +2350,81 @@
       } ]
     } ]
   }, {
-    "id" : 14,
-    "charged_duration_seconds" : 2157,
+    "id" : 13,
+    "charged_duration_seconds" : 2933,
     "science_duration_seconds" : 1200,
     "number_of_visits" : 1,
     "instrument" : "MIRI",
     "template" : "MIRI Imaging",
     "visits" : [ {
       "id" : 1,
-      "scheduling_duration" : 1679,
+      "scheduling_duration" : 1869,
       "components" : [ {
         "type" : "VISIT_SLEW",
-        "duration" : 180
+        "duration" : 659
       }, {
         "type" : "VISIT_OVERHEADS",
         "duration" : 18
       }, {
         "type" : "GS_ACQ",
-        "duration" : 122
+        "duration" : 312
+      }, {
+        "type" : "OSS",
+        "duration" : 22
+      }, {
+        "type" : "MECH",
+        "duration" : 50
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 27
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 600
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 46
+      }, {
+        "type" : "SAM",
+        "duration" : 60
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 16
+      }, {
+        "type" : "SCIENCE",
+        "duration" : 600
+      }, {
+        "type" : "EXPOSURE_OVERHEAD",
+        "duration" : 46
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 54
+      }, {
+        "type" : "OSS",
+        "duration" : 6
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 12
+      } ]
+    } ]
+  }, {
+    "id" : 14,
+    "charged_duration_seconds" : 2911,
+    "science_duration_seconds" : 1200,
+    "number_of_visits" : 1,
+    "instrument" : "MIRI",
+    "template" : "MIRI Imaging",
+    "visits" : [ {
+      "id" : 1,
+      "scheduling_duration" : 1869,
+      "components" : [ {
+        "type" : "VISIT_SLEW",
+        "duration" : 640
+      }, {
+        "type" : "VISIT_OVERHEADS",
+        "duration" : 18
+      }, {
+        "type" : "GS_ACQ",
+        "duration" : 312
       }, {
         "type" : "OSS",
         "duration" : 22

@@ -21,10 +21,12 @@ if not on_rtd:
         opd_file = check_fitsgz('OPD_RevW_ote_for_NIRCam_predicted.fits')
     opd_default = (opd_file, 0)
 
+    # If a NIRCam-specific OPD file, grab from NIRCam OPD directory,
+    # otherwise OPD file will be found in main webbpsf-data directory.
     if 'NIRCam' in opd_file:
-        opd_dir = get_webbpsf_data_path()
-    else:
         opd_dir = os.path.join(get_webbpsf_data_path(),'NIRCam','OPD')
+    else:
+        opd_dir = get_webbpsf_data_path()
 
 else:
     opd_dir = ''

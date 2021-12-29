@@ -1240,7 +1240,7 @@ class obs_hci(nrc_hci):
             _log.info('  gen_slope_image: Creating stellar PSF...')
             im_star = self.gen_offset_psf(r, th, sp=sp, wfe_drift=wfe_drift,
                                           return_oversample=return_oversample, **kwargs)
-        elif im_star==0:
+        elif isinstance(im_star, (int,float)) and (im_star==0):
             im_star = np.zeros([ypix_over, xpix_over])
 
         # Expand to full size

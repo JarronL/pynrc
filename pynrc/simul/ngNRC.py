@@ -3,32 +3,31 @@ ngNRC - NIRCam Detector Noise Simulator
 
 Modification History:
 
-15 Feb 2016, J.M. Leisenring, UA/Steward
-    - First Release
-21 July 2016, J.M. Leisenring, UA/Steward
-    - Updated many things and more for nghxrg (v3.0)
-11 Aug 2016, J.M. Leisenring, UA/Steward
+Nov 2021
+    - Auto-generate source tables from Gaia DR2 or Simbad queries
+    - Add WFE drifts.
+Oct 2021
+    - Use numpy random number generator objects to produce repeatable results.
+Sept 2021
+    - Major refactor, splitting out slope_to_level1b and slope_to_fitswriter
+    - Added linearity, flat fields, and cosmic rays
+Apr 2021
+    - Deprecate nghxrg, SCANoise, and slope_to_ramp
+    - Instead use slope_to_ramps
+Oct 2020
+    - Restructure det noise and ramp creation
+    - DMS simulations using JWST pipeline data models
+Feb 2017
+    - Add ngNRC to pyNRC code base
+Aug 2016, J.M. Leisenring, UA/Steward
     - Modified how the detector and multiaccum info is handled
     - Copied detector and multiaccum classes from pyNRC
     - In the future, we will want to integrate this directly
       so that any changes made in the pyNRC classes are accounted.
-21 Feb 2017
-    - Add ngNRC to pyNRC code base
-20 Oct 2020
-    - Restructure det noise and ramp creation
-    - DMS simulations using JWST pipeline data models
-17 Apr 2021
-    - Deprecate nghxrg, SCANoise, and slope_to_ramp
-    - Instead use slope_to_ramps
-20 Sept 2021
-    - Major refactor, splitting out slope_to_level1b and slope_to_fitswriter
-    - Added linearity, flat fields, and cosmic rays
-28 Oct 2021
-    - Use numpy random number generator objects to produce repeatable results.
-16 Nov 2021
-    - Add WFE drifts.
-20 Nov 2021
-    - Auto-generate source tables from Gaia DR2 or Simbad queries
+July 2016, J.M. Leisenring, UA/Steward
+    - Updated many things and more for nghxrg (v3.0)
+Feb 2016, J.M. Leisenring, UA/Steward
+    - First Release
 """
 import json
 import numpy as np
@@ -70,9 +69,8 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
     TODO:
         - Tracking image persistence
         - Static column noise that shifts every integration
-        - Currently only drifting coronagraphic on-mask stars (sci and ref)
+        - Currently only has WFE drifts of coronagraphic on-mask stars (sci and ref)
         - Also drifts non-HCI observations, generating new PSF grids each exposure
-        - Gaia query source tables
 
     Keyword Args
     ============
@@ -94,7 +92,9 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
         observation, printing detector info, SIAF aperture name, filter,
         visit IDs, exposure numbers, and dither information.
         If set to None, then grabs keyword from `sim_config`, otherwise
-        defaults to False if not found.
+        defaults to False if not found. 
+        If paired with `save_dms`, then will generate an empty set of DMS FITS 
+        files with headers populated, but data set to all zeros.
     save_slope : bool or None
         Saves noiseless slope images to a separate DMS-like FITS file
         that is names 'slope_{DMSfilename}'.
@@ -105,7 +105,7 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
         If dry_run=True, then setting save_dms=True will save DMS FITS
         files populated with all zeros.
         If set to None, then grabs keyword from `sim_config`; if no keyword
-        is found, then default to True if dry_run=False, otherwise False.
+        is found, then defaults to True if dry_run=False, otherwise False.
     """
 
     from ..pynrc_core import DetectorOps, NIRCam
@@ -497,7 +497,7 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                         wfe_drift_exp = 0
                     obs_params['wfe_drift'] = wfe_drift_exp
 
-                    # Generate dithered slope image for given exposure ID
+                    
                     if dry_run:
                         idl_off_str = f'({idl_off[0]:+0.3f}, {idl_off[1]:+0.3f})'
                         gsa_str = f'{grp_id:02d}{seq_id:01d}{act_id}'
@@ -506,10 +506,10 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
 
                         # Save Level1b DMS FITS files without any data
                         if save_dms:
-                            obs_params['filename'] = 'pynrc_' + obs_params['filename']
+                            obs_params['filename'] = 'empty_' + obs_params['filename']
                             create_DMS_HDUList(None, None, obs_params, 
                                                save_dir=save_dir, **kwargs_pynrc)
-                    else:
+                    else: # Generate dithered slope image for given exposure ID
 
                         # Start with background
                         # im_bg was initially created above for this 
@@ -1351,7 +1351,8 @@ def make_simbad_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
 
 def gen_wfe_drift(obs_input, case='BOL', iec_period=300, slew_init=10, rand_seed=None,
                   t0_offset=False, plot=False, figname=None):
-    """
+    """ Create WFE drift information over time
+
     Parameters
     ==========
     obs_input : DMS_input class
@@ -1491,13 +1492,13 @@ def gen_wfe_drift(obs_input, case='BOL', iec_period=300, slew_init=10, rand_seed
     pupil_dir    = webbpsf_path
 
     # Pupil and OPD file path names
-    opd_file, opd_slice = opd_default
+    opd_file, opd_index = opd_default
     pupil_path = os.path.join(pupil_dir, pupil_file)
     opd_path   = os.path.join(opd_dir, opd_file)
 
     # Initiate OTE drift class
     name = "Modified OPD from " + str(opd_file)
-    ote = OTE_WFE_Drift_Model(name=name, opd=opd_path, slice=opd_slice, 
+    ote = OTE_WFE_Drift_Model(name=name, opd=opd_path, opd_index=opd_index, 
                               transmission=pupil_path)
 
     # Generate delta OPDs for each time step
