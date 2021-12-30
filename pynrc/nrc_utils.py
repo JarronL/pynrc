@@ -957,8 +957,9 @@ def grism_background_com(filter, pupil='GRISM90', module='A', sp_bg=None,
     return res
 
 
-def make_grism_slope(nrc, src_tbl, tel_pointing, expnum, add_offset=None, **kwargs):
-    """ Create slope image 
+def make_grism_slope(nrc, src_tbl, tel_pointing, expnum, 
+                     add_offset=None, spec_ang=0, **kwargs):
+    """ Create grism slope image 
     """
     
     # Set SIAF aperture info
@@ -1047,7 +1048,8 @@ def make_grism_slope(nrc, src_tbl, tel_pointing, expnum, add_offset=None, **kwar
 
     return wspec_all, im_slope
 
-def place_grism_spec(nrc, sp, xpix, ypix, wref=None, return_oversample=False):
+def place_grism_spec(nrc, sp, xpix, ypix, wref=None, return_oversample=False, 
+                     spec_ang=0, cen_rot=None):
     """ Create spectral image and place ref wavelenght at (x,y) location 
     
     Given a NIRCam instrument object and input spectrum, create a dispersed
@@ -1055,6 +1057,15 @@ def place_grism_spec(nrc, sp, xpix, ypix, wref=None, return_oversample=False):
     (xpix,ypix) coordinates (assuming 'sci' coords). 
 
     Returned values will be a tuple of (wspec, imspec) 
+
+    Parameters
+    ==========
+    nrc : :class:`~pynrc.NIRCam`
+        pynrc.NIRCam class
+
+    Keyword Args
+    ============
+
 
     """
 
@@ -1105,6 +1116,15 @@ def place_grism_spec(nrc, sp, xpix, ypix, wref=None, return_oversample=False):
     arr = np.arange(nx_over)
     cf = jl_poly_fit(arr[~ind_nan], wspec[~ind_nan])
     wspec[ind_nan] = jl_poly(arr[ind_nan], cf)
+
+    # Expand to image
+    wspec = wspec.reshape([1,-1]).repeat(imspec.shape[0], axis=0)
+
+    # Clock spectrum
+    if spec_ang!=0:
+        cen_rot_over = (cen_rot - 0.5) * oversample
+        imspec = rotate_offset(imspec, spec_ang, cen=cen_rot_over)
+        wspec = rotate_offset(wspec, spec_ang, cen=cen_rot_over)
 
     if return_oversample:
         return wspec, imspec
@@ -2092,3 +2112,133 @@ def coron_detector(mask, module, channel=None):
             detname = 'B1' if mask[-1]=='R' else 'B3'
             
     return detname
+
+
+#############################
+
+def segment_pupil_opd(hdu, segment_name, npix=1024):
+    """Extract single segment pupil from input full OPD map"""
+    
+    from webbpsf.webbpsf_core import segname, one_segment_pupil
+    webbpsf_data_path = webbpsf.utils.get_webbpsf_data_path()
+
+    # Pupil and segment information
+    pupil_file = os.path.join(webbpsf_data_path, "jwst_pupil_RevW_npix1024.fits.gz")
+
+    # get the master pupil file, which may or may not be gzipped
+    pupil_file = os.path.join(webbpsf_data_path, f"jwst_pupil_RevW_npix{npix}.fits")
+    if not os.path.exists(pupil_file):
+        # try with .gz
+        pupil_file = os.path.join(webbpsf_data_path, f"jwst_pupil_RevW_npix{npix}.fits.gz")
+    pupil_hdul = fits.open(pupil_file)
+
+    if segment_name.upper()=='ALL':
+        opd_im, opd_header = (hdu.data, hdu.header)
+
+        # New Pupil HDUList
+        hdu = fits.PrimaryHDU(pupil_hdul[0].data)
+        hdu.header = pupil_hdul[0].header.copy()
+        pupil_all_hdul = fits.HDUList([hdu])
+        
+        # New OPD HDUList
+        hdu = fits.PrimaryHDU(opd_im * pupil_all_hdul[0].data)
+        hdu.header = opd_header.copy()
+        opd_all_hdul = fits.HDUList([hdu])
+        
+        return (pupil_all_hdul, opd_all_hdul)
+
+    else:
+        # Parse out segment number
+        # segment_official_name = segname(segment_name)
+        # Parse out the segment number
+        # num = int(segment_official_name.split('-')[1])
+        # Index of segment to grab
+        # iseg = num - 1
+
+        # Pupil mask of segment only
+        pupil_seg_hdul = one_segment_pupil(segment_name, npix=npix)
+        
+        opd_im, opd_header = (hdu.data, hdu.header)
+        opd_im_seg = opd_im * pupil_seg_hdul[0].data
+        
+        # New Pupil HDUList
+        hdu = fits.PrimaryHDU(pupil_seg_hdul[0].data)
+        hdu.header = pupil_seg_hdul[0].header.copy()
+        pupil_seg_hdul = fits.HDUList([hdu])
+
+        # New OPD HDUList
+        hdu = fits.PrimaryHDU(opd_im_seg * pupil_seg_hdul[0].data)
+        hdu.header = opd_header.copy()
+        opd_seg_hdul = fits.HDUList([hdu])
+        
+        return (pupil_seg_hdul, opd_seg_hdul)
+
+def bias_dark_high_temp(darks_80K_dir, T=80):
+    """Extrapolate a bias and dark at some temperature """
+
+    from .reduce.ref_pixels import NRC_refs
+    
+    # Grab the appropriate dark ramp
+    sca = 485
+    dark_files = [f for f in os.listdir(darks_80K_dir)]
+    matching = [s for s in dark_files if (("_{}_".format(sca) in s) and (s.endswith(".fits")))]
+    fname = os.path.join(darks_80K_dir, matching[0])
+
+    # Open the 80K dark fits
+    hdul = fits.open(fname)
+
+    header = hdul[0].header
+    nint   = header['NINT']
+    ng     = header['NGROUP']
+
+    # Reference pixel correction
+    data_mn = np.zeros([ng,2048,2048])
+    for i in range(nint):
+        data_int = hdul[0].data[i*ng:(i+1)*ng]
+        ref = NRC_refs(data_int, header)
+        ref.calc_avg_amps()
+        ref.correct_amp_refs()
+
+        data_mn += ref.data
+
+    data_mn /= nint
+    hdul.close()
+
+    # Perform linear fit to averaged ramps
+    det = ref.detector
+    tarr = (np.arange(det.multiaccum.ngroup)+1) * ref.detector.time_group
+    bias_80K, dark_80K = jl_poly_fit(tarr, data_mn)
+    
+    # pynrc data path
+    pynrc_data_path = conf.PYNRC_PATH
+    
+    # calib sub-directory info for dark and bias
+    subdir_dark = os.path.join('calib', f'{sca}', 'SUPER_DARK')
+    subdir_bias = os.path.join('calib', f'{sca}', 'SUPER_BIAS')
+
+    # file names
+    file_dark0 = f'SUPER_DARK_{sca}.FITS'
+    file_bias0 = f'SUPER_BIAS_{sca}.FITS'
+
+    # Full paths
+    path_dark0 = os.path.join(pynrc_data_path, subdir_dark, file_dark0)
+    path_bias0 = os.path.join(pynrc_data_path, subdir_bias, file_bias0)
+    
+    hdul_dark0 = fits.open(path_dark0)
+    hdul_bias0 = fits.open(path_bias0)
+    
+    dark0 = hdul_dark0[0].data
+    bias0 = hdul_bias0[0].data
+    
+    # Some interpolation/extrapolation
+    # Assume linear with log(dark) vs 1/T (Rule07 relationship)
+    f = ((1/T - 1/39) / (1/80 - 1/39))
+    dark_new = 10**(np.log10(dark_80K)*f + np.log10(dark0)*(1-f))
+    # Assume bias offset is linear with temperature 
+    f = ((T-39.0) / (80.0-39.0))
+    bias_new = (bias_80K*f + bias0*(1-f))
+    
+    hdul_dark0.close()
+    hdul_bias0.close()
+    
+    return (bias_new, dark_new)
