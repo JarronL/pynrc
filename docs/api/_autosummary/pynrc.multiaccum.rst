@@ -1,7 +1,7 @@
-pynrc.detops.multiaccum
-=======================
+﻿pynrc.multiaccum
+================
 
-.. currentmodule:: pynrc.detops
+.. currentmodule:: pynrc
 
 .. autoclass:: multiaccum
    :members:

@@ -14,6 +14,7 @@
    .. autosummary::
       :toctree:
    
+      bias_dark_high_temp
       bin_spectrum
       build_mask
       build_mask_detid
@@ -34,6 +35,7 @@
       pix_noise
       place_grism_spec
       place_grismr_tso
+      segment_pupil_opd
       var_ex_model
       zodi_euclid
       zodi_spec
