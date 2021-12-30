@@ -612,7 +612,7 @@ def slope_to_level1b(im_slope, obs_params, cal_obj=None, save_dir=None,
     obs_params : dict
         Dictionary of parameters to populate DMS header. 
         See `create_DMS_HDUList` in dms.py.
-    cal_obj : :class:`pynrc.nircam_cal`
+    cal_obj : :class:`~pynrc.nircam_cal`
         DMS object built from exported APT files. 
         See `DMS_input` in apt.py.
     save_dir : None or str
@@ -715,7 +715,7 @@ def sources_to_slope(source_table, nircam_obj, obs_params, tel_pointing,
         Table of objects in across the region, including headers
         'ra', 'dec', and object fluxes in NIRCam filter in vega mags where
         headers are labeled the filter name (e.g, 'F444W').
-    nircam_obj : :class:`pynrc.NIRCam`
+    nircam_obj : :class:`~pynrc.NIRCam`
         NIRCam instrument class for PSF generation.
     obs_params : dict
         Dictionary of parameters to populate DMS header. 
@@ -872,7 +872,7 @@ def sources_to_level1b(source_table, nircam_obj, obs_params, tel_pointing,
         Table of objects in across the region, including headers
         'ra', 'dec', and object fluxes in NIRCam filter in vega mags where
         headers are labeled the filter name (e.g, 'F444W').
-    nircam_obj : :class:`pynrc.NIRCam`
+    nircam_obj : :class:`~pynrc.NIRCam`
         NIRCam instrument class for PSF generation.
     obs_params : dict
         Dictionary of parameters to populate DMS header. 
@@ -880,7 +880,7 @@ def sources_to_level1b(source_table, nircam_obj, obs_params, tel_pointing,
     tel_pointing : :class:`webbpsf_ext.jwst_point`
         JWST telescope pointing information. Holds pointing coordinates 
         and dither information for a given telescope visit.
-    cal_obj : :class:`pynrc.nircam_cal`
+    cal_obj : :class:`~pynrc.nircam_cal`
         NIRCam calibration class that holds the necessary calibration 
         info to simulate a ramp.
     im_bg : None or ndarray
@@ -2731,7 +2731,7 @@ def xtalk_image(frame, det, coeffs=None):
     ----------
     frame : ndarray
         An image to calculate and add crosstalk to.
-    det : :class:`pynrc.DetectorOps`
+    det : :class:`~pynrc.DetectorOps`
         Detector class corresponding to data.
     coeffs : None or Table
         Table of coefficients corresponding to detector
@@ -2786,7 +2786,7 @@ def add_xtalk(data, det, coeffs=None):
     ----------
     data : ndarray
         2D or 3D data cube
-    det : :class:`pynrc.DetectorOps`
+    det : :class:`~pynrc.DetectorOps`
         Detector class corresponding to data.
     coeffs : None or Table
         Table of coefficients corresponding to detector

@@ -341,7 +341,7 @@ class NIRCam(NIRCam_ext):
     
     Creates a NIRCam instrument class that holds all the information pertinent to
     an observation using a given observation. This class extends the NIRCam subclass
-    ``webbpsf_ext.NIRCam_ext``, to generate PSF coefficients to calculate an arbitrary
+    :class:`webbpsf_ext.NIRCam_ext`, to generate PSF coefficients to calculate an arbitrary
     PSF based on wavelength, field position, and WFE drift.
 
     In addition to PSF generation, includes ability to estimate detector saturation 
@@ -743,8 +743,8 @@ class NIRCam(NIRCam_ext):
         or detector readout mode, pass those arguments through this function
         rather than creating a whole new NIRCam() instance. For example:
         
-        >>> nrc = pynrc.NIRCam('F430M', ngroup=10, nint=5)
-        >>> nrc.update_detectors(ngroup=2, nint=10, wind_mode='STRIPE', ypix=64)
+            >>> nrc = pynrc.NIRCam('F430M', ngroup=10, nint=5)
+            >>> nrc.update_detectors(ngroup=2, nint=10, wind_mode='STRIPE', ypix=64)
     
         A dictionary of the keyword settings can be referenced in :attr:`det_info`.
         This dictionary cannot be modified directly.
@@ -2187,7 +2187,7 @@ class NIRCam(NIRCam_ext):
         """ Generate a simple obs_params dictionary
 
         An obs_params dictionary is used to create a jwst data model (e.g., Level1bModel).
-        Additional **kwargs will add/update elements to the final output dictionary.
+        Additional ``**kwargs`` will add/update elements to the final output dictionary.
 
         Parameters
         ==========

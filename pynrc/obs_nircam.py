@@ -25,9 +25,9 @@ eps = np.finfo(float).eps
 class nrc_hci(NIRCam):
     """NIRCam coronagraphy (and direct imaging)
 
-    Subclass of the :mod:`~pynrc.NIRCam` instrument class with updates for PSF
+    Subclass of the :class:`~pynrc.NIRCam` instrument class with updates for PSF
     generation of off-axis PSFs. If a coronagraph is not present,
-    then this is effectively the same as the :mod:`~pynrc.NIRCam` class.
+    then this is effectively the same as the :class:`~pynrc.NIRCam` class.
 
     Parameters
     ----------
@@ -55,7 +55,7 @@ class nrc_hci(NIRCam):
         Default is to place in center of array.
     autogen_coeffs : bool
         Automatically generate base PSF coefficients. Equivalent to performing
-        `self.gen_psf_coeff()`. `gen_wfedrift_coeff`, and `gen_wfemask_coeff`.
+        :meth:`gen_psf_coeff`, :meth:`gen_wfedrift_coeff`, and :meth:`gen_wfemask_coeff`.
         Default: True.
     sgd_type : str or None
         Small grid dither pattern. Valid types are
@@ -359,7 +359,7 @@ class nrc_hci(NIRCam):
 class obs_hci(nrc_hci):
     """NIRCam coronagraphic observations
 
-    Subclass of the :mod:`~pynrc.nrc_hci` instrument class used to observe
+    Subclass of the :class:`~pynrc.nrc_hci` instrument class used to observe
     stars (plus exoplanets and disks) with either a coronagraph or direct
     imaging.
 
