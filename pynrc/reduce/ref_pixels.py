@@ -206,7 +206,19 @@ class NRC_refs(object):
         else:
             return None
 
-    
+    @property
+    def mask_ref(self):
+        """Reference pixel mask for det coordinates"""
+        return self.detector.mask_ref
+    @property
+    def mask_act(self):
+        """Active pixel mask for det coordinates"""
+        return self.detector.mask_act
+    @property
+    def mask_channels(self):
+        """Channel masks for det coordinates"""
+        return self.detector.mask_channels
+
     def calc_avg_amps(self, top_ref=True, bot_ref=True):
         """Calculate amplifier averages
         
