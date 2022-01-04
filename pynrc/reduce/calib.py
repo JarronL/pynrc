@@ -36,6 +36,7 @@ from pynrc import logging_utils
 _log = logging.getLogger('pynrc')
 
 class nircam_dark(object):
+    """NIRCam dark calibration"""
 
     def __init__(self, scaid, datadir, outdir, lindir=None, DMS=False, 
                  same_scan_direction=False, reverse_scan_direction=False):
