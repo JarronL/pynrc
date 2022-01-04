@@ -963,8 +963,7 @@ def make_grism_slope(nrc, src_tbl, tel_pointing, expnum,
     """
     
     # Set SIAF aperture info
-    siaf_ap_obs = tel_pointing.siaf_ap_obs
-    ap_siaf = siaf_ap_obs
+    ap_siaf = tel_pointing.siaf_ap_obs
     ap_obs = ap_siaf.AperName
     
     # Convert expnum to int if input as string
@@ -1038,7 +1037,9 @@ def make_grism_slope(nrc, src_tbl, tel_pointing, expnum,
 
         # Create spectral image
         xr, yr = xpix[i], ypix[i]
-        wspec, imspec = place_grism_spec(nrc, sp, xr, yr, wref=wref, return_oversample=False)
+        cen_rot = ap_siaf.reference_point('sci')
+        wspec, imspec = place_grism_spec(nrc, sp, xr, yr, wref=wref, return_oversample=False,
+                                         spec_ang=spec_ang, cen_rot=cen_rot)
 
         im_slope += imspec
         wspec_all.append(wspec)
@@ -1062,10 +1063,30 @@ def place_grism_spec(nrc, sp, xpix, ypix, wref=None, return_oversample=False,
     ==========
     nrc : :class:`~pynrc.NIRCam`
         pynrc.NIRCam class
+    sp : :mod:`pysynphot.spectrum`
+        A pysynphot spectrum of target.
+        Should already be normalized to the apparent flux.
+    xpix : float
+        Pixel position along x-axis to place reference wavelength.
+        Specified in 'sci' coordinates. Assumes no spectral rotation.
+    xpix : float
+        Pixel position along y-axis to place reference wavelength.
+        Specified in 'sci' coordinates. Assumes no spectral rotation.
 
     Keyword Args
     ============
-
+    wref : float
+        Undeviated reference wavelength in mircons associated with grism.
+        Automatically determined from :func:`grism_wref` if not specified.
+    return_oversample : bool
+        Return 
+    spec_ang : float
+        Optionally set a rotation angle (deg) of the dispersion.
+        Rotates in clockwise direction.
+    cen_rot : tuple
+        Position in 'sci' coordinates to rotate around if
+        `spec_ang` is set. If not specified, then will rotate
+        around center of image.
 
     """
 
@@ -1122,9 +1143,17 @@ def place_grism_spec(nrc, sp, xpix, ypix, wref=None, return_oversample=False,
 
     # Clock spectrum
     if spec_ang!=0:
+        cen_rot = np.asarray(cen_rot)
         cen_rot_over = (cen_rot - 0.5) * oversample
-        imspec = rotate_offset(imspec, spec_ang, cen=cen_rot_over)
-        wspec = rotate_offset(wspec, spec_ang, cen=cen_rot_over)
+        imspec = rotate_offset(imspec, spec_ang, cen=cen_rot_over, 
+                               recenter=False, reshape=False)
+        wspec = rotate_offset(wspec, spec_ang, cen=cen_rot_over, 
+                              recenter=False, reshape=False, cval=np.nan)
+
+        # Ensure we are croppsed to the correct size
+        sh = (ny_over, nx_over)
+        wspec = pad_or_cut_to_size(wspec, sh)
+        imspec = pad_or_cut_to_size(imspec, sh)
 
     if return_oversample:
         return wspec, imspec
@@ -2173,13 +2202,12 @@ def segment_pupil_opd(hdu, segment_name, npix=1024):
         
         return (pupil_seg_hdul, opd_seg_hdul)
 
-def bias_dark_high_temp(darks_80K_dir, T=80):
+def bias_dark_high_temp(darks_80K_dir, T=80, sca=485):
     """Extrapolate a bias and dark at some temperature """
 
     from .reduce.ref_pixels import NRC_refs
     
     # Grab the appropriate dark ramp
-    sca = 485
     dark_files = [f for f in os.listdir(darks_80K_dir)]
     matching = [s for s in dark_files if (("_{}_".format(sca) in s) and (s.endswith(".fits")))]
     fname = os.path.join(darks_80K_dir, matching[0])
@@ -2234,11 +2262,55 @@ def bias_dark_high_temp(darks_80K_dir, T=80):
     # Assume linear with log(dark) vs 1/T (Rule07 relationship)
     f = ((1/T - 1/39) / (1/80 - 1/39))
     dark_new = 10**(np.log10(dark_80K)*f + np.log10(dark0)*(1-f))
+
     # Assume bias offset is linear with temperature 
     f = ((T-39.0) / (80.0-39.0))
     bias_new = (bias_80K*f + bias0*(1-f))
-    
+
+    # Make sure reference pixels are 0
+    dark_new[det.mask_ref] = 0
+    # Fix any additional NaNs
+    dark_new[np.isnan(dark_new)] = 0
+
+    # Close HDULists
     hdul_dark0.close()
     hdul_bias0.close()
-    
+
     return (bias_new, dark_new)
+
+def dark_ramp_80K(darks_80K_dir, sca=485):
+    """Return dark ramp over time"""
+
+    from .reduce.ref_pixels import NRC_refs
+
+    # Grab the appropriate dark ramp
+    dark_dir = darks_80K_dir
+    dark_files = [f for f in os.listdir(dark_dir)]
+    matching = [s for s in dark_files if (("_{}_".format(sca) in s) and (s.endswith(".fits")))]
+    fname = dark_dir + matching[0]
+
+    # Open the 80K dark fits
+    hdul = fits.open(fname)
+
+    header = hdul[0].header
+    nint   = header['NINT']
+    ng     = header['NGROUP']
+
+    # Reference pixel correction
+    data_mn = np.zeros([ng,2048,2048])
+    for i in range(nint):
+        data_int = hdul[0].data[i*ng:(i+1)*ng]
+        ref = NRC_refs(data_int, header)
+        ref.calc_avg_amps()
+        ref.correct_amp_refs()
+
+        data_mn += ref.data
+
+    data_mn /= nint
+    hdul.close()
+
+    det = ref.detector
+    tarr = (np.arange(det.multiaccum.ngroup)+1) * det.time_group
+    
+    return tarr, data_mn
+
