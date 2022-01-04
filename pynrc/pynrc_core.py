@@ -2286,15 +2286,21 @@ class NIRCam(NIRCam_ext):
         dec : float
             Declination in decimal degrees
         thisday : int
-            Calendar day to use for background calculation.  If not given, will use the
-            average of visible calendar days.
+            Calendar day to use for background calculation. If not given, 
+            will use the average of visible calendar days.
 
         return_full_ramp : bool
             By default, we average groups and drop frames as specified in the
             `det` input. If this keyword is set to True, then return all raw
             frames within the ramp. The last set of `nd2` frames will be omitted.
         out_ADU : bool
-            If true, divide by gain and convert to 16-bit UINT.
+            If True, divide by gain and convert to 16-bit UINT.
+        super_bias : ndarray or None
+            Option to include a custom super bias image. If set to None, then
+            grabs from ``cal_obj``. Should be the same shape as ``im_slope``.
+        super_dark : ndarray or None
+            Option to include a custom super dark image. If set to None, then
+            grabs from ``cal_obj``. Should be the same shape as ``im_slope``.
         include_dark : bool
             Add dark current?
         include_bias : bool

@@ -5237,6 +5237,7 @@ def gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file, rand_se
                 d[k] = dith_info[k][ind]#[0]
 
         # Add a random seed for random dither offsets and noise
+        d['rand_seed_init']  = rand_seed
         d['rand_seed_dith']  = rng.integers(0, 2**32-1)
         d['rand_seed_noise'] = rng.integers(0, 2**32-1)
             
@@ -5677,7 +5678,7 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs='12:00:0
     int_range : list
         Integration indices to use 
     obs_params : dict
-        An initial obs_params dictionary. Any duplicate keywords will be
+        An initial ``obs_params`` dictionary. Any duplicate keywords will be
         updated.
     """
 
@@ -6014,7 +6015,8 @@ class DMS_input():
         self.proposal_info = get_proposal_info(xml_file)
         # Series of dictionaries, one per visit
         # Dictionaries are ordered according to smart accounting order information
-        self.program_info = gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file, rand_seed=rand_seed_init)
+        self.program_info = gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file, 
+                                               rand_seed=rand_seed_init)
 
         # Create unique labels for each exposure
         self.labels = self._gen_obs_labels()
@@ -6095,16 +6097,29 @@ class DMS_input():
                        grp_id=1, seq_id=1, act_id='01'):
         """Generate a single set of observation parameters for a given exposure"""
 
+        # Visit dictionary
+        visit_dict = self.program_info[visit_id]
+
         kwargs = self.proposal_info
         date_obs = self.obs_date
         time_obs = self.obs_time
         pa_v3 = self.pa_v3
 
+        # observation id information
         kwargs['grp_id'] = grp_id
         kwargs['seq_id'] = seq_id
         kwargs['act_id'] = act_id
+        act_int = np.int(act_id, 36) # Convert base 36 to integer number
 
-        visit_dict = self.program_info[visit_id]
+        # Populate random seed information
+        nexp = len(visit_dict['obs_id_info'])
+        rand_seed_noise = visit_dict.get('rand_seed_noise')
+        if rand_seed_noise is not None:
+            rand_seed_noise_j = rand_seed_noise + int(grp_id)*act_int*nexp + int(exp_id)
+            kwargs['rand_seed_noise'] = rand_seed_noise_j
+        kwargs['rand_seed_init']  = visit_dict.get('rand_seed_init')
+        kwargs['rand_seed_dith']  = visit_dict.get('rand_seed_dith')
+
         detname = get_detname(det_id)
         res = populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs=time_obs, pa_v3=pa_v3, 
                                   det=det, segNum=seg_num, segTot=seg_tot, int_range=int_range, **kwargs)
@@ -6220,7 +6235,7 @@ class DMS_input():
 
 def gen_pointing_info(*args, **kwargs):
     """
-    **Deprecated. Use ``gen_jwst_pointing`` instead.**
+    **Deprecated. Use :func:`gen_jwst_pointing` instead.**
     Create telescope pointing sequence for a given visit / exposure.
     """
 
@@ -6228,7 +6243,7 @@ def gen_pointing_info(*args, **kwargs):
     return gen_jwst_pointing(*args, **kwargs)
 
 def gen_jwst_pointing(visit_dict, obs_params, base_std=None, dith_std=None, 
-                      rand_seed=None, rand_seed_base=None):
+                      rand_seed=None, rand_seed_base=None, **kwargs):
     """
     Create telescope pointing sequence for a given visit / exposure.
 
