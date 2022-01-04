@@ -15,6 +15,7 @@ from jwst.datamodels import Level1bModel
 import warnings
 
 from .apt import DMS_input
+NONE_STR = str(None).upper()
 
 import logging
 _log = logging.getLogger('pynrc')
@@ -692,7 +693,7 @@ def update_headers_pynrc_info(filename, obs_params, **kwargs):
 
     # Add file info from kwargs
     kw_to_hkey = {
-        # Keyword Arg        : (Header key, Header comment)
+        # Keyword Arg   : (Header key, Header comment)
         'json_file'     : ('APTJSON',  'APT JSON file input.'),
         'sm_acct_file'  : ('APTSMRT',  'APT smart accounting file input.'),
         'pointing_file' : ('APTPOINT', 'APT pointing file input.'),
@@ -700,7 +701,7 @@ def update_headers_pynrc_info(filename, obs_params, **kwargs):
     }
     for kw in kw_to_hkey.keys():
         hkey, comment = kw_to_hkey[kw]
-        pheader[hkey] = (kwargs.get(kw), comment)
+        pheader[hkey] = (kwargs.get(kw, NONE_STR), comment)
 
     # Insert pynrc header comment
     hkey_first = 'APTJSON'
@@ -709,13 +710,19 @@ def update_headers_pynrc_info(filename, obs_params, **kwargs):
     pheader.insert(hkey_first, '', after=False)
 
     # Input telescope pointing info
-    pheader['RA_IN']    = (obs_params['ra_obs'],'RA of observered SIAF aperture.')
-    pheader['DEC_IN']   = (obs_params['dec_obs'], 'DEC of observered SIAF aperture.')
-    pheader['PAV3_IN']  = (obs_params['pa_v3'], 'Telescope position angle relative to V3.')
-    pheader['ROLL_IN']  = (obs_params['roll_offset'], 'Roll angle relative to nominal V3 PA.')
-    pheader['ELONG_IN'] = (obs_params['solar_elong'], 'Solar elongation (deg).')
-    pheader['PITCH_IN'] = (obs_params['pitch_ang'], 'Telescope pitch angle relative to sun (deg).')
-    pheader['WFEDRIFT'] = (obs_params['wfe_drift'], 'Delta WFE drift from baseline OPD (nm RMS)')
+    kw_to_hkey = {
+        # Keyword Arg : (Header key, Header comment)
+        'ra_obs'      : ('RA_IN',    'RA of observered SIAF aperture.'),
+        'dec_obs'     : ('DEC_IN',   'DEC of observered SIAF aperture.'),
+        'pa_v3'       : ('PAV3_IN',  'Telescope position angle relative to V3.'),
+        'roll_offset' : ('ROLL_IN',  'Roll angle relative to nominal V3 PA.'),
+        'solar_elong' : ('ELONG_IN', 'Solar elongation (deg).'),
+        'pitch_ang'   : ('PITCH_IN', 'Telescope pitch angle relative to sun (deg).'),
+        'wfe_drift'   : ('WFEDRIFT', 'Delta WFE drift from baseline OPD (nm RMS)'),
+    }
+    for kw in kw_to_hkey.keys():
+        hkey, comment = kw_to_hkey[kw]
+        pheader[hkey] = (obs_params.get(kw, NONE_STR), comment)
 
     # Add actual dither offset information
     kw_to_hkey = {
@@ -725,17 +732,19 @@ def update_headers_pynrc_info(filename, obs_params, **kwargs):
     }
     for kw in kw_to_hkey.keys():
         hkey, comment = kw_to_hkey[kw]
-        pheader[hkey] = (kwargs.get(kw), comment)
+        pheader[hkey] = (kwargs.get(kw, NONE_STR), comment)
 
     # Add random seed info
-    rand_init  = obs_params.get('rand_seed_init')
-    rand_dith  = obs_params.get('rand_seed_dith')
-    rand_noise = obs_params.get('rand_seed_noise')
-    rand_dwfe  = obs_params.get('rand_seed_dwfe')
-    pheader['RANDINIT'] = (rand_init, "Random seed to init program sim")
-    pheader['RANDDITH'] = (rand_dith, "Random seed for dither errors")
-    pheader['RANDNOIS'] = (rand_noise, "Random seed for ramp noise init")
-    pheader['RANDDWFE'] = (rand_dwfe, "Random seed for delta WFE IEC component")
+    kw_to_hkey = {
+        # Keyword Arg     : (Header key, Header comment)
+        'rand_seed_init'  : ('RANDINIT', 'Random seed to init program sim'),
+        'rand_seed_dith'  : ('RANDDITH', 'Random seed for dither errors'),
+        'rand_seed_noise' : ('RANDNOIS', 'Random seed for ramp noise init'),
+        'rand_seed_dwfe'  : ('RANDDWFE', 'Random seed for delta WFE IEC component'),
+    }
+    for kw in kw_to_hkey.keys():
+        hkey, comment = kw_to_hkey[kw]
+        pheader[hkey] = (obs_params.get(kw, NONE_STR), comment)
 
     # Add noise parameter settings
     kw_to_hkey = {
@@ -763,7 +772,7 @@ def update_headers_pynrc_info(filename, obs_params, **kwargs):
     }
     for kw in kw_to_hkey.keys():
         hkey, comment = kw_to_hkey[kw]
-        pheader[hkey] = (kwargs.get(kw), comment)
+        pheader[hkey] = (kwargs.get(kw, NONE_STR), comment)
 
     hdulist.flush()
     hdulist.close()
