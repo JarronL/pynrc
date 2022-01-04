@@ -460,10 +460,10 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                         tel_pointing.exp_nums = np.arange(tel_pointing.ndith) + 1 
 
                     # Save random seed in obs_params
-                    obs_params['rand_seed_init'] = rand_seed_init
-                    obs_params['rand_seed_dith'] = rand_seed_dith
+                    obs_params['rand_seed_init']  = rand_seed_init
+                    obs_params['rand_seed_dith']  = rand_seed_dith
                     obs_params['rand_seed_noise'] = rand_seed_noise_j
-                    obs_params['rand_seed_dwfe'] = rand_seed_dwfe
+                    obs_params['rand_seed_dwfe']  = rand_seed_dwfe
 
                     # Skip slope creation if obs_label doesn't match NIRCam class
                     a = obs_params['siaf_ap'].AperName
@@ -680,8 +680,7 @@ def slope_to_level1b(im_slope, obs_params, cal_obj=None, save_dir=None,
         im_slope = det_to_sci(im_slope)
     
     if cal_obj is None:
-        caldir = os.path.join(conf.PYNRC_PATH, 'calib', str(det.scaid))
-        cal_obj = nircam_cal(det.scaid, caldir)
+        cal_obj = nircam_cal(det.scaid, verbose=False)
         
     # Simulate data for a single ramp
     sci_data = []
@@ -1820,6 +1819,7 @@ def gen_ramp_biases(ref_dict, nchan=None, data_shape=(2,2048,2048),
     """
 
     rng = np.random.default_rng(rand_seed)
+
     
     if nchan is None:
         nchan = len(ref_dict['amp_offset_mean'])
@@ -2446,7 +2446,7 @@ def gen_dark_ramp(dark, out_shape, tf=10.73677, gain=1, ref_info=None,
     return result 
 
 def sim_dark_ramp(det, slope_image, ramp_avg_ch=None, ramp_avg_tf=10.73677, 
-    out_ADU=False, verbose=False, **kwargs):
+                  out_ADU=False, verbose=False, **kwargs):
     """
     Simulate a dark current ramp based on input det class and a
     super dark image. 
@@ -2474,9 +2474,9 @@ def sim_dark_ramp(det, slope_image, ramp_avg_ch=None, ramp_avg_tf=10.73677,
     out_ADU : bool
         Divide by gain to get value in ADU (float).
     include_poisson : bool
-        Include Poisson noise from photons?
+        Include Poisson noise from photoelectrons?
     verbose : bool
-        Print some messages.
+        Print some info messages.
     """
     
     nchan = det.nout
@@ -2819,7 +2819,7 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
                            add_crs=True, cr_model='SUNMAX', cr_scale=1, apply_flats=None, 
                            apply_nonlinearity=True, random_nonlin=False, latents=None,
                            rand_seed=None, return_zero_frame=None, return_full_ramp=False, 
-                           prog_bar=True, **kwargs):
+                           prog_bar=True, super_bias=None, super_dark=None, **kwargs):
     
     """ Return a single simulated ramp
     
@@ -2835,7 +2835,7 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
         Can either be full frame or match `det` subarray. 
         Returns `det` subarray shape.
     cframe : str
-        Coordinate frame of input image, 'sci' or 'det'.
+        Coordinate frame of input slope image, 'sci' or 'det'.
         Output will be in same coordinates.
 
     Keyword Args
@@ -2849,12 +2849,22 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
         frames within the ramp. The last set of `nd2` drop frames are omitted.
     out_ADU : bool
         If true, divide by gain and convert to 16-bit UINT.
-    include_poisson : bool
-        Include photon noise?
+    super_bias : ndarray or None
+        Option to include a custom super bias image. If set to None, then
+        grabs from ``cal_obj``. Can either be same shape as ``im_slope``
+        or full frame version. Values assumed to be in units of DN.
+        Assumed to be in 'det' coordinates.
+    super_dark : ndarray or None
+        Option to include a custom super dark image. If set to None, then
+        grabs from ``cal_obj``. Can either be same shape as ``im_slope``
+        or full frame version. Values assumed to be in units of DN.
+        Assumed to be in 'det' coordinates.
     include_dark : bool
         Add dark current?
     include_bias : bool
         Add detector bias?
+    include_poisson : bool
+        Include photon noise?
     include_ktc : bool
         Add kTC noise?
     include_rn : bool
@@ -2905,8 +2915,10 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     dco = cal_obj
 
     # Super bias and darks
-    super_bias = dco.super_bias_deconv # DN
-    super_dark = dco.super_dark_deconv # DN/sec
+    if super_bias is None:
+        super_bias = dco.super_bias_deconv # DN
+    if super_dark is None:
+        super_dark = dco.super_dark_deconv # DN/sec
 
     # IPC/PPC kernel information
     k_ipc = dco.kernel_ipc
@@ -2945,9 +2957,11 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     x1, x2 = (det.x0, det.x0 + nx)
     y1, y2 = (det.y0, det.y0 + ny)
     
-    # Crop super bias and super dark for subarray observations
-    super_bias = super_bias[y1:y2,x1:x2]
-    super_dark = super_dark[y1:y2,x1:x2]
+    # Do we need to crop out subarray?
+    if super_bias.shape!=(ny,nx):
+        super_bias = super_bias[y1:y2,x1:x2]
+    if super_dark.shape!=(ny,nx):
+        super_dark = super_dark[y1:y2,x1:x2]
     
     # Number of total frames up the ramp (including drops)
     ma     = det.multiaccum
