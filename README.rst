@@ -8,7 +8,11 @@ A JWST NIRCam ETC and Simulator
 .. image:: https://img.shields.io/pypi/v/pynrc.svg
         :target: https://pypi.python.org/pypi/pynrc
         :alt: Badge showing current released PyPI version
-
+        
+.. image:: https://zenodo.org/badge/DOI/10.5281/zenodo.5829553.svg
+        :target: https://doi.org/10.5281/zenodo.5829553
+        :alt: Zenodo DOI
+   
 .. image:: https://readthedocs.org/projects/pynrc/badge/?version=latest
         :target: https://pynrc.readthedocs.io/en/latest/?badge=latest
         :alt: Documentation Status
