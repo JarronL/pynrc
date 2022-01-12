@@ -774,6 +774,18 @@ def update_headers_pynrc_info(filename, obs_params, **kwargs):
         hkey, comment = kw_to_hkey[kw]
         pheader[hkey] = (kwargs.get(kw, NONE_STR), comment)
 
+    # Add ice and nvr info
+    kw_to_hkey = {
+        # Keyword Arg     : (Header key, Header comment)
+        'ice_scale' : ('ICESCALE', 'Scale relative to 0.0131 um thickness'),
+        'nvr_scale' : ('NVRSCALE', 'Scale relative to 0.280 um thickness'),
+        'nc_scale'  : ('NCSCALE',  'Scale of NVR=0.189 um and H2O=0.050 um'),
+        'ote_scale' : ('OTESCALE', 'Scale relative to 0.0131 um thickness'),
+    }
+    for kw in kw_to_hkey.keys():
+        hkey, comment = kw_to_hkey[kw]
+        pheader[hkey] = (kwargs.get(kw, NONE_STR), comment)
+
     hdulist.flush()
     hdulist.close()
 
