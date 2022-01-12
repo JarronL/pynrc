@@ -162,7 +162,7 @@ def det_to_sci(image, detid):
     Parameters
     ----------
     image : ndarray
-        Input image to tranform.
+        Input image or cube to tranform.
     detid : int or str
         NIRCam detector/SCA ID, either 481-490 or A1-B5.
     """
@@ -210,7 +210,7 @@ def sci_to_det(image, detid):
     Parameters
     ----------
     image : ndarray
-        Input image to tranform.
+        Input image or cube to tranform.
     detid : int or str
         NIRCam detector/SCA ID, either 481-490 or A1-B5.
     """

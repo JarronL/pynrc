@@ -1511,7 +1511,7 @@ def plot_images_swlw(obs_dict, hdu_dict, filt_keys, wfe_drift, fov=10,
 
     name_sci = obs.sp_sci.name
     wfe_text = "WFE Drift = {} nm".format(wfe_drift)
-    fig.suptitle('{} ({})'.format(name_sci, wfe_text), fontsize=16);
+    fig.suptitle('{} ({})'.format(name_sci, wfe_text), fontsize=16)
     fig.tight_layout()
 
     fig.subplots_adjust(wspace=0.1, hspace=0.1, top=0.9, bottom=0.07 , left=0.05, right=0.97)

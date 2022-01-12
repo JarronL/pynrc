@@ -2605,11 +2605,12 @@ def apply_flat(cube, det, imflat_full):
     cube : ndarray
         Simulated ramp data in e-. These should be intrinsic
         flux values with Poisson noise, but prior to read noise,
-        kTC, IPC, etc. Size (nz,ny,nx). In det coords.
-        Can either be full frame or match `det` subarray. 
-        Returns `det` subarray shape.
+        kTC, IPC, etc. Size (nz,ny,nx). In 'det' coords.
+        Can either be full frame or match ``det`` subarray. 
+        Returns ``det`` subarray shape.
     det : Detector Class
-        Desired detector class output
+        Desired detector class output. Mainly just utilizes detector
+        subarray position and shape.
     imflat_full : ndarray
         Full field image of flat field in det coords. Will get trimmed
         if necessary.
