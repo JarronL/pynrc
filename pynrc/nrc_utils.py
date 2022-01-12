@@ -40,8 +40,6 @@ from numpy.polynomial import legendre
 from . import conf
 from .logging_utils import setup_logging
 
-from webbpsf_ext.bandpasses import nircam_com_th, nircam_com_nd
-
 from .maths import robust
 from .maths.fast_poly import *
 from .maths.image_manip import *
@@ -126,6 +124,7 @@ __epsilon = np.finfo(float).eps
 
 from webbpsf_ext.bandpasses import bp_igood, bp_wise, bp_2mass, bp_gaia
 from webbpsf_ext.bandpasses import nircam_filter as read_filter
+from webbpsf_ext.bandpasses import nircam_com_th, nircam_com_nd
 
 
 ###########################################################################
@@ -386,6 +385,9 @@ def bin_spectrum(sp, wave, waveunits='um'):
     sp.convert(waveunits)
     # We also want input to be in terms of counts to conserve flux
     sp.convert('flam')
+
+    # Make sure wavelengths are sorted monotonically
+    wave = np.sort(wave)
 
     edges = S.binning.calculate_bin_edges(wave)
     ind = (sp.wave >= edges[0]) & (sp.wave <= edges[-1])
