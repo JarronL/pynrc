@@ -1115,8 +1115,11 @@ class NIRCam(NIRCam_ext):
         elif wind_mode=='STRIPE':
             key = 'NRC{}_GRISMTS{:.0f}'.format(detid,self.det_info['ypix'])
         # WFSS
+        # TODO: WFSS SIAF apertures no longer support 'sci' and 'det' coordinates
+        # These apertures are not useful
         elif is_grism and (wind_mode=='FULL'):
-            key = 'NRC{}_FULL_{}_WFSS'.format(detid, pupil_mask)
+            key = 'NRC{}_FULL_{}'.format(detid, pupil_mask)
+            _log.warn('WFSS SIAF apertures are currently unsupported')
         # Subarrays
         elif wind_mode=='WINDOW':
             key = 'NRC{}_SUB{}P'.format(detid,self.det_info['xpix'])
