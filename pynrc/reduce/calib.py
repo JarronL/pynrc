@@ -5486,7 +5486,8 @@ def get_linear_coeffs(allfiles, super_bias=None, DMS=False, kppc=None, kipc=None
 
 def pixel_linearity_gains(frame, coeff_arr, use_legendre=True, lxmap=[0,1e5]):
     """
-    Given some image data and coefficient
+    Given some image data and coefficients, determine effective 
+    gain value to use to go from DN to electrons.
     """
 
     # from numpy.polynomial import legendre
@@ -5537,6 +5538,7 @@ def apply_linearity(cube, det, coeff_dict):
              - 'cf_nonlin_low' : Coefficients for flux values below counts_cut
 
     """
+
     nz, _, _ = cube.shape
     nx, ny = (det.xpix, det.ypix)
 
@@ -5761,3 +5763,78 @@ def get_flat_fields(im_slope, split_low_high=True, smth_sig=10, ref_info=[4,4,4,
         return lflats, pflats
     else:
         return pad_or_cut_to_size(qe_frac, (ny,nx), fill_val=1)
+
+def bp_fix(im, sigclip=5, niter=1, pix_shift=1, bpmask=None, 
+           return_mask=False, verbose=False, in_place=True):
+    """ Find and fix bad pixels in image
+    
+    Paramters
+    ---------
+    im : ndarray
+        Single image
+    sigclip : int
+        How many sigma from mean doe we fix?
+    niter : int
+        How many iterations for sigma clipping? 
+        Ignored if bpmask is set.
+    pix_shift : int
+        We find bad pixels by comparing to neighbors and replacing.
+        E.g., if set to 1, use immediate adjacents neighbors.
+        Replaces with a median of surrounding pixels.
+    bpmask : boolean array
+        Use a pre-determined bad pixel mask for fixing.
+    return_mask : bool
+        If True, then also return a masked array of bad
+        pixels where a value of 1 is "bad".
+    verbose : bool
+        Print number of fixed pixels per iteration
+    in_place : bool
+        Do in-place corrections of input array.
+        Otherwise, return a copy.
+    """
+    
+    # Only single iteration if bpmask is set
+    if bpmask is not None:
+        niter = 1
+    
+    if in_place:
+        arr_out = im
+    else:
+        arr_out = im.copy()
+    maskout = np.zeros(im.shape, dtype='bool')
+    
+    for ii in range(niter):
+        # Create an array of shifted values
+        shift_arr = []
+        sh_vals = np.arange(pix_shift*2+1) - pix_shift
+        for i in sh_vals:
+            for j in sh_vals:
+                if (i != 0) or (j != 0):
+                    shift_arr.append(fshift(arr_out, i, j))
+        shift_arr = np.array(shift_arr)
+    
+        # Take median of shifted values
+        shift_med = np.median(shift_arr, axis=0)
+        if bpmask is None:
+            # Difference of median and reject outliers
+            diff = arr_out - shift_med
+            indgood = robust.mean(diff, Cut=sigclip, return_mask=True)
+            indbad = ~indgood
+        else:
+            indbad = bpmask
+        
+        # Set output array and mask values 
+        arr_out[indbad] = shift_med[indbad]
+        maskout[indbad] = True
+        
+        if verbose:
+            print(f'Bad Pixels fixed: {indbad.sum()}')
+
+        if indbad.sum()==0:
+            break
+
+            
+    if return_mask:
+        return arr_out, maskout
+    else:
+        return arr_out
