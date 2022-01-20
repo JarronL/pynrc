@@ -718,7 +718,7 @@ def sources_to_slope(source_table, nircam_obj, obs_params, tel_pointing,
         NIRCam instrument class for PSF generation.
     obs_params : dict
         Dictionary of parameters to populate DMS header. 
-        See `create_obs_params` in apt.py and `level1b_data_model` in dms.py.
+        See ``create_obs_params`` in apt.py and ``level1b_data_model`` in dms.py.
     tel_pointing : :class:`webbpsf_ext.jwst_point`
         JWST telescope pointing information. Holds pointing coordinates 
         and dither information for a given telescope visit.
@@ -739,15 +739,16 @@ def sources_to_slope(source_table, nircam_obj, obs_params, tel_pointing,
         view. If a coronagraphic observation, then this is for the nominal
         coronagrahic field of view.
     sptype : str
-        Spectral type, such as 'A0V' or 'K2III'.
+        Spectral type to assume point source when generating total counts.
+        Default is 'G0V'.
     wfe_drift : float
         Desired WFE drift value relative to default OPD.
     osamp : int
         Sampling of output PSF relative to detector sampling. If `hdul_psfs` is 
         specified, then the 'OSAMP' header keyword takes precedence.
     use_coeff : bool
-        If True, uses `calc_psf_from_coeff`, other WebbPSF's built-in `calc_psf`.
-        Coefficients are much faster
+        If True, uses ``calc_psf_from_coeff``, other WebbPSF's built-in ``calc_psf``.
+        Coefficients are much faster. Default is True.
     """
 
     nrc = nircam_obj
