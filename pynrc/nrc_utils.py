@@ -959,9 +959,9 @@ def grism_background_com(filter, pupil='GRISM90', module='A', sp_bg=None,
     return res
 
 
-def make_grism_slope(nrc, src_tbl, tel_pointing, expnum, 
-                     add_offset=None, spec_ang=0, **kwargs):
+def make_grism_slope(nrc, src_tbl, tel_pointing, expnum, add_offset=None, spec_ang=0, **kwargs):
     """ Create grism slope image 
+    Parameters
     """
     
     # Set SIAF aperture info
@@ -1375,10 +1375,41 @@ def pickoff_image(ap_obs, v2_obj, v3_obj, flux_obj, oversample=1):
     return xsci, ysci, oversized_image 
 
 
-def gen_unconvolved_point_source_image(nrc, tel_pointing, ra_deg, dec_deg, mags, 
-                                       expnum=1, osamp=1, siaf_ap_obs=None, **kwargs):
+def gen_unconvolved_point_source_image(nrc, tel_pointing, ra_deg, dec_deg, mags, expnum=1, 
+    osamp=1, siaf_ap_obs=None, add_offset=None, **kwargs):
     """ Create an unconvolved image with sub-pixel shifts
     
+    Parameters
+    ==========
+    nrc : :class:`~pynrc.NIRCam`
+        NIRCam instrument class for PSF generation.
+    tel_pointing : :class:`webbpsf_ext.jwst_point`
+        JWST telescope pointing information. Holds pointing coordinates 
+        and dither information for a given telescope visit.
+    ra_deg : ndarray
+        Array of RA positions of point sources in degrees.
+    dec_deg : ndarray
+        Array of Declination of points sourcesin degrees.
+    mags : ndarray
+        Magnitudes associated with each RA/Dec position.
+        Corresponds to ``nrc.bandpass``.
+
+    Keyword Args
+    ============
+    expnum : int
+        Exposure number to use in ``tel_pointing``.
+    osamp : int
+        Output sampling of image.
+    siaf_ap_obs : pysiaf Aperture
+        Option to specify observed SIAF aperture. Otherwise defaults to ``nrc.siaf_ap``.
+    add_offset : tuple or None
+        If specififed, then will add an additional 'idl' offset to source positions.
+    sp_type : str
+        Spectral type to assume when calculating total counts. 
+        Defaults to 'G0V'.
+    mag_units : str
+        Assumed magnitude units of ``mags``. 
+        Default assumes 'vegamag'.
     """    
     from .obs_nircam import attenuate_with_coron_mask, gen_coron_mask
     
@@ -1396,8 +1427,10 @@ def gen_unconvolved_point_source_image(nrc, tel_pointing, ra_deg, dec_deg, mags,
     ind = np.where(tel_pointing.exp_nums == expnum)[0][0]
 
     # Convert RA, Dec coordiantes into V2/V3 (arcsec)
-    # ra_deg, dec_deg = (tbl['ra'], tbl['dec'])
-    idl_off = [tel_pointing.position_offsets_act[ind]]
+    # Include a offset shift to better reposition spectrum?
+    add_offset = np.array([0,0]) if add_offset is None else np.asarray(add_offset)
+    idl_off = np.array([(tel_pointing.position_offsets_act[ind])]) + add_offset
+    # idl_off = [tel_pointing.position_offsets_act[ind]]
     v2_obj, v3_obj = tel_pointing.radec_to_frame((ra_deg, dec_deg), frame_out='tel', idl_offsets=idl_off)
     
     # Create initial POM image, then contract to reasonable size
