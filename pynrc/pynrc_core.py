@@ -508,6 +508,11 @@ class NIRCam(NIRCam_ext):
             elif 'GRISM90' in pupil_mask: 
                 pupil_mask = 'GRISMC'
 
+            # Cannot be set to clear
+            if pupil_mask=='CLEAR':
+                _log.warn('CLEAR is not a valid pupil mask element. Setting to None.')
+                pupil_mask = None
+
         super().__init__(filter=filter, pupil_mask=pupil_mask, image_mask=image_mask, **kwargs)
 
         if apname is None:
