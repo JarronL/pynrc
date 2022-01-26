@@ -29,6 +29,11 @@ save_dir      = '/Users/jarron/NIRCam/Data/NRC_Sims/Sim_NRC35/'
 
 webbpsf_data_path = webbpsf.utils.get_webbpsf_data_path()
 
+# Check that directories exist
+for d in [apt_dir, opd_dir, darks_80K_dir, save_dir, webbpsf_data_path]:
+    if not os.path.isdir(d):
+        print(f'{d} does not exist!')
+
 # Pupil and segment information
 pupil_file = os.path.join(webbpsf_data_path, "jwst_pupil_RevW_npix1024.fits.gz")
 pupil_hdul = fits.open(pupil_file)
@@ -103,7 +108,7 @@ def init_visits(obs_dict, rand_seed_init=None):
     sm_acct_file  = os.path.join(apt_dir, 'pid1409.smart_accounting')
     
     # Define Launch date and time
-    tlaunch = Time('2021-12-22 12:20:00')  
+    tlaunch = Time('2021-12-25 12:20:00')  
     # Populate dates and times for all observations
     for vkey in keys:
         d = obs_dict[vkey]
