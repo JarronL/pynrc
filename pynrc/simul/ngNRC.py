@@ -203,6 +203,10 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
         udetnames =[get_detname(detname)]
         # udetnames = ['NRCA5']
         
+    if dry_run:
+        print('DetID SIAFAperture Filter TargetName VisitID GSAid exp# (idl_off_act) dWFE time')
+
+
     for detname in udetnames:
         # print('detname: ', detname)
 
@@ -502,6 +506,7 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                         idl_off_str = f'({idl_off[0]:+0.3f}, {idl_off[1]:+0.3f})'
                         gsa_str = f'{grp_id:02d}{seq_id:01d}{act_id}'
                         dwfe = f'{wfe_drift_exp:.2f}'
+
                         print(detname, a, f, t, vid, gsa_str, exp_num, idl_off_str, dwfe, tval_exp)
 
                         # Save Level1b DMS FITS files without any data
@@ -1277,13 +1282,18 @@ def make_simbad_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
     # Assume solar temperature for null data
     sptype[sim_tbl['SP_TYPE'].data.mask] = spt_default
     sptype[sim_tbl['SP_TYPE'].data==''] = spt_default
+    for i in range(len(sptype)):
+        spt = sptype[i]
+        if (spt=='') or (len(spt)<2) or (spt[0] not in 'OBAFGKM'):
+            sptype[i] = spt_default
 
     # Create stellar spectra of each unique temperature
     sp_dict = {}
     for spt in np.unique(sptype):
-        if spt=='':
+        if (spt==''):
             continue
         spt2 = spt.split('+')[0]
+        print(spt, spt2)
         spt2 = spt2 + 'V' if len(spt2)==2 else spt2
         sp_dict[spt2] = stellar_spectrum(spt2)
         
