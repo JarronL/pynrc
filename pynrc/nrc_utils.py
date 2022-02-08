@@ -182,7 +182,8 @@ def get_detname(det_id):
         detname = det_id
 
     # If NRCALONG or or NRCBLONG, change 'LONG' to '5' 
-    if 'LONG' in detname:
+    detname = detname.upper()
+    if 'LONG' in detname.upper():
         detname = detname[0:4] + '5'
 
     if detname not in detnames:

@@ -177,6 +177,9 @@ def det_to_sci(image, detid):
                   486:'B1', 487:'B2', 488:'B3', 489:'B4', 490:'B5'}
         detname = scaids[detid]
     
+    if 'NRC' in detname:
+        detname = detname[3:]
+
     xflip = ['A1','A3','A5','B2','B4']
     yflip = ['A2','A4','B1','B3','B5']
 
