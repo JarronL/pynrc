@@ -1293,7 +1293,7 @@ def make_simbad_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
         if (spt==''):
             continue
         spt2 = spt.split('+')[0]
-        print(spt, spt2)
+        # print(spt, spt2)
         spt2 = spt2 + 'V' if len(spt2)==2 else spt2
         sp_dict[spt2] = stellar_spectrum(spt2)
         
