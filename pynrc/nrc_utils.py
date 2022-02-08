@@ -2182,7 +2182,12 @@ def coron_detector(mask, module, channel=None):
 #############################
 
 def segment_pupil_opd(hdu, segment_name, npix=1024):
-    """Extract single segment pupil from input full OPD map"""
+    """Extract single segment pupil from input full OPD map
+    
+    
+    Input a OPD map HDU and name of segment (or ``segment_name=="ALL"``).
+    Returns both the pupil mask and OPD image as separate HDULists.
+    """
     
     from webbpsf.webbpsf_core import segname, one_segment_pupil
     webbpsf_data_path = webbpsf.utils.get_webbpsf_data_path()

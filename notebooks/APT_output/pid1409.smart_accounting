@@ -40,24 +40,24 @@ Total:                        1800         1800
 
 Sequence   5:
 Visit ID     Smart Accounting Slew     APT Slew                  Target
- 031:001                      1800         1800                HD-84406
- 032:001                       161         1800                HD-84406
- 033:001                        51         1800                HD-84406
- 034:001                        51         1800                HD-84406
+ 001:001                      1800         1800                HD-84406
+ 022:001                       212         1800                HD-84406
+ 023:001                       189         1800                HD-84406
+ 024:001                       261         1800                HD-84406
+ 025:001                       207         1800                HD-84406
+ 026:001                       190         1800                HD-84406
 
-Total:                        2063         7200
+Total:                        2859        10800
 
 
 Sequence   6:
 Visit ID     Smart Accounting Slew     APT Slew                  Target
- 001:001                      1800         1800                HD-84406
- 022:001                        51         1800                HD-84406
- 023:001                       189         1800                HD-84406
- 024:001                       242         1800                HD-84406
- 025:001                       211         1800                HD-84406
- 026:001                       190         1800                HD-84406
+ 031:001                      1800         1800                HD-84406
+ 032:001                       161         1800                HD-84406
+ 033:001                       211         1800                HD-84406
+ 034:001                       217         1800                HD-84406
 
-Total:                        2683        10800
+Total:                        2389         7200
 
 
 Each sequence shows the visits in the order that the smart accounting algorithm
