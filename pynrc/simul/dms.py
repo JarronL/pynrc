@@ -48,9 +48,9 @@ def jw_obs_id(pid, obs_num, visit_num, visit_gp, seq_id, act_id, exp_num):
     eeeee: exposure number
     segNNN: the text “seg” followed by a three-digit segment number (optional)
     
-    detector: detector name (e.g. ‘nrca1’, ‘nrcblong’, ‘mirimage’)
+    detector: detector name (e.g. 'nrca1', 'nrcblong', 'mirimage')
     
-    prodType: product type identifier (e.g. ‘uncal’, ‘rate’, ‘cal’)
+    prodType: product type identifier (e.g. 'uncal', 'rate', 'cal')
     
     An example Stage 1 product FITS file name is:
     jw93065002001_02101_00001_nrca1_rate.fits
@@ -107,6 +107,58 @@ def DMS_filename(obs_id_info, detname, segNum=None, prodType='uncal'):
     
     fname = part1 + part2 + part3
     return fname
+
+def filename_visit_info(filename):
+    """
+    Extract visit information from filename
+
+    jw<ppppp><ooo><vvv>_<gg><s><aa>_<eeeee>(-<”seg”NNN>)_<detector>_<prodType>.fits
+
+    ppppp: program ID number
+    ooo: observation number
+    vvv: visit number
+    
+    gg: visit group
+    s: parallel sequence ID (1=prime, 2-5=parallel)
+    aa: activity number (base 36) (only for WFSC, coarse and fine phasing)
+    
+    eeeee: exposure number
+    segNNN: the text “seg” followed by a three-digit segment number (optional)
+    
+    detector: detector name (e.g. 'nrca1', 'nrcblong', 'mirimage')
+
+    prodType: product type identifier (e.g. 'uncal', 'rate', 'cal')
+    """
+    from ..nrc_utils import get_detname
+    
+    fname = filename.split('/')[-1]
+    fname_arr = fname.split('_')
+    
+    i0 = fname_arr[0].find('jw') + 2 # Increment index by 2
+    pid = int(fname_arr[0][i0:i0+5])
+    oid = int(fname_arr[0][i0+5:i0+8])
+    vid = int(fname_arr[0][i0+8:])
+    
+    grp = int(fname_arr[1][0:2])
+    seq = int(fname_arr[1][2])
+    act = int(fname_arr[1][3:])
+    
+    expid = fname_arr[2]
+    if '-seg' in expid:
+        segid = int(expid.split('-')[1][3:])
+        expid = int(expid.split('-')[0])
+    else:
+        expid = int(expid)
+        segid = None
+    
+    det = fname_arr[3]
+    
+    res = jw_obs_id(pid, oid, vid, grp, seq, act, expid)
+    res['detector'] = get_detname(det)
+    res['segid'] = segid
+    res['filename'] = fname
+    
+    return res
 
 ###  Copied and modified from MIRAGE
 def create_group_entry(integration, groupnum, endday, endmilli, endsubmilli, endgroup,
