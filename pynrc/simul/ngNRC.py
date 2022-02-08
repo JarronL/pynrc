@@ -852,7 +852,7 @@ def sources_to_slope(source_table, nircam_obj, obs_params, tel_pointing,
     im_slope = im_slope + im_bg
 
     if cframe_out=='det':
-        im_slope = sci_to_det(im_slope)
+        im_slope = sci_to_det(im_slope, det.detid)
 
     return im_slope
 
@@ -1062,7 +1062,7 @@ def slope_to_fitswriter(det, cal_obj, im_slope=None, cframe='det',
             
     # FITSWriter (ISIM format)
     if cframe=='sci':
-        im_slope = sci_to_det(im_slope)
+        im_slope = sci_to_det(im_slope, det.detid)
 
     data = simulate_detector_ramp(det, cal_obj, im_slope=im_slope, cframe='det',
                                   out_ADU=out_ADU, return_zero_frame=False, 
