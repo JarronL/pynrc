@@ -682,7 +682,7 @@ def slope_to_level1b(im_slope, obs_params, cal_obj=None, save_dir=None,
 
     # Put into 'sci' coords
     if cframe=='det':
-        im_slope = det_to_sci(im_slope)
+        im_slope = det_to_sci(im_slope, det.detid)
     
     if cal_obj is None:
         cal_obj = nircam_cal(det.scaid, verbose=False)
