@@ -1,7 +1,7 @@
 # APT Output Product
 # 
 # APT Version: Version 2021.3  JWST PRD: PRDOPSSOC-039 
-# Date: Sun Nov 28 21:59:45 GMT 2021
+# Date: Mon Feb 07 23:07:27 GMT 2022
 
 JWST Pointing Report for JWST Approved Proposal 1409 (pid1409.aptx)
 
@@ -16,15 +16,15 @@ Tar Tile Exp Dith Aperture Name             Target       RA         Dec        B
 * Bgrd Levels Sub256 Pre-Check (Obs 32)
 ** Visit 32:1
 Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
-  1    1   1    1 NRCA5_GRISM256_F322W2     13 HD-8440 +146.87624  +63.24721   +0.000   +0.000   +0.029   -4.095  +50.723 -560.571   +0.029   -4.095 TARGET     SCIENCE       98    246  0.000 (base)
-  1    2   1    1 NRCA5_GRISM256_F322W2     13 HD-8440 +146.87624  +63.24721   +0.000   +0.000   -0.029   +4.095  +50.813 -552.382   -0.029   +4.095 TILE       SCIENCE       98      0  8.190          
+  1    1   1    1 NRCAS_FULL                13 HD-8440 +146.87624  +63.24721   +0.000   +0.000   +0.785  -59.070  +80.612 -557.160   +0.785  -59.070 TARGET     SCIENCE      113    438  0.000 (base)
+  1    2   1    1 NRCAS_FULL                13 HD-8440 +146.87624  +63.24721   +0.000   +0.000   -0.785  +59.070  +81.801 -439.015   -0.785  +59.070 TILE       SCIENCE      113      0 118.151         
 
 ========================================
 * Star Levels Sub256 Pre-Check (Obs 33)
 ** Visit 33:1
 Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
-  1    1   1    1 NRCA5_GRISM256_F322W2     13 HD-8440 +146.87624  +63.24721   +0.000   +5.000   +0.029   -4.095  +50.742 -555.571   +0.029   +0.905 TARGET     SCIENCE       98    246  0.000 (base)
-  1    2   1    1 NRCA5_GRISM256_F322W2     13 HD-8440 +146.87624  +63.24721   +0.000   +5.000   -0.029   +4.095  +50.832 -547.382   -0.029   +9.095 TILE       SCIENCE       98      0  8.190          
+  1    1   1    1 NRCAS_FULL                13 HD-8440 +146.87624  +63.24721   +0.000   +5.000   +0.785  -59.070  +80.596 -552.160   +0.785  -54.070 TARGET     SCIENCE      113    438  0.000 (base)
+  1    2   1    1 NRCAS_FULL                13 HD-8440 +146.87624  +63.24721   +0.000   +5.000   -0.785  +59.070  +81.785 -434.015   -0.785  +64.070 TILE       SCIENCE      113      0 118.151         
 
 ========================================
 * Bgrd Levels Sub64 Pre-Check (Obs 34)
@@ -36,8 +36,8 @@ Tar Tile Exp Dith Aperture Name             Target       RA         Dec        B
 * LW Grism Ice Monitor #1 Mod-A 256 subarray (Obs 1)
 ** Visit 1:1
 Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
-  1    1   1    1 NRCA5_GRISM256_F322W2     13 HD-8440 +146.87624  +63.24721   +0.000   +5.000   +0.052   -7.370  +50.706 -558.847   +0.052   -2.370 TARGET     SCIENCE      386    822  0.000 (base)
-  1    2   1    1 NRCA5_GRISM256_F322W2     13 HD-8440 +146.87624  +63.24721   +0.000   +5.000   -0.052   +7.370  +50.869 -544.106   -0.052  +12.370 TILE       SCIENCE      386      0 14.741          
+  1    1   1    1 NRCAS_FULL                13 HD-8440 +146.87624  +63.24721   +0.000   +5.000   +0.785  -59.070  +80.596 -552.160   +0.785  -54.070 TARGET     SCIENCE      478   1168  0.000 (base)
+  1    2   1    1 NRCAS_FULL                13 HD-8440 +146.87624  +63.24721   +0.000   +5.000   -0.785  +59.070  +81.785 -434.015   -0.785  +64.070 TILE       SCIENCE      478      0 118.151         
 
 ========================================
 * Module A GrismR -V2 1 column 2 pts (Obs 22)
@@ -56,8 +56,8 @@ Tar Tile Exp Dith Aperture Name             Target       RA         Dec        B
 * Module B GrismR 256 subarray (Obs 24)
 ** Visit 24:1
 Tar Tile Exp Dith Aperture Name             Target       RA         Dec        BaseX    BaseY    DithX    DithY    V2       V3       IdlX     IdlY   Level      Type      ExPar  DkPar   dDist          
-  1    1   1    1 NRCB5_GRISM256_F322W2     13 HD-8440 +146.87624  +63.24721   +0.000   -5.500   +0.054   -4.034  -54.967 -438.612   +0.054   -9.534 TARGET     SCIENCE      386    822  0.000 (base)
-  1    2   1    1 NRCB5_GRISM256_F322W2     13 HD-8440 +146.87624  +63.24721   +0.000   -5.500   -0.054   +4.034  -54.920 -430.544   -0.054   -1.466 TILE       SCIENCE      386      0  8.068          
+  1    1   1    1 NRCBS_FULL                13 HD-8440 +146.87624  +63.24721   +0.000   -5.500   +0.724  -59.534  -82.879 -561.072   +0.724  -65.034 TARGET     SCIENCE      478   1169  0.000 (base)
+  1    2   1    1 NRCBS_FULL                13 HD-8440 +146.87624  +63.24721   +0.000   -5.500   -0.724  +59.534  -81.368 -442.006   -0.724  +54.034 TILE       SCIENCE      478      0 119.076         
 
 ========================================
 * Module B GrismR +V2 1 column 2 pts (Obs 25)

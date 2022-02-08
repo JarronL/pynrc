@@ -826,7 +826,7 @@ place the target appropriatedly on the detectors.</Comments>
                 <Template>
                     <ncei:NircamEngineeringImaging>
                         <ncei:Module>A</ncei:Module>
-                        <ncei:Subarray>SUBGRISM256</ncei:Subarray>
+                        <ncei:Subarray>FULL</ncei:Subarray>
                         <ncei:PrimaryDitherType>NONE</ncei:PrimaryDitherType>
                         <ncei:SubpixelDitherType>STANDARD</ncei:SubpixelDitherType>
                         <ncei:SubpixelPositions>1</ncei:SubpixelPositions>
@@ -844,7 +844,7 @@ place the target appropriatedly on the detectors.</Comments>
                         </ncei:Filters>
                     </ncei:NircamEngineeringImaging>
                 </Template>
-                <ScienceDuration>54</ScienceDuration>
+                <ScienceDuration>108</ScienceDuration>
                 <CoordinatedParallel>false</CoordinatedParallel>
                 <SpecialRequirements>
                     <OrientRange OrientMin="190 Degrees" OrientMax="210 Degrees" MsaSelectedAngle="false"/>
@@ -855,7 +855,7 @@ Of course an Offset may actually have to be added to achieve that.</Comments>
                 <MosaicParameters>
                     <Rows>2</Rows>
                     <Columns>1</Columns>
-                    <RowOverlapPercent>50.0</RowOverlapPercent>
+                    <RowOverlapPercent>10.0</RowOverlapPercent>
                     <ColumnOverlapPercent>10.0</ColumnOverlapPercent>
                     <SkewDegreesX>0.0</SkewDegreesX>
                     <SkewDegreesY>0.0</SkewDegreesY>
@@ -882,7 +882,7 @@ Of course an Offset may actually have to be added to achieve that.</Comments>
                 <Template>
                     <ncei:NircamEngineeringImaging>
                         <ncei:Module>A</ncei:Module>
-                        <ncei:Subarray>SUBGRISM256</ncei:Subarray>
+                        <ncei:Subarray>FULL</ncei:Subarray>
                         <ncei:PrimaryDitherType>NONE</ncei:PrimaryDitherType>
                         <ncei:SubpixelDitherType>STANDARD</ncei:SubpixelDitherType>
                         <ncei:SubpixelPositions>1</ncei:SubpixelPositions>
@@ -900,7 +900,7 @@ Of course an Offset may actually have to be added to achieve that.</Comments>
                         </ncei:Filters>
                     </ncei:NircamEngineeringImaging>
                 </Template>
-                <ScienceDuration>54</ScienceDuration>
+                <ScienceDuration>108</ScienceDuration>
                 <CoordinatedParallel>false</CoordinatedParallel>
                 <SpecialRequirements>
                     <OrientRange OrientMin="190 Degrees" OrientMax="210 Degrees" MsaSelectedAngle="false"/>
@@ -913,7 +913,7 @@ Offset SR, which will need to be checked/updated prior to execution w/ help from
                 <MosaicParameters>
                     <Rows>2</Rows>
                     <Columns>1</Columns>
-                    <RowOverlapPercent>50.0</RowOverlapPercent>
+                    <RowOverlapPercent>10.0</RowOverlapPercent>
                     <ColumnOverlapPercent>10.0</ColumnOverlapPercent>
                     <SkewDegreesX>0.0</SkewDegreesX>
                     <SkewDegreesY>0.0</SkewDegreesY>
@@ -1040,7 +1040,7 @@ PCS Mode=COARSE SRs are required - FGS will have no guiding capability when thes
                 <Template>
                     <ncei:NircamEngineeringImaging>
                         <ncei:Module>A</ncei:Module>
-                        <ncei:Subarray>SUBGRISM256</ncei:Subarray>
+                        <ncei:Subarray>FULL</ncei:Subarray>
                         <ncei:PrimaryDitherType>NONE</ncei:PrimaryDitherType>
                         <ncei:SubpixelDitherType>STANDARD</ncei:SubpixelDitherType>
                         <ncei:SubpixelPositions>1</ncei:SubpixelPositions>
@@ -1051,14 +1051,14 @@ PCS Mode=COARSE SRs are required - FGS will have no guiding capability when thes
                                 <ncei:LongPupil>GRISMR</ncei:LongPupil>
                                 <ncei:LongFilter>F322W2</ncei:LongFilter>
                                 <ncei:ReadoutPattern>RAPID</ncei:ReadoutPattern>
-                                <ncei:Groups>5</ncei:Groups>
+                                <ncei:Groups>3</ncei:Groups>
                                 <ncei:Integrations>10</ncei:Integrations>
                                 <ncei:EtcId></ncei:EtcId>
                             </ncei:FilterConfig>
                         </ncei:Filters>
                     </ncei:NircamEngineeringImaging>
                 </Template>
-                <ScienceDuration>532</ScienceDuration>
+                <ScienceDuration>646</ScienceDuration>
                 <CoordinatedParallel>false</CoordinatedParallel>
                 <SpecialRequirements>
                     <OrientRange OrientMin="190 Degrees" OrientMax="210 Degrees" MsaSelectedAngle="false"/>
@@ -1235,7 +1235,7 @@ the PMSA images is known.
                 <Template>
                     <ncei:NircamEngineeringImaging>
                         <ncei:Module>B</ncei:Module>
-                        <ncei:Subarray>SUBGRISM256</ncei:Subarray>
+                        <ncei:Subarray>FULL</ncei:Subarray>
                         <ncei:PrimaryDitherType>NONE</ncei:PrimaryDitherType>
                         <ncei:SubpixelDitherType>STANDARD</ncei:SubpixelDitherType>
                         <ncei:SubpixelPositions>1</ncei:SubpixelPositions>
@@ -1246,14 +1246,14 @@ the PMSA images is known.
                                 <ncei:LongPupil>GRISMR</ncei:LongPupil>
                                 <ncei:LongFilter>F322W2</ncei:LongFilter>
                                 <ncei:ReadoutPattern>RAPID</ncei:ReadoutPattern>
-                                <ncei:Groups>5</ncei:Groups>
+                                <ncei:Groups>3</ncei:Groups>
                                 <ncei:Integrations>10</ncei:Integrations>
                                 <ncei:EtcId></ncei:EtcId>
                             </ncei:FilterConfig>
                         </ncei:Filters>
                     </ncei:NircamEngineeringImaging>
                 </Template>
-                <ScienceDuration>532</ScienceDuration>
+                <ScienceDuration>646</ScienceDuration>
                 <CoordinatedParallel>false</CoordinatedParallel>
                 <SpecialRequirements>
                     <OrientRange OrientMin="190 Degrees" OrientMax="210 Degrees" MsaSelectedAngle="false"/>
@@ -1277,7 +1277,7 @@ NOTE: A target with K~3.5 is desired for this observation, but not included in t
                 <MosaicParameters>
                     <Rows>2</Rows>
                     <Columns>1</Columns>
-                    <RowOverlapPercent>50.0</RowOverlapPercent>
+                    <RowOverlapPercent>10.0</RowOverlapPercent>
                     <ColumnOverlapPercent>10.0</ColumnOverlapPercent>
                     <SkewDegreesX>0.0</SkewDegreesX>
                     <SkewDegreesY>0.0</SkewDegreesY>
