@@ -35,6 +35,16 @@ import logging
 from pynrc import logging_utils
 _log = logging.getLogger('pynrc')
 
+def detname_to_scaid(det_id):
+
+    from ..nrc_utils import get_detname
+    detname = get_detname(det_id)
+
+    det_dict = {'NRCA1':481, 'NRCA2':482, 'NRCA3':483, 'NRCA4':484, 'NRCA5':485,
+                'NRCB1':486, 'NRCB2':487, 'NRCB3':488, 'NRCB4':489, 'NRCB5':490}
+
+    return det_dict[detname]
+
 class nircam_dark(object):
     """NIRCam dark calibration"""
 
@@ -43,7 +53,8 @@ class nircam_dark(object):
         
         self.DMS = DMS
 
-        self.scaid = scaid
+        # In case detname (A1...B5) is specified rather than scaid (481...490)
+        self.scaid = detname_to_scaid(scaid)
         # Directory information
         self._create_dir_structure(datadir, outdir, lindir=lindir)
 
@@ -2374,7 +2385,8 @@ class nircam_cal(nircam_dark):
         self.DMS = DMS
 
         # Directory information
-        self.scaid = scaid
+        # In case detname (A1...B5) is specified rather than scaid (481...490)
+        self.scaid = detname_to_scaid(scaid)
         caldir = os.path.join(conf.PYNRC_PATH, 'calib') + '/'
         self._create_dir_structure(None, caldir)
 
