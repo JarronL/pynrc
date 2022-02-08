@@ -1,4 +1,5 @@
 # Import the usual libraries
+from matplotlib.pyplot import streamplot
 import numpy as np
 import os
 
@@ -23,9 +24,13 @@ from astropy.coordinates import SkyCoord
 # Define directory paths
 #########################################
 apt_dir       = '../../APT_output/'
-opd_dir       = '/Users/jarron/NIRCam/Data/OTE_OPDs/'
-darks_80K_dir = '/Users/jarron/NIRCam/Data/NRC_80K/'
-save_dir      = '/Users/jarron/NIRCam/Data/NRC_Sims/Sim_NRC35/'
+# opd_dir       = '/Users/jarron/NIRCam/Data/OTE_OPDs/'
+# darks_80K_dir = '/Users/jarron/NIRCam/Data/NRC_80K/'
+# save_dir      = '/Users/jarron/NIRCam/Data/NRC_Sims/Sim_NRC35/'
+
+opd_dir       = '/home/jarronl/data/NIRData/NIRCam/OTE_OPDs/'
+darks_80K_dir = '/home/jarronl/data/NIRData/NIRCam/NRC_80K/'
+save_dir      = '/home/jarronl/data/NIRData/NRC_Sims/Sim_NRC35/'
 
 webbpsf_data_path = webbpsf.utils.get_webbpsf_data_path()
 
@@ -53,20 +58,20 @@ def init_obs_dict(opd_dir, seg_name='A3'):
     # hdul = fits.open(opd_dir + 'MM_WAS-GLOBAL_ALIGNMENT_WO_TT_R2017112104.fits')
     opd_single = segment_pupil_opd(hdul[7], seg_name)
     # Post LOS-02 pointing and background check
-    obs_dict['031:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':86, 'day':'L+40.0'}
-    obs_dict['032:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':86, 'day':'L+40.1'}
-    obs_dict['033:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':86, 'day':'L+40.2', 'offset':(5,8)}
-    obs_dict['034:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':86, 'day':'L+40.3'}
+    obs_dict['031:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':75, 'day':'L+40.0'}
+    obs_dict['032:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':75, 'day':'L+40.1'}
+    obs_dict['033:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':75, 'day':'L+40.2', 'offset':(5,8)}
+    obs_dict['034:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':75, 'day':'L+40.3'}
     #obs_dict['035:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':86, 'day':'L+40', 'time':'16:00:00'}
     # Pre FSM heater off NIRCam with Beam Probing
-    obs_dict['001:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':84, 'day':'L+40.5', 'offset':(5,10.5)}
-    obs_dict['022:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':84, 'day':'L+40.6', 'offset':(5,10.5)}
-    obs_dict['023:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':84, 'day':'L+40.7', 'offset':(5,10.5)}
-    obs_dict['024:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':84, 'day':'L+40.8', 'offset':(5,10.5)}
-    obs_dict['025:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':84, 'day':'L+40.9', 'offset':(5,10.5)}
-    obs_dict['026:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':84, 'day':'L+41.0', 'offset':(5,10.5)}
+    obs_dict['001:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':75, 'day':'L+40.5', 'offset':(40,20)}
+    obs_dict['022:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':75, 'day':'L+40.6', 'offset':(5,10.5)}
+    obs_dict['023:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':75, 'day':'L+40.7', 'offset':(5,10.5)}
+    obs_dict['024:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':75, 'day':'L+40.8', 'offset':(5,10.5)}
+    obs_dict['025:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':75, 'day':'L+40.9', 'offset':(5,10.5)}
+    obs_dict['026:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':75, 'day':'L+41.0', 'offset':(5,10.5)}
     # L+43 - Initial Deployment
-    obs_dict['002:001']  = {'opd': opd_single, 'jsig': 0.1, 'temp':80, 'day':'L+43'}
+    obs_dict['002:001']  = {'opd': opd_single, 'jsig': 0.1, 'temp':70, 'day':'L+43'}
 
     # L+47 - Segment Image Array 1
     hdul = fits.open(opd_dir + 'MM_WAS-GLOBAL_ALIGNMENT_small_WITH_TT_R2017102404.fits')
@@ -246,6 +251,9 @@ def add_slope_images(obs_dict, key=None, spec_ang=0, add_offset=None, **kwargs):
         ra, dec = (coords.ra.deg, coords.dec.deg)
         # src_tbl = ngNRC.make_gaia_source_table(coords, remove_cen_star=False)
         src_tbl = ngNRC.make_simbad_source_table(coords, remove_cen_star=False)
+
+        # Central star is actually a binary with primary as a sub-giant or giant type
+        src_tbl[0]['SpType'] = 'K3III'
         d['src_tbl'] = src_tbl
         
         # Create pointing information
@@ -284,7 +292,7 @@ def add_slope_images(obs_dict, key=None, spec_ang=0, add_offset=None, **kwargs):
         # Create background slope image
         im_bg_zodi = nrc.bg_zodi_image()
         # Scale background counts by T**4
-        bg_cnts = 2000 * (T**4-39.0**4)/(80.0**4-39.0**4) 
+        bg_cnts = 100 # 2000 * (T**4-39.0**4)/(80.0**4-39.0**4) 
         im_bg_pom = bg_cnts * im_bg_zodi / im_bg_zodi.max()
         d['bg_slope'] = im_bg_pom + im_bg_zodi
         
@@ -346,7 +354,8 @@ def generate_level1b(obs_dict, key=None, save_dir=None, save_slope=True, **kwarg
         save_level1b_fits(outModel, obs_params, save_dir=save_dir, **kwargs)        
 
 
-def run_all_exps(obs_dict, key=None, save_dir=None, rand_seed_init=None, save_slope=True, **kwargs):
+def run_all_exps(obs_dict, key=None, save_dir=None, rand_seed_init=None, save_slope=True, 
+                 add_offset=None, **kwargs):
     """Run all exposures within visit
     
     Assumes visits and NIRCam objects have been initialized.
@@ -397,7 +406,7 @@ def run_all_exps(obs_dict, key=None, save_dir=None, rand_seed_init=None, save_sl
             # Generate ideal slope image and wavelength solution
             #   obs_dict[vkey]['wave'] = wspec_all  # wavelengths for all
             #   obs_dict[vkey]['im_slope_ideal'] = im_slope_ideal
-            add_slope_images(obs_dict, key=key, add_offset=(5,10.5), spec_ang=0)
+            add_slope_images(obs_dict, key=key, spec_ang=0, add_offset=add_offset)
             
             # Save Level1b FITS file
             generate_level1b(obs_dict, key=key, save_dir=save_dir, save_slope=save_slope, **kwargs)
