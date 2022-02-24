@@ -13,17 +13,20 @@ Assume anaconda python >3.7 installation on Linux/Mac
    then use pip's -e option to create an editable installation:
       "pip install -e ."
    Branch to use: master`
+   Note: Requirement set to numpy 1.21.4, but conda case is 1.21.2, so decides to install 1.22.2 using pip, which is incompatible with numba
    
 2. poppy - https://github.com/spacetelescope/poppy
    Download source directly from github. Navigate to directory, 
    then use pip's -e option to create an editable installation:
       "pip install -e ."
+      Maybe use "pip install --no-deps -e ."??
    Branch to use: develop
 
 3. webbpsf - https://github.com/spacetelescope/webbpsf
    Download source directly from github. Navigate to directory, 
    then use pip's -e option to create an editable installation:
       "pip install -e ."
+      Maybe use "pip install --no-deps -e ."??
    Note: This also install photutils via pip if not already installed
    Branch to use: develop
 
@@ -35,7 +38,7 @@ Assume anaconda python >3.7 installation on Linux/Mac
    
 4. jwst-backgrounds - https://github.com/spacetelescope/jwst_backgrounds
    Install healpy: conda install healpy
-      If healpy asks to downgrade any dependencies, cancel and install the 
+      If healpy asks to downgrade any dependencies, cancel and install any 
       missing dependencies manually, then try again  --no-deps flag:
          conda install healpy --no_deps
    Install jwst_backgrounds: pip install -e .
@@ -47,6 +50,7 @@ Assume anaconda python >3.7 installation on Linux/Mac
       https://github.com/spacetelescope/crds         
       https://github.com/spacetelescope/stpipe       
       https://github.com/spacetelescope/jwst    # adds a few other dependencies
+      "Successfully installed BayesicFitting-3.0.0 asdf-astropy-0.1.2 asdf-coordinates-schemas-0.1.0 asdf-wcs-schemas-0.1.1 drizzle-1.13.4 gwcs-0.18.0 jwst-1.4.3.dev22+g70d3cb5b spherical-geometry-1.2.22 stsci.image-2.3.5 stsci.imagestats-1.6.3 stsci.stimage-0.2.5 tweakwcs-0.7.3"
 
 5a. Configure calibration reference database (CRDS)
    Define CRDS directory to download and save cal files.
