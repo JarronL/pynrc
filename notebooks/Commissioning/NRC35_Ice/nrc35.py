@@ -20,17 +20,20 @@ from astropy.io import fits, ascii
 from astropy.time import Time
 from astropy.coordinates import SkyCoord
 
+from astropy.convolution import Gaussian1DKernel, convolve
+from scipy.interpolate import interp1d
+
 #########################################
 # Define directory paths
 #########################################
 apt_dir       = '../../APT_output/'
-# opd_dir       = '/Users/jarron/NIRCam/Data/OTE_OPDs/'
-# darks_80K_dir = '/Users/jarron/NIRCam/Data/NRC_80K/'
-# save_dir      = '/Users/jarron/NIRCam/Data/NRC_Sims/Sim_NRC35/'
+opd_dir       = '/Users/jarron/NIRCam/Data/OTE_OPDs/'
+darks_80K_dir = '/Users/jarron/NIRCam/Data/NRC_80K/'
+save_dir      = '/Users/jarron/NIRCam/Data/NRC_Sims/Sim_NRC35/'
 
-opd_dir       = '/home/jarronl/data/NIRData/NIRCam/OTE_OPDs/'
-darks_80K_dir = '/home/jarronl/data/NIRData/NIRCam/NRC_80K/'
-save_dir      = '/home/jarronl/data/NIRData/NRC_Sims/Sim_NRC35/'
+# opd_dir       = '/home/jarronl/data/NIRData/NIRCam/OTE_OPDs/'
+# darks_80K_dir = '/home/jarronl/data/NIRData/NIRCam/NRC_80K/'
+# save_dir      = '/home/jarronl/data/NIRData/NRC_Sims/Sim_NRC35/'
 
 webbpsf_data_path = webbpsf.utils.get_webbpsf_data_path()
 
@@ -58,14 +61,14 @@ def init_obs_dict(opd_dir, seg_name='A3'):
     # hdul = fits.open(opd_dir + 'MM_WAS-GLOBAL_ALIGNMENT_WO_TT_R2017112104.fits')
     opd_single = segment_pupil_opd(hdul[7], seg_name)
     # Post LOS-02 pointing and background check
-    obs_dict['031:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':75, 'day':'L+40.0'}
+    obs_dict['031:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':75, 'day':'L+40.0', 'offset':(20,40)}
     obs_dict['032:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':75, 'day':'L+40.1'}
     obs_dict['033:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':75, 'day':'L+40.2', 'offset':(5,8)}
     obs_dict['034:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':75, 'day':'L+40.3'}
     #obs_dict['035:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':86, 'day':'L+40', 'time':'16:00:00'}
     # Pre FSM heater off NIRCam with Beam Probing
-    obs_dict['001:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':75, 'day':'L+40.5', 'offset':(40,20)}
-    obs_dict['022:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':75, 'day':'L+40.6', 'offset':(5,10.5)}
+    obs_dict['001:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':75, 'day':'L+40.5', 'offset':(5,10.5)}
+    obs_dict['022:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':75, 'day':'L+40.6', 'offset':(45,50)}
     obs_dict['023:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':75, 'day':'L+40.7', 'offset':(5,10.5)}
     obs_dict['024:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':75, 'day':'L+40.8', 'offset':(5,10.5)}
     obs_dict['025:001'] = {'opd': opd_single, 'jsig': 0.1, 'temp':75, 'day':'L+40.9', 'offset':(5,10.5)}
@@ -222,7 +225,8 @@ def add_inst(obs_dict, key=None, ice_scale=None, nvr_scale=None, ote_scale=0, nc
         d['nrc'] = nrc
 
 
-def add_slope_images(obs_dict, key=None, spec_ang=0, add_offset=None, **kwargs):
+def add_slope_images(obs_dict, key=None, spec_ang=0, add_offset=None, 
+    src_tbl=None, **kwargs):
     """Generate slope image(s)"""
         
     print('  Creating ideal slopes, FSM background, SCA darks, biases...')
@@ -244,16 +248,18 @@ def add_slope_images(obs_dict, key=None, spec_ang=0, add_offset=None, **kwargs):
         S.refs.setref(area=coll_area_seg)
 
         # Create source table
-        ra  = obs_params['ra']
-        dec = obs_params['dec']
-        coords = SkyCoord(ra, dec, unit=(u.deg, u.deg), 
-                          frame='icrs', equinox='J2000', obstime='J2000')
-        ra, dec = (coords.ra.deg, coords.dec.deg)
-        # src_tbl = ngNRC.make_gaia_source_table(coords, remove_cen_star=False)
-        src_tbl = ngNRC.make_simbad_source_table(coords, remove_cen_star=False)
+        if src_tbl is None:
+            ra  = obs_params['ra']
+            dec = obs_params['dec']
+            coords = SkyCoord(ra, dec, unit=(u.deg, u.deg), 
+                            frame='icrs', equinox='J2000', obstime='J2000')
+            ra, dec = (coords.ra.deg, coords.dec.deg)
+            # src_tbl = ngNRC.make_gaia_source_table(coords, remove_cen_star=False)
+            src_tbl = ngNRC.make_simbad_source_table(coords, remove_cen_star=False)
 
-        # Central star is actually a binary with primary as a sub-giant or giant type
-        src_tbl[0]['SpType'] = 'K3III'
+            # Central star is actually a binary with primary as a sub-giant or giant type
+            src_tbl[0]['SpType'] = 'G8IV'
+
         d['src_tbl'] = src_tbl
         
         # Create pointing information
@@ -374,8 +380,9 @@ def run_all_exps(obs_dict, key=None, save_dir=None, rand_seed_init=None, save_sl
     
     # Read and interpret APT files
     # Observation of first date, not really necessary
+    obs_date = obs_dict['031:001']['date']
     apt_obj = apt.DMS_input(xml_file, pointing_file, json_file, sm_acct_file, 
-                            rand_seed_init=rand_seed_init)
+                            obs_date=obs_date, rand_seed_init=rand_seed_init)
     
     keys = obs_dict.keys() if key is None else np.asarray([key]).flatten()
     iter_keys = tqdm(keys, leave=False, desc='Visits') if len(keys)>1 else keys
@@ -406,9 +413,372 @@ def run_all_exps(obs_dict, key=None, save_dir=None, rand_seed_init=None, save_sl
             # Generate ideal slope image and wavelength solution
             #   obs_dict[vkey]['wave'] = wspec_all  # wavelengths for all
             #   obs_dict[vkey]['im_slope_ideal'] = im_slope_ideal
-            add_slope_images(obs_dict, key=key, spec_ang=0, add_offset=add_offset)
+            src_tbl = obs_dict[vkey].get('src_tbl')
+            add_slope_images(obs_dict, key=key, spec_ang=0, add_offset=add_offset, src_tbl=src_tbl)
             
             # Save Level1b FITS file
             generate_level1b(obs_dict, key=key, save_dir=save_dir, save_slope=save_slope, **kwargs)
 
+# Model fitting
+from scipy import optimize
+from webbpsf_ext.maths import jl_poly, jl_poly_fit
+import webbpsf_ext
 
+# Ice and NVR absorption coefficients
+def abs_water(wave=None):
+    path = webbpsf_ext.__path__[0]
+
+    fname = os.path.join(path, 'throughputs/h2o_abs.txt')
+    names = ['Wave', 'coeff'] # coeff is per um path length
+    data_ice  = ascii.read(fname, names=names)
+    
+    w_ice = data_ice['Wave']
+    a_ice = data_ice['coeff']
+    
+    # Estimates for w<2.5um
+    w_ice = np.insert(w_ice, 0, [1.0]) 
+    a_ice = np.insert(a_ice, 0, [0.0]) 
+    # Estimates for w>5.0um
+    w_ice = np.append(w_ice, [6.0])    
+    a_ice = np.append(a_ice, [0.0])
+        
+    if wave is not None:
+        a_ice = np.interp(wave, w_ice, a_ice)
+        w_ice = wave
+        
+    return w_ice, a_ice
+    
+def abs_nvr(wave=None):
+    path = webbpsf_ext.__path__[0]
+
+    fname = os.path.join(path, 'throughputs/nvr_abs.txt')
+    names = ['Wave', 'coeff'] # coeff is per um path length
+    data_nvr  = ascii.read(fname, names=names)
+
+    w_nvr = data_nvr['Wave']
+    a_nvr = data_nvr['coeff']
+
+    # Estimates for w>5.0um
+    w_nvr = np.append(w_nvr, [6.0])    
+    a_nvr = np.append(a_nvr, [0.0])
+
+    if wave is not None:
+        a_nvr = np.interp(wave, w_nvr, a_nvr)
+        w_nvr = wave
+        
+    return w_nvr, a_nvr
+
+def nc_eol_model(ice_thick=0.05, nvr_thick=0.189, wave=None):
+    """Default NIRCam model for End of Life"""
+    
+    wave, a_nvr = abs_nvr(wave=wave)
+    wave, a_ice = abs_nvr(wave=wave)
+
+    t_ice = np.exp(-a_ice*ice_thick)
+    t_nvr = np.exp(-a_nvr*nvr_thick)
+    t_nc = t_ice * t_nvr
+    
+    t_nc = np.exp(-a_ice*ice_thick-a_nvr*nvr_thick)
+    
+    return wave, t_nc
+
+def ote_eol_model(wave=None):
+    """Default OTE model for End of Life"""
+    path = webbpsf_ext.__path__[0]
+    
+    fname = os.path.join(path, 'throughputs/ote_nc_sim_1.00.txt')
+    names = ['Wave', 't_ice', 't_nvr', 't_sys']
+    data  = ascii.read(fname, data_start=1, names=names)
+
+    wtemp = data['Wave']
+    wtemp = np.insert(wtemp, 0, [1.0]) # Estimates for w<2.5um
+    wtemp = np.append(wtemp, [6.0])    # Estimates for w>5.0um
+    
+    ttemp = data['t_ice']
+    ttemp = np.insert(ttemp, 0, [1.0]) # Estimates for w<2.5um
+    ttemp = np.append(ttemp, [1.0])    # Estimates for w>5.0um
+    
+    if wave is None:
+        wave = wtemp
+        th = ttemp
+    else:
+        th = np.interp(wave, wtemp, ttemp)
+    
+    return wave, th
+
+
+
+# Fitting Functions
+
+def abs_func(x, p, **kwargs):
+    """Fit absorption coefficients to data"""
+
+    t_abs = np.exp(-p[0]*kwargs['abs_ice'] - p[1]*kwargs['abs_nvr'])
+    return np.interp(x, kwargs['wave_abs'], t_abs)
+
+def cont_abs_func(x, p, **kwargs):
+    """Fit absorption coefficients and polynomial continuum to data"""
+    t_abs = np.exp(-p[-2]*kwargs['abs_ice'] - p[-1]*kwargs['abs_nvr'])
+    t_abs = np.interp(x, kwargs['wave_abs'], t_abs)
+    return jl_poly(x, p[0:-2])*t_abs
+
+def fit_bootstrap(pinit, datax, datay, function, yerr_systematic=0.0, nrand=1000, 
+                  return_more=False, **kwargs):
+    """Bootstrap fitting routine
+    
+    Bootstrap fitting algorithm to determine the uncertainties on the fit parameters.
+    
+    Parameters
+    ----------
+    pinit : ndarray
+        Initial guess for parameters to fit
+    datax, datay : ndarray
+        X and y values of data to be fit
+    function : func
+        Model function 
+    yerr_systematic : float or array_like of floats
+        Systematic uncertainites on contributing to additional error in data. 
+        This is treated as independent Normal error on each data point.
+        Can have unique values for each data point. If 0, then we just use
+        the standard deviation of the residuals to randomize the data.
+    nrand : int
+        Number of random data sets to generate and fit.
+    return_all : bool
+        If true, then also return the full set of fit parameters for the randomized
+        data to perform a more thorough analysis of the distribution. Otherewise, 
+        just reaturn the mean and standard deviations.
+    """
+
+    def errfunc(p, x, y, **kwargs):
+        return function(x, p, **kwargs) - y
+
+    # Parameter limits
+    lim_min = len(pinit) * [-np.inf]
+    lim_max = len(pinit) * [np.inf]
+    lim_min[-2] = 0
+    lim_min[-1] = 0
+    bounds = (lim_min, lim_max)
+    
+    # Fit first time
+    #pfit, perr = optimize.leastsq(errfunc, pinit, args=(datax, datay), full_output=0)    
+    res = optimize.least_squares(errfunc, pinit, bounds=bounds, args=(datax, datay), kwargs=kwargs)#, 
+                                 #loss='huber', f_scale=0.1)
+    pinit = res.x
+    res = optimize.least_squares(errfunc, pinit, bounds=bounds, args=(datax, datay), kwargs=kwargs)#, 
+                                 #loss='huber', f_scale=0.1)
+    pfit = res.x
+
+    if (nrand is not None) and (nrand>0):
+        # Get the stdev of the residuals
+        residuals = errfunc(pfit, datax, datay, **kwargs)
+        sigma_res = np.std(residuals)
+
+        sigma_err_total = np.sqrt(sigma_res**2 + yerr_systematic**2)
+
+        # Some random data sets are generated and fitted
+        randomdataY = datay + np.random.normal(scale=sigma_err_total, size=(nrand, len(datay)))
+        ps = []
+        for i in range(nrand):
+            datay_rand = randomdataY[i]
+            res = optimize.least_squares(errfunc, pinit, bounds=bounds, args=(datax, datay_rand), kwargs=kwargs)#, 
+                                         #loss='huber', f_scale=0.1)
+            randomfit = res.x
+
+            ps.append(randomfit) 
+
+        ps = np.array(ps)
+        mean_pfit = np.mean(ps,axis=0)
+        err_pfit = np.std(ps,axis=0)
+
+        if return_more:
+            return mean_pfit, err_pfit, ps
+        else:
+            return mean_pfit, err_pfit
+        
+    else:
+        return pfit
+
+def get_collecting_area(segment_name):
+    
+    from webbpsf.webbpsf_core import one_segment_pupil
+    webbpsf_data_path = webbpsf.utils.get_webbpsf_data_path()
+
+    # Pupil mask of segment only
+    pupil_seg_hdul = one_segment_pupil(segment_name)
+
+    # Full pupil file
+    pupil_file = os.path.join(webbpsf_data_path, "jwst_pupil_RevW_npix1024.fits.gz")
+    pupil_hdul = fits.open(pupil_file)
+
+    # Change collecting area to modify flux 
+    coll_area_seg = 25.78e4 * pupil_seg_hdul[0].data.sum() / pupil_hdul[0].data.sum()
+    pupil_hdul.close()
+
+    return coll_area_seg
+
+def sim_obs_spec(wave_out, coll_area_seg, bp_dict=None, sp=None, psf_sig_pix=5, 
+                 filter='F322W2', pupil='GRISMR', module='A', new_cf=True, **kwargs):
+    
+    pupil='NONE' if pupil is None else pupil
+    
+    if bp_dict is None:
+        bp = pynrc.read_filter(filter, pupil=pupil, module=module, **kwargs)
+    else:
+        bp = bp_dict[module][pupil][filter]
+    
+    if sp is None:
+        bp_k = pynrc.bp_2mass('k')
+        sp = pynrc.stellar_spectrum('K0V', 4.7, 'vegamag', bp_k, Teff=5000, log_g=4.3, metallicity=0)
+        sp.convert('photlam')
+
+    # Interpolate onto output grid
+    # sp_val = np.interp(wave_out, sp.wave/1e4, sp.flux)
+    # bp_val = np.interp(wave_out, bp.wave/1e4, bp.throughput)
+    sp_func = interp1d(sp.wave/1e4, sp.flux, kind='cubic', fill_value=0)
+    bp_func = interp1d(bp.wave/1e4, bp.throughput, kind='cubic', fill_value=0)
+    
+    sp_val = sp_func(wave_out)
+    bp_val = bp_func(wave_out)
+    
+    if not (pupil=='NONE') and new_cf:
+        bp_val /= grism_throughput(wave_out, module=module, new_cf=False)
+        bp_val *= grism_throughput(wave_out, module=module, new_cf=True)
+    
+    # Multiply by bandpass, collecting area, and dw
+    dw = np.mean(wave_out[1:] - wave_out[:-1]) * 1e4
+    res = sp_val * bp_val * coll_area_seg * dw
+    
+    # Convolve with Gaussian
+    g = Gaussian1DKernel(stddev=psf_sig_pix)
+    res_conv = convolve(res, g)
+    
+    return res_conv
+
+def grism_throughput(wave, module='A', grism_order=1, new_cf=False):
+    """Grism transmission curve follows a 3rd-order polynomial"""
+    
+    # The following coefficients assume that wavelength is in um
+    if (module == 'A') and (grism_order==1):
+        if new_cf:
+            # Tom G's blaze angle of 6.16 deg
+            # cf_g = 1.14 * np.array([-0.44941915, -1.10918236, 1.09376196, -0.26981016, 0.02065479])
+            # Newly fit grism efficiency estimate
+            cf_g = np.array([-0.51108063, -0.46895732, 0.49194712, -0.0749169 ])
+        else:
+            cf_g = np.array([0.068695897, -0.943894294, 4.1768413, -5.306475735])[::-1]
+    elif (module == 'B') and (grism_order==1):
+        if new_cf:
+            # Newly fit grism efficiency estimate
+            cf_g = np.array([-3.91489419, 2.94875747, -0.61759455, 0.03881305])
+        else:
+            cf_g = np.array([0.050758635, -0.697433006, 3.086221627, -3.92089596])[::-1]
+    elif (module == 'A') and (grism_order==2):
+        cf_g = np.array([0.05172, -0.85065, 5.22254, -14.18118, 14.37131])[::-1]
+    elif (module == 'B') and (grism_order==2):
+        cf_g = np.array([0.03821, -0.62853, 3.85887, -10.47832, 10.61880])[::-1]
+    
+    return jl_poly(wave, cf_g)
+
+class water_analysis(object):
+    
+    def __init__(self, wave, flux, module, pupil, segid=None, sp=None, new_cf=True, **kwargs):
+        
+        self.wave = wave
+        self.flux = flux
+        self.segid = segid
+        
+        self.filter = 'F322W2'
+        self.pupil  = pupil
+        self.module = module
+        
+        # Set default spectum and interpolate onto wavelength grid
+        if sp is None:
+            bp_k = pynrc.bp_2mass('k')
+            self.get_sp('K0V', 4.7, 'vegamag', bp_k, Teff=5000, log_g=4.3, metallicity=0)
+        else:
+            self.sp = sp
+        
+        # Load bandpass and interpolate onto wavelength grid
+        self.bp = self.get_bp(new_cf=new_cf, **kwargs)
+
+    def collecting_area(self):
+        """"""
+        segid = 'C5' if self.segid is None else self.segid
+        return get_collecting_area(segid)
+        
+
+    def get_sp(self, spt, mag, units, bp_scale, Teff=5000, log_g=4.3, metallicity=0):
+        """Spectrum in ph/s/cm^2/A"""        
+        sp = pynrc.stellar_spectrum(spt, mag, units, bp_scale, 
+                                    Teff=Teff, log_g=log_g, metallicity=metallicity)
+        sp.convert('photlam')
+        self.sp = sp
+        self.set_spvals()
+    
+    def set_spvals(self):
+        """"""
+        sp = self.sp
+        sp_func = interp1d(sp.wave/1e4, sp.flux, kind='cubic', fill_value=0)
+        self.sp_vals = sp_func(self.wave)
+        
+    def get_bp(self, new_cf=True, **kwargs):
+        """"""
+        bp = pynrc.read_filter(self.filter, pupil=self.pupil, module=self.module, **kwargs)
+        
+        # Correct grism efficiency
+        if new_cf:
+            w = bp.wave / 1e4
+            th = bp.throughput
+            bp._throughputtable /= grism_throughput(w, module=self.module, new_cf=False)
+            bp._throughputtable *= grism_throughput(w, module=self.module, new_cf=True)
+        
+        self.bp = bp
+        self.set_bpvals()
+        
+    def set_bpvals(self):
+        """"""
+        bp = self.bp
+        bp_func = interp1d(bp.wave/1e4, bp.throughput, kind='cubic', fill_value=0)
+        bp_vals = bp_func(self.wave)
+
+        self.bp_vals = bp_vals
+        
+    def normalize_spec(self, psf_sig_pix=5, include_resid=False, wmin=2.45, wmax=3.95, 
+                       robust_fit=True, deg=1):
+        """"""
+        #Normalized value convolved with Gaussian
+        norm_val = self.sp_vals*self.bp_vals
+        g = Gaussian1DKernel(stddev=psf_sig_pix)
+        norm_val_conv = convolve(norm_val, g)
+        
+        if include_resid:
+            norm_val_conv *= self.estimate_resid()
+
+        spec_corr = self.flux / norm_val_conv
+
+        # Cut off edges and normalize at continuum location
+        wave_extract = self.wave
+        ind = (wave_extract>wmin) & (wave_extract<wmax)
+        wind = wave_extract[ind]
+        spec_fin = spec_corr[ind]
+        
+        # Normalize by average continuum level
+        ind_cont = ((wind>2.4) & (wind<2.7)) | (wind>3.6)
+        spec_fin /= np.nanmedian(spec_fin[ind_cont])
+        
+        # Indices to fit continuum
+        w = wind
+        if self.module=='A':
+            ind_fit = ((w>=2.45) & (w<=2.55)) | ((w>=2.65) & (w<=2.7)) | ((w>=3.65) & (w<=3.85))
+        else:
+            ind_fit = (w<2.5) | ((w>=2.55) & (w<=2.7)) | ((w>=3.65) & (w<=3.85))    
+        ind_fit = ind_fit & ~np.isnan(spec_fin)
+
+        # Fit water ice and NVR thicknesses (um)
+        cf = jl_poly_fit(wind[ind_fit], spec_fin[ind_fit], deg=deg, robust_fit=robust_fit)
+        spec_cont = jl_poly(wind, cf)
+        spec_norm = spec_fin / spec_cont
+        
+        dout = {'wave':wind, 'flux':spec_fin, 'flux_cont':spec_cont, 'flux_norm':spec_norm}
+        return dout
+        
