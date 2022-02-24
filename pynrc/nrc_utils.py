@@ -27,6 +27,9 @@ import sys, platform
 import multiprocessing as mp
 import traceback
 
+# Progress bar
+from tqdm.auto import trange, tqdm
+
 from astropy.io import fits, ascii
 from astropy.table import Table
 from astropy.time import Time
@@ -1031,7 +1034,7 @@ def make_grism_slope(nrc, src_tbl, tel_pointing, expnum, add_offset=None, spec_a
 
     # Build final image
     wspec_all = []
-    for i in range(xpix.size):
+    for i in trange(xpix.size, leave=False, desc='Spectra'):
         # Get stellar spectrum
         teff_i = teff[i]   if teff   is not None else None
         sptp_i = sptype[i] if sptype is not None else 'G2V'
@@ -2193,7 +2196,7 @@ def segment_pupil_opd(hdu, segment_name, npix=1024):
     webbpsf_data_path = webbpsf.utils.get_webbpsf_data_path()
 
     # Pupil and segment information
-    pupil_file = os.path.join(webbpsf_data_path, "jwst_pupil_RevW_npix1024.fits.gz")
+    # pupil_file = os.path.join(webbpsf_data_path, "jwst_pupil_RevW_npix1024.fits.gz")
 
     # get the master pupil file, which may or may not be gzipped
     pupil_file = os.path.join(webbpsf_data_path, f"jwst_pupil_RevW_npix{npix}.fits")
