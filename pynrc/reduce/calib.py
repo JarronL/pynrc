@@ -1157,7 +1157,7 @@ class nircam_dark(object):
 
             self._pow_spec_dict['ps_corr_scale'] = scales
 
-    def get_super_flats(self, split_low_high=True, smth_sig=10, force=False, **kwargs):
+    def get_super_flats(self, split_low_high=False, smth_sig=10, force=False, **kwargs):
         """Get flat field information
         
         Splits flat field into to lflats and pflats (low and high frequency).
@@ -1204,7 +1204,7 @@ class nircam_dark(object):
             det = create_detops(hdr, DMS=self.DMS)
             data = apply_linearity(data, det, self.linear_dict)
 
-            # Perform fit to data in DN/sec
+            # Perform fit to data (e-/group)
             tarr = np.arange(1,len(data)+1)
             cf_arr = cube_fit(tarr, data, deg=1, sat_vals=det.well_level, sat_frac=0.8, fit_zero=False)
             im_slope = cf_arr[1]
@@ -1215,9 +1215,10 @@ class nircam_dark(object):
                                           smth_sig=smth_sig, ref_info=det.ref_info)
             super_flats = np.asarray(super_flats)
 
-            # Save superbias frame to directory
+            # Save super flats to directory
             hdu = fits.PrimaryHDU(super_flats)
-            hdu.header['SMTH_SIG'] = smth_sig
+            if split_low_high:
+                hdu.header['SMTH_SIG'] = smth_sig
             hdu.writeto(savename, overwrite=True)
 
         sh = super_flats.shape
@@ -1226,11 +1227,11 @@ class nircam_dark(object):
             if nz==2:
                 lflats, pflats = super_flats
             else:
-                lflats = None
                 pflats = super_flats
+                lflats = np.ones_like(pflats)
         else:
-            lflats = None
             pflats = super_flats
+            lflats = np.ones_like(pflats)
 
         self.lflats = lflats
         self.pflats = pflats
@@ -5720,10 +5721,9 @@ def apply_nonlin(cube, det, coeff_dict, randomize=True, rand_seed=None):
 
     return res
 
-def get_flat_fields(im_slope, split_low_high=True, smth_sig=10, ref_info=[4,4,4,4]):
+def get_flat_fields(im_slope, split_low_high=False, smth_sig=10, ref_info=[4,4,4,4]):
     """ Calculate QE variations in flat field"""
 
-    
     from astropy.convolution import convolve_fft, Gaussian2DKernel
 
     ny, nx = im_slope.shape
@@ -5741,7 +5741,7 @@ def get_flat_fields(im_slope, split_low_high=True, smth_sig=10, ref_info=[4,4,4,
 
     # Perform a quick median filter
     imarr = []
-    xysh = 3
+    xysh = 2
     for xsh in np.arange(-xysh, xysh):
         for ysh in np.arange(-xysh, xysh):
             if not xsh==ysh==0:
@@ -5753,9 +5753,9 @@ def get_flat_fields(im_slope, split_low_high=True, smth_sig=10, ref_info=[4,4,4,
 
     del imarr
 
-    # Replace outliers with their median values
+    # Replace outliers with the median of their surrounding values
     diff = qe_frac - im_med
-    mask_good = robust.mean(diff, return_mask=True)
+    mask_good = robust.mean(diff, Cut=20, return_mask=True)
     mask_bad = ~mask_good
     qe_frac[mask_bad] = im_med[mask_bad]
 
@@ -5776,9 +5776,10 @@ def get_flat_fields(im_slope, split_low_high=True, smth_sig=10, ref_info=[4,4,4,
     else:
         return pad_or_cut_to_size(qe_frac, (ny,nx), fill_val=1)
 
-def bp_fix(im, sigclip=5, niter=1, pix_shift=1, bpmask=None, 
-           return_mask=False, verbose=False, in_place=True):
-    """ Find and fix bad pixels in image
+
+def bp_fix(im, sigclip=5, niter=1, pix_shift=1, rows=True, cols=True, 
+           bpmask=None, return_mask=False, verbose=False, in_place=True):
+    """ Find and fix bad pixels in image with median of surrounding values
     
     Paramters
     ---------
@@ -5793,6 +5794,14 @@ def bp_fix(im, sigclip=5, niter=1, pix_shift=1, bpmask=None,
         We find bad pixels by comparing to neighbors and replacing.
         E.g., if set to 1, use immediate adjacents neighbors.
         Replaces with a median of surrounding pixels.
+    rows : bool
+        Compare to row pixels? Setting to False will ignore pixels
+        along rows during comparison. Recommended to increase
+        ``pix_shift`` parameter if using only rows or cols.
+    cols : bool
+        Compare to column pixels? Setting to False will ignore pixels
+        along columns during comparison. Recommended to increase
+        ``pix_shift`` parameter if using only rows or cols.
     bpmask : boolean array
         Use a pre-determined bad pixel mask for fixing.
     return_mask : bool
@@ -5804,6 +5813,21 @@ def bp_fix(im, sigclip=5, niter=1, pix_shift=1, bpmask=None,
         Do in-place corrections of input array.
         Otherwise, return a copy.
     """
+    
+    def shift_array(arr_out, pix_shift, rows=True, cols=True):
+        '''Create an array of shifted values'''
+
+        shift_arr = []
+        sh_vals = np.arange(pix_shift*2+1) - pix_shift
+        # Set shifting of columns and rows
+        xsh_vals = sh_vals if rows else [0]
+        ysh_vals = sh_vals if cols else [0]
+        for i in xsh_vals:
+            for j in ysh_vals:
+                if (i != 0) or (j != 0):
+                    shift_arr.append(fshift(arr_out, delx=i, dely=j))
+        shift_arr = np.asarray(shift_arr)
+        return shift_arr
     
     # Only single iteration if bpmask is set
     if bpmask is not None:
@@ -5817,21 +5841,19 @@ def bp_fix(im, sigclip=5, niter=1, pix_shift=1, bpmask=None,
     
     for ii in range(niter):
         # Create an array of shifted values
-        shift_arr = []
-        sh_vals = np.arange(pix_shift*2+1) - pix_shift
-        for i in sh_vals:
-            for j in sh_vals:
-                if (i != 0) or (j != 0):
-                    shift_arr.append(fshift(arr_out, i, j))
-        shift_arr = np.array(shift_arr)
+        shift_arr = shift_array(arr_out, pix_shift, rows=rows, cols=cols)
     
         # Take median of shifted values
         shift_med = np.median(shift_arr, axis=0)
         if bpmask is None:
             # Difference of median and reject outliers
             diff = arr_out - shift_med
-            indgood = robust.mean(diff, Cut=sigclip, return_mask=True)
-            indbad = ~indgood
+            shift_std = robust.medabsdev(shift_arr, axis=0)
+
+            indbad = diff > (sigclip*shift_std)
+            # indgood = robust.mean(diff, Cut=sigclip, return_mask=True)
+            # indbad = ~indgood
+
         else:
             indbad = bpmask
         
@@ -5844,7 +5866,6 @@ def bp_fix(im, sigclip=5, niter=1, pix_shift=1, bpmask=None,
 
         if indbad.sum()==0:
             break
-
             
     if return_mask:
         return arr_out, maskout
