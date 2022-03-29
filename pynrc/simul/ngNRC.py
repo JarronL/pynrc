@@ -1903,7 +1903,8 @@ def gen_ramp_biases(ref_dict, nchan=None, data_shape=(2,2048,2048),
     return cube
 
 
-def fft_noise(pow_spec, nstep_out=None, fmin=None, f=None, 
+
+def fft_noise(pow_spec, nstep_out=None, nseq=1, fmin=None, f=None, 
               pad_mode='edge', rand_seed=None, **kwargs):
     """ Random Noise from Power Spectrum
     
@@ -1919,6 +1920,10 @@ def fft_noise(pow_spec, nstep_out=None, fmin=None, f=None,
         Desired size of the output noise array. If smaller than `pow_spec`
         then it just truncates the results to the appropriate size.
         If larger, then pow_spec gets padded by the specified `pad_mode`.
+    nseq : int
+        How many independent random time series do we want to produce 
+        simultaneoulsy? If `nseq>1`, then returns an array of size
+        (nseq, nstep_out).
     fmin : float or None
         Low-frequency cutoff. Power spectrum values below this cut-off
         point get set equal to the power spectrum value at fmin.
@@ -1970,6 +1975,7 @@ def fft_noise(pow_spec, nstep_out=None, fmin=None, f=None,
         nstep_out = 2 * (len(pow_spec) - 1)
         
     nstep = nstep_out
+    # For large data sets, this is faster than going to the next power of 2
     nstep2 = int(2**np.ceil(np.log2(nstep-1))) + 1
 
     lin_spec = np.sqrt(pow_spec) 
@@ -1998,31 +2004,32 @@ def fft_noise(pow_spec, nstep_out=None, fmin=None, f=None,
     the_std = 2 * np.sqrt(np.sum(w**2) + w_last**2) / n_ifft
     
     # Generate scaled random power + phase
-    # sr = lin_spec
-    # sr = rng.normal(scale=lin_spec)
-    # si = rng.normal(scale=lin_spec)
     # For large numbers, faster to gen with scale=1, then multiply
-    sr = rng.normal(size=len(lin_spec)) * lin_spec
-    si = rng.normal(size=len(lin_spec)) * lin_spec
+    # sr = rng.normal(size=len(lin_spec)) * lin_spec
+    # si = rng.normal(size=len(lin_spec)) * lin_spec
+    sr = rng.normal(size=[nseq, len(lin_spec)]) * lin_spec.reshape([1,-1])
+    si = rng.normal(size=[nseq, len(lin_spec)]) * lin_spec.reshape([1,-1])
+    del lin_spec
 
     # If the signal length is even, frequencies +/- 0.5 are equal
     # so the coefficient must be real.
     if (nstep2 % 2) == 0: 
-        si[-1] = 0
+        si[:,-1] = 0
 
     # Regardless of signal length, the DC component must be real
-    si[0] = 0
+    si[:,0] = 0
 
     # Combine power + corrected phase to Fourier components
     thefft  = sr + 1J * si
+    del sr, si
 
     # Apply the pinkening filter.
     result = np.fft.irfft(thefft)
+    del thefft
     
     # Keep requested nstep and scale to unit variance
-    result = result[:nstep_out] / the_std
-
-    return result
+    result = result[:, :nstep_out] / the_std
+    return result.squeeze()
 
 
 def pink_noise(nstep_out, pow_spec=None, f=None, fmin=None, alpha=-1, **kwargs):
@@ -2251,9 +2258,9 @@ def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
     f2 = np.fft.rfftfreq(2*nstep2)
     f2[0] = f2[1] # First element should not be 0
     alpha = -1
-    p_filter2 = np.sqrt(f2**alpha)
+    p_filter2 = f2**alpha
     p_filter2[0] = 0.
-    
+
     # Add correlated pink noise.
     if (c_pink is not None) and (c_pink > 0):
         rng = rng_dict['c_pink']
