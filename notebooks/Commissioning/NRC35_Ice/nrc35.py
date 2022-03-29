@@ -13,6 +13,10 @@ from pynrc.nrc_utils import segment_pupil_opd, make_grism_slope
 from pynrc.nrc_utils import bias_dark_high_temp as bias_dark
 from pynrc.simul import apt, ngNRC
 
+from pynrc.reduce.calib import nircam_cal, apply_linearity, get_fits_data
+from pynrc.maths.coords import det_to_sci, sci_to_det
+from pynrc.detops import create_detops
+
 pynrc.setup_logging('WARN', verbose=True)
 
 from astropy import units as u
@@ -419,6 +423,48 @@ def run_all_exps(obs_dict, key=None, save_dir=None, rand_seed_init=None, save_sl
             # Save Level1b FITS file
             generate_level1b(obs_dict, key=key, save_dir=save_dir, save_slope=save_slope, **kwargs)
 
+def get_model_ice_nvr(file):
+    """Get simulated Ice and NVR layers stored in FITS header
+    
+    Assumes a single layer.
+
+    Returns (ice, nvr) layer thickness in units of microns.
+    """
+
+    hdul = fits.open(file)
+    hdr = hdul[0].header
+    hdul.close()
+
+    ice_scale = hdr.get('ICESCALE')
+    nvr_scale = hdr.get('NVRSCALE')
+    nc_scale  = hdr.get('NCSCALE')
+    ote_scale = hdr.get('OTESCALE')
+
+    ice_scale = None if ice_scale == 'NONE' else ice_scale
+    nvr_scale = None if nvr_scale == 'NONE' else nvr_scale
+    nc_scale  = None if nc_scale  == 'NONE' else nc_scale
+    ote_scale = None if ote_scale == 'NONE' else ote_scale
+
+    # ote_scale takes priority over ice_scale
+    if ote_scale is not None:
+        ice_scale = ote_scale
+    # nc_scale turns off nvr_scale
+    if nc_scale is not None:
+        nvr_scale = 0
+
+    ice_layer = 0
+    nvr_layer = 0
+
+    if ice_scale is not None:
+        ice_layer += ice_scale * 0.0131
+    if nvr_scale is not None:
+        nvr_layer += nvr_scale * 0.280
+    if nc_scale is not None:
+        ice_layer += nc_scale * 0.050
+        nvr_layer += nc_scale * 0.189
+
+    return (ice_layer, nvr_layer)
+
 # Model fitting
 from scipy import optimize
 from webbpsf_ext.maths import jl_poly, jl_poly_fit
@@ -603,6 +649,10 @@ def get_collecting_area(segment_name):
     from webbpsf.webbpsf_core import one_segment_pupil
     webbpsf_data_path = webbpsf.utils.get_webbpsf_data_path()
 
+    coll_full = 25.78e4
+    if 'ALL' in segment_name.upper():
+        return coll_full
+
     # Pupil mask of segment only
     pupil_seg_hdul = one_segment_pupil(segment_name)
 
@@ -611,7 +661,7 @@ def get_collecting_area(segment_name):
     pupil_hdul = fits.open(pupil_file)
 
     # Change collecting area to modify flux 
-    coll_area_seg = 25.78e4 * pupil_seg_hdul[0].data.sum() / pupil_hdul[0].data.sum()
+    coll_area_seg = coll_full * pupil_seg_hdul[0].data.sum() / pupil_hdul[0].data.sum()
     pupil_hdul.close()
 
     return coll_area_seg
@@ -678,6 +728,182 @@ def grism_throughput(wave, module='A', grism_order=1, new_cf=False):
         cf_g = np.array([0.03821, -0.62853, 3.85887, -10.47832, 10.61880])[::-1]
     
     return jl_poly(wave, cf_g)
+
+##############################
+## Data Reduction
+##############################
+
+def do_lincorr(data, det, bias_sub=True, superbias=None, cal_obj=None, cframe='sci', **kwargs):
+    """Perform linearity corrections on image or cube"""
+
+    cal_obj = nircam_cal(det.scaid, verbose=False) if cal_obj is None else cal_obj
+
+    # Convert from sci to det coordinates
+    if cframe=='sci':
+        data = sci_to_det(data, det.detid)
+
+    # Subtract bias
+    if bias_sub:
+        ny, nx = (det.ypix, det.xpix)
+        x1, x2 = (det.x0, det.x0 + nx)
+        y1, y2 = (det.y0, det.y0 + ny)
+        superbias = cal_obj.super_bias if superbias is None else superbias
+        data -= superbias[y1:y2,x1:x2]
+    
+    # Apply linearity correction
+    data = apply_linearity(data, det, cal_obj.linear_dict)
+
+    # Convert back to sci coordinates if input were sci
+    if cframe=='sci':
+        data = det_to_sci(data, det.detid)
+
+    return data
+
+
+def do_flatcorr(data, det, cal_obj=None, pflat_corr=True, lflat_corr=True, cframe='sci'):
+    """Perform flat field corrections on image or cube"""
+        
+    if (not pflat_corr) and (not lflat_corr):
+        return data
+    
+    cal_obj = nircam_cal(det.scaid, verbose=False) if cal_obj is None else cal_obj
+
+    # Convert from sci to det coordinates
+    if cframe=='sci':
+        data = sci_to_det(data, det.detid)
+
+    # Apply flat field corrections
+    if pflat_corr and (cal_obj.pflats is not None):
+        data = ngNRC.apply_flat(data, det, 1/cal_obj.pflats)
+    if lflat_corr and (cal_obj.lflats is not None):
+        data = ngNRC.apply_flat(data, det, 1/cal_obj.lflats)
+        
+    # Convert back to sci coordinates if input were sci
+    if cframe=='sci':
+        data = det_to_sci(data, det.detid)
+
+    return data
+
+
+def get_all_data(file, return_mean=True, mn_func=np.mean, reffix=True, 
+                 lin_corr=True, pflat_corr=False, lflat_corr=False, cal_obj=None, **kwargs):
+    
+    
+    hdul = fits.open(file)
+    hdr = hdul[0].header
+    hdul.close()
+
+    det = create_detops(hdr, DMS=True)
+    tarr = det.times_group_avg
+    
+    # Reference pixel correction keywords
+    nbot, ntop, nleft, nright = det.ref_info
+    kwargs_def = {
+        'nchans': det.nout, 'altcol': True, 'in_place': True,    
+        'fixcol': False, 'avg_type': 'pixel', 'savgol': True, 'perint': False,
+        'nbot': nbot, 'ntop': ntop, 'nleft': nleft, 'nright': nright,
+    }
+    for k in kwargs_def.keys():
+        if k not in kwargs:
+            kwargs[k] = kwargs_def[k]
+            
+    # Cycle through each integration
+    nint = det.multiaccum.nint
+    imarr = []
+    for i in trange(nint, desc='Integrations', leave=False):
+        data = get_fits_data(file, DMS=True, int_ind=i, reffix=reffix, **kwargs)
+        
+        # Perform linearity correction?
+        if lin_corr:
+            if not reffix:
+                print('Must perform reference pixel correction with linearity correction.')
+            else:
+                # Will subtract a superbias stored in cal_obj by default
+                data = do_lincorr(data, det, cal_obj=cal_obj, **kwargs)
+                
+        # Perform flat field corrections (just returns input if _corr keywords are False)
+        data = do_flatcorr(data, det, cal_obj=cal_obj, pflat_corr=pflat_corr, lflat_corr=lflat_corr)
+            
+        imarr.append(data)
+    imarr = np.asarray(imarr)
+    
+    # Return average of all ramps or full array?
+    if return_mean:
+        return mn_func(imarr, axis=0)
+    else:
+        return imarr
+
+
+def get_flat(indir, det, filt='F322W2', coords_out='det'):
+    """Grab CDBS flat field data"""
+    
+    from pynrc.maths.coords import sci_to_det
+    
+    det_str = det.detname[3:].lower()
+    flat_files = []
+    for file in os.listdir(indir):
+        if file.startswith("jwst_nircam_flat") and file.endswith(f"{filt}.fits") and (det_str in file):
+            flat_files.append(file)
+    # Choose more recent file to use
+    file = np.sort(flat_files)[-1]
+        
+    hdul = fits.open(os.path.join(indir, file))
+    flat_data = hdul[1].data.astype('float')
+    hdul.close()
+
+    # Place in 'det' coordinates
+    if coords_out=='det':
+        flat_data = sci_to_det(flat_data, det.detid)
+
+    return flat_data
+
+def do_flatcorr_cdbs(flatdir, data, det, filt='F322W2', cframe='sci'):
+    """Perform flat field corrections on image or cube"""
+        
+    # Get flat data in detector coordinates
+    flat_data = get_flat(flatdir, det, filt=filt, coords='det')
+
+    # Flip to detector coordinates
+    if cframe=='sci':
+        data = sci_to_det(data, det.detid)
+        
+    data = ngNRC.apply_flat(data, det, 1/flat_data)
+    
+    # Convert back to sci coordinates if input were sci
+    if cframe=='sci':
+        data = det_to_sci(data, det.detid)
+        
+    return data
+
+
+##############################
+
+
+def average_diffs(ext_dict, interp='linear', mn_func=np.median):
+    """Align all images and average"""
+    
+    # Get all Gaussian fit row values
+    ycen_all = [ext_dict[k]['ycen'] for k in ext_dict.keys()]
+    for i, yc in enumerate(ycen_all):
+        if yc.size==0:
+            ycen_all[i] = ycen_all[i-1]
+    ycen_all = np.asarray(ycen_all)
+    
+    # Get average offsets
+    yc_mean = np.mean(ycen_all, axis=0)
+    yshift = np.mean(yc_mean - ycen_all, axis=1)
+
+    # Shift all images
+    keys = list(ext_dict.keys())
+    data_all = []
+    for k in keys:
+        im = nrc_utils.fshift(ext_dict[k]['data'], dely=yshift[k], interp=interp)
+        data_all.append(im)
+        
+    # Return average
+    return mn_func(data_all, axis=0)
+
+
 
 class water_analysis(object):
     
@@ -774,7 +1000,7 @@ class water_analysis(object):
             ind_fit = (w<2.5) | ((w>=2.55) & (w<=2.7)) | ((w>=3.65) & (w<=3.85))    
         ind_fit = ind_fit & ~np.isnan(spec_fin)
 
-        # Fit water ice and NVR thicknesses (um)
+        # Fit continuum
         cf = jl_poly_fit(wind[ind_fit], spec_fin[ind_fit], deg=deg, robust_fit=robust_fit)
         spec_cont = jl_poly(wind, cf)
         spec_norm = spec_fin / spec_cont
