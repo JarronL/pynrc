@@ -4646,6 +4646,10 @@ def get_pointing_info(pointing_files, propid=0, verbose=False, all_inst=False):
                         do_this = ((np.int(elements[1]) > 0) & ('NRC' in elements[4])) or \
                             (('TA' in elements[4]) & ('NRC' in elements[4]))
 
+                    # Skip visit name lines that might sneak past above
+                    if line[0:2] == '* ':
+                        do_this = False
+
                     if do_this:
 
                         level = elements[17]
