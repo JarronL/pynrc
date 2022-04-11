@@ -1086,7 +1086,7 @@ def slope_to_fitswriter(det, cal_obj, im_slope=None, cframe='det',
 
 
 def make_gaia_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
-    teff_default=5800):
+    teff_default=5800, dist_crossmatch=0.1):
     """ Create source table from GAIA DR2 query
 
     Generates a table of objects by performing a cone search around a set
@@ -1108,16 +1108,19 @@ def make_gaia_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
         Astropy SkyCoords object.
     remove_cen_star : bool
         Output will exclude the star associated with the input
-        coordinates (anything with 0.1" is removed from table).
+        coordinates (anything with ``dist_crossmatch`` is removed 
+        from table).
     radius : Units
         Radius to perfrom search. Default is 6', which should encompass
         NIRCam's full FoV, including both Modules A and B.
     teff_default : string
         Default stellar effective temperature to assume for sources 
         without GAIA information to extrapolate to longer wavelengths.
+    dist_crossmatch : float
+        Crossmatch GAIA coordinates with input coordinates within this distance.
+        Defalult: 0.1".
     """
     
-    from astroquery.simbad import Simbad
     from astroquery.gaia import Gaia
     from astropy.table import Table
     from astropy.time import Time
@@ -1140,7 +1143,7 @@ def make_gaia_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
     ind_nomag = gaia_tbl['phot_g_mean_mag'].data.mask
     if remove_cen_star:
         dist_asec = gaia_tbl['dist'].data * 3600
-        ind_dist  = dist_asec.data < 0.1
+        ind_dist  = dist_asec.data < dist_crossmatch
         ind_remove = np.where(ind_nomag | ind_dist)
     else:
         ind_remove = np.where(ind_nomag)
@@ -1235,7 +1238,7 @@ def make_gaia_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
 
 
 def make_simbad_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
-    spt_default='G2V'):
+    spt_default='G2V', dist_crossmatch=0.1):
 
     from astroquery.simbad import Simbad
     from astropy.table import Table
@@ -1256,7 +1259,7 @@ def make_simbad_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
     ind_star = np.array(['Star' in val for val in sim_tbl['OTYPE_V'].data.data])
     ind_nokband = sim_tbl['FLUX_K'].data.mask
     if remove_cen_star:
-        ind_dist  = (sim_tbl['DISTANCE_RESULT'] < 0.1).data
+        ind_dist  = (sim_tbl['DISTANCE_RESULT'] < dist_crossmatch).data
         # ind_remove = np.where((~ind_star) | ind_nok | ind_dist)
         ind_remove = np.where(ind_nokband | ind_dist)
     else:
