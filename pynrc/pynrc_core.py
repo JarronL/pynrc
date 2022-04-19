@@ -222,7 +222,7 @@ class DetectorOps(det_timing):
         return xt_coeffs[ind]
 
     def pixel_noise(self, fsrc=0.0, fzodi=0.0, fbg=0.0, rn=None, ktc=None, idark=None,
-        p_excess=None, ng=None, nf=None, verbose=False, **kwargs):
+        p_excess=None, ng=None, nf=None, scale_ints=True, verbose=False, **kwargs):
         """Noise values per pixel.
         
         Return theoretical noise calculation for the specified MULTIACCUM exposure 
@@ -256,6 +256,8 @@ class DetectorOps(det_timing):
             used to enable the ability of only calculating pixel noise for
             unsaturated groups for each pixel. If a numpy array, then it should
             be the same shape as `fsrc` image. By default will use `self.ngroup`.
+        scale_ints : bool
+            Scale pixel noise by by sqrt(nint)?
         verbose : bool
             Print out results at the end.
 
@@ -292,7 +294,8 @@ class DetectorOps(det_timing):
                        idark=idark, fsrc=fsrc, fzodi=fzodi, fbg=fbg, **kwargs)
     
         # Divide by sqrt(Total Integrations)
-        final = pn / np.sqrt(ma.nint)
+        final = pn / np.sqrt(ma.nint) if scale_ints else pn
+
         if verbose:
             print('Noise (e-/sec/pix): {}'.format(final))
             print('Total Noise (e-/pix): {}'.format(final*self.time_exp))
