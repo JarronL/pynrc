@@ -1,4 +1,4 @@
-pynrc.reduce.ref\_pixels.NRC\_refs
+﻿pynrc.reduce.ref\_pixels.NRC\_refs
 ==================================
 
 .. currentmodule:: pynrc.reduce.ref_pixels
@@ -31,6 +31,9 @@ pynrc.reduce.ref\_pixels.NRC\_refs
 
    .. autosummary::
    
+      ~NRC_refs.mask_act
+      ~NRC_refs.mask_channels
+      ~NRC_refs.mask_ref
       ~NRC_refs.multiaccum
       ~NRC_refs.multiaccum_times
       ~NRC_refs.refs_bot

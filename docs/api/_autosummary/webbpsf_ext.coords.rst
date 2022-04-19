@@ -16,6 +16,7 @@
    
       NIRCam_V2V3_limits
       ap_radec
+      convert_to_sky
       dist_image
       gen_sgd_offsets
       get_NRC_v2v3_limits

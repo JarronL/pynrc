@@ -19,6 +19,7 @@
       create_DMS_HDUList
       create_group_entry
       dec_to_base36
+      filename_visit_info
       jw_obs_id
       level1b_data_model
       populate_group_table

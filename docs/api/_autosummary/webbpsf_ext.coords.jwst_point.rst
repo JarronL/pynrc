@@ -19,6 +19,7 @@ webbpsf\_ext.coords.jwst\_point
       ~jwst_point.__init__
       ~jwst_point.ap_radec
       ~jwst_point.attitude_matrix
+      ~jwst_point.frame_to_radec
       ~jwst_point.gen_random_offsets
       ~jwst_point.plot_inst_apertures
       ~jwst_point.plot_main_apertures

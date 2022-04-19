@@ -22,6 +22,7 @@
       coron_ap_locs
       coron_detector
       coron_trans
+      dark_ramp_80K
       gen_unconvolved_point_source_image
       get_detname
       grism_background

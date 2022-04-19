@@ -23,9 +23,13 @@
       nircam_com_th
       nircam_filter
       nircam_grism_res
+      nircam_grism_si_ar
+      nircam_grism_th
       nircam_grism_wref
       niriss_grism_res
       niriss_grism_wref
+      qe_nircam
+      qe_nirspec
       read_filter
    
    

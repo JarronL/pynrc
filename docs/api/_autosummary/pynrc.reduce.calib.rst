@@ -16,6 +16,7 @@
    
       apply_linearity
       apply_nonlin
+      bp_fix
       broken_pink_powspec
       calc_cdsnoise
       calc_eff_noise
@@ -25,6 +26,7 @@
       chisqr_red
       cube_fit
       deconv_single_image
+      detname_to_scaid
       find_group_sat
       find_sat
       fit_corr_powspec
