@@ -202,8 +202,11 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
     if detname is None:
         udetnames = np.unique(obs_detnames)
     else:
-        udetnames =[get_detname(detname)]
-        # udetnames = ['NRCA5']
+        # Option to pass multiple names
+        if isinstance(detname, str):
+            udetnames = [get_detname(detname)]
+        else:
+            udetnames = np.unique(detname)
         
     if dry_run:
         print('DetID SIAFAperture Filter TargetName VisitID GSAid exp# (idl_off_act) dWFE time')
@@ -223,22 +226,27 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
         if (not dry_run) and save_dms:
             cal_obj = nircam_cal(det.scaid, caldir, verbose=False)
 
+        # Grab labels for only the specific detectors
         ulabels, ulabels_ind = np.unique(obs_labels[ind], return_index=True)
+        # Grab the associated apnames and filters
         uapnames = obs_apnames[ind][ulabels_ind]
         ufilters = obs_filters[ind][ulabels_ind]
+        # Create masks for desired filters and apnames
+        if filter is not None:
+            filt_select = [filter] if isinstance(filter, str) else np.unique(filter)
+            filt_mask = np.array([ff in filt_select for ff in ufilters])
+        if apname is not None:
+            ap_select = [apname] if isinstance(apname, str) else np.unique(apname)
+            ap_mask = np.array([aa in ap_select for aa in uapnames])
+        # Select specific labels, which get parsed later
         if (apname is not None) and (filter is not None):
-            ind_mask1 = np.array([apname==a for a in uapnames])
-            ind_mask2 = np.array([filter==a for a in ufilters])
-            ind_mask = ind_mask1 & ind_mask2
-            ulabels = ulabels[ind_mask]
+            ulabels = ulabels[filt_mask & ap_mask]
             log_print = _log.info
         elif (apname is not None) and (filter is None):
-            ind_mask = np.array([apname==a for a in uapnames])
-            ulabels = ulabels[ind_mask]
+            ulabels = ulabels[ap_mask]
             log_print = _log.info
         elif (apname is None) and (filter is not None):
-            ind_mask = np.array([filter==a for a in ufilters])
-            ulabels = ulabels[ind_mask]
+            ulabels = ulabels[filt_mask]
             log_print = _log.info
         else:
             log_print = _log.warn
@@ -248,15 +256,14 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
             log_print(f'  SCA: {detname}, SIAF: {apname}, Filter: {filter}')
             continue
 
-        # ulabels = ['NRCA5_FULL_F277W']
+        # Cycle through all labels
         for label in ulabels:
             aname = '_'.join(label.split('_')[0:-2])
             fname = label.split('_')[-2]
             tname = label.split('_')[-1]
 
-            # print(' label: ', label)
+            # Ensure this label matches one in the full list
             ind2 = (obs_labels == label)
-            
             if ind2.sum()==0:
                 _log.warn(f'Skipping {aname} + {fname} + {tname} for {detname}...')
                 continue
@@ -318,7 +325,11 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
             # Is this a high-contrast imaging observation?
             is_hci = ('MASK' in ap_nrc_name) or (sp_star is not None)
 
-            if not dry_run:
+            # Set pupil to None for some cases of coron and imaging mixing, eg. eng template
+            if (pupil is not None) and ('MASK' in pupil) and ('MASK' not in ap_nrc_name):
+                pupil = None
+
+            if (not dry_run):
                 # Get rid of previous instances
                 try: del nrc
                 except: pass
@@ -401,8 +412,9 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                     act_id = act_ids[j]
                     act_int = np.int(act_id, 36) # Convert base 36 to integer number
                     # print('   exp_num: ', exp_num)
-                    obs_params = obs_input.gen_obs_params(vid, exp_num, detname,
-                                                          grp_id=grp_id, seq_id=seq_id, act_id=act_id)
+                    obs_params = obs_input.gen_obs_params(vid, exp_num, detname, grp_id=grp_id, 
+                                                          seq_id=seq_id, act_id=act_id)
+
                     # Update some target info
                     obs_params['catalog_name'] = target_info.get('TargetArchiveName', 'UNKNOWN')
                     if 'RAProperMotion' in obs_params.keys():
@@ -482,6 +494,14 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                     f = obs_params['filter']
                     t = obs_params['target_name']
                     if label != f'{a}_{f}_{t}':
+                        continue
+
+                    # Some detectors don't have coronagraphic SIAF apertures.
+                    # We want to skip creation of their FITS files, because those
+                    # simulated observations would assume direct imaging apertures, 
+                    # which would produce incorrect PSFs and wrong pointing info.
+                    p = obs_params['pupil']
+                    if (p is not None) and ('MASK' in p) and ('MASK' not in a):
                         continue
 
                     # Create dictionary of parameters to save to FITS header

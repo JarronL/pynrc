@@ -4882,8 +4882,10 @@ def update_eng_detectors(visit_dict):
 
         swpupil = visit_dict['sw_pupils'][i]
         if ('MASKRND' in swpupil) or ('MASKBAR' in swpupil):
-            det_amod = ['NRCA2', 'NRCA4', 'NRCA5']
-            det_bmod = ['NRCB1', 'NRCB3', 'NRCB5']
+            # det_amod = ['NRCA2', 'NRCA4', 'NRCA5']
+            # det_bmod = ['NRCB1', 'NRCB3', 'NRCB5']
+            det_amod = ['NRCA1', 'NRCA2', 'NRCA3', 'NRCA4', 'NRCA5']
+            det_bmod = ['NRCB1', 'NRCB2', 'NRCB3', 'NRCB4', 'NRCB5']
         else:
             det_amod = ['NRCA1', 'NRCA2', 'NRCA3', 'NRCA4', 'NRCA5']
             det_bmod = ['NRCB1', 'NRCB2', 'NRCB3', 'NRCB4', 'NRCB5']
