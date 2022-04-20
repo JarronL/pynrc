@@ -21,6 +21,7 @@ from tqdm.auto import trange, tqdm
 from webbpsf_ext import robust
 from webbpsf_ext.image_manip import fshift, pad_or_cut_to_size
 from webbpsf_ext.maths import hist_indices, jl_poly_fit, jl_poly
+from ..maths.coords import det_to_sci, sci_to_det 
 
 # import pynrc
 from ..nrc_utils import var_ex_model
@@ -383,7 +384,7 @@ class nircam_dark(object):
         # TODO: Add DMS support for temperature
         if self.DMS:
             self._temperature_dict = None
-            _log.error("DMS data not yet supported obtaining FPA temperatures")
+            _log.warn("DMS data not yet supported obtaining FPA temperatures")
             return
         
         savename = self.paths_dict['temperatures_file']
@@ -810,7 +811,7 @@ class nircam_dark(object):
             en_spat_list = []
             #en_temp_list = []
             for patt in tqdm(patterns, leave=False, desc='Patterns'):
-                res = calc_eff_noise(allfiles, superbias=superbias, read_pattern=patt, temporal=False)
+                res = calc_eff_noise(allfiles, DMS=self.DMS, superbias=superbias, read_pattern=patt, temporal=False)
                 # ng_all, eff_noise_temp, eff_noise_spa = res
                 ng_all, eff_noise_spat = res
                 
@@ -2140,12 +2141,12 @@ class nircam_dark(object):
         xvals = tvals
         for ch in range(nchan):
             thr_e = det.pixel_noise(ng=ng_all, rn=read_noise[ch], idark=idark[ch], 
-                                        ideal_Poisson=ideal_Poisson, p_excess=p_excess)
+                                    ideal_Poisson=ideal_Poisson, p_excess=p_excess, scale_ints=False)
             yvals2 = (thr_e * tvals) / gain
             axes[0].plot(xvals, yvals2,  color=colarr[ch], lw=10, alpha=0.3, label=f'Ch{ch} - Theory')
             axes[1].plot(xvals, yvals2/tvals,  color=colarr[ch], lw=10, alpha=0.3, label=f'Ch{ch} - Theory')
         ch = -1
-        thr_e = det.pixel_noise(ng=ng_all, rn=read_noise_ref, idark=0, p_excess=[0,0])
+        thr_e = det.pixel_noise(ng=ng_all, rn=read_noise_ref, idark=0, p_excess=[0,0], scale_ints=False)
         yvals2 = (thr_e * tvals) / gain
         axes[0].plot(xvals, yvals2,  color=colarr[ch], lw=10, alpha=0.3, label=f'Ref - Theory')
         axes[1].plot(xvals, yvals2/tvals,  color=colarr[ch], lw=10, alpha=0.3, label=f'Ref - Theory')
@@ -2230,7 +2231,7 @@ class nircam_dark(object):
 
             ng_all = ng_all_list[i]
             thr_e = det_new.pixel_noise(ng=ng_all, rn=read_noise, idark=idark_avg, 
-                                        ideal_Poisson=ideal_Poisson, p_excess=[0,0])
+                                        ideal_Poisson=ideal_Poisson, p_excess=[0,0], scale_ints=False)
             
             yvals = (thr_e * tvals) / gain
             ax.plot(xvals, yvals, color='C1', label='Theory')
@@ -2238,7 +2239,7 @@ class nircam_dark(object):
             tvals = tarr_all[i]
             ng_all = ng_all_list[i]
             thr_e = det_new.pixel_noise(ng=ng_all, rn=read_noise, idark=idark_avg, 
-                                        ideal_Poisson=ideal_Poisson, p_excess=p_excess)
+                                        ideal_Poisson=ideal_Poisson, p_excess=p_excess, scale_ints=False)
             
             yvals = (thr_e * tvals) / gain
             ax.plot(xvals, yvals, marker='.', color='C1', ls='--', label='Theory + Excess')
@@ -2663,7 +2664,7 @@ def _wrap_super_bias_for_mp(arg):
     return cf[0]
 
 def gen_super_bias(allfiles, DMS=False, mn_func=np.median, std_func=robust.std, 
-                   return_std=False, deg=1, nsplit=3, **kwargs):
+                   return_std=False, deg=1, nsplit=3, return_all=False, **kwargs):
     """ Generate a Super Bias Image
 
     Read in a number of dark ramps, perform a polynomial fit to the data,
@@ -2679,20 +2680,24 @@ def gen_super_bias(allfiles, DMS=False, mn_func=np.median, std_func=robust.std,
     kw = kwargs.copy()
     kw['deg'] = deg
     kw['DMS'] = DMS
+
     if DMS:
         worker_args = []
         for f in allfiles:
             hdr = fits.getheader(f)
             # Account for multiple ints in each file
             for i in range(hdr['NINTS']):
-                kw['int_ind'] = i
-                worker_args.append(([f],kw))
+                kw_i = kw.copy()
+                kw_i['int_ind'] = i
+                worker_args.append(([f],kw_i))
     else:
         worker_args = [([f],kw) for f in allfiles]
     
     nfiles = len(allfiles)
     
-    if nsplit>1:
+    if nsplit is None or nsplit<=1:
+        bias_all = np.asarray([_wrap_super_bias_for_mp(wa) for wa in tqdm(worker_args)])
+    else:
         bias_all = []
         # pool = mp.Pool(nsplit)
         try:
@@ -2716,9 +2721,10 @@ def gen_super_bias(allfiles, DMS=False, mn_func=np.median, std_func=robust.std,
             _log.info('Closing multiprocess pool.')
             # pool.close()
 
-        bias_all = np.array(bias_all)
-    else:
-        bias_all = np.array([_wrap_super_bias_for_mp(wa) for wa in tqdm(worker_args)])
+        bias_all = np.asarray(bias_all)
+
+    if return_all:
+        return bias_all
 
     # Set back to previous logging level
     setup_logging(log_prev, verbose=False)
@@ -4074,12 +4080,12 @@ def calc_eff_noise(allfiles, superbias=None, temporal=True, spatial=True,
     # Calculate effective noise spatially
     if spatial:
         eff_noise_all = []
-        for f in tqdm(allfiles, desc="Spatial", leave=False):
+        for fname in tqdm(allfiles, desc="Spatial", leave=False):
             # If DMS, then might be multiple integrations per FITS file
             nint = fits.getheader(fname)['NINTS'] if DMS else 1
             iter_range = trange(nint, desc='Ramps', leave=False) if nint>1 else range(nint)
             for i in iter_range:
-                data = get_fits_data(f, bias=superbias, reffix=True, 
+                data = get_fits_data(fname, bias=superbias, reffix=True, 
                                      DMS=DMS, ind_int=i, **kw_ref)
 
                 # Reformat data?
@@ -4150,7 +4156,7 @@ def fit_func_var_ex(params, det, patterns, ng_all_list, en_dn_list,
 
         ng_all = ng_all_list[i]
         thr_e = det_new.pixel_noise(ng=ng_all, rn=read_noise, idark=idark, 
-                                    ideal_Poisson=ideal_Poisson, p_excess=[0,0])
+                                    ideal_Poisson=ideal_Poisson, p_excess=[0,0], scale_ints=False)
         
         tvals = (ng_all - 1) * det_new.time_group
         var_ex_obs = (en_dn_list[i] * gain * tvals)**2 - (thr_e * tvals)**2

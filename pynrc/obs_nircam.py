@@ -1149,6 +1149,10 @@ class obs_hci(nrc_hci):
         im_star : ndarray or None
             Pass a precomputed slope image of the stellar source already
             positioned at it's correct location.
+        sat_val : float
+            Fraction of full well to consider as saturated. Used to determine
+            number of unsaturated groups for linear fit, which feeds into
+            estimated effective noise equation. 
         wfe_drift0 : float
             Initial RMS WFE drift value of First PSF. Roll2 and Ref observations
             will be incremented from this. Default is 0.

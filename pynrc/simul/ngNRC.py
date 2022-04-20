@@ -175,9 +175,11 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
     # WFE Drift information
     if kwargs_wfedrift is None:
         wfe_dict = None
+        rand_seed_dwfe = None
     elif kwargs_wfedrift.get('wfe_dict') is not None:
         # wfe_dict already exists in passed parameters
         wfe_dict = kwargs_wfedrift.get('wfe_dict')
+        rand_seed_dwfe = None
     else:
         plot_fig = kwargs_wfedrift.get('plot', False)
         figname = kwargs_wfedrift.get('figname', None)
@@ -200,8 +202,11 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
     if detname is None:
         udetnames = np.unique(obs_detnames)
     else:
-        udetnames =[get_detname(detname)]
-        # udetnames = ['NRCA5']
+        # Option to pass multiple names
+        if isinstance(detname, str):
+            udetnames = [get_detname(detname)]
+        else:
+            udetnames = np.unique(detname)
         
     if dry_run:
         print('DetID SIAFAperture Filter TargetName VisitID GSAid exp# (idl_off_act) dWFE time')
@@ -221,20 +226,27 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
         if (not dry_run) and save_dms:
             cal_obj = nircam_cal(det.scaid, caldir, verbose=False)
 
-        ulabels= np.unique(obs_labels[ind])
+        # Grab labels for only the specific detectors
+        ulabels, ulabels_ind = np.unique(obs_labels[ind], return_index=True)
+        # Grab the associated apnames and filters
+        uapnames = obs_apnames[ind][ulabels_ind]
+        ufilters = obs_filters[ind][ulabels_ind]
+        # Create masks for desired filters and apnames
+        if filter is not None:
+            filt_select = [filter] if isinstance(filter, str) else np.unique(filter)
+            filt_mask = np.array([ff in filt_select for ff in ufilters])
+        if apname is not None:
+            ap_select = [apname] if isinstance(apname, str) else np.unique(apname)
+            ap_mask = np.array([aa in ap_select for aa in uapnames])
+        # Select specific labels, which get parsed later
         if (apname is not None) and (filter is not None):
-            ind_mask1 = np.array([apname in a for a in ulabels])
-            ind_mask2 = np.array([filter in a for a in ulabels])
-            ind_mask = ind_mask1 & ind_mask2
-            ulabels = ulabels[ind_mask]
+            ulabels = ulabels[filt_mask & ap_mask]
             log_print = _log.info
         elif (apname is not None) and (filter is None):
-            ind_mask = np.array([apname in a for a in ulabels])
-            ulabels = ulabels[ind_mask]
+            ulabels = ulabels[ap_mask]
             log_print = _log.info
         elif (apname is None) and (filter is not None):
-            ind_mask = np.array([filter in a for a in ulabels])
-            ulabels = ulabels[ind_mask]
+            ulabels = ulabels[filt_mask]
             log_print = _log.info
         else:
             log_print = _log.warn
@@ -244,15 +256,14 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
             log_print(f'  SCA: {detname}, SIAF: {apname}, Filter: {filter}')
             continue
 
-        # ulabels = ['NRCA5_FULL_F277W']
+        # Cycle through all labels
         for label in ulabels:
             aname = '_'.join(label.split('_')[0:-2])
             fname = label.split('_')[-2]
             tname = label.split('_')[-1]
 
-            # print(' label: ', label)
+            # Ensure this label matches one in the full list
             ind2 = (obs_labels == label)
-            
             if ind2.sum()==0:
                 _log.warn(f'Skipping {aname} + {fname} + {tname} for {detname}...')
                 continue
@@ -296,8 +307,8 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                 continue
 
             # More target info
-            src_tbl     = target_info.get('src_tbl')
-            star_info   = target_info.get('params_star')
+            src_tbl   = target_info.get('src_tbl')
+            star_info = target_info.get('params_star')
             sp_star   = None if star_info is None else star_info.get('sp')
             dist_pc   = target_info.get('dist_pc')
             age_Myr   = target_info.get('age_Myr')
@@ -306,15 +317,19 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
 
             # Gather info to create NIRCam instrument object
             filt  = op_temp['filter']
-            pupil = None if op_temp['pupil']=='CLEAR'     else op_temp['pupil']
-            mask  = None if op_temp['coron_mask']=='None' else op_temp['coron_mask']
+            pupil = None if op_temp['pupil']=='CLEAR'             else op_temp['pupil']
+            mask  = None if op_temp['coron_mask'].upper()=='NONE' else op_temp['coron_mask']
             ap_obs_name = siaf_ap.AperName
             ap_nrc_name = ap_obs_name
 
             # Is this a high-contrast imaging observation?
             is_hci = ('MASK' in ap_nrc_name) or (sp_star is not None)
 
-            if not dry_run:
+            # Set pupil to None for some cases of coron and imaging mixing, eg. eng template
+            if (pupil is not None) and ('MASK' in pupil) and ('MASK' not in ap_nrc_name):
+                pupil = None
+
+            if (not dry_run):
                 # Get rid of previous instances
                 try: del nrc
                 except: pass
@@ -397,8 +412,9 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                     act_id = act_ids[j]
                     act_int = np.int(act_id, 36) # Convert base 36 to integer number
                     # print('   exp_num: ', exp_num)
-                    obs_params = obs_input.gen_obs_params(vid, exp_num, detname,
-                                                          grp_id=grp_id, seq_id=seq_id, act_id=act_id)
+                    obs_params = obs_input.gen_obs_params(vid, exp_num, detname, grp_id=grp_id, 
+                                                          seq_id=seq_id, act_id=act_id)
+
                     # Update some target info
                     obs_params['catalog_name'] = target_info.get('TargetArchiveName', 'UNKNOWN')
                     if 'RAProperMotion' in obs_params.keys():
@@ -433,6 +449,10 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                         rand_seed_base = visit_dict['rand_seed_dith'] + 1
                         rand_seed_dith = rand_seed_base + 1
                         base_std = large_slew_uncert if type_arr[0].upper()=='SCIENCE' else ta_sam_uncert
+                    elif (tup=='SCIENCE') and (lup=='TILE'):
+                        rand_seed_base = visit_dict['rand_seed_dith'] + 1
+                        rand_seed_dith = rand_seed_base + 1 + grp_id*act_int*nexp + exp_num
+                        base_std = std_sam_uncert
                     elif (tup=='SCIENCE') and (lup=='FILTER'):
                         rand_seed_base = visit_dict['rand_seed_dith'] + 1
                         if ddist==0:
@@ -476,6 +496,14 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                     if label != f'{a}_{f}_{t}':
                         continue
 
+                    # Some detectors don't have coronagraphic SIAF apertures.
+                    # We want to skip creation of their FITS files, because those
+                    # simulated observations would assume direct imaging apertures, 
+                    # which would produce incorrect PSFs and wrong pointing info.
+                    p = obs_params['pupil']
+                    if (p is not None) and ('MASK' in p) and ('MASK' not in a):
+                        continue
+
                     # Create dictionary of parameters to save to FITS header
                     kwargs_pynrc = kwargs_det.copy()
                     kwargs_pynrc['json_file']     = os.path.basename(json_file)
@@ -492,8 +520,8 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                     kwargs_pynrc['pa_v3'] = obs_params['pa_v3']
 
                     # WFE drift values
+                    tval_exp = obs_params['texp_start_relative']  # seconds
                     if wfe_dict is not None:
-                        tval_exp = obs_params['texp_start_relative']  # seconds
                         tval_all = wfe_dict['time_sec']
                         wfe_total = wfe_dict['total']
                         wfe_drift_exp = np.interp(tval_exp, tval_all, wfe_total)
@@ -539,8 +567,8 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                                                          wfe_drift=wfe_drift_exp)
 
                         # Create slope image from HCI observation
-                        # if isinstance(nrc, obs_hci):
-                        if is_hci:
+                        # Only add if a stellar source was included
+                        if is_hci and (sp_star is not None):
                             pa_v3 = obs_params['pa_v3']
                             im_slope += nrc.gen_slope_image(PA=pa_v3, xyoff_asec=idl_off, 
                                                             zfact=0, exclude_noise=True, 
@@ -1086,7 +1114,7 @@ def slope_to_fitswriter(det, cal_obj, im_slope=None, cframe='det',
 
 
 def make_gaia_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
-    teff_default=5800):
+    teff_default=5800, dist_crossmatch=0.1):
     """ Create source table from GAIA DR2 query
 
     Generates a table of objects by performing a cone search around a set
@@ -1108,16 +1136,19 @@ def make_gaia_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
         Astropy SkyCoords object.
     remove_cen_star : bool
         Output will exclude the star associated with the input
-        coordinates (anything with 0.1" is removed from table).
+        coordinates (anything with ``dist_crossmatch`` is removed 
+        from table).
     radius : Units
         Radius to perfrom search. Default is 6', which should encompass
         NIRCam's full FoV, including both Modules A and B.
     teff_default : string
         Default stellar effective temperature to assume for sources 
         without GAIA information to extrapolate to longer wavelengths.
+    dist_crossmatch : float
+        Crossmatch GAIA coordinates with input coordinates within this distance.
+        Defalult: 0.1".
     """
     
-    from astroquery.simbad import Simbad
     from astroquery.gaia import Gaia
     from astropy.table import Table
     from astropy.time import Time
@@ -1140,7 +1171,7 @@ def make_gaia_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
     ind_nomag = gaia_tbl['phot_g_mean_mag'].data.mask
     if remove_cen_star:
         dist_asec = gaia_tbl['dist'].data * 3600
-        ind_dist  = dist_asec.data < 0.1
+        ind_dist  = dist_asec.data < dist_crossmatch
         ind_remove = np.where(ind_nomag | ind_dist)
     else:
         ind_remove = np.where(ind_nomag)
@@ -1235,7 +1266,7 @@ def make_gaia_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
 
 
 def make_simbad_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
-    spt_default='G2V'):
+    spt_default='G2V', dist_crossmatch=0.1):
 
     from astroquery.simbad import Simbad
     from astropy.table import Table
@@ -1256,7 +1287,7 @@ def make_simbad_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
     ind_star = np.array(['Star' in val for val in sim_tbl['OTYPE_V'].data.data])
     ind_nokband = sim_tbl['FLUX_K'].data.mask
     if remove_cen_star:
-        ind_dist  = (sim_tbl['DISTANCE_RESULT'] < 0.1).data
+        ind_dist  = (sim_tbl['DISTANCE_RESULT'] < dist_crossmatch).data
         # ind_remove = np.where((~ind_star) | ind_nok | ind_dist)
         ind_remove = np.where(ind_nokband | ind_dist)
     else:
@@ -1375,7 +1406,7 @@ def gen_wfe_drift(obs_input, case='BOL', iec_period=300, slew_init=10, rand_seed
     iec_period : float
         IEC heater switching period in seconds.
     slew_init : float
-        Assumed slew difference relative to previous program
+        Assumed slew difference relative to previous program (degress of pitch angle).
     rand_seed : None or int
         Seed value to initialize random number generator to obtain
         repeatable values.

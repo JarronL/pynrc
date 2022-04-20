@@ -1,7 +1,7 @@
 Installation Notes
 ===================
 
-Assume anaconda python >3.7 installation on Linux/Mac
+Assume anaconda python >3.8 installation on Linux/Mac
 
 0. Add channels:
    conda config --append channels http://ssb.stsci.edu/astroconda
@@ -59,7 +59,7 @@ Assume anaconda python >3.7 installation on Linux/Mac
       export CRDS_SERVER_URL='https://jwst-crds.stsci.edu'
 
 6. pysynphot - https://pysynphot.readthedocs.io/
-   conda install pysynphot (v2.0)
+   "conda install pysynphot" (v2.0)
    Download and untar http://mips.as.arizona.edu/~jleisenring/pynrc/cdbs.tar.gz
    Set the environment variable $PYSYN_CDBS to point to that directory.
    For example, in .bashrc shell file, add: 

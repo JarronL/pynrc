@@ -4646,6 +4646,10 @@ def get_pointing_info(pointing_files, propid=0, verbose=False, all_inst=False):
                         do_this = ((np.int(elements[1]) > 0) & ('NRC' in elements[4])) or \
                             (('TA' in elements[4]) & ('NRC' in elements[4]))
 
+                    # Skip visit name lines that might sneak past above
+                    if line[0:2] == '* ':
+                        do_this = False
+
                     if do_this:
 
                         level = elements[17]
@@ -4872,12 +4876,20 @@ def update_eng_detectors(visit_dict):
         _log.warn(f'APT template {apt_template} is not Engineering. Returning...')
         return
     
-    det_amod = ['NRCA1', 'NRCA2', 'NRCA3', 'NRCA4', 'NRCA5']
-    det_bmod = ['NRCB1', 'NRCB2', 'NRCB3', 'NRCB4', 'NRCB5']
-
     # Update detectors used
     detectors = []
-    for mod in visit_dict['ModuleAPT']:
+    for i, mod in enumerate(visit_dict['ModuleAPT']):
+
+        swpupil = visit_dict['sw_pupils'][i]
+        if ('MASKRND' in swpupil) or ('MASKBAR' in swpupil):
+            # det_amod = ['NRCA2', 'NRCA4', 'NRCA5']
+            # det_bmod = ['NRCB1', 'NRCB3', 'NRCB5']
+            det_amod = ['NRCA1', 'NRCA2', 'NRCA3', 'NRCA4', 'NRCA5']
+            det_bmod = ['NRCB1', 'NRCB2', 'NRCB3', 'NRCB4', 'NRCB5']
+        else:
+            det_amod = ['NRCA1', 'NRCA2', 'NRCA3', 'NRCA4', 'NRCA5']
+            det_bmod = ['NRCB1', 'NRCB2', 'NRCB3', 'NRCB4', 'NRCB5']
+
         if mod=='A':
             dets = det_amod
         elif mod=='B':
@@ -5711,6 +5723,7 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs='12:00:0
     obs_label     = visit_dict['obs_label'][ind_mask][0]
 
     # Get siaf aperture names
+    # First, do reference aperture
     exp_apnames = visit_dict['aperture'][ind_mask]
     if exp_apnames.size==1:
         apname = visit_dict['aperture'][ind_mask][0]
@@ -5718,9 +5731,31 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs='12:00:0
         ind_det = (visit_dict['detectors'][ind_mask] == det_id)
         apname = visit_dict['aperture'][ind_mask][ind_det][0]
     siaf_ap_ref = siaf_nrc[apname]
+
+    # Next, update observed aperture
     if ('NRCAS' in apname) or ('NRCBS' in apname) or ('NRCALL' in apname):
-        apname = det_id + '_FULL'
-    # pysiaf aperture
+        # Account for coronagraphic masks in engineering templates
+        # No SIAF aperture for B Module
+        sw_pupil = visit_dict['sw_pupils'][ind_mask][0]
+        lw_pupil = visit_dict['lw_pupils'][ind_mask][0]
+        if ('A5' in det_id) and lw_pupil=='MASKRND':
+            apname = 'NRCA5_FULL_MASK335R'
+        elif ('A5' in det_id) and lw_pupil=='MASKBAR':
+            apname = 'NRCA5_FULL_MASKLWB'
+        elif ('A2' in det_id) and ('MASK' in sw_pupil):
+            apname = 'NRCA2_FULL_MASK210R'
+        elif ('A4' in det_id) and ('MASK' in sw_pupil):
+            apname = 'NRCA4_FULL_MASKSWB'
+        else:
+            apname = det_id + '_FULL'
+    
+        #  Check if any of the above apertures throws an exception
+        try:
+            _ = siaf_nrc[apname]
+        except:
+            apname_new = det_id + '_FULL'
+            _log.error(f'{apname} does not exist. Falling back to {apname_new}.')
+            apname = apname_new
     siaf_ap = siaf_nrc[apname]
 
     # Subarray name
