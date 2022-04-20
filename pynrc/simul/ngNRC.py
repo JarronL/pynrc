@@ -175,9 +175,11 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
     # WFE Drift information
     if kwargs_wfedrift is None:
         wfe_dict = None
+        rand_seed_dwfe = None
     elif kwargs_wfedrift.get('wfe_dict') is not None:
         # wfe_dict already exists in passed parameters
         wfe_dict = kwargs_wfedrift.get('wfe_dict')
+        rand_seed_dwfe = None
     else:
         plot_fig = kwargs_wfedrift.get('plot', False)
         figname = kwargs_wfedrift.get('figname', None)
@@ -221,19 +223,21 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
         if (not dry_run) and save_dms:
             cal_obj = nircam_cal(det.scaid, caldir, verbose=False)
 
-        ulabels= np.unique(obs_labels[ind])
+        ulabels, ulabels_ind = np.unique(obs_labels[ind], return_index=True)
+        uapnames = obs_apnames[ind][ulabels_ind]
+        ufilters = obs_filters[ind][ulabels_ind]
         if (apname is not None) and (filter is not None):
-            ind_mask1 = np.array([apname in a for a in ulabels])
-            ind_mask2 = np.array([filter in a for a in ulabels])
+            ind_mask1 = np.array([apname==a for a in uapnames])
+            ind_mask2 = np.array([filter==a for a in ufilters])
             ind_mask = ind_mask1 & ind_mask2
             ulabels = ulabels[ind_mask]
             log_print = _log.info
         elif (apname is not None) and (filter is None):
-            ind_mask = np.array([apname in a for a in ulabels])
+            ind_mask = np.array([apname==a for a in uapnames])
             ulabels = ulabels[ind_mask]
             log_print = _log.info
         elif (apname is None) and (filter is not None):
-            ind_mask = np.array([filter in a for a in ulabels])
+            ind_mask = np.array([filter==a for a in ufilters])
             ulabels = ulabels[ind_mask]
             log_print = _log.info
         else:
@@ -296,8 +300,8 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                 continue
 
             # More target info
-            src_tbl     = target_info.get('src_tbl')
-            star_info   = target_info.get('params_star')
+            src_tbl   = target_info.get('src_tbl')
+            star_info = target_info.get('params_star')
             sp_star   = None if star_info is None else star_info.get('sp')
             dist_pc   = target_info.get('dist_pc')
             age_Myr   = target_info.get('age_Myr')
@@ -306,8 +310,8 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
 
             # Gather info to create NIRCam instrument object
             filt  = op_temp['filter']
-            pupil = None if op_temp['pupil']=='CLEAR'     else op_temp['pupil']
-            mask  = None if op_temp['coron_mask']=='None' else op_temp['coron_mask']
+            pupil = None if op_temp['pupil']=='CLEAR'             else op_temp['pupil']
+            mask  = None if op_temp['coron_mask'].upper()=='NONE' else op_temp['coron_mask']
             ap_obs_name = siaf_ap.AperName
             ap_nrc_name = ap_obs_name
 
@@ -433,6 +437,10 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                         rand_seed_base = visit_dict['rand_seed_dith'] + 1
                         rand_seed_dith = rand_seed_base + 1
                         base_std = large_slew_uncert if type_arr[0].upper()=='SCIENCE' else ta_sam_uncert
+                    elif (tup=='SCIENCE') and (lup=='TILE'):
+                        rand_seed_base = visit_dict['rand_seed_dith'] + 1
+                        rand_seed_dith = rand_seed_base + 1 + grp_id*act_int*nexp + exp_num
+                        base_std = std_sam_uncert
                     elif (tup=='SCIENCE') and (lup=='FILTER'):
                         rand_seed_base = visit_dict['rand_seed_dith'] + 1
                         if ddist==0:
@@ -492,8 +500,8 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                     kwargs_pynrc['pa_v3'] = obs_params['pa_v3']
 
                     # WFE drift values
+                    tval_exp = obs_params['texp_start_relative']  # seconds
                     if wfe_dict is not None:
-                        tval_exp = obs_params['texp_start_relative']  # seconds
                         tval_all = wfe_dict['time_sec']
                         wfe_total = wfe_dict['total']
                         wfe_drift_exp = np.interp(tval_exp, tval_all, wfe_total)
@@ -539,8 +547,8 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                                                          wfe_drift=wfe_drift_exp)
 
                         # Create slope image from HCI observation
-                        # if isinstance(nrc, obs_hci):
-                        if is_hci:
+                        # Only add if a stellar source was included
+                        if is_hci and (sp_star is not None):
                             pa_v3 = obs_params['pa_v3']
                             im_slope += nrc.gen_slope_image(PA=pa_v3, xyoff_asec=idl_off, 
                                                             zfact=0, exclude_noise=True, 
@@ -1378,7 +1386,7 @@ def gen_wfe_drift(obs_input, case='BOL', iec_period=300, slew_init=10, rand_seed
     iec_period : float
         IEC heater switching period in seconds.
     slew_init : float
-        Assumed slew difference relative to previous program
+        Assumed slew difference relative to previous program (degress of pitch angle).
     rand_seed : None or int
         Seed value to initialize random number generator to obtain
         repeatable values.
