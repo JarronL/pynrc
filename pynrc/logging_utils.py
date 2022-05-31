@@ -1,6 +1,7 @@
 import sys
 from webbpsf_ext.logging_utils import setup_logging as setup_logging_wext
 
+import webbpsf, poppy, webbpsf_ext
 from . import conf
 
 import logging

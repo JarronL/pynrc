@@ -997,7 +997,10 @@ class NIRCam(NIRCam_ext):
 
         # Regenerate PSF coefficients
         if update_coeffs:
-            del self.psf_coeff, self.psf_coeff_header
+            try:
+                del self.psf_coeff, self.psf_coeff_header
+            except AttributeError:
+                pass
             save = True if save is None else save
             self.gen_psf_coeff(save=save, force=force, nproc=nproc, **kwargs)
 
@@ -1862,8 +1865,8 @@ class NIRCam(NIRCam_ext):
         dec : float
             Declination in decimal degrees
         thisday : int
-            Calendar day to use for background calculation.  If not given, will use the
-            average of visible calendar days.
+            Calendar day to use for background calculation.  
+            If not given, will use the average of visible calendar days.
 
         ideal_Poisson : bool
             Use total signal for noise estimate?

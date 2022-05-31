@@ -884,8 +884,9 @@ class det_timing(object):
         avg_groups : bool
             For groups where nf>1, the telescope data gets averaged via a 
             bit-shifter. Setting ``avg_groups=True`` also averages the
-            pixel times in a similar manner. Default is True.
+            pixel times in a similar manner. Default is False.
         return_flat : bool
+            Return a single array rather than image array.
         
         Keyword Args
         ------------
