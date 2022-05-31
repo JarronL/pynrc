@@ -6340,7 +6340,7 @@ def gen_jwst_pointing(visit_dict, obs_params, base_std=None, dith_std=None,
 
 def get_tel_angles(ra, dec, obs_date='2022-03-01', obs_time='12:00:00'):
     """
-    For a given RA, Dec and date, return the telescope pitch and V3 PA angles.
+    For a given RA, Dec and date, return the nominal telescope pitch and V3 PA angles.
     """
     
     import datetime
