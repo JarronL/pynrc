@@ -83,10 +83,10 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
         be simulated.
     filter : None or str
         Specify a filter within observation to be simulated. Can be combined
-        with `detname` and `apname` keywords. Should have the form "ABC:XYZ",
-        or "ObsNum:VisitNum" (e.g., "005:001" for observation 5, visit 1).
+        with `detname` and `apname` keywords. 
     visit_id : None or str
-        Specify the visit ID to simulate.
+        Specify the visit ID to simulate. Should have the form "ABC:XYZ",
+        or "ObsNum:VisitNum" (e.g., "005:001" for observation 5, visit 1).
     dry_run : bool or None
         Won't generate any image data, but instead runs through each 
         observation, printing detector info, SIAF aperture name, filter,
