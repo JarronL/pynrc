@@ -4758,7 +4758,8 @@ def get_pointing_info(pointing_files, propid=0, verbose=False, all_inst=False):
                             expnum = 1 # Reset exposure counter
                         # Increment activity coun
                         elif type_val=='CONFIRM':
-                            act_counter += 1 
+                            if 'TA' in ap:
+                                act_counter += 1 
                             expnum = 1 # Reset exposure counter
 
                 except ValueError as e:
