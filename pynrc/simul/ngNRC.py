@@ -573,7 +573,7 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                                                          wfe_drift=wfe_drift_exp)
 
                         # return nrc, obs_params['pa_v3'],idl_off,wfe_drift_exp
-                        
+
                         # Create slope image from HCI observation
                         # Only add if a stellar source was included
                         if is_hci and (sp_star is not None):

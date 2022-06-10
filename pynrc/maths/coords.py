@@ -15,7 +15,7 @@ siaf_nrc.generate_toc()
 # Functions transferred to webbpsf_ext
 from webbpsf_ext.coords import dist_image
 from webbpsf_ext.coords import xy_to_rtheta, rtheta_to_xy, xy_rot
-from webbpsf_ext.coords import ap_radec, radec_to_v2v3, v2v3_to_pixel
+from webbpsf_ext.coords import ap_radec, radec_to_coord, radec_to_v2v3, v2v3_to_pixel
 from webbpsf_ext.coords import get_NRC_v2v3_limits, NIRCam_V2V3_limits
 from webbpsf_ext.coords import get_NRC_v2v3_limits as get_v2v3_limits # Original name
 from webbpsf_ext.coords import plotAxes
