@@ -82,11 +82,11 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
         name that exists within the observation. Only that aperture will
         be simulated.
     filter : None or str
-        Specify a filter within observation to be simulated. Can be combined
-        with `detname` and `apname` keywords. Should have the form "ABC:XYZ",
-        or "ObsNum:VisitNum" (e.g., "005:001" for observation 5, visit 1).
+        Specify a filter or list of filters within observation to be simulated. 
+        Can be combined with `detname` and `apname` keywords.
     visit_id : None or str
-        Specify the visit ID to simulate.
+        Specify the visit ID to simulate. Should have the form "ABC:XYZ",
+        or "ObsNum:VisitNum" (e.g., "005:001" for observation 5, visit 1).
     dry_run : bool or None
         Won't generate any image data, but instead runs through each 
         observation, printing detector info, SIAF aperture name, filter,
@@ -434,21 +434,27 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                         _log.warn(f'  Visit {vid}, Exp {exp_num}, Grp {grp_id}, Seq {seq_id}, Act {act_id}')
                         continue
                     if tup=='T_ACQ':
+                        # First target acq image involves small SAM (~3 pixels) from initial slew
+                        # These are super accurate
                         rand_seed_base = rand_seed_dith = visit_dict['rand_seed_dith']
-                        base_std = large_slew_uncert
+                        base_std = ta_sam_uncert #large_slew_uncert
                         dith_std = 0
                     elif (tup=='CONFIRM') and (ddist==0):
+                        # First TA_CONF image is same position as T_ACQ
+                        # These are super accurate
                         rand_seed_base = rand_seed_dith= visit_dict['rand_seed_dith']
-                        base_std = large_slew_uncert
+                        base_std = ta_sam_uncert #large_slew_uncert
                         dith_std = 0
                     elif (tup=='CONFIRM'):
-                        rand_seed_base = rand_seed_dith= visit_dict['rand_seed_dith'] + 1
-                        base_std = ta_sam_uncert
+                        # Second TA_CONF has a small SAM from ND square to coron mask
+                        rand_seed_base = rand_seed_dith = visit_dict['rand_seed_dith'] + 1
+                        base_std = std_sam_uncert
                         dith_std = 0
                     elif (tup=='SCIENCE') and (lup=='TARGET'):
+                        # Initial observation
                         rand_seed_base = visit_dict['rand_seed_dith'] + 1
                         rand_seed_dith = rand_seed_base + 1
-                        base_std = large_slew_uncert if type_arr[0].upper()=='SCIENCE' else ta_sam_uncert
+                        base_std = large_slew_uncert if type_arr[0].upper()=='SCIENCE' else std_sam_uncert
                     elif (tup=='SCIENCE') and (lup=='TILE'):
                         rand_seed_base = visit_dict['rand_seed_dith'] + 1
                         rand_seed_dith = rand_seed_base + 1 + grp_id*act_int*nexp + exp_num
@@ -476,7 +482,7 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                         first_dith_zero = True if (lup=='TARGET' or ddist==0) else False
                         # Create jwst_pointing class
                         tel_pointing = gen_jwst_pointing(visit_dict, obs_params, base_std=base_std)
-                        # Update standard and SGD uncertainties and regenerage random pointings
+                        # Update standard and SGD uncertainties and regenerate random pointings
                         tel_pointing._std_sig = std_sam_uncert
                         tel_pointing._sgd_sig = sgd_sam_uncert
                         tel_pointing.gen_random_offsets(rand_seed=rand_seed_dith, rand_seed_base=rand_seed_base,
@@ -566,6 +572,8 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                                                          hdul_psfs=hdul_psfs, im_bg=0, 
                                                          wfe_drift=wfe_drift_exp)
 
+                        # return nrc, obs_params['pa_v3'],idl_off,wfe_drift_exp
+                        
                         # Create slope image from HCI observation
                         # Only add if a stellar source was included
                         if is_hci and (sp_star is not None):
