@@ -1,5 +1,3 @@
-from __future__ import division, print_function, unicode_literals
-
 from astropy.convolution import Gaussian1DKernel, Gaussian2DKernel
 from astropy.convolution import convolve_fft
 from scipy import fftpack
@@ -825,7 +823,7 @@ class obs_hci(nrc_hci):
 
     def gen_planets_image(self, PA_offset=0, xyoff_asec=(0,0), use_cmask=True, 
         wfe_drift=None, use_coeff=True, return_oversample=False, coron_rescale=True, 
-        **kwargs):
+        shift_func=fshift, interp=None, **kwargs):
         """Create image of just planets.
 
         Use info stored in self.planets to create a noiseless slope image
@@ -857,7 +855,11 @@ class obs_hci(nrc_hci):
         coron_rescale : bool
             Rescale off-axis coronagraphic PSF to better match analytic prediction
             when source overlaps coronagraphic occulting mask. Default: True.
-
+        shift_func : func
+            Function to use for shifting image. Typical options are `fshift` and
+            `fourier_imshift`.
+        interp : str
+            Interpolation used for `fshift`, either 'linear' or 'cubic'.
         """
         if len(self.planets)==0:
             _log.info("No planet info at self.planets")
@@ -943,11 +945,24 @@ class obs_hci(nrc_hci):
             delx_over += delx_sci * self.oversample
             dely_over += dely_sci * self.oversample
 
-            interp = 'linear' if ('FULL' in self.det_info['wind_mode']) else 'cubic'
-            psf_planet = fshift(psf_planet, delx=delx_over, dely=dely_over, pad=True, interp=interp)
+            # Default interpolation for fshift
+            if shift_func is fshift:
+                if interp is None:
+                    interp = 'linear' if ('FULL' in self.det_info['wind_mode']) else 'cubic'
+                psf_planet = shift_func(psf_planet, delx=delx_over, dely=dely_over, pad=True, interp=interp)
+            elif shift_func is fourier_imshift:
+                psf_planet = fourier_imshift(psf_planet, delx_over, dely_over, pad=True)
+            else:
+                try:
+                    psf_planet = shift_func(psf_planet, delx_over, dely_over, pad=True)
+                except:
+                    raise ValueError(f'Unknwon input shift function: {shift_func}')
 
             # Add to image
             image_over += psf_planet
+
+        # Remove any negative numbers
+        image_over[image_over<0] = 0
 
         if return_oversample:
             return image_over
@@ -1116,7 +1131,8 @@ class obs_hci(nrc_hci):
     def gen_slope_image(self, PA=0, xyoff_asec=(0,0), return_oversample=False,
         exclude_disk=False, exclude_planets=False, exclude_noise=False, 
         zfact=None, do_ref=False, do_roll2=False, im_star=None, sat_val=0.9,
-        wfe_drift0=0, wfe_ref_drift=None, wfe_roll_drift=None, **kwargs):
+        wfe_drift0=0, wfe_ref_drift=None, wfe_roll_drift=None, 
+        shift_func=fshift, interp=None, **kwargs):
         """Create slope image of observation
         
         Beware that stellar position (centered on a pixel) will likely not
@@ -1162,6 +1178,11 @@ class obs_hci(nrc_hci):
             WFE drift between Roll1 and Roll2 observations (nm RMS).
         return_oversample : bool
             Return either the detector pixel-sampled or oversampled image.
+        shift_func : func
+            Function to use for shifting image. Typical options are `fshift` and
+            `fourier_imshift`.
+        interp : str
+            Interpolation used for `fshift`, either 'linear' or 'cubic'.
 
         Keyword Args
         ------------
@@ -1283,8 +1304,19 @@ class obs_hci(nrc_hci):
         # print(f'delx, dely = ({delx_det:.2f}, {dely_det:.2f}) det pixels')
         
         # Stellar PSF doesn't rotate
-        interp = 'linear' if ('FULL' in self.det_info['wind_mode']) else 'cubic'
-        im_star = fshift(im_star, delx=delx_over, dely=dely_over, pad=True, interp=interp)
+
+        # Default interpolation for fshift
+        if shift_func is fshift:
+            if interp is None:
+                interp = 'linear' if ('FULL' in self.det_info['wind_mode']) else 'cubic'
+            im_star = fshift(im_star, delx=delx_over, dely=dely_over, pad=True, interp=interp)
+        elif shift_func is fourier_imshift:
+            im_star = fourier_imshift(im_star, delx_over, dely_over, pad=True)
+        else:
+            try:
+                im_star = shift_func(im_star, delx_over, dely_over, pad=True)
+            except:
+                raise ValueError(f'Unknwon input shift function: {shift_func}')
         im_star[im_star<0] = 0
 
         ##################################
@@ -1434,7 +1466,8 @@ class obs_hci(nrc_hci):
     def gen_roll_image(self, PA1=0, PA2=10, return_oversample=False,
         no_ref=False, opt_diff=True, fix_sat=False, ref_scale_all=False, 
         wfe_drift0=0, wfe_ref_drift=None, wfe_roll_drift=None, 
-        xyoff_roll1=None, xyoff_roll2=None, xyoff_ref=None, **kwargs):
+        xyoff_roll1=None, xyoff_roll2=None, xyoff_ref=None, 
+        interp=None, **kwargs):
         """Make roll-subtracted image.
 
         Create a final roll-subtracted slope image based on current observation
@@ -1519,7 +1552,11 @@ class obs_hci(nrc_hci):
         thisday : int
             Calendar day to use for background calculation.  If not given, will use the
             average of visible calendar days.
-
+        shift_func : func
+            Function to use for shifting image. Typical options are `fshift` and
+            `fourier_imshift`.
+        interp : str
+            Interpolation used for `fshift`, either 'linear' or 'cubic'.
         """
 
         # Final image shape
@@ -1612,10 +1649,10 @@ class obs_hci(nrc_hci):
         cen_over = (xcen_over, ycen_over)
 
         # Perform shift and create slope image
-        interp = 'linear' if ('FULL' in self.det_info['wind_mode']) else 'cubic'
-        #im_star = fshift(im_star, delx=delx_over, dely=dely_over, pad=True, interp=interp)
+        if interp is None:
+            interp = 'linear' if ('FULL' in self.det_info['wind_mode']) else 'cubic'
         im_roll1 = self.gen_slope_image(PA=PA1, xyoff_asec=xyoff_asec1, im_star=im_star, 
-                                        return_oversample=True, **kwargs)
+                                        return_oversample=True, interp=interp, **kwargs)
 
         if no_ref and (roll_angle==0):
             _log.warning('If no_ref=True, then PA1 must not equal PA2. Setting no_ref=False')
@@ -1644,11 +1681,11 @@ class obs_hci(nrc_hci):
             # Create Roll2 image
             if (np.abs(wfe_roll_drift) < eps) and np.allclose(xyoff_asec1, xyoff_asec2):
                 im_roll2 = self.gen_slope_image(PA=PA2, im_star=im_star, do_roll2=True, 
-                                                return_oversample=True, **kwargs)
+                                                return_oversample=True, interp=interp, **kwargs)
             else:
                 im_roll2 = self.gen_slope_image(PA=PA2, xyoff_asec=xyoff_asec2, do_roll2=True, 
                                                 wfe_drift0=wfe_drift0, wfe_roll_drift=wfe_roll_drift, 
-                                                return_oversample=True, **kwargs)
+                                                return_oversample=True, interp=interp, **kwargs)
 
             # Fix saturated pixels
             if fix_sat:
@@ -1753,7 +1790,7 @@ class obs_hci(nrc_hci):
         # Create Reference slope image
         # Essentially just adds image shifts and noise
         im_ref = self.gen_slope_image(PA=0, xyoff_asec=xyoff_asec_ref, im_star=im_ref, 
-                                      do_ref=True, return_oversample=True, **kwargs)
+                                      do_ref=True, return_oversample=True, interp=interp, **kwargs)
 
         # Fix saturated pixels
         if fix_sat:
@@ -1807,7 +1844,7 @@ class obs_hci(nrc_hci):
 
             # Create Roll2 slope image
             im_roll2 = self.gen_slope_image(PA=PA2, xyoff_asec=xyoff_asec2, im_star=im_star2, 
-                                            do_roll2=True, return_oversample=True, **kwargs)
+                                            do_roll2=True, return_oversample=True, interp=interp, **kwargs)
 
             # Include disk and companion flux for calculating the reference scale factor
             if ref_scale_all:
