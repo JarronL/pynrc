@@ -42,8 +42,10 @@
       ~nrc_hci.get_optical_system
       ~nrc_hci.get_siaf_apname
       ~nrc_hci.get_subarray_name
+      ~nrc_hci.get_wfe
       ~nrc_hci.interpolate_was_opd
-      ~nrc_hci.load_was_opd
+      ~nrc_hci.load_wss_opd
+      ~nrc_hci.load_wss_opd_by_date
       ~nrc_hci.plot_bandpass
       ~nrc_hci.psf_grid
       ~nrc_hci.ramp_optimize

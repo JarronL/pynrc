@@ -1,4 +1,4 @@
-webbpsf\_ext.webbpsf\_ext\_core.NIRCam\_ext
+﻿webbpsf\_ext.webbpsf\_ext\_core.NIRCam\_ext
 ===========================================
 
 .. currentmodule:: webbpsf_ext.webbpsf_ext_core
@@ -34,8 +34,10 @@ webbpsf\_ext.webbpsf\_ext\_core.NIRCam\_ext
       ~NIRCam_ext.get_opd_file_full_path
       ~NIRCam_ext.get_opd_info
       ~NIRCam_ext.get_optical_system
+      ~NIRCam_ext.get_wfe
       ~NIRCam_ext.interpolate_was_opd
-      ~NIRCam_ext.load_was_opd
+      ~NIRCam_ext.load_wss_opd
+      ~NIRCam_ext.load_wss_opd_by_date
       ~NIRCam_ext.psf_grid
       ~NIRCam_ext.set_position_from_aperture_name
       ~NIRCam_ext.visualize_wfe_budget

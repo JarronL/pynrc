@@ -52,8 +52,10 @@
       ~obs_hci.get_optical_system
       ~obs_hci.get_siaf_apname
       ~obs_hci.get_subarray_name
+      ~obs_hci.get_wfe
       ~obs_hci.interpolate_was_opd
-      ~obs_hci.load_was_opd
+      ~obs_hci.load_wss_opd
+      ~obs_hci.load_wss_opd_by_date
       ~obs_hci.planet_spec
       ~obs_hci.plot_bandpass
       ~obs_hci.psf_grid

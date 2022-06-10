@@ -1,4 +1,4 @@
-webbpsf\_ext.webbpsf\_ext\_core.MIRI\_ext
+﻿webbpsf\_ext.webbpsf\_ext\_core.MIRI\_ext
 =========================================
 
 .. currentmodule:: webbpsf_ext.webbpsf_ext_core
@@ -33,8 +33,10 @@ webbpsf\_ext.webbpsf\_ext\_core.MIRI\_ext
       ~MIRI_ext.get_opd_file_full_path
       ~MIRI_ext.get_opd_info
       ~MIRI_ext.get_optical_system
+      ~MIRI_ext.get_wfe
       ~MIRI_ext.interpolate_was_opd
-      ~MIRI_ext.load_was_opd
+      ~MIRI_ext.load_wss_opd
+      ~MIRI_ext.load_wss_opd_by_date
       ~MIRI_ext.psf_grid
       ~MIRI_ext.set_position_from_aperture_name
       ~MIRI_ext.visualize_wfe_budget

@@ -39,8 +39,10 @@
       ~NIRCam.get_optical_system
       ~NIRCam.get_siaf_apname
       ~NIRCam.get_subarray_name
+      ~NIRCam.get_wfe
       ~NIRCam.interpolate_was_opd
-      ~NIRCam.load_was_opd
+      ~NIRCam.load_wss_opd
+      ~NIRCam.load_wss_opd_by_date
       ~NIRCam.plot_bandpass
       ~NIRCam.psf_grid
       ~NIRCam.ramp_optimize
