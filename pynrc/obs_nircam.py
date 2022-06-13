@@ -1293,6 +1293,8 @@ class obs_hci(nrc_hci):
         
         # Stellar PSF doesn't rotate
         # Shift and crop maintaining original image
+        if interp is None:
+            interp = 'linear' if ('FULL' in self.det_info['wind_mode']) else 'cubic'
         im_star = pad_or_cut_to_size(im_star, (ypix_over, xpix_over), 
                                      offset_vals=(dely_over, delx_over), 
                                      shift_func=shift_func, interp=interp)
