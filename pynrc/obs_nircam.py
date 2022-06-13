@@ -907,9 +907,6 @@ class obs_hci(nrc_hci):
                                              coron_rescale=coron_rescale, use_cmask=use_cmask,
                                              **kwargs)
 
-            # Expand to full size
-            psf_planet = pad_or_cut_to_size(psf_planet, (ypix_over, xpix_over))
-
             ##################################
             # Shift image
 
@@ -945,18 +942,12 @@ class obs_hci(nrc_hci):
             delx_over += delx_sci * self.oversample
             dely_over += dely_sci * self.oversample
 
-            # Default interpolation for fshift
-            if shift_func is fshift:
-                if interp is None:
-                    interp = 'linear' if ('FULL' in self.det_info['wind_mode']) else 'cubic'
-                psf_planet = shift_func(psf_planet, delx=delx_over, dely=dely_over, pad=True, interp=interp)
-            elif shift_func is fourier_imshift:
-                psf_planet = fourier_imshift(psf_planet, delx_over, dely_over, pad=True)
-            else:
-                try:
-                    psf_planet = shift_func(psf_planet, delx_over, dely_over, pad=True)
-                except:
-                    raise ValueError(f'Unknwon input shift function: {shift_func}')
+            # Shift and crop maintaining original image
+            if interp is None:
+                interp = 'linear' if ('FULL' in self.det_info['wind_mode']) else 'cubic'
+            psf_planet = pad_or_cut_to_size(psf_planet, (ypix_over, xpix_over), 
+                                            offset_vals=(dely_over,delx_over), 
+                                            shift_func=shift_func, interp=interp)
 
             # Add to image
             image_over += psf_planet
@@ -1268,9 +1259,6 @@ class obs_hci(nrc_hci):
         elif isinstance(im_star, (int,float)) and (im_star==0):
             im_star = np.zeros([ypix_over, xpix_over])
 
-        # Expand to full size
-        im_star = pad_or_cut_to_size(im_star, (ypix_over, xpix_over))
-
         ##################################
         # Shift image
         ##################################
@@ -1304,19 +1292,10 @@ class obs_hci(nrc_hci):
         # print(f'delx, dely = ({delx_det:.2f}, {dely_det:.2f}) det pixels')
         
         # Stellar PSF doesn't rotate
-
-        # Default interpolation for fshift
-        if shift_func is fshift:
-            if interp is None:
-                interp = 'linear' if ('FULL' in self.det_info['wind_mode']) else 'cubic'
-            im_star = fshift(im_star, delx=delx_over, dely=dely_over, pad=True, interp=interp)
-        elif shift_func is fourier_imshift:
-            im_star = fourier_imshift(im_star, delx_over, dely_over, pad=True)
-        else:
-            try:
-                im_star = shift_func(im_star, delx_over, dely_over, pad=True)
-            except:
-                raise ValueError(f'Unknwon input shift function: {shift_func}')
+        # Shift and crop maintaining original image
+        im_star = pad_or_cut_to_size(im_star, (ypix_over, xpix_over), 
+                                     offset_vals=(dely_over, delx_over), 
+                                     shift_func=shift_func, interp=interp)
         im_star[im_star<0] = 0
 
         ##################################
@@ -1619,8 +1598,11 @@ class obs_hci(nrc_hci):
                                       wfe_drift=wfe_drift0, **kwargs)
         # Stellar cut-out for reference scaling
         im_star_sub = pad_or_cut_to_size(im_star, sub_shape)
-        # Expand to full size
-        im_star = pad_or_cut_to_size(im_star, (ypix_over, xpix_over))
+
+        # Expand to full size 
+        #   - Not needed because this is correctly handled in gen_slope_image
+        #   - Run into undesired cropping effects if PSF is larger than FoV and significantly shifted 
+        # im_star = pad_or_cut_to_size(im_star, (ypix_over, xpix_over))
 
         ###################################
         # Get image shifts to mask location
@@ -1785,7 +1767,9 @@ class obs_hci(nrc_hci):
         # Stellar cut-out for reference scaling
         im_ref_sub = pad_or_cut_to_size(im_ref, sub_shape)
         # Expand to full size
-        im_ref = pad_or_cut_to_size(im_ref, (ypix_over, xpix_over))
+        #   - Not needed because this is correctly handled in gen_slope_image
+        #   - Run into undesired cropping effects if PSF is larger than FoV and significantly shifted 
+        # im_ref = pad_or_cut_to_size(im_ref, (ypix_over, xpix_over))
 
         # Create Reference slope image
         # Essentially just adds image shifts and noise
