@@ -199,4 +199,4 @@ dmypy.json
 notebooks/GO/
 *.aptbackup
 
-notebooks/gitignore/
+notebooks/git_ignore/
