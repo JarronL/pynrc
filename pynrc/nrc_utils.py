@@ -65,6 +65,7 @@ _log = logging.getLogger('pynrc')
 
 try:
     import webbpsf_ext
+    from webbpsf_ext.utils import get_one_siaf
 except ImportError:
     raise ImportError('webbpsf_ext is not installed. pyNRC depends on its inclusion.')
 
