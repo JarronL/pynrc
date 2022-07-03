@@ -104,7 +104,7 @@ with open('HISTORY.rst') as history_file:
 
 install_requires = [
     'Click>=6.0',
-    'numpy>=1.19.0',
+    'numpy~>1.22', 
     'matplotlib>=3.3.0',
     'scipy>=1.5.0',
     'pysynphot>=2.0.0',
