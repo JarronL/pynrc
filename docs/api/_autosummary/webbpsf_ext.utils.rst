@@ -15,6 +15,7 @@
       :toctree:
    
       check_fitsgz
+      get_one_siaf
    
    
 
