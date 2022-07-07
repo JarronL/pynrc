@@ -2966,6 +2966,7 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
         Show a progress bar for this ramp generation?
     """
     
+    import gc
     from ..reduce.calib import apply_nonlin
 
     ################################
@@ -3182,9 +3183,6 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
                                   rand_seed=rseed, verbose=False)
     if prog_bar: pbar.update(1)
 
-
-
-
     ####################
     # Add reference offsets
     if prog_bar: pbar.set_description("Ref Pixel Offsets")
@@ -3226,6 +3224,7 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     if cframe=='sci':
         data = det_to_sci(data, det.detid)
 
+    gc.collect()
     if return_full_ramp:
         if return_zero_frame:
             return data, data[0].copy()
