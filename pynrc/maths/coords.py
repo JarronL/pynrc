@@ -9,6 +9,7 @@ __epsilon = np.finfo(float).eps
 import pysiaf
 from pysiaf import JWST_PRD_VERSION, rotations, Siaf
 # Create this once since it takes time to call multiple times
+# from ..nrc_utils import siaf_nrc
 siaf_nrc = Siaf('NIRCam')
 siaf_nrc.generate_toc()
 

@@ -1,4 +1,5 @@
 """pyNRC utility functions"""
+from copy import deepcopy
 import os, re
 
 # Import libraries
@@ -110,7 +111,8 @@ import pysiaf
 from pysiaf import JWST_PRD_VERSION, rotations, Siaf
 
 # Create this once since it takes time to call multiple times
-siaf_nrc = Siaf('NIRCam')
+from webbpsf_ext.utils import siaf_nrc as siaf_nrc_wext
+siaf_nrc = deepcopy(siaf_nrc_wext)
 siaf_nrc.generate_toc()
 
 
@@ -1043,7 +1045,7 @@ def make_grism_slope(nrc, src_tbl, tel_pointing, expnum, add_offset=None, spec_a
 
         # Create spectral image
         xr, yr = xpix[i], ypix[i]
-        cen_rot = ap_siaf.reference_point('sci')
+        cen_rot = (ap_siaf.XSciRef, ap_siaf.YSciRef)
         wspec, imspec = place_grism_spec(nrc, sp, xr, yr, wref=wref, return_oversample=False,
                                          spec_ang=spec_ang, cen_rot=cen_rot)
 

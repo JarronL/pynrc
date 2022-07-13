@@ -18,8 +18,9 @@ import yaml, json
 import pysiaf
 from pysiaf import JWST_PRD_VERSION, rotations, Siaf
 # Create this once since it takes time to call multiple times
-siaf_nrc = Siaf('NIRCam')
-siaf_nrc.generate_toc()
+from ..nrc_utils import siaf_nrc
+# siaf_nrc = Siaf('NIRCam')
+# siaf_nrc.generate_toc()
 
 from astropy.table import Table
 from astropy.io import ascii
@@ -911,7 +912,8 @@ class AptInput:
 
         # We'll always be changing NIRCam to FGS, so set up the NIRCam siaf
         # instance outside of loop
-        nrc_siaf = Siaf('nircam')['NRCA3_FULL']
+        nrc_ap = siaf_nrc['NRCA3_FULL']
+        # nrc_siaf = Siaf('nircam')['NRCA3_FULL']
 
         ga_index = np.array(obs_dict['APTTemplate']) == 'WfscGlobalAlignment'
 
@@ -937,7 +939,7 @@ class AptInput:
 
             # Update the pointing info for the FGS exposures
             fgs = Siaf('fgs')[fgs_aperture]
-            basex, basey = fgs.tel_to_idl(nrc_siaf.V2Ref, nrc_siaf.V3Ref)
+            basex, basey = fgs.tel_to_idl(nrc_ap.V2Ref, nrc_ap.V3Ref)
             dithx = np.array(obs_dict['dithx'])[obs_indexes[to_fgs]]
             dithy = np.array(obs_dict['dithy'])[obs_indexes[to_fgs]]
             idlx = basex + dithx

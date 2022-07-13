@@ -4,7 +4,7 @@ from scipy import fftpack
 from copy import deepcopy
 
 from webbpsf_ext.image_manip import convolve_image, _convolve_psfs_for_mp
-from webbpsf_ext.image_manip import convolve_image, make_disk_image, distort_image
+from webbpsf_ext.image_manip import make_disk_image, distort_image
 from webbpsf_ext.bandpasses import nircam_com_th
 
 # Import libraries
@@ -675,16 +675,16 @@ class obs_hci(nrc_hci):
                 yv = np.arange(ny)
                 xg, yg = np.meshgrid(xv,yv)
                 res = _transmission_map(self, (xg,yg), 'sci', siaf_ap=siaf_ap)
-                trans = frebin(res[0]**2, scale=self.oversample)
+                trans = frebin(res[0]**2, scale=self.oversample, total=False)
             else:
                 siaf_ap = self.siaf[self.aperturename]
-                xr, yr = siaf_ap.reference_point('sci')
+                xr, yr = (siaf_ap.XSciRef, siaf_ap.YSciRef)
                 xv = np.arange(nx) - nx/2 + xr
                 yv = np.arange(ny) - ny/2 + yr
                 xg, yg = np.meshgrid(xv,yv)
                 xidl, yidl = siaf_ap.convert(xg,yg,'sci','idl')
                 res = _transmission_map(self, (xidl,yidl), 'idl', siaf_ap=siaf_ap)
-                trans = frebin(res[0]**2, scale=self.oversample)
+                trans = frebin(res[0]**2, scale=self.oversample, total=False)
             self.mask_images['OVERMASK'] = trans
 
             # renormalize all PSFs for disk convolution to 1
@@ -913,7 +913,7 @@ class obs_hci(nrc_hci):
             # Determine final shift amounts to mask location
             # Shift to position relative to center of image
             if (('FULL' in self.det_info['wind_mode']) and (self.image_mask is not None)) or self._use_ap_info:
-                xcen, ycen = self.siaf_ap.reference_point('sci')
+                xcen, ycen = (self.siaf_ap.XSciRef, self.siaf_ap.YSciRef)
                 delx_pix = (xcen - (xpix/2 + 0.5))  # 'sci' pixel shifts
                 dely_pix = (ycen - (ypix/2 + 0.5))  # 'sci' pixel shifts
                 delx_asec, dely_asec = np.array([delx_pix, dely_pix]) * self.pixelscale
@@ -935,7 +935,7 @@ class obs_hci(nrc_hci):
 
             # Determine planet PSF shift in pixels compared to center of mask
             # Convert delx and dely from 'idl' to 'sci' coords
-            xsci_ref, ysci_ref = self.siaf_ap.reference_point('sci')
+            xsci_ref, ysci_ref = (self.siaf_ap.XSciRef, self.siaf_ap.YSciRef)
             xsci_pl, ysci_pl = self.siaf_ap.idl_to_sci(plx_asec, ply_asec)
             delx_sci, dely_sci = (xsci_pl - xsci_ref, ysci_pl - ysci_ref)
 
@@ -992,6 +992,9 @@ class obs_hci(nrc_hci):
 
         if self.disk_hdulist is None:
             return 0.0
+        elif kwargs.get('use_coeff',True)==False:
+            _log.warn('  gen_disk_image: Skipping disk generate because use_coeff=False...')            
+            return 0.0
 
         # Final image shape
         det = self.Detector
@@ -1008,7 +1011,7 @@ class obs_hci(nrc_hci):
         # Determine final shift amounts to location along bar
         # Shift to position relative to center of image
         if (('FULL' in self.det_info['wind_mode']) and (self.image_mask is not None)) or self._use_ap_info:
-            xcen, ycen = self.siaf_ap.reference_point('sci')
+            xcen, ycen = (self.siaf_ap.XSciRef, self.siaf_ap.YSciRef)
             delx_pix = (xcen - (xpix/2 + 0.5))  # 'sci' pixel shifts
             dely_pix = (ycen - (ypix/2 + 0.5))  # 'sci' pixel shifts
             # Convert to 'idl' offsets
@@ -1266,7 +1269,7 @@ class obs_hci(nrc_hci):
         # Determine final shift amounts to mask location
         # Shift to position relative to center of image
         if (('FULL' in self.det_info['wind_mode']) and (self.image_mask is not None)) or self._use_ap_info:
-            xcen, ycen = self.siaf_ap.reference_point('sci')
+            xcen, ycen = (self.siaf_ap.XSciRef, self.siaf_ap.YSciRef)
             delx_pix = (xcen - (xpix/2 + 0.5))  # 'sci' pixel shifts
             dely_pix = (ycen - (ypix/2 + 0.5))  # 'sci' pixel shifts
             delx_asec, dely_asec = np.array([delx_pix, dely_pix]) * self.pixelscale
@@ -1316,7 +1319,7 @@ class obs_hci(nrc_hci):
         kwargs2['PA_offset']  = -1*PA
         kwargs2['xyoff_asec'] = xyoff_asec
         kwargs2['return_oversample'] = return_oversample
-        kwargs2['use_coeff'] = True
+        kwargs2['use_coeff'] = kwargs.get('use_coeff', True)
         # Companions
         if no_planets:
             im_pl = 0
@@ -1329,6 +1332,7 @@ class obs_hci(nrc_hci):
             im_disk = 0
         else:
             _log.info('  gen_slope_image: Creating disk image...')
+            kwargs2['use_coeff'] = True
             im_disk = self.gen_disk_image(**kwargs2)
 
         # Zodiacal bg levels
@@ -1612,7 +1616,7 @@ class obs_hci(nrc_hci):
 
         # Shift to position relative to center of image
         if (('FULL' in self.det_info['wind_mode']) and (self.image_mask is not None)) or self._use_ap_info:
-            xcen, ycen = self.siaf_ap.reference_point('sci')
+            xcen, ycen = (self.siaf_ap.XSciRef, self.siaf_ap.YSciRef)
             delx_pix = (xcen - (xpix/2 + 0.5))  # 'sci' pixel shifts
             dely_pix = (ycen - (ypix/2 + 0.5))  # 'sci' pixel shifts
             delx_asec, dely_asec = np.array([delx_pix, dely_pix]) * self.pixelscale
@@ -2380,7 +2384,7 @@ def get_cen_offsets(self, idl_offset=(0,0), PA_offset=0):
 
     # Determine planet PSF shift in pixels compared to center of mask
     # Convert delx and dely from 'idl' to 'sci' coords
-    xsci_ref, ysci_ref = self.siaf_ap.reference_point('sci')
+    xsci_ref, ysci_ref = (self.siaf_ap.XSciRef, self.siaf_ap.YSciRef)
     xsci_pl, ysci_pl = self.siaf_ap.idl_to_sci(delx_asec, dely_asec)
     delx_sci, dely_sci = (xsci_pl - xsci_ref, ysci_pl - ysci_ref)
 
