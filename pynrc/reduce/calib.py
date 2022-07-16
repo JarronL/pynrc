@@ -5862,6 +5862,9 @@ def bp_fix(im, sigclip=5, niter=1, pix_shift=1, rows=True, cols=True,
 
         else:
             indbad = bpmask
+
+        # Mark anything that is a NaN
+        indbad[np.isnan(arr_out)] = True
         
         # Set output array and mask values 
         arr_out[indbad] = shift_med[indbad]
