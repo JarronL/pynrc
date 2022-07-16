@@ -594,6 +594,44 @@ class obs_hci(nrc_hci):
         # Updates ref detector window size
         self.gen_ref_det()
 
+    def update_detectors_ref(self, **kwargs):
+        """
+        An easy-to-identify shortcut to `gen_ref_det`, because I 
+        keep forgetting to run it to independently of `update_detectors`.
+
+        Keyword Args
+        ------------
+        wind_mode : str
+            Window mode type 'FULL', 'STRIPE', 'WINDOW'.
+        xpix : int
+            Size of window in x-pixels for frame time calculation.
+        ypix : int
+            Size of window in y-pixels for frame time calculation.
+        x0 : int
+            Lower-left x-coord position of detector window.
+        y0 : int
+            Lower-left y-coord position of detector window.
+        read_mode : str
+            NIRCam Ramp Readout mode such as 'RAPID', 'BRIGHT1', etc.
+        nint : int
+            Number of integrations (ramps).
+        ngroup : int
+            Number of groups in a integration.
+        nf : int
+            Number of frames per group.
+        nd1 : int
+            Number of drop frame after reset (before first group read). 
+        nd2 : int
+            Number of drop frames within a group (ie., groupgap). 
+        nd3 : int
+            Number of drop frames after final read frame in ramp. 
+        nr1 : int
+            Number of reset frames within first ramp.
+        nr2 : int
+            Number of reset frames for subsequent ramps.
+        """
+        self.gen_ref_det(**kwargs)
+
     def gen_ref_det(self, **kwargs):
         """
         Function to generate and update Reference Detector class.
