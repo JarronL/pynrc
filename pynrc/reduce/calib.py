@@ -5850,7 +5850,7 @@ def bp_fix(im, sigclip=5, niter=1, pix_shift=1, rows=True, cols=True,
         shift_arr = shift_array(arr_out, pix_shift, rows=rows, cols=cols)
     
         # Take median of shifted values
-        shift_med = np.median(shift_arr, axis=0)
+        shift_med = np.nanmedian(shift_arr, axis=0)
         if bpmask is None:
             # Difference of median and reject outliers
             diff = arr_out - shift_med
