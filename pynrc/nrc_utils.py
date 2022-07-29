@@ -182,15 +182,18 @@ def get_detname(det_id):
         return det_id
     elif det_id in scaids:
         detname = 'NRC' + det_dict[det_id]
-    elif det_id in detids:
-        detname = 'NRC' + det_id
+    elif det_id.upper() in detids:
+        detname = 'NRC' + det_id.upper()
     else:
         detname = det_id
 
     # If NRCALONG or or NRCBLONG, change 'LONG' to '5' 
     detname = detname.upper()
-    if 'LONG' in detname.upper():
-        detname = detname[0:4] + '5'
+    if 'LONG' in detname:
+        detname = detname.replace('LONG', '5')
+        # Ensure NRC is prepended
+        if detname[0:3]!='NRC':
+            detname = 'NRC' + detname
 
     if detname not in detnames:
         raise ValueError("Invalid detector: {} \n\tValid names are: {}" \

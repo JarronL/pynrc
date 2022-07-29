@@ -68,6 +68,7 @@
       ~obs_hci.simulate_ramps
       ~obs_hci.star_flux
       ~obs_hci.update_detectors
+      ~obs_hci.update_detectors_ref
       ~obs_hci.update_from_SIAF
       ~obs_hci.update_psf_coeff
       ~obs_hci.visualize_wfe_budget
