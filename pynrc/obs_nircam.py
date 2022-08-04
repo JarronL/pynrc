@@ -44,8 +44,9 @@ class nrc_hci(NIRCam):
         If True, then produces a higher fidelity PSF variations across the FoV, 
         but will take much longer to genrate on the first pass and requires more
         disk space and memory while running.
-    bar_offset : float
+    bar_offset : float or None
         Custom offset position along bar mask (-10 to +10 arcsec).
+        Set to None to auto-determine based on other configurations.
     use_ap_info : bool   
         For subarray observations, the mask reference points are not
         actually in the center of the array. Set this to true to 
@@ -72,7 +73,7 @@ class nrc_hci(NIRCam):
         desired mask center. ***Values should be in units of mas***
     """
 
-    def __init__(self, wind_mode='WINDOW', xpix=320, ypix=320, large_grid=False, bar_offset=None, 
+    def __init__(self, wind_mode='WINDOW', xpix=320, ypix=320, large_grid=True, bar_offset=None, 
                  use_ap_info=False, autogen_coeffs=True, sgd_type=None, slew_std=5, fsm_std=2.5, **kwargs):
 
         super().__init__(wind_mode=wind_mode, xpix=xpix, ypix=ypix, fov_bg_match=True, 
@@ -1250,6 +1251,10 @@ class obs_hci(nrc_hci):
             det = self.Detector
             sp = self.sp_sci
 
+        # Special case of sp not specified, then output should be 0
+        if sp is None:
+            im_star = 0
+
         # Add additional WFE drift for 2nd roll position
         if do_roll2: 
             wfe_drift = wfe_drift + wfe_roll_drift
@@ -1432,6 +1437,9 @@ class obs_hci(nrc_hci):
 
         if sp is None:
             sp = self.sp_ref if do_ref else self.sp_sci
+
+        if sp is None:
+            raise ValueError('Stellar spectrum is undefined.')
 
         # Create pysynphot observation
         bp = self.bandpass
