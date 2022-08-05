@@ -410,7 +410,7 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                     grp_id = grp_ids[j]
                     seq_id = seq_ids[j]
                     act_id = act_ids[j]
-                    act_int = np.int(act_id, 36) # Convert base 36 to integer number
+                    act_int = int(act_id, 36) # Convert base 36 to integer number
                     # print('   exp_num: ', exp_num)
                     obs_params = obs_input.gen_obs_params(vid, exp_num, detname, grp_id=grp_id, 
                                                           seq_id=seq_id, act_id=act_id)

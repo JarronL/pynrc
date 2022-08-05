@@ -292,13 +292,13 @@ def populate_group_table(starttime, grouptime, ramptime, numint, numgroup, ny, n
         # If the integration has a single group, force endday to be an array
         if isinstance(endday, float):
             endday = np.array([endday])
-        enddayint = [np.int(s) for s in endday]
+        enddayint = [int(s) for s in endday]
 
         # Now to get end_milliseconds, we need milliseconds from the beginning
         # of the day
         inday = TimeDelta(endday - enddayint, format='jd')
         endmilli = inday.sec * 1000.
-        endmilli_int = [np.int(s) for s in endmilli]
+        endmilli_int = [int(s) for s in endmilli]
 
         # Submilliseconds - just use a random number
         endsubmilli = (endmilli - endmilli_int)*1000
