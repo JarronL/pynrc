@@ -18,6 +18,7 @@
       bp_gaia
       bp_igood
       bp_wise
+      filter_width
       miri_filter
       nircam_com_nd
       nircam_com_th

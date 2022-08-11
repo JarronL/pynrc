@@ -2081,7 +2081,7 @@ class obs_hci(nrc_hci):
         Generate n-sigma contrast curve for the current observation settings.
         Make sure that MULTIACCUM parameters are set for both the main
         class (``self.update_detectors()``) as well as the reference target
-        class (``self.nrc_ref.update_detectors()``).
+        class (``self.update_detectors_ref()``).
 
         Parameters
         ----------
