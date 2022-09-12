@@ -1445,7 +1445,9 @@ def gen_wfe_drift(obs_input, case='BOL', iec_period=300, slew_init=10, rand_seed
         ax = axes[0]
         ax.plot(tvals.value, slew_angles, marker='.')
         ax.set_ylabel('Pitch Angle (deg)')
-        ax.set_title(f'OPD w/ Initial Slew of 5 deg (PID 1194, {case})')
+        k0 = list(obs_input.program_info.keys())[0]
+        pid = int(obs_input.program_info[k0]['obs_id_info'][0]['program_number'])
+        ax.set_title(f'OPD w/ Initial Slew of {slew_init:.0f} deg (PID {pid}, {case})')
 
         ylims = ax.get_ylim()
         dy = ylims[1]-ylims[0]
@@ -1479,6 +1481,9 @@ def gen_wfe_drift(obs_input, case='BOL', iec_period=300, slew_init=10, rand_seed
 
         ax = axes[1]
         for k in keys:
+            # Don't plot time vs time!!
+            if 'time' in k:
+                continue
             lw = 2 if 'total' in k else 1
             alpha = 0.5 if 'total' in k else 1
             ax.plot(tvals.value, wfe_dict2[k], label=k, lw=lw, alpha=alpha)
