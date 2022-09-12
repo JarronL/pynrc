@@ -471,7 +471,7 @@ def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True,
         sat_rad = 0
     else:
         mask_temp = sci_mask1 if nsat1_sci>nsat1_ref else ref_mask1
-        rho_asec = dist_image(mask_temp, pixscale=obs.pix_scale)
+        rho_asec = dist_image(mask_temp, pixscale=obs.pixelscale)
         sat_rad = rho_asec[mask_temp].max()
     
     if verbose:
@@ -513,7 +513,7 @@ def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True,
 
         delx, dely = (xcen - xpix/2, ycen - ypix/2)
         extent_pix = np.array([-xpix/2-delx,xpix/2-delx,-ypix/2-dely,ypix/2-dely])
-        extent = extent_pix * obs.pix_scale
+        extent = extent_pix * obs.pixelscale
 
         axes = axes_all[0]
         axes[0].imshow(sat_mask1, extent=extent)
