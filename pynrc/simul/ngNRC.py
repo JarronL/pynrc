@@ -1493,7 +1493,8 @@ def gen_wfe_drift(obs_input, case='BOL', iec_period=300, slew_init=10, rand_seed
             ax.legend()
             ax.set_ylabel('$\Delta$WFE (nm RMS)')
 
-        xlim = [-1,18.5]
+        # xlim = [-0.1,ax.get_xlim()[1]]
+        xlim = [-0.1,tvals.value.max()]
         ax.set_xlim(xlim)
         ylim = ax.get_ylim()
         if np.abs(ylim[0])>ylim[1]:

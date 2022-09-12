@@ -4861,6 +4861,7 @@ def get_siaf_detectors(apname):
         return det_bmod
     elif detid=='NRCALL':
         return det_amod + det_bmod
+    # TODO; Add in SW + LW for subarray imaging
     else:
         return [detid]
 
