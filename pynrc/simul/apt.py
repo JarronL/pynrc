@@ -4861,9 +4861,60 @@ def get_siaf_detectors(apname):
         return det_bmod
     elif detid=='NRCALL':
         return det_amod + det_bmod
-    # TODO; Add in SW + LW for subarray imaging
     else:
         return [detid]
+
+def update_subarray_imaging(visit_dict):
+    """Update detectors and apertures used or subaray observations"""
+
+    apt_template = visit_dict.get('APTTemplate')
+    if (apt_template is not None) and ('nircamimaging' not in apt_template.lower()):
+        _log.warn(f'APT template {apt_template} is not NircamImaging. Returning...')
+        return
+
+    # Update names of apertures and detectors
+    apertures = []
+    detectors = []
+    for i, subname in enumerate(visit_dict['subarray_name']):
+        if subname=='FULL':
+            if mod=='A':
+                aps = 'NRCAS_FULL'
+            elif mod=='B':
+                aps = 'NRCBS_FULL'
+            else:
+                aps = 'NRCALL_FULL'
+
+            dets = get_siaf_detectors(aps)
+        elif ('SUB' in subname):
+            mod = visit_dict['ModuleAPT'][i]
+            pix = subname[3:]
+            subp = subname[-1]=='P'
+            if subp:
+                pix = pix[:-1]
+
+            if subp:
+                aps_amod = [f'NRCA{j}_SUB{pix}P' for j in [3,5]]
+                aps_bmod = [f'NRCB{j}_SUB{pix}P' for j in [1,5]]
+            else:
+                aps_amod = [f'NRCA{j}_SUB{pix}' for j in [1,2,3,4,5]]
+                aps_bmod = [f'NRCB{j}_SUB{pix}' for j in [1,2,3,4,5]]
+
+            if mod=='A':
+                aps = aps_amod
+            elif mod=='B':
+                aps = aps_bmod
+            else:
+                aps = aps_amod + aps_bmod
+
+            # Get detector name for each aperture
+            dets = [get_siaf_detectors(ap)[0] for ap in aps]
+
+        apertures.append(aps)
+        detectors.append(dets)
+
+    visit_dict['aperture'] = np.array(apertures)
+    visit_dict['detectors'] = np.array(detectors)
+
 
 def update_eng_detectors(visit_dict):
     """Update detectors used for engineering templates
@@ -5282,6 +5333,8 @@ def gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file, rand_se
         template_name = d.get(template_key)
         if (template_name is not None) and ('engineering' in template_name.lower()):
             update_eng_detectors(d)
+        elif (template_name is not None) and ('nircamimaging' in template_name.lower()):
+            update_subarray_imaging(d)
 
     return visits_dict
 
