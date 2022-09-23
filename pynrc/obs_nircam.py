@@ -771,9 +771,10 @@ class obs_hci(nrc_hci):
             stellar spectrum model ('bosz', 'ck04models', 'phoenix').
         atmo : str
             A string consisting of one of four atmosphere types:
-            ['hy1s', 'hy3s', 'cf1s', 'cf3s'].
+            ['hy1s', 'hy3s', 'cf1s', 'cf3s']. Only relevant for SB12.
         mass: int
-            Number 1 to 15 Jupiter masses.
+            Number 1 to 15 Jupiter masses for SB12. 
+            BEX and COND spans much lower masses (sub-Saturn, depending on age). 
         age: float
             Age in millions of years (1-1000).
         entropy: float
@@ -846,6 +847,9 @@ class obs_hci(nrc_hci):
         sh_diff = np.abs(np.array([yoff,xoff])) - np.array(image_shape)/2
         if np.any(sh_diff>=0):
             _log.warning('xoff,yoff = {} is beyond image boundaries.'.format((xoff,yoff)))
+
+        if (model.lower()=='sb12') and (mass<1):
+            _log.warning(f'Mass of {mass:.3f} MJup less than SB12 model minimum of 1 MJup')
 
         # X and Y pixel offsets from center of image
         # Dictionary of planet info
@@ -1032,7 +1036,7 @@ class obs_hci(nrc_hci):
         if self.disk_hdulist is None:
             return 0.0
         elif kwargs.get('use_coeff',True)==False:
-            _log.warn('  gen_disk_image: Skipping disk generate because use_coeff=False...')            
+            _log.warning('  gen_disk_image: Skipping disk generate because use_coeff=False...')            
             return 0.0
 
         # Final image shape
