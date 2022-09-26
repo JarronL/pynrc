@@ -420,8 +420,21 @@ def level1b_data_model(obs_params, sci_data=None, zero_data=None):
         pupil = 'MASKRND'
     elif 'WEDGE' in pupil:
         pupil = 'MASKBAR'
-    filt  = 'UNKNOWN' if filt  is None else filt
-    pupil = 'UNKNOWN' if pupil is None else pupil
+    filt  = 'CLEAR' if filt  is None else filt
+    pupil = 'CLEAR' if pupil is None else pupil
+
+    # Update filter and pupil settings for narrowband filters in pupil wheel
+    if filt in ['F162M', 'F164N']:
+        pupil = filt
+        filt = 'F150W2'
+    elif filt=='F323N':
+        pupil = filt
+        filt = 'F322W2'
+    elif filt in ['F405N', 'F466N','F470N']:
+        pupil = filt
+        filt = 'F444W'
+
+    # Set fiter and pupil in datamodel
     outModel.meta.instrument.filter = filt
     outModel.meta.instrument.pupil  = pupil
 
