@@ -1140,8 +1140,8 @@ def make_gaia_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
 
     Parameters
     ==========
-    coords : SkyCoords
-        Astropy SkyCoords object.
+    coords : SkyCoord
+        Astropy SkyCoord object.
     remove_cen_star : bool
         Output will exclude the star associated with the input
         coordinates (anything with ``dist_crossmatch`` is removed 
