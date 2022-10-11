@@ -47,7 +47,7 @@ class NRC_refs(object):
     
     """
 
-    def __init__(self, data, header, DMS=False, altcol=True, do_all=False, **kwargs):
+    def __init__(self, data, header, DMS=True, altcol=True, do_all=False, **kwargs):
     
         # Convert to float if necessary
         if 'float' not in data.dtype.name:
