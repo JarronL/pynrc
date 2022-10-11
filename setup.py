@@ -104,16 +104,13 @@ with open('HISTORY.rst') as history_file:
 
 install_requires = [
     'Click>=6.0',
-    'numpy>=1.22', 
-    'matplotlib>=3.3.0',
-    'scipy>=1.5.0',
-    'pysynphot>=2.0.0',
-    'poppy>=1.0.1',
-    'webbpsf>=1.0.0',
-    'webbpsf_ext>=1.0.4',
     'tqdm>4',
-    'astropy>=4.2',
-    'astroquery>=0.4.3',
+    'poppy>=1.0.3',
+    'webbpsf>=1.1.0',
+    'webbpsf_ext>=1.0.4',
+    'pysynphot>=2.0.0',
+    'astroquery>=0.4.6',
+    'pysiaf>=0.18.0',
     'jwst',
 ]
 
@@ -157,9 +154,9 @@ setup(
         # Specify the Python versions you support here. In particular, ensure
         # that you indicate whether you support Python 2, Python 3 or both.
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
     ],
 
     # You can just specify the packages manually here if your project is
@@ -180,8 +177,9 @@ setup(
     #extras_require={
     #    'dev': ['check-manifest>=0.34', 'lxml>=3.6.4', 'pytest>=3.0.2'],
     #},
-    extras_require = {'docs': 
-        ['docutils==0.16', 'sphinx>=3.4.1']},
+    extras_require = {
+        'docs': ['docutils==0.16', 'sphinx>=3.4.1'],
+    },
 
     # If there are data files included in your packages that need to be
     # installed, specify them here.  If using Python 2.6 or less, then these
