@@ -103,7 +103,6 @@ with open('HISTORY.rst') as history_file:
     history = history_file.read()
 
 install_requires = [
-    'Click>=6.0',
     'tqdm>4',
     'poppy>=1.0.3',
     'webbpsf>=1.1.0',
