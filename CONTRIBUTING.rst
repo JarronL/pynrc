@@ -139,7 +139,7 @@ A reminder for the maintainers on how to deploy. First, make sure the following 
 
    .. code-block:: sh
 
-      $ make docs
+      $ make html
 
 4. Push all updates to github and make sure readthedocs generates correctly before actually submitting the release.
 5. Package a distribution and test upload the release to TestPyPI:
