@@ -1311,7 +1311,7 @@ class NIRCam(NIRCam_ext):
 
         # Filter stuff
         # Defaults
-        fsw_def, flw_def = ('F210M', 'F430M') 
+        fsw_def, flw_def = ('F210M', 'F335M') 
         if filter is not None: 
             self.filter = filter
         try:
