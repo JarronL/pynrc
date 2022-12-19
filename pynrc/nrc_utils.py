@@ -142,6 +142,7 @@ from webbpsf_ext.bandpasses import nircam_com_th, nircam_com_nd
 from webbpsf_ext.bandpasses import nircam_grism_res as grism_res
 from webbpsf_ext.bandpasses import nircam_grism_wref as grism_wref
 from webbpsf_ext.maths import radial_std
+from webbpsf_ext.utils import get_detname
 
 def channel_select(bp):
     """Select wavelength channel
@@ -166,40 +167,6 @@ def channel_select(bp):
         pex = (1.5,10.0)
 
     return (pix_scale, idark, pex)
-
-
-def get_detname(det_id):
-    """Return NRC[A-B][1-5] for valid detector/SCA IDs"""
-
-    det_dict = {481:'A1', 482:'A2', 483:'A3', 484:'A4', 485:'A5',
-                486:'B1', 487:'B2', 488:'B3', 489:'B4', 490:'B5'}
-    scaids = det_dict.keys()
-    detids = det_dict.values()
-    detnames = ['NRC' + idval for idval in detids]
-
-    # If already valid, then return
-    if det_id in detnames:
-        return det_id
-    elif det_id in scaids:
-        detname = 'NRC' + det_dict[det_id]
-    elif det_id.upper() in detids:
-        detname = 'NRC' + det_id.upper()
-    else:
-        detname = det_id
-
-    # If NRCALONG or or NRCBLONG, change 'LONG' to '5' 
-    detname = detname.upper()
-    if 'LONG' in detname:
-        detname = detname.replace('LONG', '5')
-        # Ensure NRC is prepended
-        if detname[0:3]!='NRC':
-            detname = 'NRC' + detname
-
-    if detname not in detnames:
-        raise ValueError("Invalid detector: {} \n\tValid names are: {}" \
-                  .format(detname, ', '.join(detnames)))
-        
-    return detname
 
 def var_ex_model(ng, nf, params):
     """ Variance Excess Model
