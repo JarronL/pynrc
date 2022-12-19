@@ -2557,7 +2557,7 @@ def get_fits_data(fits_file, return_header=False, bias=None, reffix=False,
     if grp_ind is not None:
         data = data[grp_ind[0]:grp_ind[1]]
     # Convert to float
-    data = data.astype(np.float)
+    data = data.astype(float)
     hdul.close()
 
     if bias is not None:

@@ -181,7 +181,7 @@ def scale_ref_image(im1, im2, mask=None, smooth_imgs=False,
     
     # Mask for generating standard deviation
     if mask is None:
-        mask = np.ones(im1.shape, dtype=np.bool)
+        mask = np.ones(im1.shape, dtype=bool)
     nan_mask = ~(np.isnan(im1) | np.isnan(im2))
     mask = (mask & nan_mask)
 
@@ -280,7 +280,7 @@ def optimal_difference(im_sci, im_ref, scale, binsize=1, center=None,
     
     # Only perform operations on pixels where mask_good=True
     if mask_good is None:
-        mask_good = np.ones(rho.shape, dtype=np.bool)
+        mask_good = np.ones(rho.shape, dtype=bool)
     nan_mask1 = np.isnan(diff1)
     nan_mask2 = np.isnan(diff2)
     mask_good = mask_good & (~nan_mask1) & (~nan_mask2)

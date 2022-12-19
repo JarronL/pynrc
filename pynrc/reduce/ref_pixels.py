@@ -52,7 +52,7 @@ class NRC_refs(object):
         # Convert to float if necessary
         if 'float' not in data.dtype.name:
             type_in = data.dtype.name
-            data = data.astype(np.float, copy=False)
+            data = data.astype(float, copy=False)
             type_out = data.dtype.name
             #print('Converting data from {} to {}'.format(type_in, type_out))
 
@@ -447,7 +447,7 @@ def reffix_hxrg(cube, nchans=4, in_place=True, fixcol=False, **kwargs):
     # Convert to float
     if 'float' not in cube.dtype.name:
         copy = (not in_place)
-        cube = cube.astype(np.float, copy=copy)
+        cube = cube.astype(float, copy=copy)
 
     if not in_place:
         cube = np.copy(cube)

@@ -1255,8 +1255,8 @@ def pickoff_xy(ap_obs_name):
     # Convert to science pixel positions
     x_new, y_new = ap_siaf.tel_to_sci(v2_all, v3_all)
     # sci pixel values are use are X.5
-    x1, x2 = np.array([x_new.min(), x_new.max()]).astype(np.int) + 0.5
-    y1, y2 = np.array([y_new.min(), y_new.max()]).astype(np.int) + 0.5
+    x1, x2 = np.array([x_new.min(), x_new.max()]).astype(int) + 0.5
+    y1, y2 = np.array([y_new.min(), y_new.max()]).astype(int) + 0.5
 
     return (x1, x2, y1, y2)
 
@@ -1320,8 +1320,8 @@ def pickoff_image(ap_obs, v2_obj, v3_obj, flux_obj, oversample=1):
     yvals_os = (ypix - y1) * oversample
 
     # separate into an integers and fractions
-    intx = xvals_os.astype(np.int)
-    inty = yvals_os.astype(np.int)
+    intx = xvals_os.astype(int)
+    inty = yvals_os.astype(int)
     fracx = xvals_os - intx
     fracy = yvals_os - inty
     
@@ -1562,7 +1562,7 @@ def offset_bar(filt, mask):
         # What is the effective wavelength of the filter?
         #bp = pynrc.read_filter(filter)
         #w0 = bp.avgwave() / 1e4
-        w0 = np.float(filt[1:-1])/100
+        w0 = float(filt[1:-1])/100
 
         # Choose wavelength from dictionary
         wdict = {'F182M': 1.84, 'F187N': 1.88, 'F210M': 2.09, 'F212N': 2.12,

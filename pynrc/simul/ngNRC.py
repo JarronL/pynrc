@@ -2754,8 +2754,8 @@ def add_cosmic_rays(data, scenario='SUNMAX', scale=1, tframe=10.73677, ref_info=
 
             # Add CRs jump to current frame and all sequentional
             # separate into an integers and fractions
-            intx = xpos_rand.astype(np.int)
-            inty = ypos_rand.astype(np.int)
+            intx = xpos_rand.astype(int)
+            inty = ypos_rand.astype(int)
             fracx = xpos_rand - intx
             fracy = ypos_rand - inty
             

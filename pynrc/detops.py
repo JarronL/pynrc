@@ -955,8 +955,8 @@ class det_timing(object):
         nticks = fticks * nframes
         
         # Make large array of pixel timing
-        arr = np.arange(nticks, dtype=np.float).reshape([nframes,-1])
-        arr_reset = np.arange(fticks, dtype=np.float)
+        arr = np.arange(nticks, dtype=float).reshape([nframes,-1])
+        arr_reset = np.arange(fticks, dtype=float)
         if reset_zero:
             arr += arr_reset.max() + 1
         
