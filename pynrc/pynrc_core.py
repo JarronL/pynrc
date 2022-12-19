@@ -103,8 +103,12 @@ class DetectorOps(det_timing):
         # Automatically set the pixel scale based on detector selection
         self.auto_pixscale = True  
 
-        self._gain_list = {481:2.07, 482:2.01, 483:2.16, 484:2.01, 485:1.83, 
-                           486:2.00, 487:2.42, 488:1.93, 489:2.30, 490:1.85}
+        # Pre-flight estimates
+        # self._gain_list = {481:2.07, 482:2.01, 483:2.16, 484:2.01, 485:1.83, 
+        #                    486:2.00, 487:2.42, 488:1.93, 489:2.30, 490:1.85}
+        ## Updated flight estimates from P330E (PID 1538)
+        self._gain_list = {481:2.13, 482:2.17, 483:2.25, 484:2.08, 485:1.88, 
+                           486:2.00, 487:2.24, 488:2.09, 489:2.18, 490:1.90}
 
         self._scaids = {481:'A1', 482:'A2', 483:'A3', 484:'A4', 485:'A5',
                         486:'B1', 487:'B2', 488:'B3', 489:'B4', 490:'B5'}
