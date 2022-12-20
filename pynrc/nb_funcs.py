@@ -230,20 +230,30 @@ def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None,
         # Other coronagraph vs direct imaging settings
         module, oversample = ('B', 4) if mask is None else ('A', 2)
         
-        if narrow and ('SWB' in mask):
-            bar_offset=-8
+        if mask is None:
+            bar_offset = None
+        elif narrow and ('SWB' in mask):
+            bar_offset = -8
         elif narrow and ('LWB' in mask):
-            bar_offset=8
+            bar_offset = 8
         else:
-            bar_offset=None
+            bar_offset = None
+
+        # Select detector for imaging mode
+        if module=='B':
+            bp = read_filter(filt)
+            detector = 'NRCB1' if bp.avgwave()/1e4<2.5 else 'NRCB5'
+        else:
+            detector = None
         
         # Initialize and store the observation
         # A reference observation is stored inside each parent obs_hci class.
         obs = obs_hci(sp_sci, dist, sp_ref=sp_ref, filter=filt, image_mask=mask, pupil_mask=pupil, 
-                      module=module, wind_mode=wind_mode, xpix=subuse, ypix=subuse,
+                      detector=detector, wind_mode=wind_mode, xpix=subuse, ypix=subuse,
                       wfe_ref_drift=wfe_ref_drift, fov_pix=fov_pix, oversample=oversample, 
                       disk_params=args_disk_temp, verbose=verbose, bar_offset=bar_offset,
                       autogen_coeffs=False, **kwargs)
+
         obs.gen_psf_coeff()
         # Enable WFE drift
         obs.gen_wfedrift_coeff()
@@ -972,7 +982,7 @@ def plot_hdulist(hdulist, ext=0, xr=None, yr=None, ax=None, return_ax=False,
         oversamp = hdulist[ext].header['OSAMP']
         shft = 0.5*oversamp
         hdul = deepcopy(hdulist)
-        hdul[0].data = fshift(hdul[0].data, shft, shft)
+        hdul[0].data = fourier_imshift(hdul[0].data, shft, shft)
     else:
         hdul = hdulist
 
