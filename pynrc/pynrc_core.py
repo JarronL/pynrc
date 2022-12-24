@@ -604,6 +604,9 @@ class NIRCam(NIRCam_ext):
             nrc_bg.gen_psf_coeff(**kwargs)
             setup_logging(log_prev, verbose=False)
 
+            # Match detector positions for WFE calculations
+            nrc_bg.detector_position = self.detector_position
+
             # Save as attribute
             self._nrc_bg = nrc_bg
 
@@ -1273,8 +1276,8 @@ class NIRCam(NIRCam_ext):
                 elif ('MASK430R' in apname):
                     image_mask  = 'MASK430R'
                 if 'TA' in apname:
-                    _log.info('Full TA apertures are treated similar to coronagraphic observations.')
-                    _log.info("To calculate SNR, self.update_psf_coeff(image_mask='CLEAR') and set self.ND_acq.")
+                    _log.warn('Full TA apertures are treated similar to coronagraphic observations.')
+                    _log.warn("To calculate SNR, self.update_psf_coeff(image_mask='CLEAR') and set self.ND_acq.")
             elif '_TAMASK' in apname:
                 # For small TA subarray, turn off mask and enable ND square
                 image_mask = None

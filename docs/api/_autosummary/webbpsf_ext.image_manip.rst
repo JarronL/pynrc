@@ -14,8 +14,10 @@
    .. autosummary::
       :toctree:
    
+      bp_fix
       convolve_image
       crop_zero_rows_cols
+      cv_shift
       distort_image
       fourier_imshift
       frebin

@@ -16,7 +16,6 @@
    
       apply_linearity
       apply_nonlin
-      bp_fix
       broken_pink_powspec
       calc_cdsnoise
       calc_eff_noise
