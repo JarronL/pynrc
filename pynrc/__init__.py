@@ -10,7 +10,7 @@ and weak lens imaging. All PSFs are generated via webbpsf (https://webbpsf.readt
 and webbpsf_ext (https://github.com/JarronL/webbpsf_ext) to reproduce realistic JWST 
 images and spectra.
 
-Developed by Jarron Leisenring and contributors at University of Arizona (2015-21).
+Developed by Jarron Leisenring and contributors at University of Arizona (2015-23).
 """
 from .version import __version__
 
