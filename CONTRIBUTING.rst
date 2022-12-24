@@ -129,17 +129,17 @@ A reminder for the maintainers on how to deploy. First, make sure the following 
    $ conda install bump2version
 
 1. Add entries to HISTORY.rst. Make sure all your changes are committed to git.
-2. Update version using ``bumpversion``, which automatically updates ``pynrc.version``. Usage: ``bump2version [options] part [file]``, where "part" is either major, minor, or patch (e.g., major.minor.patch). See https://github.com/c4urself/bump2version for more details.
+2. Update version using ``bump2version``, which automatically updates ``pynrc.version``. Usage: ``bump2version [options] part [file]``, where "part" is either major, minor, or patch (e.g., major.minor.patch). See https://github.com/c4urself/bump2version for more details. For instance, ``bump2version minor`` will update from 1.0.5 to 1.1.0
 
    .. code-block:: sh
 
-      $ bumpversion patch
+      $ bump2version [major | minor | patch]
 
 3. Generate documentation locally:
 
    .. code-block:: sh
 
-      $ make html
+      $ make docs
 
 4. Push all updates to github and make sure readthedocs generates correctly before actually submitting the release.
 5. Package a distribution and test upload the release to TestPyPI:
