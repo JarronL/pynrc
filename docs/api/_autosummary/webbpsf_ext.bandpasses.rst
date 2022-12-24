@@ -30,6 +30,8 @@
       niriss_grism_res
       niriss_grism_wref
       qe_nircam
+      qe_nircam_flight
+      qe_nircam_preflight
       qe_nirspec
       read_filter
    

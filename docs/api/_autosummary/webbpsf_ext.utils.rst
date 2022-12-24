@@ -15,6 +15,7 @@
       :toctree:
    
       check_fitsgz
+      get_detname
       get_one_siaf
    
    
