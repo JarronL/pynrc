@@ -1384,7 +1384,10 @@ class obs_hci(nrc_hci):
 
         # Zodiacal bg levels
         _log.info('  gen_slope_image: Creating zodiacal background image...')
-        fzodi = self.bg_zodi_image(zfact=zfact, **kwargs)
+        if kwargs['use_cmask']:
+            fzodi = self.bg_zodi_image(zfact=zfact, **kwargs)
+        else:
+            fzodi = np.ones([ypix,xpix]) * self.bg_zodi(zfact=zfact, **kwargs)
         if oversample!=1:
             fzodi = frebin(fzodi, scale=oversample)
 
@@ -2151,8 +2154,8 @@ class obs_hci(nrc_hci):
         pixscale = self.pixelscale
 
         # Radial noise binned to detector pixels
-        rr, stds = radial_std(data, pixscale=header['PIXELSCL'], oversample=header['OSAMP'], 
-                              supersample=False, func=func_std)
+        rr, nstds = radial_std(data, pixscale=header['PIXELSCL'], oversample=header['OSAMP'], 
+                               supersample=False, func=func_std, nsig=nsig, **kwargs)
 
         interp = 'linear' if ('FULL' in self.det_info['wind_mode']) else 'cubic'
         # Normalize by psf max value
@@ -2266,7 +2269,7 @@ class obs_hci(nrc_hci):
         # Count rate necessary to obtain some nsig
         texp  = self.multiaccum_times['t_exp']
         p     = 1 / texp
-        crate = (p*nsig**2 + nsig * np.sqrt((p*nsig)**2 + 4*stds**2)) / 2
+        crate = (p*nsig**2 + np.sqrt((p*nsig**2)**2 + 4*nstds**2)) / 2
         # Get total count rate
         crate /= psf_max
 
