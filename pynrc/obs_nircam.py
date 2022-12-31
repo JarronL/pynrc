@@ -508,9 +508,9 @@ class obs_hci(nrc_hci):
             desired mask center. 
             Values should be in units of mas.
         """
-        sgd_type = self.sgd_type
-        slew_std = self.slew_std
-        fsm_std  = self.fsm_std
+        sgd_type = self.sgd_type if sgd_type is None else sgd_type
+        slew_std = self.slew_std if slew_std is None else slew_std
+        fsm_std  = self.fsm_std if fsm_std is None else fsm_std
 
         if sgd_type == 'auto':
             if self.is_coron and self.image_mask[-1]=='R':
@@ -520,8 +520,8 @@ class obs_hci(nrc_hci):
             else:
                 sgd_type = '5diamond'
 
+        rng = np.random.default_rng(seed=rand_seed)
         if sgd_type is None:
-            rng = np.random.default_rng(seed=rand_seed)
             xyoff_ref = rng.normal(scale=slew_std, size=2) / 1000
             fsm_std = None
         else:
@@ -1205,7 +1205,9 @@ class obs_hci(nrc_hci):
         sat_val : float
             Fraction of full well to consider as saturated. Used to determine
             number of unsaturated groups for linear fit, which feeds into
-            estimated effective noise equation. 
+            estimated effective noise equation. For pixels that saturatea in a
+            single group, the noise is assumed to be that for a single frame.
+            **Final image does not flag saturated pixels!**
         wfe_drift0 : float
             Initial RMS WFE drift value of First PSF. Roll2 and Ref observations
             will be incremented from this. Default is 0.
@@ -1281,6 +1283,9 @@ class obs_hci(nrc_hci):
         if xyoff_asec is None:
             if do_ref:
                 xyoff_asec = self.pointing_info['ref']
+                # If multiple SGD points for ref, then select nominal position
+                if len(xyoff_asec)>1:
+                    xyoff_asec = xyoff_asec[0]
             elif do_roll2:
                 xyoff_asec = self.pointing_info['roll2']
             else:
@@ -1501,8 +1506,8 @@ class obs_hci(nrc_hci):
 
         return image
 
-    def gen_roll_image(self, PA1=0, PA2=10, return_oversample=False,
-        no_ref=False, opt_diff=True, fix_sat=False, ref_scale_all=False, 
+    def gen_roll_image(self, PA1=-5, PA2=+5, return_oversample=False,
+        no_ref=False, opt_diff=False, fix_sat=False, ref_scale_all=False, 
         wfe_drift0=0, wfe_ref_drift=None, wfe_roll_drift=None, 
         xyoff_roll1=None, xyoff_roll2=None, xyoff_ref=None, 
         interp=None, **kwargs):
@@ -1643,6 +1648,8 @@ class obs_hci(nrc_hci):
         xyoff_asec1    = np.asarray(xyoff_asec1)
         xyoff_asec2    = np.asarray(xyoff_asec2)
         xyoff_asec_ref = np.asarray(xyoff_asec_ref)
+        if len(xyoff_asec_ref.shape)>1:
+            xyoff_asec_ref = xyoff_asec_ref[0]
 
         ##################################
         # Generate Roll1 Image
@@ -2121,8 +2128,15 @@ class obs_hci(nrc_hci):
         ideal_Poisson : bool
             If set to True, use total signal for noise estimate,
             otherwise MULTIACCUM equation is used.
+        use_cmask : bool
+            Include coronagraphic mask elements to attenuate background, disk, companions?
         opt_diff : bool
             Optimal reference differencing (scaling only on the inner regions)
+        smooth : bool
+            Smooth the result by convolving with a Gaussian that has stddev=1
+            Default: True.
+        small_numbers : bool
+            Account for small number statistics? Default: True.
 
         Returns
         -------
@@ -2139,8 +2153,10 @@ class obs_hci(nrc_hci):
         # If no HDUList is passed, then create one
         if hdu_diff is None:
             roll_angle = 0 if roll_angle is None else roll_angle
-            PA1 = 0
-            PA2 = None if abs(roll_angle) < eps else roll_angle
+            if abs(roll_angle) < eps:
+                PA1, PA2 = (0, None)
+            else:
+                PA1, PA2 = np.array([-0.5, +0.5]) * roll_angle
             hdu_diff = self.gen_roll_image(PA1=PA1, PA2=PA2, exclude_disk=exclude_disk,
                                            exclude_planets=exclude_planets, no_ref=no_ref,
                                            wfe_drift0=wfe_drift0, wfe_ref_drift=wfe_ref_drift,
