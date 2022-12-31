@@ -173,7 +173,7 @@ def disk_rim_model(a_asec, b_asec, pa=0, sig_asec=0.1, flux_frac=0.5,
 
 def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None, 
             wind_mode='WINDOW', subsize=None, fov_pix=None, verbose=False, narrow=False,
-            model_dir=None, large_grid=True, **kwargs):
+            model_dir=None, large_grid=True, sgd_type=None, slew_std=0, fsm_std=0, **kwargs):
     """
     For a given WFE drift and series of filters, create a list of 
     NIRCam observations.
@@ -252,7 +252,7 @@ def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None,
                       detector=detector, wind_mode=wind_mode, xpix=subuse, ypix=subuse,
                       wfe_ref_drift=wfe_ref_drift, fov_pix=fov_pix, oversample=oversample, 
                       disk_params=args_disk_temp, verbose=verbose, bar_offset=bar_offset,
-                      autogen_coeffs=False, **kwargs)
+                      autogen_coeffs=False, sgd_type=sgd_type, slew_std=slew_std, fsm_std=fsm_std, **kwargs)
 
         obs.gen_psf_coeff()
         # Enable WFE drift
@@ -422,7 +422,7 @@ def do_gen_hdus(obs_dict, filt_keys, wfe_ref_drift, wfe_roll_drift,
     exclude_disk  = False
     exclude_noise = False
     no_ref        = False
-    opt_diff      = True
+    opt_diff      = False
     use_cmask     = False
     ref_scale_all = False
     xyoff_roll1   = None
@@ -794,11 +794,12 @@ def plot_contrasts(curves, nsig, wfe_list, obs=None, sat_rad=None, ax=None,
         lin_vals = np.linspace(0.3,0.8,len(wfe_list))
         colors = plt.cm.Blues_r(lin_vals)
         
+    delta_str = '$\Delta$'
     for j in range(len(wfe_list)): #for j, wfe_ref_drift in enumerate(wfe_list):
         rr, contrast, mag_sens = curves[j]
         xvals = rr[rr>sat_rad]
         yvals = mag_sens[rr>sat_rad]
-        label='$\Delta$' + "WFE = {} nm".format(wfe_list[j])
+        label= f"{delta_str}WFE = {wfe_list[j]} nm"
         ax.plot(xvals, yvals, label=label, color=colors[j], zorder=1, lw=2)
 
     if xr is not None: ax.set_xlim(xr)
