@@ -353,118 +353,121 @@ class NIRCam(NIRCam_ext):
 
     In addition to PSF generation, includes ability to estimate detector saturation 
     limits, sensitivities, and perform ramp optimizations.
-
-    Parameters
-    ==========
-    filter : str
-        Name of input filter.
-    pupil_mask : str, None
-        Pupil elements such as grisms or lyot stops (default: None).
-    image_mask : str, None
-        Specify which coronagraphic occulter (default: None).
-    ND_acq : bool
-        Add in neutral density attenuation in throughput and PSF creation?
-        Used primarily for sensitivity and saturation calculations.
-        Not recommended for simulations (TBI). 
-    detector : int or str
-        NRC[A-B][1-5] or 481-490
-    apname : str
-        Pass specific SIAF aperture name, which will update pupil mask, image mask,
-        and detector subarray information.
-    autogen_coeffs : bool
-        Automatically generate base PSF coefficients. Equivalent to performing
-        ``self.gen_psf_coeff()``. Default: True
-        WFE drift and field-dependent coefficients should be run manually via
-        ``gen_wfedrift_coeff``, ``gen_wfefield_coeff``, and ``gen_wfemask_coeff``.
-
-    Keyword Args
-    ============
-
-    wind_mode : str
-        Window mode type 'FULL', 'STRIPE', 'WINDOW'.
-    xpix : int
-        Size of window in x-pixels for frame time calculation.
-    ypix : int
-        Size of window in y-pixels for frame time calculation.
-    x0 : int
-        Lower-left x-coord position of detector window.
-    y0 : int
-        Lower-left y-coord position of detector window.
-    read_mode : str
-        NIRCam Ramp Readout mode such as 'RAPID', 'BRIGHT1', etc.
-    nint : int
-        Number of integrations (ramps).
-    ngroup : int
-        Number of groups in a integration.
-    nf : int
-        Number of frames per group.
-    nd1 : int
-        Number of drop frame after reset (before first group read). 
-    nd2 : int
-        Number of drop frames within a group (ie., groupgap). 
-    nd3 : int
-        Number of drop frames after final read frame in ramp. 
-    nr1 : int
-        Number of reset frames within first ramp.
-    nr2 : int
-        Number of reset frames for subsequent ramps.
-
-    PSF Keywords
-    ============
-
-    fov_pix : int
-        Size of the PSF FoV in pixels (real SW or LW pixels).
-        The defaults depend on the type of observation.
-        Odd number place the PSF on the center of the pixel,
-        whereas an even number centers it on the "crosshairs."
-    oversample : int
-        Factor to oversample during WebbPSF calculations.
-        Default 2 for coronagraphy and 4 otherwise.
-    include_si_wfe : bool
-        Include SI WFE measurements? Default=True.
-    include_distortions : bool
-        If True, will include a distorted version of the PSF.
-    pupil : str
-        File name or HDUList specifying telescope entrance pupil.
-        Can also be an OTE_Linear_Model.
-    pupilopd : tuple or HDUList
-        Tuple (file, index) or filename or HDUList specifying OPD.
-        Can also be an OTE_Linear_Model.
-    wfe_drift : float
-        Wavefront error drift amplitude in nm.
-    offset_r : float
-        Radial offset from the center in arcsec.
-    offset_theta :float
-        Position angle for radial offset, in degrees CCW.
-    bar_offset : float
-        For wedge masks, option to set the PSF position across the bar.
-    jitter : str or None
-        Currently either 'gaussian' or None.
-    jitter_sigma : float
-        If ``jitter = 'gaussian'``, then this is the size of the blurring effect.
-    npsf : int
-        Number of wavelengths/PSFs to fit.
-    ndeg : int
-        Degree of polynomial fit.
-    nproc : int
-        Manual setting of number of processor cores to break up PSF calculation.
-        If set to None, this is determined based on the requested PSF size,
-        number of available memory, and hardware processor cores. The automatic
-        calculation endeavors to leave a number of resources available to the
-        user so as to not crash the user's machine. 
-    save : bool
-        Save the resulting PSF coefficients to a file? (default: True)
-    force : bool
-        Forces a recalculation of PSF even if saved PSF exists. (default: False)
-    quick : bool
-        Only perform a fit over the filter bandpass with a lower default polynomial degree fit.
-        (default: True)
-    use_legendre : bool
-        Fit with Legendre polynomials, an orthonormal basis set. (default: True)
     """
 
     def __init__(self, filter=None, pupil_mask=None, image_mask=None, 
                  ND_acq=False, detector=None, apname=None, autogen_coeffs=True, **kwargs):
+
+        """ Init Function
+
+        Parameters
+        ==========
+        filter : str
+            Name of input filter.
+        pupil_mask : str, None
+            Pupil elements such as grisms or lyot stops (default: None).
+        image_mask : str, None
+            Specify which coronagraphic occulter (default: None).
+        ND_acq : bool
+            Add in neutral density attenuation in throughput and PSF creation?
+            Used primarily for sensitivity and saturation calculations.
+            Not recommended for simulations (TBI). 
+        detector : int or str
+            NRC[A-B][1-5] or 481-490
+        apname : str
+            Pass specific SIAF aperture name, which will update pupil mask, image mask,
+            and detector subarray information.
+        autogen_coeffs : bool
+            Automatically generate base PSF coefficients. Equivalent to performing
+            ``self.gen_psf_coeff()``. Default: True
+            WFE drift and field-dependent coefficients should be run manually via
+            ``gen_wfedrift_coeff``, ``gen_wfefield_coeff``, and ``gen_wfemask_coeff``.
+
+        Keyword Args
+        ============
+
+        wind_mode : str
+            Window mode type 'FULL', 'STRIPE', 'WINDOW'.
+        xpix : int
+            Size of window in x-pixels for frame time calculation.
+        ypix : int
+            Size of window in y-pixels for frame time calculation.
+        x0 : int
+            Lower-left x-coord position of detector window.
+        y0 : int
+            Lower-left y-coord position of detector window.
+        read_mode : str
+            NIRCam Ramp Readout mode such as 'RAPID', 'BRIGHT1', etc.
+        nint : int
+            Number of integrations (ramps).
+        ngroup : int
+            Number of groups in a integration.
+        nf : int
+            Number of frames per group.
+        nd1 : int
+            Number of drop frame after reset (before first group read). 
+        nd2 : int
+            Number of drop frames within a group (ie., groupgap). 
+        nd3 : int
+            Number of drop frames after final read frame in ramp. 
+        nr1 : int
+            Number of reset frames within first ramp.
+        nr2 : int
+            Number of reset frames for subsequent ramps.
+
+        PSF Keywords
+        ============
+
+        fov_pix : int
+            Size of the PSF FoV in pixels (real SW or LW pixels).
+            The defaults depend on the type of observation.
+            Odd number place the PSF on the center of the pixel,
+            whereas an even number centers it on the "crosshairs."
+        oversample : int
+            Factor to oversample during WebbPSF calculations.
+            Default 2 for coronagraphy and 4 otherwise.
+        include_si_wfe : bool
+            Include SI WFE measurements? Default=True.
+        include_distortions : bool
+            If True, will include a distorted version of the PSF.
+        pupil : str
+            File name or HDUList specifying telescope entrance pupil.
+            Can also be an OTE_Linear_Model.
+        pupilopd : tuple or HDUList
+            Tuple (file, index) or filename or HDUList specifying OPD.
+            Can also be an OTE_Linear_Model.
+        wfe_drift : float
+            Wavefront error drift amplitude in nm.
+        offset_r : float
+            Radial offset from the center in arcsec.
+        offset_theta :float
+            Position angle for radial offset, in degrees CCW.
+        bar_offset : float
+            For wedge masks, option to set the PSF position across the bar.
+        jitter : str or None
+            Currently either 'gaussian' or None.
+        jitter_sigma : float
+            If ``jitter = 'gaussian'``, then this is the size of the blurring effect.
+        npsf : int
+            Number of wavelengths/PSFs to fit.
+        ndeg : int
+            Degree of polynomial fit.
+        nproc : int
+            Manual setting of number of processor cores to break up PSF calculation.
+            If set to None, this is determined based on the requested PSF size,
+            number of available memory, and hardware processor cores. The automatic
+            calculation endeavors to leave a number of resources available to the
+            user so as to not crash the user's machine. 
+        save : bool
+            Save the resulting PSF coefficients to a file? (default: True)
+        force : bool
+            Forces a recalculation of PSF even if saved PSF exists. (default: False)
+        quick : bool
+            Only perform a fit over the filter bandpass with a lower default polynomial degree fit.
+            (default: True)
+        use_legendre : bool
+            Fit with Legendre polynomials, an orthonormal basis set. (default: True)
+        """
 
         if detector is not None:
             detector = get_detname(detector)
@@ -1342,6 +1345,11 @@ class NIRCam(NIRCam_ext):
 
         # Update aperture
         self.siaf_ap = siaf_ap
+
+        # Update detector position to default of aperture
+        ap_webbpsf = self.siaf[self.aperturename]
+        self.detector_position = ap_webbpsf.det_to_sci(siaf_ap.XDetRef, siaf_ap.YDetRef)
+
 
     def calc_psf_from_coeff(self, sp=None, return_oversample=True, return_hdul=True,
         wfe_drift=None, coord_vals=None, coord_frame='tel', use_bg_psf=False, **kwargs):
