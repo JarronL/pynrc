@@ -303,8 +303,11 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
             try:
                 target_info = params_targets[target_id]
             except KeyError:
-                _log.error(f"Cannot find {target_id} target! Skipping {aname} + {fname} for {detname}...")
-                continue
+                try:
+                    target_info = params_targets[target_id+'_ref']
+                except KeyError:
+                    _log.error(f"Cannot find {target_id} target! Skipping {aname} + {fname} for {detname}...")
+                    continue
 
             # More target info
             src_tbl   = target_info.get('src_tbl')
