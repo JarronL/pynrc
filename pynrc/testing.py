@@ -7,6 +7,7 @@ from .opds import opd_default
 
 def perform_benchmarks(filter='F430M', pupil=None, mask=None, module='A',
                        fov_pix=33, oversample=4, include_si_wfe=True, 
+                       include_ote_field_dependence=True, include_distortions=True,
                        use_legendre=True, force=False, save=True, 
                        do_webbpsf=True, do_webbpsf_only=False, return_nrc=False,
                        use_mp=None, nproc=None, **kwargs):
@@ -28,6 +29,8 @@ def perform_benchmarks(filter='F430M', pupil=None, mask=None, module='A',
     kwargs['jitter_sigma'] = 0.007
 
     kwargs['include_si_wfe'] = include_si_wfe
+    kwargs['include_ote_field_dependence'] = include_ote_field_dependence
+    kwargs['include_distortions'] = include_distortions
     kwargs['use_legendre'] = use_legendre
 
     kwargs['force']     = force

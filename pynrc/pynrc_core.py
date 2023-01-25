@@ -428,6 +428,8 @@ class NIRCam(NIRCam_ext):
             Default 2 for coronagraphy and 4 otherwise.
         include_si_wfe : bool
             Include SI WFE measurements? Default=True.
+        include_ote_field_dependence : bool
+            Include OTE field-dependent WFE measurements? Default=True.
         include_distortions : bool
             If True, will include a distorted version of the PSF.
         pupil : str
@@ -855,7 +857,8 @@ class NIRCam(NIRCam_ext):
                 print('  {:<10} : {:>8.3f}'.format(k, ma[k]))
 
     def update_psf_coeff(self, filter=None, pupil_mask=None, image_mask=None, detector=None, 
-        fov_pix=None, oversample=None, include_si_wfe=None, include_distortions=None, 
+        fov_pix=None, oversample=None, include_ote_field_dependence=None, 
+        include_si_wfe=None, include_distortions=None, 
         pupil=None, pupilopd=None, offset_r=None, offset_theta=None, bar_offset=None, 
         jitter=None, jitter_sigma=None, npsf=None, ndeg=None, nproc=None, quick=None,
         save=None, force=False, use_legendre=None, **kwargs):
@@ -882,6 +885,8 @@ class NIRCam(NIRCam_ext):
             Default 2 for coronagraphy and 4 otherwise.
         include_si_wfe : bool
             Include SI WFE measurements? Default=True.
+        include_ote_field_dependence : bool
+            Include OTE field-dependent WFE measurements? Default=True.
         include_distortions : bool
             If True, will include a distorted version of the PSF.
         pupil : str
@@ -951,9 +956,12 @@ class NIRCam(NIRCam_ext):
             self.oversample = oversample
 
         # SI WFE and distortions
-        if (include_si_wfe is not None) and (include_distortions != self.include_distortions):
+        if (include_si_wfe is not None) and (include_si_wfe != self.include_si_wfe):
             update_coeffs = True
             self.include_si_wfe = include_si_wfe
+        if (include_ote_field_dependence is not None) and (include_ote_field_dependence != self.include_ote_field_dependence):
+            update_coeffs = True
+            self.include_ote_field_dependence = include_ote_field_dependence
         if (include_distortions is not None) and (include_distortions != self.include_distortions):
             update_coeffs = True
             self.include_distortions = include_distortions
@@ -1033,7 +1041,9 @@ class NIRCam(NIRCam_ext):
 
         d = {
             'fov_pix': self.fov_pix, 'oversample': self.oversample,
-            'npsf': self.npsf, 'ndeg': self.ndeg, 'include_si_wfe': self.include_si_wfe,
+            'npsf': self.npsf, 'ndeg': self.ndeg, 
+            'include_si_wfe': self.include_si_wfe,
+            'include_ote_field_dependence': self.include_ote_field_dependence, 
             'include_distortions': self.include_distortions,
             'jitter': d_options.get('jitter'), 'jitter_sigma': d_options.get('jitter_sigma'), 
             'offset_r': d_options.get('source_offset_r', 0), 'offset_theta': d_options.get('source_offset_theta', 0),
