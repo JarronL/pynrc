@@ -476,7 +476,7 @@ class obs_hci(nrc_hci):
         """Set the WFE drift value between roll observations"""
         self._wfe_roll_drift = value
 
-    def gen_pointing_offsets(self, sgd_type=None, slew_std=5, fsm_std=2.5, 
+    def gen_pointing_offsets(self, sgd_type=None, slew_std=None, fsm_std=None, 
         rand_seed=None, verbose=False):
         """
         Create a series of x and y position offsets for a SGD pattern.
