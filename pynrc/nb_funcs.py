@@ -388,22 +388,24 @@ def do_contrast(obs_dict, wfe_list, filt_keys, nsig=5, roll_angle=10, verbose=Fa
         if verbose: 
             print(key)
 
-        wfe_roll_temp = obs.wfe_roll_drift
-        wfe_ref_temp  = obs.wfe_ref_drift
-
         # Stores tuple of (Radial Distances, Contrast, and Sensitivity) for each WFE drift
         curves = []
         for wfe_drift in tqdm(wfe_list, leave=False, desc='WFE Drift'):
             
-            if ('no_ref' in list(kwargs.keys())) and (kwargs['no_ref']==True):
-                obs.wfe_roll_drift = wfe_drift
+            no_ref = kwargs.get('no_ref', False)
+            if no_ref:
+                wfe_ref_drift = 0
+                wfe_roll_drift = wfe_drift
             else:
-                obs.wfe_ref_drift = wfe_drift
+                # Assume drift between Roll1 and Roll2 is 2 nm WFE or less
+                wfe_ref_drift = wfe_drift
+                wfe_roll_drift = wfe_ref_drift/2 if wfe_ref_drift<=2 else 2
+
+            kwargs['wfe_ref_drift'] = wfe_ref_drift
+            kwargs['wfe_roll_drift'] = wfe_roll_drift
+
             result = obs.calc_contrast(roll_angle=roll_angle, nsig=nsig, **kwargs)
             curves.append(result)
-            
-        obs.wfe_roll_drift = wfe_roll_temp
-        obs.wfe_ref_drift = wfe_ref_temp
             
         contrast_all[key] = curves
     return contrast_all

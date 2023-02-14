@@ -721,7 +721,7 @@ class NIRCam(NIRCam_ext):
 
         # MASK430R falls in SW SCA gap and cannot be seen by SW module
         if ('MASK430R' in image_mask) and (channel=='SW'):
-            wstr = '{} mask is no visible in SW module (filter is {})'.format(image_mask,filter)
+            wstr = '{} mask is not visible in SW module (filter is {})'.format(image_mask,filter)
             do_warn(wstr)
 
         # Need F200W paired with WEAK LENS +4
@@ -1346,12 +1346,16 @@ class NIRCam(NIRCam_ext):
         if channel=='LW' and self._filter not in self._filters_lw:
             self._filter = flw_def
 	
+        # For NIRCam, update detector depending mask and filter
+        self._update_coron_detector()
+        self.detector = get_detname(scaname)
+        self._update_coron_detector()
+
         self._validate_wheels()
-        
-        # Update detector
+
+        # Update detector settings
         det_kwargs = {'xpix': xpix, 'ypix': ypix, 'x0': x0, 'y0': y0, 'wind_mode':wind_mode}
         kwargs = merge_dicts(kwargs, det_kwargs)
-        self.detector = get_detname(scaname)
         self.update_detectors(**kwargs)
 
         # Update aperture
