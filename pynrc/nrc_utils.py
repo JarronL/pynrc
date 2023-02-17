@@ -2330,3 +2330,79 @@ def dark_ramp_80K(darks_80K_dir, sca=485):
     
     return tarr, data_mn
 
+def do_charge_migration(image, satmax=1.5, niter=5, corners=True, **kwargs):
+    """Migration of charge from saturated pixels to immediate neighbors"""
+
+    ny, nx = image.shape
+    ind_lock = np.zeros([ny,nx], dtype=bool)
+
+    sat_image = image.copy()
+    for j in range(niter):
+        ind_sat = (sat_image >= satmax) & (~ind_lock)
+        yxind = np.where(ind_sat)
+        # for each saturated pixel, migrate charge to neighbors
+        # starting with the brightest
+        isort = np.argsort(sat_image[ind_sat])[::-1]
+        for i in isort:
+            y, x = yxind[0][i], yxind[1][i]
+            # Find neighbors
+            xind = np.array([x-1, x+1, x, x])
+            yind = np.array([y, y, y-1, y+1])
+            # Find corners
+            xind_corn = np.array([x-1, x+1, x-1, x+1])
+            yind_corn = np.array([y-1, y-1, y+1, y+1])
+
+            # Remove neighbors outside of array or locked
+            ind_good = (xind>=0) & (xind<nx) & (yind>=0) & (yind<ny) & \
+                        (ind_lock[yind,xind]==False)
+            xind, yind = (xind[ind_good], yind[ind_good])
+            ind_good = (xind_corn>=0) & (xind_corn<nx) & (yind_corn>=0) & (yind_corn<ny) & \
+                        (ind_lock[yind_corn,xind_corn]==False)
+            xind_corn, yind_corn = (xind_corn[ind_good], yind_corn[ind_good])
+
+            # Total charge to distribute
+            qtot = sat_image[y,x] - 1
+            # Distribute charge to neighbors and corners
+            n_neighbors = len(xind)
+            n_corners = len(xind_corn) if corners else 0
+            if n_neighbors + n_corners <= 0:
+                continue
+
+            # Corners get sqrt(2) less charge
+            q_neighbors = qtot / (n_neighbors + n_corners / np.sqrt(2))
+            q_corners = q_neighbors / np.sqrt(2)
+
+            # Add charge to neighbors
+            if n_neighbors>0:
+                sat_image[yind,xind] += q_neighbors
+            # Add charge to corners
+            if n_corners>0:
+                sat_image[yind_corn,xind_corn] += q_corners
+            # Lock this pixel from further charge migration
+            ind_lock[y,x] = True
+            # Remove charge from this pixel
+            sat_image[y,x] = satmax
+
+    return sat_image
+
+# Option to implement MKL FFT
+try:
+    import mkl_fft
+    _MKLFFT_AVAILABLE = True
+except ImportError:
+    _MKLFFT_AVAILABLE = False
+
+def do_fft(a, n=None, axis=-1, norm=None, inverse=False, real=False, use_mkl=True):
+    """Perform FFT using either numpy or MKL FFT"""
+
+    if _MKLFFT_AVAILABLE and use_mkl:
+        fft_func = mkl_fft.ifft if inverse else mkl_fft.fft
+        if n is None:
+            n = a.shape[axis]
+        return fft_func(a, n=n, axis=axis, norm=norm)
+    else:
+        if real:
+            fft_func = np.fft.irfft if inverse else np.fft.rfft
+        else:
+            fft_func = np.fft.ifft if inverse else np.fft.fft
+        return fft_func(a, n=n, axis=axis, norm=norm)
