@@ -554,6 +554,7 @@ class NIRCam(NIRCam_ext):
         self._update_bg_class(**kwargs)
 
         # Check aperture info is consistent if not explicitly specified
+        # TODO: This might fail because self.Detector has not yet been initialized??
         ap_name_rec = self.get_siaf_apname()
         if ((apname is None) and (ap_name_rec != self.aperturename) and
             not (('FULL' in self.aperturename) and ('TAMASK' in self.aperturename))):

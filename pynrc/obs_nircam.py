@@ -138,7 +138,7 @@ class nrc_hci(NIRCam):
 
 
     def gen_offset_psf(self, offset_r, offset_theta, sp=None, return_oversample=False, 
-        wfe_drift=None, use_coeff=True, coron_rescale=False, use_cmask=False, **kwargs):
+        wfe_drift=None, use_coeff=True, coron_rescale=True, use_cmask=False, **kwargs):
         """Create a PSF offset from center FoV
 
         Generate some off-axis PSF at a given (r,theta) offset from center of mask.
@@ -165,9 +165,10 @@ class nrc_hci(NIRCam):
         use_coeff : bool
             If True, uses `calc_psf_from_coeff`, other WebbPSF's built-in `calc_psf`.
         coron_rescale : bool
-            Rescale off-axis coronagraphic PSF to better match analytic prediction
-            when source overlaps coronagraphic occulting mask.
-            Primarily used for planetary companion PSFs.
+            Rescale total flux of off-axis coronagraphic PSF to better match 
+            analytic prediction when source overlaps coronagraphic occulting 
+            mask. Primarily used for planetary companion and disk PSFs.
+            Default: True.
         """
 
         coords = rtheta_to_xy(offset_r, offset_theta)
@@ -865,7 +866,7 @@ class obs_hci(nrc_hci):
 
 
     def gen_planets_image(self, PA_offset=0, xyoff_asec=(0,0), use_cmask=True, 
-        wfe_drift=None, use_coeff=True, return_oversample=False, coron_rescale=True, 
+        wfe_drift=None, use_coeff=True, return_oversample=False, 
         shift_func=fshift, interp=None, **kwargs):
         """Create image of just planets.
 
@@ -886,23 +887,29 @@ class obs_hci(nrc_hci):
             for automatically. 
         use_cmask : bool
             Use the coronagraphic mask image to determine if any planet is
-            getting obscurred by a corongraphic mask feature
+            getting obscurred by a corongraphic mask feature. Default: True.
         wfe_drift : float
             WFE drift value (in nm RMS). Not usually a concern for companion
             PSFs, so default is 0.
         use_coeff : bool
-            If True, uses `calc_psf_from_coeff`, other WebbPSF's built-in `calc_psf`
-            for stellar sources.
+            If True, uses `calc_psf_from_coeff`, otherwise use WebbPSF's 
+            built-in `calc_psf` for stellar sources.
         return_oversample : bool
             Return either the detector pixel-sampled or oversampled image.
-        coron_rescale : bool
-            Rescale off-axis coronagraphic PSF to better match analytic prediction
-            when source overlaps coronagraphic occulting mask. Default: True.
         shift_func : func
             Function to use for shifting image. Typical options are `fshift` and
             `fourier_imshift`.
         interp : str
             Interpolation used for `fshift`, either 'linear' or 'cubic'.
+
+        Keyword Args
+        ------------
+        coron_rescale : bool
+            Rescale total flux of off-axis coronagraphic PSF to better match 
+            analytic prediction when source overlaps coronagraphic occulting 
+            mask. Primarily used for planetary companion and disk PSFs.
+            Default: True.
+
         """
         if len(self.planets)==0:
             _log.info("No planet info at self.planets")
@@ -947,8 +954,7 @@ class obs_hci(nrc_hci):
             r, th = xy_to_rtheta(xoff_idl, yoff_idl)
             psf_planet = self.gen_offset_psf(r, th, sp=sp, return_oversample=True, 
                                              use_coeff=use_coeff, wfe_drift=wfe_drift, 
-                                             coron_rescale=coron_rescale, use_cmask=use_cmask,
-                                             **kwargs)
+                                             use_cmask=use_cmask, **kwargs)
 
             ##################################
             # Shift image
