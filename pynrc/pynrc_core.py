@@ -1519,12 +1519,10 @@ class NIRCam(NIRCam_ext):
         return satlim
 
 
-    def saturation_levels(self, sp, full_size=True, ngroup=2, image=None, **kwargs):
+    def saturation_levels(self, sp, full_size=True, ngroup=2, image=None, charge_migration=True, **kwargs):
         """ Saturation levels
         
         Create image showing level of saturation for each pixel.
-        Can either show the saturation after one frame (default)
-        or after the ramp has finished integrating (ramp_sat=True).
         
         Parameters
         ----------
@@ -1544,7 +1542,18 @@ class NIRCam(NIRCam_ext):
         image : ndarray
             Rather than generating an image on the fly, pass a pre-computed
             slope image. Overrides `sp` and `full_size`
-        
+        charge_migration : bool
+            Include charge migration effects?
+
+        Keyword Args
+        ------------
+        satmax : float
+            Saturation value to limit charge migration. Default is 1.5.
+        niter : int
+            Number of iterations for charge migration. Default is 5.
+        corners : bool
+            Include corner pixels in charge migration? Default is True.
+
         """
         
         assert ngroup >= 0
@@ -1565,12 +1574,14 @@ class NIRCam(NIRCam_ext):
     
         # Slope image of input 
         if image is not None:
-            return image * t_sat / self.well_level
+            sat_level = image * t_sat / self.well_level
         else:
 
             image = self.calc_psf_from_coeff(sp=sp, return_oversample=False, return_hdul=False)
             if is_grism: 
                 wave, image = image
+            else: 
+                wave = None
             
             if full_size:
                 shape = (self.det_info['ypix'], self.det_info['xpix'])
@@ -1581,11 +1592,15 @@ class NIRCam(NIRCam_ext):
 
             # Well levels after "saturation time"
             sat_level = image * t_sat / self.well_level
-    
-            if is_grism:
-                return (wave, sat_level)
-            else:
-                return sat_level
+
+        # Add in charge migration effects
+        if charge_migration:
+            sat_level = do_charge_migration(sat_level, **kwargs)
+
+        if wave is None:
+            return sat_level
+        else:
+            return (wave, sat_level)
 
     def sensitivity(self, nsig=10, units=None, sp=None, verbose=False, **kwargs):
         """Sensitivity limits.

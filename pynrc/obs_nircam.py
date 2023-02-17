@@ -2298,7 +2298,7 @@ class obs_hci(nrc_hci):
 
         return (rr, contrast, sen_mag)
 
-    def saturation_levels(self, ngroup=2, do_ref=False, image=None, **kwargs):
+    def saturation_levels(self, ngroup=2, do_ref=False, image=None, charge_migration=True, **kwargs):
         """Saturation levels
 
         Create image showing level of saturation for each pixel.
@@ -2321,6 +2321,8 @@ class obs_hci(nrc_hci):
         image : ndarray
             Rather than generating an image on the fly, pass a pre-computed
             slope image.
+        charge_migration : bool
+            Include charge migration effects?
 
         Keyword Args
         ------------
@@ -2333,6 +2335,12 @@ class obs_hci(nrc_hci):
         use_cmask : bool
             Use the coronagraphic mask image to attenuate planet or disk that
             is obscurred by a corongraphic mask feature.
+        satmax : float
+            Saturation value to limit charge migration. Default is 1.5.
+        niter : int
+            Number of iterations for charge migration. Default is 5.
+        corners : bool
+            Include corner pixels in charge migration? Default is True.
         zfact : float
             Zodiacal background factor (default=2.5)
         ra : float
@@ -2342,7 +2350,6 @@ class obs_hci(nrc_hci):
         thisday : int
             Calendar day to use for background calculation.  If not given, will use the
             average of visible calendar days.
-
         """
 
         assert ngroup >= 0
@@ -2370,6 +2377,10 @@ class obs_hci(nrc_hci):
 
         # Well levels after "saturation time"
         sat_level = image * t_sat / self.well_level
+
+        # Add in charge migration effects
+        if charge_migration:
+            sat_level = do_charge_migration(sat_level, **kwargs)
 
         return sat_level
 

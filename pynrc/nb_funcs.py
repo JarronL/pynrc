@@ -445,22 +445,32 @@ def do_gen_hdus(obs_dict, filt_keys, wfe_ref_drift, wfe_roll_drift,
     return hdulist_dict
 
 def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True, 
-                  plot=True, xylim=2.5, return_fig_axes=False):
+                  charge_migration=True, niter=5, satmax=1, corners=True,
+                  plot=True, xylim=2.5, return_fig_axes=False, **kwargs):
 
-    """Only for obs.hci classes"""
+    """Only for obs.hci classes
+    
+    keywords of interest: charge_migration, satmax, niter, corners
+    """
+
+    # Charge migration keywords
+    kwargs['charge_migration'] = charge_migration
+    kwargs['niter'] = niter
+    kwargs['satmax'] = satmax
+    kwargs['corners'] = corners
     
     ng_max = obs.det_info['ngroup'] if ng_max is None else ng_max
     kw_gen_psf = {'return_oversample': False,'return_hdul': False}
     
     # Well level of each pixel for science source
     image = obs.calc_psf_from_coeff(sp=obs.sp_sci, **kw_gen_psf)
-    sci_levels1 = obs.saturation_levels(ngroup=ng_min, image=image)
-    sci_levels2 = obs.saturation_levels(ngroup=ng_max, image=image)
+    sci_levels1 = obs.saturation_levels(ngroup=ng_min, image=image, **kwargs)
+    sci_levels2 = obs.saturation_levels(ngroup=ng_max, image=image, **kwargs)
 
     # Well level of each pixel for reference source
     image = obs.calc_psf_from_coeff(sp=obs.sp_ref, **kw_gen_psf)
-    ref_levels1 = obs.saturation_levels(ngroup=ng_min, image=image, do_ref=True)
-    ref_levels2 = obs.saturation_levels(ngroup=ng_max, image=image, do_ref=True)
+    ref_levels1 = obs.saturation_levels(ngroup=ng_min, image=image, do_ref=True, **kwargs)
+    ref_levels2 = obs.saturation_levels(ngroup=ng_max, image=image, do_ref=True, **kwargs)
     
     # Which pixels are saturated?
     sci_mask1 = sci_levels1 > satval
@@ -479,12 +489,14 @@ def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True,
     nsat2_ref = len(ref_levels2[ref_mask2])
 
     # Get saturation radius
+    pixscale = obs.pixelscale
     if nsat1_sci == nsat1_ref == 0:
-        sat_rad = 0
+        sat_rad_max = sat_rad = 0
     else:
         mask_temp = sci_mask1 if nsat1_sci>nsat1_ref else ref_mask1
-        rho_asec = dist_image(mask_temp, pixscale=obs.pixelscale)
-        sat_rad = rho_asec[mask_temp].max()
+        rho_asec = dist_image(mask_temp, pixscale=pixscale)
+        sat_rad_max = rho_asec[mask_temp].max()
+        sat_rad = np.sqrt(nsat1_sci / np.pi) * pixscale
     
     if verbose:
         print('Sci: {}'.format(obs.sp_sci.name))
@@ -492,7 +504,9 @@ def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True,
             .format(nsat1_sci, ng_min, sci_levels1.max()))
         print('  {} saturated pixel at NGROUP={}; Max Well: {:.2f}'\
             .format(nsat2_sci, ng_max, sci_levels2.max()))
-        print('  Sat Dist NG={}: {:.2f} arcsec'.format(ng_min, sat_rad))
+        print(f'  Sat Max Dist NG={ng_min}: {sat_rad_max/pixscale:.2f} pix ({sat_rad_max:.2f} arcsec)')
+        print(f'  Sat Avg Dist NG={ng_min}: {sat_rad/pixscale:.2f} pix ({sat_rad:.2f} arcsec)')
+
         print('Ref: {}'.format(obs.sp_ref.name))
         print('  {} saturated pixel at NGROUP={}; Max Well: {:.2f}'.\
             format(nsat1_ref, ng_min, ref_levels1.max()))
