@@ -1953,7 +1953,7 @@ def gen_ramp_biases(ref_dict, nchan=None, data_shape=(2,2048,2048),
 
 
 def fft_noise(pow_spec, nstep_out=None, nseq=1, fmin=None, f=None, 
-              pad_mode='edge', rand_seed=None, **kwargs):
+              pad_mode='edge', rand_seed=None, use_mkl=False, **kwargs):
     """ Random Noise from Power Spectrum
     
     Returns a noised array where the instrinsic distribution
@@ -2017,6 +2017,8 @@ def fft_noise(pow_spec, nstep_out=None, nseq=1, fmin=None, f=None,
 
     """
     
+    from ..nrc_utils import do_fft
+
     rng = np.random.default_rng(rand_seed)
 
     if nstep_out is None:
@@ -2072,7 +2074,7 @@ def fft_noise(pow_spec, nstep_out=None, nseq=1, fmin=None, f=None,
     del sr, si
 
     # Apply the pinkening filter.
-    result = np.fft.irfft(thefft)
+    result = do_fft(thefft, real=True, inverse=True, use_mkl=use_mkl)
     del thefft
     
     # Keep requested nstep and scale to unit variance
