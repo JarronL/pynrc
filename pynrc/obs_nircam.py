@@ -42,7 +42,7 @@ class nrc_hci(NIRCam):
     large_grid : bool
         Use a large number (high-density) of grid points to create coefficients.
         If True, then produces a higher fidelity PSF variations across the FoV, 
-        but will take much longer to genrate on the first pass and requires more
+        but will take much longer to generate on the first pass and requires more
         disk space and memory while running.
     bar_offset : float or None
         Custom offset position along bar mask (-10 to +10 arcsec).
@@ -65,16 +65,18 @@ class nrc_hci(NIRCam):
     fsm_std : float
         One-sigma accuracy per axis of fine steering mirror positions.
         This provides randomness to each position relative to the nominal 
-        central position. Ignored for central position. 
-        Values should be in units of mas. 
+        central position. Ignored for central SGD position. 
+        ***Values should be in units of mas***
     slew_std : float
         One-sigma accuracy per axis of the initial slew. This is applied
         to all positions and gives a baseline offset relative to the
-        desired mask center. ***Values should be in units of mas***
+        desired mask center. 
+        ***Values should be in units of mas***
     """
 
-    def __init__(self, wind_mode='WINDOW', xpix=320, ypix=320, large_grid=True, bar_offset=None, 
-                 use_ap_info=False, autogen_coeffs=True, sgd_type=None, slew_std=5, fsm_std=2.5, **kwargs):
+    def __init__(self, wind_mode='WINDOW', xpix=320, ypix=320, large_grid=True, 
+                 bar_offset=None, use_ap_info=False, autogen_coeffs=True, 
+                 sgd_type=None, slew_std=0, fsm_std=20, **kwargs):
 
         super().__init__(wind_mode=wind_mode, xpix=xpix, ypix=ypix, fov_bg_match=True, 
                          autogen_coeffs=autogen_coeffs, **kwargs)
@@ -422,16 +424,17 @@ class obs_hci(nrc_hci):
         One-sigma accuracy per axis of fine steering mirror positions.
         This provides randomness to each position relative to the nominal 
         central position. Ignored for central position. 
-        Values should be in units of mas. 
+        ***Values should be in units of mas***
     slew_std : float
         One-sigma accuracy per axis of the initial slew. This is applied
         to all positions and gives a baseline offset relative to the
-        desired mask center. ***Values should be in units of mas***
+        desired mask center. 
+        ***Values should be in units of mas***
     """
 
     def __init__(self, sp_sci, distance, sp_ref=None, wfe_ref_drift=5, wfe_roll_drift=2,
         wind_mode='WINDOW', xpix=320, ypix=320, disk_params=None, autogen_coeffs=True,
-        sgd_type=None, slew_std=5, fsm_std=2.5, **kwargs):
+        sgd_type=None, slew_std=0, fsm_std=0, **kwargs):
 
         if 'FULL'   in wind_mode: xpix = ypix = 2048
         if 'STRIPE' in wind_mode: xpix = 2048
@@ -962,9 +965,9 @@ class obs_hci(nrc_hci):
             # Determine final shift amounts to mask location
             # Shift to position relative to center of image
             if (('FULL' in self.det_info['wind_mode']) and (self.image_mask is not None)) or self._use_ap_info:
-                xcen, ycen = (self.siaf_ap.XSciRef, self.siaf_ap.YSciRef)
-                delx_pix = (xcen - (xpix/2 + 0.5))  # 'sci' pixel shifts
-                dely_pix = (ycen - (ypix/2 + 0.5))  # 'sci' pixel shifts
+                xcen, ycen = (self.siaf_ap.XSciRef - 1, self.siaf_ap.YSciRef - 1)
+                delx_pix = (xcen - (xpix/2. - 0.5))  # 'sci' pixel shifts
+                dely_pix = (ycen - (ypix/2. - 0.5))  # 'sci' pixel shifts
                 delx_asec, dely_asec = np.array([delx_pix, dely_pix]) * self.pixelscale
             else:
                 # Otherwise assumed mask is already in center of subarray
@@ -1014,9 +1017,9 @@ class obs_hci(nrc_hci):
         return_oversample=False, **kwargs):
         """Create image of just disk.
 
-        Generate a (noiseless) convolved image of the disk at some PA offset.
-        The PA offset value will rotate the image CCW.
-        Image units of e-/sec.
+        Generate a (noiseless) convolved image of the disk 
+        at some PA offset. The PA offset value will rotate 
+        the image CCW. Image units of e-/sec.
 
         Coordinate convention is for N up and E to left.
 
@@ -1060,17 +1063,18 @@ class obs_hci(nrc_hci):
         # Determine final shift amounts to location along bar
         # Shift to position relative to center of image
         if (('FULL' in self.det_info['wind_mode']) and (self.image_mask is not None)) or self._use_ap_info:
-            xcen, ycen = (self.siaf_ap.XSciRef, self.siaf_ap.YSciRef)
-            delx_pix = (xcen - (xpix/2 + 0.5))  # 'sci' pixel shifts
-            dely_pix = (ycen - (ypix/2 + 0.5))  # 'sci' pixel shifts
+            xcen, ycen = (self.siaf_ap.XSciRef - 1, self.siaf_ap.YSciRef - 1)
+            # Offset relative to center of image
+            delx_pix = (xcen - (xpix/2 - 0.5))  # 'sci' pixel shifts
+            dely_pix = (ycen - (ypix/2 - 0.5))  # 'sci' pixel shifts
             # Convert to 'idl' offsets
             # delx_asec, dely_asec = self.siaf_ap.convert(xcen+delx_pix, ycen+dely_pix, 'sci', 'idl')
             delx_asec, dely_asec = np.array([delx_pix, dely_pix]) * self.pixelscale
         else:
             # Otherwise assumed mask is in center of subarray for simplicity
-            # The 0.5 offset indicates PSF is centered in middle of pixel
-            # TODO: How does this interact w/ odd/even PSFs??
-            xcen, ycen = (xpix/2 + 0.5, ypix/2 + 0.5)
+            # For odd dimensions, this is in a pixel center.
+            # For even dimensions, this is at the pixel boundary.
+            xcen, ycen = (xpix/2. - 0.5, ypix/2. - 0.5)
             # Add bar offset
             xcen += bar_offpix  # Add bar offset
             delx_pix, dely_pix = (bar_offpix, 0)
@@ -1088,8 +1092,11 @@ class obs_hci(nrc_hci):
         out_shape = np.array([ypix*oversample, xpix*oversample], dtype='int')
         # Extend to accommodate rotations and shifts
         extend = int(np.sqrt(2)*np.max(self.disk_hdulist[0].data.shape))
+        # Ensure even number of pixels
+        if np.mod(extend,2)==1:
+            extend += 1
         oversized_shape = out_shape + extend
-        # But don't make smaller than current size
+        # Don't make smaller than current size
         orig_shape = hdul_disk[0].data.shape
         new_shape = np.array([oversized_shape,orig_shape]).max(axis=0)
         hdul_disk[0].data = pad_or_cut_to_size(hdul_disk[0].data, new_shape)
@@ -1118,9 +1125,9 @@ class obs_hci(nrc_hci):
         im_crop, ixy_vals = res
         ix1, ix2, iy1, iy2 = ixy_vals
         # Get 'sci' pixel values that correspond to center of input image
-        xarr = (np.arange(hdul_rot_shift[0].data.shape[1]) + 1) / oversample
-        yarr = (np.arange(hdul_rot_shift[0].data.shape[0]) + 1) / oversample
-        cen_sci = (np.mean(xarr[ix1:ix2]), np.mean(yarr[iy1:iy2]))
+        xarr_sci = (np.arange(hdul_rot_shift[0].data.shape[1]) + 1) / oversample
+        yarr_sci = (np.arange(hdul_rot_shift[0].data.shape[0]) + 1) / oversample
+        cen_sci = (np.mean(xarr_sci[ix1:ix2]), np.mean(yarr_sci[iy1:iy2]))
 
         im_orig = hdul_rot_shift[0].data
         hdul_rot_shift[0].data = im_crop
@@ -1327,9 +1334,9 @@ class obs_hci(nrc_hci):
         # Determine final shift amounts to mask location
         # Shift to position relative to center of image
         if (('FULL' in self.det_info['wind_mode']) and (self.image_mask is not None)) or self._use_ap_info:
-            xcen, ycen = (self.siaf_ap.XSciRef, self.siaf_ap.YSciRef)
-            delx_pix = (xcen - (xpix/2 + 0.5))  # 'sci' pixel shifts
-            dely_pix = (ycen - (ypix/2 + 0.5))  # 'sci' pixel shifts
+            xcen, ycen = (self.siaf_ap.XSciRef - 1, self.siaf_ap.YSciRef - 1)
+            delx_pix = (xcen - (xpix/2. - 0.5))  # 'sci' pixel shifts
+            dely_pix = (ycen - (ypix/2. - 0.5))  # 'sci' pixel shifts
             delx_asec, dely_asec = np.array([delx_pix, dely_pix]) * self.pixelscale
         else:
             # Otherwise assumed mask is already in center of subarray
@@ -1682,16 +1689,16 @@ class obs_hci(nrc_hci):
 
         # Shift to position relative to center of image
         if (('FULL' in self.det_info['wind_mode']) and (self.image_mask is not None)) or self._use_ap_info:
-            xcen, ycen = (self.siaf_ap.XSciRef, self.siaf_ap.YSciRef)
-            delx_pix = (xcen - (xpix/2 + 0.5))  # 'sci' pixel shifts
-            dely_pix = (ycen - (ypix/2 + 0.5))  # 'sci' pixel shifts
+            xcen, ycen = (self.siaf_ap.XSciRef - 1, self.siaf_ap.YSciRef - 1)
+            delx_pix = (xcen - (xpix/2. - 0.5))  # 'sci' pixel shifts
+            dely_pix = (ycen - (ypix/2. - 0.5))  # 'sci' pixel shifts
             delx_asec, dely_asec = np.array([delx_pix, dely_pix]) * self.pixelscale
             xcen_baroff = xcen  # Use SIAF aperture location
         else:
             # Otherwise assumed mask is in center of subarray for simplicity
             # The 0.5 offset indicates PSF is centered in middle of pixel
             # TODO: How does this interact w/ odd/even PSFs??
-            xcen, ycen = (xpix/2 + 0.5, ypix/2 + 0.5)
+            xcen, ycen = (xpix/2. - 0.5, ypix/2. - 0.5)
             xcen_baroff = xcen + bar_offpix  # Include bar offset position
             # Add bar offset
             xcen += bar_offpix

@@ -13,6 +13,7 @@ from webbpsf_ext.image_manip import pad_or_cut_to_size, fshift, fourier_imshift,
 from webbpsf_ext.image_manip import rotate_offset, rotate_shift_image
 from webbpsf_ext.image_manip import image_rescale, model_to_hdulist
 from webbpsf_ext.image_manip import convolve_image, crop_zero_rows_cols
+from webbpsf_ext.image_manip import get_im_cen
 from webbpsf_ext.maths import hist_indices, binned_statistic, fit_bootstrap
 
 def shift_subtract(params, reference, target, mask=None, pad=False, interp='cubic',
@@ -59,10 +60,12 @@ def shift_subtract(params, reference, target, mask=None, pad=False, interp='cubi
         return ( target - beta * offset ).ravel() #.flatten()
 
 def align_LSQ(reference, target, mask=None, pad=False, interp='cubic',
-              shift_function=fshift):
+              shift_function=fshift, init_pars=[0.0, 0.0, 1.0]):
     """Find best shift value
     
-    LSQ optimization with option of shift alignment algorithm
+    LSQ optimization with option of shift alignment algorithm.
+    In practice, the 'reference' image gets shifted to match
+    the 'target' image.
     
     Parameters
     ----------
@@ -94,8 +97,6 @@ def align_LSQ(reference, target, mask=None, pad=False, interp='cubic',
         reduced to match the intensity of the reference.
     """
     from scipy.optimize import least_squares#, leastsq
-
-    init_pars = [0.0, 0.0, 1.0]
 
     # Use loss='soft_l1' for least squares robust against outliers
     # May want to play around with f_scale...
