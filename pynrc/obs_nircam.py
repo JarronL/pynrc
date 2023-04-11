@@ -21,62 +21,66 @@ import numpy as np
 eps = np.finfo(float).eps
 
 class nrc_hci(NIRCam):
-    """NIRCam coronagraphy (and direct imaging)
+
+    """ NIRCam High Contrast Imaging (HCI)
 
     Subclass of the :class:`~pynrc.NIRCam` instrument class with updates for PSF
     generation of off-axis PSFs. If a coronagraph is not present,
     then this is effectively the same as the :class:`~pynrc.NIRCam` class.
-
-    Parameters
-    ----------
-    wind_mode : str
-        'FULL', 'STRIPE', or 'WINDOW'
-    xpix : int
-        Size of the detector readout along the x-axis. The detector is
-        assumed to be in window mode  unless the user explicitly
-        sets wind_mode='FULL'.
-    ypix : int
-        Size of the detector readout along the y-axis. The detector is
-        assumed to be in window mode  unless the user explicitly
-        sets wind_mode='FULL'.
-    large_grid : bool
-        Use a large number (high-density) of grid points to create coefficients.
-        If True, then produces a higher fidelity PSF variations across the FoV, 
-        but will take much longer to generate on the first pass and requires more
-        disk space and memory while running.
-    bar_offset : float or None
-        Custom offset position along bar mask (-10 to +10 arcsec).
-        Set to None to auto-determine based on other configurations.
-    use_ap_info : bool   
-        For subarray observations, the mask reference points are not
-        actually in the center of the array. Set this to true to 
-        shift the sources to actual aperture reference location. 
-        Default is to place in center of array.
-    autogen_coeffs : bool
-        Automatically generate base PSF coefficients. Equivalent to performing
-        :meth:`gen_psf_coeff`, :meth:`gen_wfedrift_coeff`, and :meth:`gen_wfemask_coeff`.
-        Default: True.
-    sgd_type : str or None
-        Small grid dither pattern. Valid types are
-        '9circle', '5box', '5diamond', '3bar', or '5bar'. If 'auto', 
-        then defaults are '5diamond' for round masks, '5bar' for bar masks, 
-        and '5diamond' for direct imaging. If None, then no FSM pointings,
-        but there will be a single slew.
-    fsm_std : float
-        One-sigma accuracy per axis of fine steering mirror positions.
-        This provides randomness to each position relative to the nominal 
-        central position. Ignored for central SGD position. 
-        ***Values should be in units of mas***
-    slew_std : float
-        One-sigma accuracy per axis of the initial slew. This is applied
-        to all positions and gives a baseline offset relative to the
-        desired mask center. 
-        ***Values should be in units of mas***
     """
 
     def __init__(self, wind_mode='WINDOW', xpix=320, ypix=320, large_grid=True, 
                  bar_offset=None, use_ap_info=False, autogen_coeffs=True, 
                  sgd_type=None, slew_std=0, fsm_std=20, **kwargs):
+
+        """Init function for NIRCam HCI class.
+
+        Parameters
+        ----------
+        wind_mode : str
+            'FULL', 'STRIPE', or 'WINDOW'
+        xpix : int
+            Size of the detector readout along the x-axis. The detector is
+            assumed to be in window mode  unless the user explicitly
+            sets wind_mode='FULL'.
+        ypix : int
+            Size of the detector readout along the y-axis. The detector is
+            assumed to be in window mode  unless the user explicitly
+            sets wind_mode='FULL'.
+        large_grid : bool
+            Use a large number (high-density) of grid points to create coefficients.
+            If True, then produces a higher fidelity PSF variations across the FoV, 
+            but will take much longer to generate on the first pass and requires more
+            disk space and memory while running.
+        bar_offset : float or None
+            Custom offset position along bar mask (-10 to +10 arcsec).
+            Set to None to auto-determine based on other configurations.
+        use_ap_info : bool   
+            For subarray observations, the mask reference points are not
+            actually in the center of the array. Set this to true to 
+            shift the sources to actual aperture reference location. 
+            Default is to place in center of array.
+        autogen_coeffs : bool
+            Automatically generate base PSF coefficients. Equivalent to performing
+            :meth:`gen_psf_coeff`, :meth:`gen_wfedrift_coeff`, and :meth:`gen_wfemask_coeff`.
+            Default: True.
+        sgd_type : str or None
+            Small grid dither pattern. Valid types are
+            '9circle', '5box', '5diamond', '3bar', or '5bar'. If 'auto', 
+            then defaults are '5diamond' for round masks, '5bar' for bar masks, 
+            and '5diamond' for direct imaging. If None, then no FSM pointings,
+            but there will be a single slew.
+        fsm_std : float
+            One-sigma accuracy (mas) per axis of fine steering mirror positions.
+            This provides randomness to each position relative to the nominal 
+            central position. Ignored for central SGD position. 
+            ***Values should be in units of mas***
+        slew_std : float
+            One-sigma accuracy (mas) per axis of the initial slew. This is 
+            applied to all positions and gives a baseline offset relative 
+            to the desired mask center. 
+            ***Values should be in units of mas***
+        """
 
         super().__init__(wind_mode=wind_mode, xpix=xpix, ypix=ypix, fov_bg_match=True, 
                          autogen_coeffs=autogen_coeffs, **kwargs)
@@ -359,6 +363,7 @@ class nrc_hci(NIRCam):
 
 
 class obs_hci(nrc_hci):
+
     """NIRCam coronagraphic observations
 
     Subclass of the :class:`~pynrc.nrc_hci` instrument class used to observe
@@ -371,70 +376,75 @@ class obs_hci(nrc_hci):
     also defined for PSF subtraction, which contains a specified WFE.
     A variety of methods exist to generate slope images and analyze
     the PSF-subtracted results via images and contrast curves.
-
-    Parameters
-    ----------
-    sp_sci : :mod:`pysynphot.spectrum`
-        A pysynphot spectrum of science target (e.g., central star).
-        Should already be normalized to the apparent flux.
-    sp_ref : :mod:`pysynphot.spectrum` or None
-        A pysynphot spectrum of reference target.
-        Should already be normalized to the apparent flux.
-    distance : float
-        Distance in parsecs to the science target. This is used for
-        flux normalization of the planets and disk.
-    wfe_ref_drift: float
-        WFE drift in nm RMS between the science and reference targets.
-        Expected values are between ~3-10 nm.
-    wfe_roll_drift: float
-        WFE drift in nm RMS between science roll angles. Default=0.
-    wind_mode : str
-        'FULL', 'STRIPE', or 'WINDOW'
-    xpix : int
-        Size of the detector readout along the x-axis. The detector is
-        assumed to be in window mode  unless the user explicitly
-        sets wind_mode='FULL'.
-    ypix : int
-        Size of the detector readout along the y-axis. The detector is
-        assumed to be in window mode  unless the user explicitly
-        sets wind_mode='FULL'.
-    disk_params : dict
-        Arguments describing disk model information for a given FITS file:
-            - 'file'       : Path to model file or an HDUList.
-            - 'pixscale'   : Pixel scale for model image (arcsec/pixel).
-            - 'dist'       : Assumed model distance in parsecs.
-            - 'wavelength' : Wavelength of observation in microns.
-            - 'units'      : String of assumed flux units (ie., MJy/arcsec^2 or muJy/pixel)
-            - 'cen_star'   : True/False. Is a star already placed in the central pixel? 
-    autogen_coeffs : bool
-        Automatically generate base PSF coefficients. Equivalent to performing
-        `self.gen_psf_coeff()`. `gen_wfedrift_coeff`, and `gen_wfemask_coeff`.
-        Default: True.
-    use_ap_info : bool   
-        For subarray observations, the mask reference points are not actually in the 
-        center of the array. Set this to True to shift the sources to actual 
-        aperture reference location. Otherwise, default will place in center of array.
-    sgd_type : str or None
-        Small grid dither pattern. Valid types are
-        '9circle', '5box', '5diamond', '3bar', or '5bar'. If 'auto', 
-        then defaults are '5diamond' for round masks, '5bar' for bar masks, 
-        and '5diamond' for direct imaging. If None, then no FSM pointings,
-        but there will be a single slew.
-    fsm_std : float
-        One-sigma accuracy per axis of fine steering mirror positions.
-        This provides randomness to each position relative to the nominal 
-        central position. Ignored for central position. 
-        ***Values should be in units of mas***
-    slew_std : float
-        One-sigma accuracy per axis of the initial slew. This is applied
-        to all positions and gives a baseline offset relative to the
-        desired mask center. 
-        ***Values should be in units of mas***
     """
 
     def __init__(self, sp_sci, distance, sp_ref=None, wfe_ref_drift=5, wfe_roll_drift=2,
         wind_mode='WINDOW', xpix=320, ypix=320, disk_params=None, autogen_coeffs=True,
         sgd_type=None, slew_std=0, fsm_std=0, **kwargs):
+
+        """Init function for obs_hci class
+
+        Parameters
+        ----------
+        sp_sci : :mod:`pysynphot.spectrum`
+            A pysynphot spectrum of science target (e.g., central star).
+            Should already be normalized to the apparent flux.
+        sp_ref : :mod:`pysynphot.spectrum` or None
+            A pysynphot spectrum of reference target.
+            Should already be normalized to the apparent flux.
+        distance : float
+            Distance in parsecs to the science target. This is used for
+            flux normalization of the planets and disk.
+        wfe_ref_drift: float
+            WFE drift in nm RMS between the science and reference targets.
+            Expected values are between ~3-10 nm.
+        wfe_roll_drift: float
+            WFE drift in nm RMS between science roll angles. Default=0.
+        wind_mode : str
+            'FULL', 'STRIPE', or 'WINDOW'
+        xpix : int
+            Size of the detector readout along the x-axis. The detector is
+            assumed to be in window mode  unless the user explicitly
+            sets wind_mode='FULL'.
+        ypix : int
+            Size of the detector readout along the y-axis. The detector is
+            assumed to be in window mode  unless the user explicitly
+            sets wind_mode='FULL'.
+        disk_params : dict
+            Arguments describing disk model information for a given FITS file:
+
+                - 'file'       : Path to model file or an HDUList.
+                - 'pixscale'   : Pixel scale for model image (arcsec/pixel).
+                - 'dist'       : Assumed model distance in parsecs.
+                - 'wavelength' : Wavelength of observation in microns.
+                - 'units'      : String of assumed flux units (ie., MJy/arcsec^2 or muJy/pixel)
+                - 'cen_star'   : True/False. Is a star already placed in the central pixel? 
+
+        autogen_coeffs : bool
+            Automatically generate base PSF coefficients. Equivalent to performing
+            `self.gen_psf_coeff()`. `gen_wfedrift_coeff`, and `gen_wfemask_coeff`.
+            Default: True.
+        use_ap_info : bool   
+            For subarray observations, the mask reference points are not actually in the 
+            center of the array. Set this to True to shift the sources to actual 
+            aperture reference location. Otherwise, default will place in center of array.
+        sgd_type : str or None
+            Small grid dither pattern. Valid types are
+            '9circle', '5box', '5diamond', '3bar', or '5bar'. If 'auto', 
+            then defaults are '5diamond' for round masks, '5bar' for bar masks, 
+            and '5diamond' for direct imaging. If None, then no FSM pointings,
+            but there will be a single slew.
+        fsm_std : float
+            One-sigma accuracy per axis of fine steering mirror positions.
+            This provides randomness to each position relative to the nominal 
+            central position. Ignored for central position. 
+            ***Values should be in units of mas***
+        slew_std : float
+            One-sigma accuracy per axis of the initial slew. This is applied
+            to all positions and gives a baseline offset relative to the
+            desired mask center. 
+            ***Values should be in units of mas***
+        """
 
         if 'FULL'   in wind_mode: xpix = ypix = 2048
         if 'STRIPE' in wind_mode: xpix = 2048
