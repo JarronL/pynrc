@@ -275,6 +275,11 @@ def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None,
             obs.sp_sci = sp_sci * (1 - disk_flux / star_flux)
             obs.sp_sci.name = sp_sci.name
 
+            if verbose:
+                filt = key.split('_')[0]
+                print(f'{filt:6} | {disk_flux:9.0f} | {star_flux:9.0f} | {obs.star_flux():9.0f}')
+
+
             if sp_ref is sp_sci:
                 obs.sp_ref = obs.sp_sci
                 
@@ -459,19 +464,42 @@ def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True,
     kwargs['satmax'] = satmax
     kwargs['corners'] = corners
     
-    ng_max = obs.det_info['ngroup'] if ng_max is None else ng_max
+    ng_max_sci = obs.Detector.multiaccum.ngroup if ng_max is None else ng_max
+    ng_max_ref = obs.Detector_ref.multiaccum.ngroup if ng_max is None else ng_max
     kw_gen_psf = {'return_oversample': False,'return_hdul': False}
     
     # Well level of each pixel for science source
     image = obs.calc_psf_from_coeff(sp=obs.sp_sci, **kw_gen_psf)
     sci_levels1 = obs.saturation_levels(ngroup=ng_min, image=image, **kwargs)
-    sci_levels2 = obs.saturation_levels(ngroup=ng_max, image=image, **kwargs)
+    sci_levels2 = obs.saturation_levels(ngroup=ng_max_sci, image=image, **kwargs)
+    if charge_migration:
+        # Get max well fill without charge migration
+        kwargs_temp = kwargs.copy()
+        kwargs_temp['charge_migration'] = False
+        sci_levels1_temp = obs.saturation_levels(ngroup=ng_min, image=image, **kwargs_temp)
+        sci_levels2_temp = obs.saturation_levels(ngroup=ng_max_sci, image=image, **kwargs_temp)
+        sci_levels1_max = sci_levels1_temp.max()
+        sci_levels2_max = sci_levels2_temp.max()
+    else:
+        sci_levels1_max = sci_levels1.max()
+        sci_levels2_max = sci_levels2.max()
 
     # Well level of each pixel for reference source
     image = obs.calc_psf_from_coeff(sp=obs.sp_ref, **kw_gen_psf)
     ref_levels1 = obs.saturation_levels(ngroup=ng_min, image=image, do_ref=True, **kwargs)
-    ref_levels2 = obs.saturation_levels(ngroup=ng_max, image=image, do_ref=True, **kwargs)
-    
+    ref_levels2 = obs.saturation_levels(ngroup=ng_max_ref, image=image, do_ref=True, **kwargs)
+    if charge_migration:
+        # Get max well fill without charge migration
+        kwargs_temp = kwargs.copy()
+        kwargs_temp['charge_migration'] = False
+        ref_levels1_temp = obs.saturation_levels(ngroup=ng_min, image=image, do_ref=True, **kwargs_temp)
+        ref_levels2_temp = obs.saturation_levels(ngroup=ng_max_ref, image=image, do_ref=True, **kwargs_temp)
+        ref_levels1_max = ref_levels1_temp.max()
+        ref_levels2_max = ref_levels2_temp.max()
+    else:
+        ref_levels1_max = ref_levels1.max()
+        ref_levels2_max = ref_levels2.max()
+        
     # Which pixels are saturated?
     sci_mask1 = sci_levels1 > satval
     sci_mask2 = sci_levels2 > satval
@@ -501,17 +529,19 @@ def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True,
     if verbose:
         print('Sci: {}'.format(obs.sp_sci.name))
         print('  {} saturated pixel at NGROUP={}; Max Well: {:.2f}'\
-            .format(nsat1_sci, ng_min, sci_levels1.max()))
+            .format(nsat1_sci, ng_min, sci_levels1_max))
         print('  {} saturated pixel at NGROUP={}; Max Well: {:.2f}'\
-            .format(nsat2_sci, ng_max, sci_levels2.max()))
-        print(f'  Sat Max Dist NG={ng_min}: {sat_rad_max/pixscale:.2f} pix ({sat_rad_max:.2f} arcsec)')
-        print(f'  Sat Avg Dist NG={ng_min}: {sat_rad/pixscale:.2f} pix ({sat_rad:.2f} arcsec)')
+            .format(nsat2_sci, ng_max_sci, sci_levels2_max))
 
         print('Ref: {}'.format(obs.sp_ref.name))
         print('  {} saturated pixel at NGROUP={}; Max Well: {:.2f}'.\
-            format(nsat1_ref, ng_min, ref_levels1.max()))
+            format(nsat1_ref, ng_min, ref_levels1_max))
         print('  {} saturated pixel at NGROUP={}; Max Well: {:.2f}'.\
-            format(nsat2_ref, ng_max, ref_levels2.max()))
+            format(nsat2_ref, ng_max_ref, ref_levels2_max))
+
+        print(f'Sat Max Dist NG={ng_min}: {sat_rad_max/pixscale:.2f} pix ({sat_rad_max:.2f} arcsec)')
+        print(f'Sat Avg Dist NG={ng_min}: {sat_rad/pixscale:.2f} pix ({sat_rad:.2f} arcsec)')
+
 
     if (nsat2_sci==nsat2_ref==0) and (plot==True):
         plot=False
@@ -529,13 +559,21 @@ def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True,
 
         xpix, ypix = (obs.det_info['xpix'], obs.det_info['ypix'])
         bar_offpix = obs.bar_offset / obs.pixelscale
-        if ('FULL' in obs.det_info['wind_mode']) and (obs.image_mask is not None):
-            cdict = coron_ap_locs(obs.module, obs.channel, obs.image_mask, full=True)
-            xcen, ycen = cdict['cen_V23']
-            xcen += bar_offpix
+        # Determine final shift amounts to location along bar
+        # Shift to position relative to center of image
+        if (('FULL' in obs.det_info['wind_mode']) and (obs.image_mask is not None)) or obs._use_ap_info:
+            xcen, ycen = (obs.siaf_ap.XSciRef - 1, obs.siaf_ap.YSciRef - 1)
+            # Offset relative to center of image
+            delx_pix = (xcen - (xpix/2 - 0.5))  # 'sci' pixel shifts
+            dely_pix = (ycen - (ypix/2 - 0.5))  # 'sci' pixel shifts
         else:
-            xcen, ycen = (xpix/2 + bar_offpix, ypix/2)
-        # rho = dist_image(sci_mask1, center=(xcen,ycen))
+            # Otherwise assumed mask is in center of subarray for simplicity
+            # For odd dimensions, this is in a pixel center.
+            # For even dimensions, this is at the pixel boundary.
+            xcen, ycen = (xpix/2. - 0.5, ypix/2. - 0.5)
+            # Add bar offset
+            xcen += bar_offpix  # Add bar offset
+            delx_pix, dely_pix = (bar_offpix, 0)
 
         delx, dely = (xcen - xpix/2, ycen - ypix/2)
         extent_pix = np.array([-xpix/2-delx,xpix/2-delx,-ypix/2-dely,ypix/2-dely])
@@ -546,7 +584,7 @@ def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True,
         axes[1].imshow(sat_mask2, extent=extent)
 
         axes[0].set_title('{} Saturation (NGROUP=2)'.format(sp.name))
-        axes[1].set_title('{} Saturation (NGROUP={})'.format(sp.name,ng_max))
+        axes[1].set_title('{} Saturation (NGROUP={})'.format(sp.name, ng_max_sci))
 
         for ax in axes:
             ax.set_xlabel('Arcsec')
@@ -569,7 +607,7 @@ def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True,
         axes[1].imshow(sat_mask2, extent=extent)
 
         axes[0].set_title('{} Saturation (NGROUP=2)'.format(sp.name))
-        axes[1].set_title('{} Saturation (NGROUP={})'.format(sp.name,ng_max))
+        axes[1].set_title('{} Saturation (NGROUP={})'.format(sp.name, ng_max_ref))
 
         for ax in axes:
             ax.set_xlabel('Arcsec')
@@ -835,7 +873,7 @@ def plot_contrasts(curves, nsig, wfe_list, obs=None, sat_rad=None, ax=None,
         ax2 = ax.twinx()
         ax2.set_yscale('log')
         ax2.set_ylim(yr2)
-        ax2.set_ylabel('{:.0f}-$\sigma$ Contrast'.format(nsig))
+        ax2.set_ylabel(f'{nsig:.0f}-$\sigma$ Contrast ({obs.filter})')
 
         ax3 = ax.twiny()
         xr3 = np.array(ax.get_xlim()) * obs.distance
@@ -1278,7 +1316,7 @@ def do_plot_contrasts2(key1, key2, curves_all, nsig, obs_dict, wfe_list, age, sa
                             ax=ax, colors=c2, xr=xr, linder_models=linder_models)
 
     mod_str = 'BEX' if linder_models else 'COND'
-    ax.set_title('Mass Sensitivities -- {} Models'.format(mod_str))
+    ax.set_title(f'Mass Sensitivities -- {mod_str} Models')
 
     # Update fancy y-axis scaling on right plot
     ax = axes2_all[0]
@@ -1295,7 +1333,8 @@ def do_plot_contrasts2(key1, key2, curves_all, nsig, obs_dict, wfe_list, age, sa
     h3 = handles[2*nwfe:]
     h1_t = [mpatches.Patch(color='none', label=label1)]
     h2_t = [mpatches.Patch(color='none', label=label2)]
-    h3_t = [mpatches.Patch(color='none', label='{} ({})'.format(mod_str, obs_dict[key1].filter))]
+    lfilt = obs_dict[key1].filter
+    h3_t = [mpatches.Patch(color='none', label=f'{mod_str} ({lfilt})')]
     if planet_patches:
         if key2 is not None:
             handles_new = h1_t + h1 + h2_t + h2 + h3_t + h3
@@ -1331,11 +1370,11 @@ def do_plot_contrasts2(key1, key2, curves_all, nsig, obs_dict, wfe_list, age, sa
     # Title
     name_sci = obs.sp_sci.name
     dist = obs.distance
-    age_str = 'Age = {:.0f} Myr'.format(age)
-    dist_str = 'Distance = {:.1f} pc'.format(dist) if dist is not None else ''
-    title_str = '{} ({}, {})'.format(name_sci,age_str,dist_str)
+    age_str = f'Age = {age:.0f} Myr'
+    dist_str = f'Distance = {dist:.1f} pc' if dist is not None else ''
+    title_str = f'{name_sci} ({age_str}, {dist_str})'
 
-    fig.suptitle(title_str, fontsize=16);
+    fig.suptitle(title_str, fontsize=16)
 
     fig.tight_layout()
     fig.subplots_adjust(top=0.8, bottom=0.1 , left=0.05, right=0.95)
@@ -1547,5 +1586,74 @@ def plot_images_swlw(obs_dict, hdu_dict, filt_keys, wfe_drift, fov=10,
     if save_fig: 
         fig.savefig(outdir+fname)
         
+    if return_fig_axes:
+        return fig, axes
+
+def plot_spectrum(src, bp_list, sptype=None, src_ref=None,
+                  return_fig_axes=False, save_fig=False, outdir='', **kwargs):
+
+    name = src.name
+    sp = src.sp_model
+
+    # Plot spectra 
+    fig, axes = plt.subplots(1,2, figsize=(12,4))
+
+    ax = axes[0]
+    src.plot_SED(ax=axes[0], xr=[0.5,30])
+
+    spt_label = '' if sptype is None else f' ({sptype})'
+    ax.set_title(f'{name} SED{spt_label}')
+    ax.set_xlabel(r'Wavelength ($\mathdefault{\mu m}$)')
+    # ax.set_ylim([0.5,20])
+    # ax.set_xscale('linear')
+    # ax.xaxis.set_minor_locator(AutoMinorLocator())
+
+    ax = axes[1]
+    xr = [2.5,5.5]
+
+    bp = bp_list[-1]
+    w = sp.wave / 1e4
+    o = S.Observation(sp, bp, binset=bp.wave)
+    sp.convert('photlam')
+    f = sp.flux / sp.flux[(w>xr[0]) & (w<xr[1])].max()
+
+    ind = (w>=xr[0]) & (w<=xr[1])
+    ax.plot(w[ind], f[ind], lw=1, label=sp.name)
+    ax.set_ylabel('Normalized Flux (photons/s/wave)')
+    sp.convert('flam')
+
+    if src_ref is not None:
+        sp_ref = src_ref.sp_model
+        sp_ref.convert('photlam')
+        w_ref = sp_ref.wave / 1e4
+        f_ref = sp_ref.flux / sp_ref.flux[(w_ref>xr[0]) & (w_ref<xr[1])].max()
+        ind = (w_ref>=xr[0]) & (w_ref<=xr[1])
+        label = f"{sp_ref.name} (Ref)"
+        ax.plot(w_ref[ind], f_ref[ind], lw=1, label=label, color='C3', alpha=0.75)
+        sp_ref.convert('flam')
+
+    ax.set_xlim(xr)
+    ax.set_xlabel(r'Wavelength ($\mathdefault{\mu m}$)')
+    ax.set_title(f'{sp.name} Spectrum and Bandpasses')
+
+    # Overplot Filter Bandpass
+    ax2 = ax.twinx()
+    cols = plt.rcParams['axes.prop_cycle'].by_key()['color']
+    for i, bp in enumerate(bp_list):
+        ax2.plot(bp.wave/1e4, bp.throughput, color=cols[i+1], label=bp.name+' Bandpass')
+    ax2.set_ylim([0,ax2.get_ylim()[1]])
+    ax2.set_xlim(xr)
+    ax2.set_ylabel('Bandpass Throughput')
+
+    ax.legend(loc='upper left')
+    ax2.legend(loc='upper right')
+
+    fig.tight_layout()
+
+    if save_fig: 
+        name_str = name.replace(' ','')
+        fig_path = os.path.join(outdir, f'{name_str}_SED.pdf')
+        fig.savefig(fig_path, bbox_inches='tight')
+
     if return_fig_axes:
         return fig, axes
