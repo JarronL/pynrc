@@ -1,0 +1,61 @@
+JWST Installation Notes
+=======================
+
+0.0 New install of anaconda if desired.
+	- conda update conda
+	- conda update anaconda
+0.1 New environment with full anaconda packages installed:
+	- conda create --name jwst_env python=3.9 anaconda
+
+Note: May want to perform "pip cache purge" first in order to get latest versions from pypi
+
+1. pysiaf
+	- Install from GitHub "pip install -e ."
+
+2. poppy: develop branch
+	- Install from GitHub "pip install -e ."
+
+3. webbpsf: develop branch
+	- Install from GitHub "pip install -e ."
+	- Installs photutils-1.5.0 synphot-1.1.1
+
+4. jwst-background: main branch
+	- Install from GitHub "pip install -e ."
+	- Installs healpy-1.16.1
+
+5. jwst pipeline
+	- pip install asdf
+	- pip install stcal stdatamodels stpipe crds
+	- Install from GitHub "pip install -e ."
+	- Successfully installed BayesicFitting-3.0.1 asdf-astropy-0.2.2 asdf-coordinates-schemas-0.1.0 asdf-wcs-schemas-0.1.1 certifi-2022.5.18.1 drizzle-1.13.6 gwcs-0.18.2 jwst-1.7.3.dev15+gd5f9a3f9 spherical-geometry-1.2.22 stsci.image-2.3.5 stsci.imagestats-1.6.3 stsci.stimage-0.2.5 tweakwcs-0.8.0 wiimatch-0.3.1
+	
+6. webbpsf_ext: develop branch
+	- Install from GitHub "pip install -e ."
+	- Installs pysynphot-2.0.0
+
+7. pynrc: develop branch
+	- Install from GitHub "pip install -e ."
+	- Installs astroquery-0.4.6 html5lib-1.1 pyvo-1.4
+
+8. pyklip: jwst branch
+	- Install from GitHub "pip install -e ."
+	- Installs corner-2.2.1 emcee-3.1.3
+
+9. spaceKlip: some dev branch
+	- Install from GitHub "pip install -e ."
+	
+10. jwst_mast_query 
+	- Install from GitHub "pip install -e ."
+	- Installs argparse-1.4.0 
+
+NOTE: make sure to downgrade to certifi-2022.5.18.1 (and possibly jsonschema-4.9.1) if jwst datamodels package no longer works
+	- Do multiple times: "pip uninstall certifi" and "pip uninstall jsonschema"
+	- Then reinstall "pip install certifi=2022.5.18.1" and "pip install jsonschema=4.9.1"
+
+
+Documentation (RTD) stuff:
+	pip install sphinx_automodapi
+	conda install sphinx_rtd_theme --no-deps
+	conda install nbsphinx --no-deps
+
+
