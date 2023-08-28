@@ -168,16 +168,10 @@ def det_to_sci(image, detid):
         NIRCam detector/SCA ID, either 481-490 or A1-B5.
     """
     
-    # Check if SCA ID (481-489) where passed through detname rather than A1-B5
-    try:
-        detid = int(detid)
-    except ValueError:
-        detname = detid
-    else:
-        scaids = {481:'A1', 482:'A2', 483:'A3', 484:'A4', 485:'A5',
-                  486:'B1', 487:'B2', 488:'B3', 489:'B4', 490:'B5'}
-        detname = scaids[detid]
-    
+    from ..nrc_utils import get_detname
+
+    # Get detector name returns NRCA1, NRCB1, NRCA5, etc
+    detname = get_detname(detid, use_long=False)
     if 'NRC' in detname:
         detname = detname[3:]
 
