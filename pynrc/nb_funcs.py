@@ -64,7 +64,7 @@ def model_info(source, filt, dist, model_dir=''):
     
     # File name, arcsec/pix, dist (pc), wavelength (um), flux units, cen_star?
     model_dict = {
-        'file'       : model_dir+fname, 
+        'file'       : os.path.join(model_dir, fname), 
         'pixscale'   : model_scale, 
         'dist'       : dist, 
         'wavelength' : w0, 
@@ -192,7 +192,8 @@ def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None,
             args_disk_temp = None
         elif 'auto' in args_disk:
             # Convert to photons/sec in specified filter
-            args_disk_temp = model_info(sp_sci.name, filt, dist, model_dir=model_dir)
+            name = sp_sci.name.replace(' ', '')
+            args_disk_temp = model_info(name, filt, dist, model_dir=model_dir)
         else:
             args_disk_temp = args_disk
                         
@@ -259,6 +260,8 @@ def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None,
         obs.gen_wfedrift_coeff()
         # Enable mask-dependent
         obs.gen_wfemask_coeff(large_grid=large_grid)
+        # Calculate PSF offset to center
+        obs.calc_psf_offset_from_center()
 
         obs_dict[key] = obs
         fov_pix = fov_pix_orig
@@ -1520,12 +1523,15 @@ def plot_images_swlw(obs_dict, hdu_dict, filt_keys, wfe_drift, fov=10,
         data_mod = frebin(data_mod, scale=header_mod['PIXELSCL']/header['PIXELSCL'])
         rho_mod    = dist_image(data_mod, pixscale=header['PIXELSCL'])
         data_mod_r2 = data_mod*rho_mod**2
-        vmax  = np.max(data_mod)
-        vmax2 = np.max(data_mod_r2)
+        # Ignore inner pixels
+        mask_good = rho_mod > 0.15
+        vmax  = np.max(data_mod[mask_good])
+        vmax2 = np.max(data_mod_r2[mask_good])
         
         # Scale value for data
         im_temp = pad_or_cut_to_size(data_mod, hdu_sim[0].data.shape)
-        mask_good = im_temp>(0.1*vmax)
+        rho_temp = dist_image(im_temp, pixscale=header['PIXELSCL'])
+        mask_good = (im_temp>(0.1*vmax)) & (rho_temp>0.15)
         scl1 = np.nanmedian(hdu_sim[0].data[mask_good] / im_temp[mask_good])
         scl1 = np.abs(scl1)
         
@@ -1590,7 +1596,8 @@ def plot_images_swlw(obs_dict, hdu_dict, filt_keys, wfe_drift, fov=10,
         return fig, axes
 
 def plot_spectrum(src, bp_list, sptype=None, src_ref=None,
-                  return_fig_axes=False, save_fig=False, outdir='', **kwargs):
+                  return_fig_axes=False, save_fig=False, outdir='', 
+                  xr=[2.5, 5.5], **kwargs):
 
     name = src.name
     sp = src.sp_model
@@ -1609,7 +1616,6 @@ def plot_spectrum(src, bp_list, sptype=None, src_ref=None,
     # ax.xaxis.set_minor_locator(AutoMinorLocator())
 
     ax = axes[1]
-    xr = [2.5,5.5]
 
     bp = bp_list[-1]
     w = sp.wave / 1e4
@@ -1641,7 +1647,7 @@ def plot_spectrum(src, bp_list, sptype=None, src_ref=None,
     cols = plt.rcParams['axes.prop_cycle'].by_key()['color']
     for i, bp in enumerate(bp_list):
         ax2.plot(bp.wave/1e4, bp.throughput, color=cols[i+1], label=bp.name+' Bandpass')
-    ax2.set_ylim([0,ax2.get_ylim()[1]])
+    ax2.set_ylim([0,1.1*ax2.get_ylim()[1]])
     ax2.set_xlim(xr)
     ax2.set_ylabel('Bandpass Throughput')
 
