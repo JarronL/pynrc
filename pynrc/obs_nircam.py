@@ -31,7 +31,7 @@ class nrc_hci(NIRCam):
 
     def __init__(self, wind_mode='WINDOW', xpix=320, ypix=320, large_grid=True, 
                  bar_offset=None, use_ap_info=False, autogen_coeffs=True, 
-                 sgd_type=None, slew_std=0, fsm_std=20, **kwargs):
+                 sgd_type=None, slew_std=0, fsm_std=0, **kwargs):
 
         """Init function for NIRCam HCI class.
 
@@ -90,6 +90,7 @@ class nrc_hci(NIRCam):
             self.gen_wfedrift_coeff()
             # Enable mask-dependent
             self.gen_wfemask_coeff(large_grid=large_grid)
+            self.calc_psf_offset_from_center()
 
         log_prev = conf.logging_level
         setup_logging('WARN', verbose=False)
@@ -144,7 +145,8 @@ class nrc_hci(NIRCam):
 
 
     def gen_offset_psf(self, offset_r, offset_theta, sp=None, return_oversample=False, 
-        wfe_drift=None, use_coeff=True, coron_rescale=True, use_cmask=False, **kwargs):
+        wfe_drift=None, use_coeff=True, coron_rescale=True, use_cmask=False, 
+        recenter=True, **kwargs):
         """Create a PSF offset from center FoV
 
         Generate some off-axis PSF at a given (r,theta) offset from center of mask.
@@ -175,6 +177,8 @@ class nrc_hci(NIRCam):
             analytic prediction when source overlaps coronagraphic occulting 
             mask. Primarily used for planetary companion and disk PSFs.
             Default: True.
+        recenter : bool
+            Recenter the PSF to the center of the image. Default: True.
         """
 
         coords = rtheta_to_xy(offset_r, offset_theta)
@@ -194,6 +198,11 @@ class nrc_hci(NIRCam):
         else:
             psf = self.calc_psf(sp=sp, return_hdul=False, return_oversample=return_oversample, 
                 wfe_drift=wfe_drift, coord_vals=coords, coord_frame='idl', **kwargs)
+
+        # Recenter PSF?
+        if recenter:
+            sampling = self.oversample if return_oversample else 1
+            psf = self.recenter_psf(psf, sampling=sampling)
 
         # Being coronagraphic mask attenuation
         if not self.is_coron:
@@ -596,7 +605,7 @@ class obs_hci(nrc_hci):
             cen_star   = self._disk_params['cen_star']
 
             # TODO: Double-check 'APERNAME', 'DET_X', 'DET_Y', 'DET_V2', 'DET_V3'
-            # correspond to the desired observation
+            #   correspond to the desired observation
             disk_hdul = _gen_disk_hdulist(self, file, pixscale, dist, wavelength, units, cen_star, 
                                           sp_star=self.sp_sci, dist_out=self.distance, shape_out=shape_out)
             self.disk_hdulist = disk_hdul
@@ -686,7 +695,8 @@ class obs_hci(nrc_hci):
         self._det_info_ref = merge_dicts(kw1,kw2)
 
 
-    def gen_disk_psfs(self, wfe_drift=0, force=False, **kwargs):
+    def gen_disk_psfs(self, wfe_drift=0, force=False, 
+                      use_coeff=True, recenter=True, **kwargs):
         """
         Save instances of NIRCam PSFs that are incrementally offset
         from coronagraph center to convolve with a disk image.
@@ -702,19 +712,33 @@ class obs_hci(nrc_hci):
             kwargs['return_oversample'] = True
             kwargs['return_hdul'] = True
             kwargs['wfe_drift'] = wfe_drift
+            kwargs['use_coeff'] = use_coeff
+            kwargs['return_hdul'] = True
             self.psf_list = self.calc_psf_from_coeff(**kwargs)
         elif 'WB' in self.image_mask:
             # Bar mask
             kwargs['ysci_vals'] = 0
             kwargs['xsci_vals'] = np.linspace(-8,8,9) # np.linspace(-9,9,19)
             kwargs['wfe_drift'] = wfe_drift
+            kwargs['use_coeff'] = use_coeff
             self.psf_list = self.calc_psfs_grid(osamp=self.oversample, **kwargs)
         else:
             # Circular masks, just need single on-axis PSF
             kwargs['return_oversample'] = True
             kwargs['return_hdul'] = True
             kwargs['wfe_drift'] = wfe_drift
+            kwargs['use_coeff'] = use_coeff
+            kwargs['return_hdul'] = True
             self.psf_list = self.calc_psf_from_coeff(**kwargs)
+
+        # Recenter PSFs
+        if self.psf_list is not None:
+            for hdu in self.psf_list:
+                if recenter:
+                    hdu.data = self.recenter_psf(hdu.data, sampling=self.oversample)
+                    hdu.header['RECENTER'] = (True, 'PSF was recentered')
+                else:
+                    hdu.header['RECENTER'] = (False, 'PSF was not recentered')
 
         # Generate oversampled mask transmission for mask-dependent PSFs
         if (self.image_mask is not None) and (self.mask_images.get('OVERMASK') is None):
@@ -1172,9 +1196,13 @@ class obs_hci(nrc_hci):
             # Off-axis component
             hdul_rot_shift_off = deepcopy(hdul_rot_shift)
             hdul_rot_shift_off[0].data = hdul_rot_shift_off[0].data * trans
-            psf_off = self.calc_psf_from_coeff(return_oversample=True, return_hdul=True,  
+            hdul_psf_off = self.calc_psf_from_coeff(return_oversample=True, return_hdul=True,  
                                                coord_vals=(10,10), coord_frame='idl')
-            image_conv_off = convolve_image(hdul_rot_shift_off, psf_off)
+            # Recenter PSF?
+            if hdul_psfs[0].header['RECENTER']:
+                hdul_psf_off[0].data = self.recenter_psf(hdul_psf_off[0].data, sampling=self.oversample)
+            # Perform off-axis convolution
+            image_conv_off = convolve_image(hdul_rot_shift_off, hdul_psf_off)
 
             # On-axis component (closest PSF convolution)
             hdul_rot_shift_on = deepcopy(hdul_rot_shift)
@@ -1644,8 +1672,10 @@ class obs_hci(nrc_hci):
 
         # Sub-image for determining ref star scale factor
         subsize = 50 * oversample
-        xsub = np.min([subsize,xpix])
-        ysub = np.min([subsize,ypix])
+        xpix_over = xpix * oversample
+        ypix_over = ypix * oversample
+        xsub = np.min([subsize, xpix_over])
+        ysub = np.min([subsize, ypix_over])
         sub_shape = (ysub, xsub)
 
         # Option to override wfe_ref_drift and wfe_roll_drift
@@ -1657,8 +1687,7 @@ class obs_hci(nrc_hci):
             roll_angle = 0
         else:
             roll_angle = PA2 - PA1
-        xpix_over = xpix * oversample
-        ypix_over = ypix * oversample
+
 
         # Bar offset in arcsec
         bar_offset = self.bar_offset
@@ -1686,7 +1715,8 @@ class obs_hci(nrc_hci):
         im_star = self.gen_offset_psf(r, th, sp=self.sp_sci, return_oversample=True, 
                                       wfe_drift=wfe_drift0, **kwargs)
         # Stellar cut-out for reference scaling
-        im_star_sub = pad_or_cut_to_size(im_star, sub_shape)
+        # im_star_sub = pad_or_cut_to_size(im_star, sub_shape)
+        im_star_sub = crop_image(im_star, sub_shape)
 
         # Expand to full size 
         #   - Not needed because this is correctly handled in gen_slope_image
@@ -1706,8 +1736,7 @@ class obs_hci(nrc_hci):
             xcen_baroff = xcen  # Use SIAF aperture location
         else:
             # Otherwise assumed mask is in center of subarray for simplicity
-            # The 0.5 offset indicates PSF is centered in middle of pixel
-            # TODO: How does this interact w/ odd/even PSFs??
+            # For even arrays, the pixel is then centered on the boundary between two pixels
             xcen, ycen = (xpix/2. - 0.5, ypix/2. - 0.5)
             xcen_baroff = xcen + bar_offpix  # Include bar offset position
             # Add bar offset
@@ -1732,14 +1761,16 @@ class obs_hci(nrc_hci):
         # Include disk and companion flux for calculating the reference scale factor
         # Use summed roll image; shift star to center of array and crop
         if ref_scale_all:
-            # Get dither offsets
+            # Get dither offsets that exist within im_roll1
             offx_asec, offy_asec = xyoff_asec1
             delx_asec_dith = delx_asec + offx_asec 
             dely_asec_dith = dely_asec + offy_asec
             delx_over, dely_over = np.array([delx_asec_dith, dely_asec_dith]) / pixscale_over
-            # Shift and crop star+disk+planets image
-            im_star_sub = pad_or_cut_to_size(im_roll1, sub_shape, interp=interp,
-                                             offset_vals=(-1*dely_over,-1*delx_over))
+            # Shift image back to center and crop star+disk+planets image
+            im_star_sub = crop_image(im_star, sub_shape, delx=-1*delx_over, dely=-1*dely_over,
+                                     interp=interp, shift_func=fshift)
+            # im_star_sub = pad_or_cut_to_size(im_roll1, sub_shape, interp=interp,
+            #                                  offset_vals=(-1*dely_over,-1*delx_over))
 
         # Fix saturated pixels
         if fix_sat:
@@ -1782,8 +1813,10 @@ class obs_hci(nrc_hci):
 
             # Expand to the same size
             new_shape = tuple(np.max(np.array([diff_r1_rot.shape, diff_r2_rot.shape]), axis=0))
-            diff_r1_rot = pad_or_cut_to_size(diff_r1_rot, new_shape, fill_val=np.nan)
-            diff_r2_rot = pad_or_cut_to_size(diff_r2_rot, new_shape, fill_val=np.nan)
+            diff_r1_rot = crop_image(diff_r1_rot, new_shape, fill_val=np.nan)
+            diff_r2_rot = crop_image(diff_r2_rot, new_shape, fill_val=np.nan)
+            # diff_r1_rot = pad_or_cut_to_size(diff_r1_rot, new_shape, fill_val=np.nan)
+            # diff_r2_rot = pad_or_cut_to_size(diff_r2_rot, new_shape, fill_val=np.nan)
 
             # Replace NaNs with values from other differenced mask
             nan_mask = np.isnan(diff_r1_rot)
@@ -1854,7 +1887,8 @@ class obs_hci(nrc_hci):
         im_ref = self.gen_offset_psf(r, th, sp=self.sp_ref, return_oversample=True, 
                                      wfe_drift=wfe_drift_ref, **kwargs)
         # Stellar cut-out for reference scaling
-        im_ref_sub = pad_or_cut_to_size(im_ref, sub_shape)
+        # im_ref_sub = pad_or_cut_to_size(im_ref, sub_shape)
+        im_ref_sub = crop_image(im_ref, sub_shape)
         # Expand to full size
         #   - Not needed because this is correctly handled in gen_slope_image
         #   - Run into undesired cropping effects if PSF is larger than FoV and significantly shifted 
@@ -1911,8 +1945,10 @@ class obs_hci(nrc_hci):
                 # Create stellar PSF (Roll 2) centered in image
                 im_star2 = self.gen_offset_psf(r, th, sp=self.sp_sci, return_oversample=True, 
                                                wfe_drift=wfe_drift2, **kwargs)
-                im_star2_sub = pad_or_cut_to_size(im_star2, sub_shape)
-                im_star2     = pad_or_cut_to_size(im_star2, (ypix_over, xpix_over))
+                im_star2_sub = crop_image(im_star2, sub_shape)
+                im_star2     = crop_image(im_star2, (ypix_over, xpix_over))
+                # im_star2_sub = pad_or_cut_to_size(im_star2, sub_shape)
+                # im_star2     = pad_or_cut_to_size(im_star2, (ypix_over, xpix_over))
 
 
             # Create Roll2 slope image
@@ -1927,8 +1963,10 @@ class obs_hci(nrc_hci):
                 dely_asec_dith = dely_asec + offy_asec
                 delx_over, dely_over = np.array([delx_asec_dith, dely_asec_dith]) / pixscale_over
                 # Shift and crop star+disk+planets image
-                im_star2_sub = pad_or_cut_to_size(im_roll2, sub_shape, interp=interp,
-                                                  offset_vals=(-1*dely_over,-1*delx_over))
+                im_star2_sub = crop_image(im_roll2, sub_shape, delx=-1*delx_over, dely=-1*dely_over,
+                                          interp=interp, shift_func=fshift)
+                # im_star2_sub = pad_or_cut_to_size(im_roll2, sub_shape, interp=interp,
+                #                                   offset_vals=(-1*dely_over,-1*delx_over))
 
             # Fix saturated pixels
             if fix_sat:
@@ -1959,10 +1997,14 @@ class obs_hci(nrc_hci):
 
             # Expand all images to the same size
             new_shape = tuple(np.max(np.array([diff1_r1_rot.shape, diff1_r2_rot.shape]), axis=0))
-            diff1_r1_rot = pad_or_cut_to_size(diff1_r1_rot, new_shape, np.nan)
-            diff2_r1_rot = pad_or_cut_to_size(diff2_r1_rot, new_shape, np.nan)
-            diff1_r2_rot = pad_or_cut_to_size(diff1_r2_rot, new_shape, np.nan)
-            diff2_r2_rot = pad_or_cut_to_size(diff2_r2_rot, new_shape, np.nan)
+            diff1_r1_rot = crop_image(diff1_r1_rot, new_shape, fill_val=np.nan)
+            diff2_r1_rot = crop_image(diff2_r1_rot, new_shape, fill_val=np.nan)
+            diff1_r2_rot = crop_image(diff1_r2_rot, new_shape, fill_val=np.nan)
+            diff2_r2_rot = crop_image(diff2_r2_rot, new_shape, fill_val=np.nan)
+            # diff1_r1_rot = pad_or_cut_to_size(diff1_r1_rot, new_shape, np.nan)
+            # diff2_r1_rot = pad_or_cut_to_size(diff2_r1_rot, new_shape, np.nan)
+            # diff1_r2_rot = pad_or_cut_to_size(diff1_r2_rot, new_shape, np.nan)
+            # diff2_r2_rot = pad_or_cut_to_size(diff2_r2_rot, new_shape, np.nan)
 
             # Replace NaNs with values from other differenced mask
             nan_mask = np.isnan(diff1_r1_rot)
@@ -2196,7 +2238,6 @@ class obs_hci(nrc_hci):
         rr, nstds = radial_std(data, pixscale=header['PIXELSCL'], oversample=header['OSAMP'], 
                                supersample=False, func=func_std, nsig=nsig, **kwargs)
 
-        interp = 'linear' if ('FULL' in self.det_info['wind_mode']) else 'cubic'
         # Normalize by psf max value
         if no_ref:
             # No reference image subtraction; pure roll subtraction
@@ -2205,6 +2246,7 @@ class obs_hci(nrc_hci):
             off_vals = []
             max_vals = []
             rvals_pix = np.insert(np.arange(1,xpix/2,5), 0, 0.1)
+            interp = 'linear' #if ('FULL' in self.det_info['wind_mode']) else 'cubic'
             for roff_pix in rvals_pix:
                 roff_asec = roff_pix * pixscale
                 psf1 = self.gen_offset_psf(roff_asec, 0, return_oversample=False, 
@@ -2234,7 +2276,8 @@ class obs_hci(nrc_hci):
             psf_max = 10**psf_max_log
 
         elif not self.is_coron: # Direct imaging
-            psf = self.calc_psf_from_coeff(return_oversample=False, return_hdul=False)
+            psf = self.gen_offset_psf(return_oversample=False, return_hdul=False)
+            # psf = self.calc_psf_from_coeff(return_oversample=False, return_hdul=False)
             psf_max = psf.max()
 
         elif self.image_mask[-1]=='R': # Round masks
@@ -2409,7 +2452,7 @@ class obs_hci(nrc_hci):
 
 
 def _gen_disk_hdulist(inst, file, pixscale, dist, wavelength, units, cen_star, 
-    sp_star=None, dist_out=None, shape_out=None):
+    sp_star=None, dist_out=None, shape_out=None, inner_pix=1, **kwargs):
     """Create a correctly scaled disk model image.
 
     Rescale disk model flux to current pixel scale and distance.
@@ -2443,19 +2486,24 @@ def _gen_disk_hdulist(inst, file, pixscale, dist, wavelength, units, cen_star,
     image = disk_hdul[0].data
     image_rho = dist_image(image)
     ind_max = (image == image.max())
-    inner_pix = 3 * oversample
+    inner_pix = inner_pix * oversample
     if (image[image_rho<inner_pix].max() == image.max()) and (image.max()>1000*image[~ind_max].max()):
-        image[image_rho < inner_pix] = 0
+        r1 = inner_pix
+        r2 = r1 + 1.5
+        mean_inner = np.median(image[(image_rho >= r1) & (image_rho <= r2)])
+
+        # Make sure we're not adding too much flux
+        ind_inner = image_rho < inner_pix
+        if mean_inner * ind_inner.sum() > image[ind_inner].sum():
+            mean_inner = (image[ind_inner] - image.max()) / ind_inner.sum()
+        image[ind_inner] = mean_inner
 
     # Crop image to minimum size plus some border
     if shape_out is None:
         im_disk = crop_zero_rows_cols(disk_hdul[0].data, symmetric=True)
         sh_new = np.array(im_disk.shape) + 20
-        disk_hdul[0].data = pad_or_cut_to_size(im_disk, sh_new)
-        # ydata, xdata = disk_hdul[0].data.shape
-        # ynew = np.max([ypix, ydata])
-        # xnew = np.max([xpix, xdata])
-        # disk_hdul[0].data = pad_or_cut_to_size(disk_hdul[0].data, (ynew,xnew))
+        disk_hdul[0].data = crop_image(im_disk, sh_new)
+        # disk_hdul[0].data = pad_or_cut_to_size(im_disk, sh_new)
 
     return disk_hdul
 
