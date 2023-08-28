@@ -535,9 +535,11 @@ class NIRCam(NIRCam_ext):
             self._validate_wheels()
             self.update_detectors(**kwargs)
             ap_name_rec = self.get_siaf_apname()
-            self.update_from_SIAF(ap_name_rec, pupil_mask=pupil_mask)
+            self.update_from_SIAF(ap_name_rec, image_mask=image_mask,
+                                  pupil_mask=pupil_mask)
         else:
-            self.update_from_SIAF(apname, pupil_mask=pupil_mask, **kwargs)
+            self.update_from_SIAF(apname, image_mask=image_mask, 
+                                  pupil_mask=pupil_mask, **kwargs)
 
             # Default to no jitter for coronagraphy
             self.options['jitter'] = None if self.is_coron else 'gaussian'
@@ -552,6 +554,9 @@ class NIRCam(NIRCam_ext):
         self._fov_bg_match = False
         # if autogen_coeffs:
         self._update_bg_class(**kwargs)
+
+        # Initialize PSF offset to center of image
+        self.psf_offset_to_center = np.array([0,0])
 
         # Check aperture info is consistent if not explicitly specified
         # TODO: This might fail because self.Detector has not yet been initialized??
@@ -1231,7 +1236,7 @@ class NIRCam(NIRCam_ext):
         
         return subarray_name
         
-    def update_from_SIAF(self, apname, pupil_mask=None, **kwargs):
+    def update_from_SIAF(self, apname, image_mask=None, pupil_mask=None, **kwargs):
         """Update detector properties based on SIAF aperture"""
 
         if apname is None:
@@ -1267,18 +1272,24 @@ class NIRCam(NIRCam_ext):
         x0, y0 = np.array(siaf_ap.dms_corner()) - 1
               
         # Update pupil and mask info
-        image_mask = None
         ND_acq = False
         filter = None
         # Coronagraphic mask observations
-        if 'MASK' in apname:
+        if ('MASK' in apname) or ('FULL_WEDGE' in apname):
             # Set default pupil
             if pupil_mask is None:
-                pupil_mask = 'WEDGELYOT' if 'WB' in apname else 'CIRCLYOT'
+                if ('WB' in apname) or ('BAR' in apname):
+                    pupil_mask = 'WEDGELYOT'
+                elif ('210R' in apname) or ('335R' in apname) or ('430R' in apname) or ('RND' in apname):
+                    pupil_mask = 'CIRCLYOT'
+                else:
+                    _log.warning(f'No Lyot pupil setting for {apname}')
 
             # Set mask occulter for all full arrays (incl. TAs) and science subarrays
             # Treats full array TAs like a full coronagraphic observation
-            if ('FULL' in apname) or ('_MASK' in apname):
+            if image_mask is not None:
+                pass
+            elif ('FULL' in apname) or ('_MASK' in apname):
                 if ('MASKSWB' in apname):
                     image_mask  = 'MASKSWB'
                 elif ('MASKLWB' in apname):
@@ -1403,6 +1414,50 @@ class NIRCam(NIRCam_ext):
 
         setup_logging(log_prev, verbose=False)
         return res
+    
+
+    def calc_psf_offset_from_center(self, use_coeff=True):
+        """Calculate the offset necessary to shift PSF to array center
+        
+        Returns values in detector-sampled pixels.
+
+        The array center is the middle of a pixel for odd images, 
+        and at pixel boundaries for even images.
+        """
+
+        from webbpsf_ext import imreg_tools
+
+        calc_psf_func = self.calc_psf_from_coeff if use_coeff else self.calc_psf
+        psf_over = calc_psf_func(return_oversample=True, return_hdul=False, use_bg_psf=True)
+
+        oversample = self.oversample
+
+        # Determine shift amount to place PSF in center of array
+        if oversample==1:
+            halfwidth=1
+        elif oversample<=3:
+            # Prevent special case COM algorithm from not converging
+            if ('LWB' in self.aperturename) and 'F4' in self.filter:
+                halfwidth=5
+            else:
+                halfwidth=3
+        elif oversample<=5:
+            halfwidth=7
+        _, xyoff_psf_over = imreg_tools.recenter_psf(psf_over, niter=3, halfwidth=halfwidth)
+
+        # Convert to detector pixels
+        xyoff_psf = np.array(xyoff_psf_over) / oversample
+
+        self.psf_offset_to_center = xyoff_psf
+        # print(f"PSF offset to center: {xyoff_psf[0]:.3f}, {xyoff_psf[1]:.3f}")
+
+    def recenter_psf(self, psf, sampling=1, 
+                     shift_func=fourier_imshift, interp='cubic', **kwargs):
+        """Recenter PSF to array center"""
+
+        xsh_to_cen, ysh_to_cen = self.psf_offset_to_center * sampling
+        kwargs['interp'] = interp
+        return shift_func(psf, xsh_to_cen, ysh_to_cen, **kwargs)
 
 
     def sat_limits(self, sp=None, bp_lim=None, units='vegamag', well_frac=0.8,
