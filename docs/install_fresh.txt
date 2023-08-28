@@ -40,7 +40,7 @@ Assume anaconda python >3.8 installation on Linux/Mac
    Install healpy: conda install healpy
       If healpy asks to downgrade any dependencies, cancel and install any 
       missing dependencies manually, then try again  --no-deps flag:
-         conda install healpy --no_deps
+         conda install healpy --no-deps
    Install jwst_backgrounds: pip install -e .
 
 5. jwst pipeline
