@@ -172,7 +172,7 @@ def det_to_sci(image, detid):
     from ..nrc_utils import get_detname
 
     # Get detector name returns NRCA1, NRCB1, NRCA5, etc
-    detname = get_detname(detid)
+    detname = get_detname(detid, use_long=False)
     if 'NRC' in detname:
         detname = detname[3:]
 
