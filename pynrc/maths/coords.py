@@ -163,21 +163,16 @@ def det_to_sci(image, detid):
     Parameters
     ----------
     image : ndarray
-        Input image or cube to tranform.
+        Input image or cube to transform.
     detid : int or str
-        NIRCam detector/SCA ID, either 481-490 or A1-B5.
+        NIRCam detector/SCA ID, either 481-490, NRCA1-NRCB5, or A1-B5.
+        ALONG and BLONG variations are also accepted.
     """
     
-    # Check if SCA ID (481-489) where passed through detname rather than A1-B5
-    try:
-        detid = int(detid)
-    except ValueError:
-        detname = detid
-    else:
-        scaids = {481:'A1', 482:'A2', 483:'A3', 484:'A4', 485:'A5',
-                  486:'B1', 487:'B2', 488:'B3', 489:'B4', 490:'B5'}
-        detname = scaids[detid]
-    
+    from ..nrc_utils import get_detname
+
+    # Get detector name returns NRCA1, NRCB1, NRCA5, etc
+    detname = get_detname(detid)
     if 'NRC' in detname:
         detname = detname[3:]
 
@@ -214,9 +209,10 @@ def sci_to_det(image, detid):
     Parameters
     ----------
     image : ndarray
-        Input image or cube to tranform.
+        Input image or cube to transform.
     detid : int or str
-        NIRCam detector/SCA ID, either 481-490 or A1-B5.
+        NIRCam detector/SCA ID, either 481-490, NRCA1-NRCB5, or A1-B5.
+        ALONG and BLONG variations are also accepted.
     """
     
     # Flips occur along the same axis and manner as in det_to_sci()
