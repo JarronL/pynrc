@@ -1335,6 +1335,11 @@ class NIRCam(NIRCam_ext):
             inds = [pos for pos, char in enumerate(apname) if char == '_']
             # Filter is always appended to end, but can have different string sizes (F322W2)
             filter = apname[inds[-1]+1:]
+            # If filter doesn't make sense with channel
+            if channel=='SW' and filter not in self._filters_sw:
+                filter = None
+            if channel=='LW' and filter not in self._filters_lw:
+                filter = None
 
         # Save to internal variables
         self.pupil_mask = pupil_mask

@@ -118,9 +118,8 @@ class nrc_hci(NIRCam):
         if 'TA' in self.siaf_ap.AperName:
             bar_offset = 0
         elif self._bar_offset is None:
-            # bar_offset, _ = offset_bar(self._filter, self.image_mask)
-            narrow = ('NARROW' in self.siaf_ap.AperName)
-            bar_offset = self.get_bar_offset(narrow=narrow)
+            # Bar offset should get auto-determined based on aperture name info
+            bar_offset = self.get_bar_offset()
             bar_offset = 0 if bar_offset is None else bar_offset # Circular masks return None
         else:
             bar_offset = self._bar_offset
