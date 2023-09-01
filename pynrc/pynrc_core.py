@@ -560,7 +560,11 @@ class NIRCam(NIRCam_ext):
 
         # Check aperture info is consistent if not explicitly specified
         # TODO: This might fail because self.Detector has not yet been initialized??
-        ap_name_rec = self.get_siaf_apname()
+        try:
+            ap_name_rec = self.get_siaf_apname()
+        except AttributeError:
+            raise AttributeError(f'Detector might not be initialized bececause {apname} is not valid.')
+
         if ((apname is None) and (ap_name_rec != self.aperturename) and
             not (('FULL' in self.aperturename) and ('TAMASK' in self.aperturename))):
             # Warning strings
@@ -1124,7 +1128,9 @@ class NIRCam(NIRCam_ext):
         if is_coron:
             wstr = 'FULL_' if wind_mode=='FULL' else ''
             key = 'NRC{}_{}{}'.format(detid,wstr,self.image_mask)
-            if ('WB' in self.image_mask) and (self.module=='A') and (self.filter in swb_filters+lwb_filters):
+            if ('LWB' in self.image_mask) and (self.module=='A') and (self.filter in lwb_filters):
+                key = key + '_{}'.format(self.filter)
+            elif ('SWB' in self.image_mask) and (self.module=='A') and (self.filter in swb_filters):
                 key = key + '_{}'.format(self.filter)
             if wind_mode=='STRIPE':
                 key = None
@@ -1245,7 +1251,7 @@ class NIRCam(NIRCam_ext):
 
         if not (apname in self.siaf_ap_names):
             # raise ValueError(f'Cannot find {apname} in siaf.apernames list.')
-            _log.warn(f'update_from_SIAF: Cannot find {apname} in siaf.apernames list. Returing...')
+            _log.warn(f'update_from_SIAF: Cannot find {apname} in siaf.apernames list. Returning...')
             return
             
         if ('NRCALL' in apname) or ('NRCAS' in apname) or ('NRCBS' in apname):
