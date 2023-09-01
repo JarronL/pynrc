@@ -542,7 +542,7 @@ class NIRCam(NIRCam_ext):
                                   pupil_mask=pupil_mask, **kwargs)
 
             # Default to no jitter for coronagraphy
-            self.options['jitter'] = None if self.is_coron else 'gaussian'
+            # self.options['jitter'] = None if self.is_coron else 'gaussian'
 
         # Generate PSF coefficients
         if autogen_coeffs:
