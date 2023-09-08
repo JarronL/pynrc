@@ -1436,7 +1436,7 @@ class NIRCam(NIRCam_ext):
         and at pixel boundaries for even images.
         """
 
-        from webbpsf_ext import imreg_tools
+        from webbpsf_ext.imreg_tools import recenter_psf
 
         calc_psf_func = self.calc_psf_from_coeff if use_coeff else self.calc_psf
         psf_over = calc_psf_func(return_oversample=True, return_hdul=False, use_bg_psf=True)
@@ -1454,7 +1454,7 @@ class NIRCam(NIRCam_ext):
                 halfwidth=3
         elif oversample<=5:
             halfwidth=7
-        _, xyoff_psf_over = imreg_tools.recenter_psf(psf_over, niter=3, halfwidth=halfwidth)
+        _, xyoff_psf_over = recenter_psf(psf_over, niter=3, halfwidth=halfwidth)
 
         # Convert to detector pixels
         xyoff_psf = np.array(xyoff_psf_over) / oversample
