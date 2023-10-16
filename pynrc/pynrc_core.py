@@ -1586,7 +1586,7 @@ class NIRCam(NIRCam_ext):
         return satlim
 
 
-    def saturation_levels(self, sp, full_size=True, ngroup=2, image=None, charge_migration=True, **kwargs):
+    def saturation_levels(self, sp=None, full_size=True, ngroup=2, image=None, charge_migration=True, **kwargs):
         """ Saturation levels
         
         Create image showing level of saturation for each pixel.
