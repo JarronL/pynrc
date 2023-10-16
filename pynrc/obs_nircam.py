@@ -610,12 +610,15 @@ class obs_hci(nrc_hci):
             self.disk_hdulist = disk_hdul
 
 
-    # Any time update_detectors is called, also call gen_ref_det()
-    def update_detectors(self, verbose=False, **kwargs):
-        super().update_detectors(verbose=verbose, **kwargs)
+    def update_detectors(self, verbose=False, do_ref=False, **kwargs):
 
-        # Updates ref detector window size
-        self.gen_ref_det()
+        if do_ref:
+            self.update_detectors_ref(verbose=verbose, **kwargs)
+        else:
+            # Any time update_detectors is called, also call gen_ref_det()
+            super().update_detectors(verbose=verbose, **kwargs)
+            # Updates ref detector window size
+            self.gen_ref_det()
 
     def update_detectors_ref(self, **kwargs):
         """
@@ -2448,6 +2451,25 @@ class obs_hci(nrc_hci):
             sat_level = do_charge_migration(sat_level, **kwargs)
 
         return sat_level
+
+    def sensitivity(self, nsig=10, units=None, sp=None, verbose=False, do_ref=False, **kwargs):
+
+        # Use reference target detector config?
+        if do_ref:
+            det_temp = self.Detector
+            self.Detector = self.Detector_ref
+
+        kwargs['nsig'] = nsig
+        kwargs['units'] = units
+        kwargs['sp'] = sp
+        kwargs['verbose'] = verbose
+        bglim = super().sensitivity(**kwargs)
+
+        # Return to original detector
+        if do_ref:
+            self.Detector = det_temp
+
+        return bglim
 
 
 def _gen_disk_hdulist(inst, file, pixscale, dist, wavelength, units, cen_star, 
