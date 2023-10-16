@@ -173,7 +173,8 @@ def disk_rim_model(a_asec, b_asec, pa=0, sig_asec=0.1, flux_frac=0.5,
 
 def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None, 
             wind_mode='WINDOW', subsize=None, fov_pix=None, verbose=False, narrow=False,
-            model_dir=None, large_grid=True, sgd_type=None, slew_std=0, fsm_std=0, **kwargs):
+            model_dir=None, large_grid=True, sgd_type=None, slew_std=0, fsm_std=0, 
+            quiet=False, **kwargs):
     """
     For a given WFE drift and series of filters, create a list of 
     NIRCam observations.
@@ -185,7 +186,8 @@ def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None,
     for filt, mask, pupil in filt_list:
         # Create identification key
         key = make_key(filt, mask=mask, pupil=pupil)
-        print(key)
+        if not quiet:
+            print(key)
 
         # Disk Model
         if args_disk is None:
@@ -287,7 +289,11 @@ def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None,
                 obs.sp_ref = obs.sp_sci
                 
     # Generation mask position dependent PSFs
-    for key in tqdm(obs_dict.keys(), desc='Obs', leave=False):
+    if quiet or (args_disk_temp is None):
+        iter_vals = obs_dict.keys()
+    else:
+        iter_vals = tqdm(obs_dict.keys(), desc='Obs', leave=False)
+    for key in iter_vals:
         obs_dict[key].gen_disk_psfs()
 
     return obs_dict
@@ -376,7 +382,7 @@ def do_opt(obs_dict, tacq_max=1800, **kwargs):
 
 
 # For each filter setting, generate a series of contrast curves at different WFE values
-def do_contrast(obs_dict, wfe_list, filt_keys, nsig=5, roll_angle=10, verbose=False, **kwargs):
+def do_contrast(obs_dict, wfe_list, filt_keys, nsig=5, roll_angle=10, verbose=True, **kwargs):
     """
     kwargs to pass to calc_contrast() and their defaults:
 
@@ -390,15 +396,24 @@ def do_contrast(obs_dict, wfe_list, filt_keys, nsig=5, roll_angle=10, verbose=Fa
     ref_scale_all = False
     """
     contrast_all = {}
-    for i in trange(len(filt_keys), desc='Observations'):
+    if verbose:
+        iter_vals = trange(len(filt_keys), leave=False)
+    else:
+        iter_vals = range(len(filt_keys))
+
+    for i in iter_vals:
         key = filt_keys[i]
         obs = obs_dict[key]
         if verbose: 
-            print(key)
+            iter_vals.set_description(key, refresh=True)
 
         # Stores tuple of (Radial Distances, Contrast, and Sensitivity) for each WFE drift
         curves = []
-        for wfe_drift in tqdm(wfe_list, leave=False, desc='WFE Drift'):
+        if verbose:
+            jter_vals = tqdm(wfe_list, leave=False, desc='WFE Drift')
+        else:
+            jter_vals = wfe_list
+        for wfe_drift in jter_vals:
             
             no_ref = kwargs.get('no_ref', False)
             if no_ref:
@@ -454,10 +469,13 @@ def do_gen_hdus(obs_dict, filt_keys, wfe_ref_drift, wfe_roll_drift,
 
 def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True, 
                   charge_migration=True, niter=5, satmax=1, corners=True,
-                  plot=True, xylim=2.5, return_fig_axes=False, **kwargs):
+                  plot=True, xylim=2.5, return_fig_axes=False, return_more=False,
+                  **kwargs):
 
     """Only for obs.hci classes
     
+    return_more will return (sat_rad, sci_levels2_max, ref_levels2_max)
+
     keywords of interest: charge_migration, satmax, niter, corners
     """
 
@@ -625,11 +643,15 @@ def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True,
 
         fig.tight_layout()
         
+    if return_more:
+        res = (sat_rad, sci_levels2_max, ref_levels2_max)
+    else:
+        res = sat_rad
         
     if return_fig_axes and plot:
-        return (fig, axes), sat_rad
+        return (fig, axes), res
     else:
-        return sat_rad
+        return res
     
 ###########################################
 # Simulated Data
