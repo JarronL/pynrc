@@ -24,6 +24,7 @@ from webbpsf_ext.coords import plotAxes
 # New stuff from webbpsf_ext
 from webbpsf_ext.coords import gen_sgd_offsets, get_idl_offset, radec_offset
 from webbpsf_ext.coords import jwst_point
+from webbpsf_ext.coron_masks import det_to_sci, sci_to_det
 
 ###########################################################################
 #
@@ -153,67 +154,3 @@ def siafap_sci_coords(inst, coord_vals=None, coord_frame='tel'):
 
     return (detector, detector_position, apname)
 
-def det_to_sci(image, detid):
-    """ Detector to science orientation
-    
-    Reorient image from detector coordinates to 'sci' coordinate system.
-    This places +V3 up and +V2 to the LEFT. Detector pixel (0,0) is assumed 
-    to be in the bottom left. Simply performs axes flips.
-    
-    Parameters
-    ----------
-    image : ndarray
-        Input image or cube to transform.
-    detid : int or str
-        NIRCam detector/SCA ID, either 481-490, NRCA1-NRCB5, or A1-B5.
-        ALONG and BLONG variations are also accepted.
-    """
-    
-    from ..nrc_utils import get_detname
-
-    # Get detector name returns NRCA1, NRCB1, NRCA5, etc
-    detname = get_detname(detid, use_long=False)
-    if 'NRC' in detname:
-        detname = detname[3:]
-
-    xflip = ['A1','A3','A5','B2','B4']
-    yflip = ['A2','A4','B1','B3','B5']
-
-    # Handle multiple array of images
-    ndim = len(image.shape)
-    if ndim==2:
-        # Convert to image cube
-        ny, nx = image.shape
-        image = image.reshape([1,ny,nx])
-    
-    for s in xflip:
-        if detname in s:
-            image = image[:,:,::-1] 
-    for s in yflip:
-        if detname in s:
-            image = image[:,::-1,:] 
-    
-    # Convert back to 2D if input was 2D
-    if ndim==2:
-        image = image.reshape([ny,nx])
-
-    return image
-    
-def sci_to_det(image, detid):
-    """ Science to detector orientation
-    
-    Reorient image from 'sci' coordinates to detector coordinate system.
-    Assumes +V3 up and +V2 to the LEFT. The result places the detector
-    pixel (0,0) in the bottom left. Simply performs axes flips.
-
-    Parameters
-    ----------
-    image : ndarray
-        Input image or cube to transform.
-    detid : int or str
-        NIRCam detector/SCA ID, either 481-490, NRCA1-NRCB5, or A1-B5.
-        ALONG and BLONG variations are also accepted.
-    """
-    
-    # Flips occur along the same axis and manner as in det_to_sci()
-    return det_to_sci(image, detid)
