@@ -299,7 +299,7 @@ def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None,
     return obs_dict
 
 
-def obs_optimize(obs_dict, sp_opt=None, well_levels=None, tacq_max=1800, **kwargs):
+def obs_optimize(obs_dict, sp_opt=None, well_levels=None, tacq_max=2000, **kwargs):
     """
     Perform ramp optimization on each science and reference observation
     in a list of filter observations. Updates the detector MULTIACCUM
@@ -313,6 +313,8 @@ def obs_optimize(obs_dict, sp_opt=None, well_levels=None, tacq_max=1800, **kwarg
     ng_max = 10
     """
 
+    verbose = kwargs.pop('verbose', True)
+
     # A very faint bg object on which to maximize S/N
     # If sp_opt is not set, then default to a 20th magnitude flat source
     if sp_opt is None:
@@ -321,25 +323,24 @@ def obs_optimize(obs_dict, sp_opt=None, well_levels=None, tacq_max=1800, **kwarg
     
     # Some observations may saturate, so define a list of  maximum well level
     # values that we will incrementally check until a ramp setting is found
-    # that meets the contraints.
+    # that meets the constraints.
     if well_levels is None:
         well_levels = [0.8, 1.5, 3.0, 5.0, 10.0, 20.0, 100.0, 150.0, 300.0, 500.0]
-   
+
+    if verbose:
+        print(['Pattern', 'NGRP', 'NINT', 't_int', 't_exp', 't_acq', 'SNR', 'Well', 'eff'])
+
     filt_keys = list(obs_dict.keys())
     filt_keys.sort()
-    print(['Pattern', 'NGRP', 'NINT', 't_int', 't_exp', 't_acq', 'SNR', 'Well', 'eff'])
     for j, key in enumerate(filt_keys):
-        print('')
-        print(key)
+        if verbose:
+            print('')
+            print(key)
 
         obs = obs_dict[key]
-        obs_ref = obs.nrc_ref
 
         sp_sci, sp_ref = (obs.sp_sci, obs.sp_ref)
         
-        # SW filter piggy-back on two LW filters, so 2 x tacq
-        is_SW = obs.bandpass.avgwave()/1e4 < 2.5
-
         # Ramp optimization for both science and reference targets
         for j, sp in enumerate([sp_sci, sp_ref]):
             i = nrow = 0
@@ -356,7 +357,8 @@ def obs_optimize(obs_dict, sp_opt=None, well_levels=None, tacq_max=1800, **kwarg
             strout = '{:10} {:4.0f} {:4.0f}'.format(vals[0], vals[1], vals[2])
             for v in vals[3:]:
                 strout = strout + ', {:.4f}'.format(v)
-            print(strout)
+            if verbose:
+                print(strout)
 
             # SW filter piggy-back on two LW filters, so 2 x tacq
             # is_SW = obs.bandpass.avgwave()/1e4 < 2.5
@@ -364,10 +366,12 @@ def obs_optimize(obs_dict, sp_opt=None, well_levels=None, tacq_max=1800, **kwarg
             #     v3 *= 2
             
             # Coronagraphic observations have two roll positions, so cut NINT by 2
-            if obs.image_mask is not None: 
-                v3 = int(v3/2) 
-            obs2 = obs if j==0 else obs_ref
-            obs2.update_detectors(read_mode=v1, ngroup=v2, nint=v3)
+            # if obs.image_mask is not None: 
+            #     v3 = int(v3/2) 
+            if j==0:
+                obs.update_detectors(read_mode=v1, ngroup=v2, nint=v3)
+            else:
+                obs.update_detectors(read_mode=v1, ngroup=v2, nint=v3, do_ref=True)
         
 
 
