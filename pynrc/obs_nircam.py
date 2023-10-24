@@ -2501,6 +2501,10 @@ def _gen_disk_hdulist(inst, file, pixscale, dist, wavelength, units, cen_star,
     # correspond to the desired observation
     disk_hdul = make_disk_image(inst, disk_params, sp_star=sp_star, pixscale_out=pixscale_out,
                                 dist_out=dist_out, shape_out=shape_out)
+    
+    # Ensure disk image is only 2D
+    if len(disk_hdul[0].data.shape) > 2:
+        disk_hdul[0].data = disk_hdul[0].data[0]
 
     # Get rid of the central star flux
     # and anything interior to a few pixels
