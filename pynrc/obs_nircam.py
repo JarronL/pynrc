@@ -2459,6 +2459,9 @@ class obs_hci(nrc_hci):
             det_temp = self.Detector
             self.Detector = self.Detector_ref
 
+        if sp is None:
+            sp = self.sp_ref if do_ref else self.sp_sci
+
         kwargs['nsig'] = nsig
         kwargs['units'] = units
         kwargs['sp'] = sp
