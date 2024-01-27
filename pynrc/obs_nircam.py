@@ -181,6 +181,7 @@ class nrc_hci(NIRCam):
         """
 
         coords = rtheta_to_xy(offset_r, offset_theta)
+        kwargs['return_hdul'] = False
 
         # FULL TA coronagraphic masks require siaf_ap to be passed
         # since we want offset relative to TA position rather than
@@ -193,9 +194,9 @@ class nrc_hci(NIRCam):
         if use_coeff:
             psf = self.calc_psf_from_coeff(sp=sp, return_oversample=return_oversample, 
                 wfe_drift=wfe_drift, coord_vals=coords, coord_frame='idl', 
-                coron_rescale=coron_rescale, return_hdul=False, **kwargs)
+                coron_rescale=coron_rescale, **kwargs)
         else:
-            psf = self.calc_psf(sp=sp, return_hdul=False, return_oversample=return_oversample, 
+            psf = self.calc_psf(sp=sp, return_oversample=return_oversample, 
                 wfe_drift=wfe_drift, coord_vals=coords, coord_frame='idl', **kwargs)
 
         # Recenter PSF?
@@ -2278,8 +2279,7 @@ class obs_hci(nrc_hci):
             psf_max = 10**psf_max_log
 
         elif not self.is_coron: # Direct imaging
-            psf = self.gen_offset_psf(return_oversample=False, return_hdul=False)
-            # psf = self.calc_psf_from_coeff(return_oversample=False, return_hdul=False)
+            psf = self.gen_offset_psf(0, 0, return_oversample=False)
             psf_max = psf.max()
 
         elif self.image_mask[-1]=='R': # Round masks
