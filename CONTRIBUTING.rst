@@ -117,7 +117,7 @@ To run a subset of tests:
 Deploying
 ---------
 
-A reminder for the maintainers on how to deploy. First, make sure the following packages are installed:
+A reminder for the maintainers on how to deploy. First, make sure the following packages are installed (also requires the Pandoc package https://pandoc.org/installing.html):
 
 .. code-block:: sh
 
@@ -125,8 +125,10 @@ A reminder for the maintainers on how to deploy. First, make sure the following 
    $ conda install sphinx_rtd_theme
    $ conda install nbsphinx
    $ conda install twine
-   $ conda install docutils=0.16
+   $ conda install docutils=0.18
    $ conda install bump2version
+
+
 
 1. Add entries to HISTORY.rst. Make sure all your changes are committed to git.
 2. Update version using ``bump2version``, which automatically updates ``pynrc.version``. Usage: ``bump2version [options] part [file]``, where "part" is either major, minor, or patch (e.g., major.minor.patch). See https://github.com/c4urself/bump2version for more details. For instance, ``bump2version minor`` will update from 1.0.5 to 1.1.0
