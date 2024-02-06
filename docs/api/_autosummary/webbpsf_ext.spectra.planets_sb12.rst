@@ -18,6 +18,7 @@ webbpsf\_ext.spectra.planets\_sb12
    
       ~planets_sb12.__init__
       ~planets_sb12.export_pysynphot
+      ~planets_sb12.export_synphot
    
    
 

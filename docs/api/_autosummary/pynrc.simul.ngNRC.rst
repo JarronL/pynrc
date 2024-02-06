@@ -16,8 +16,6 @@
    
       add_col_noise
       add_cosmic_rays
-      add_ipc
-      add_ppc
       add_xtalk
       apply_flat
       create_level1b_FITS

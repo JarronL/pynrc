@@ -18,6 +18,7 @@
    
       ~NIRCam_ext.__init__
       ~NIRCam_ext.calc_datacube
+      ~NIRCam_ext.calc_datacube_fast
       ~NIRCam_ext.calc_psf
       ~NIRCam_ext.calc_psf_from_coeff
       ~NIRCam_ext.calc_psfs_grid
@@ -25,6 +26,7 @@
       ~NIRCam_ext.display
       ~NIRCam_ext.drift_opd
       ~NIRCam_ext.gen_mask_image
+      ~NIRCam_ext.gen_mask_transmission_map
       ~NIRCam_ext.gen_psf_coeff
       ~NIRCam_ext.gen_save_name
       ~NIRCam_ext.gen_wfedrift_coeff
@@ -38,6 +40,7 @@
       ~NIRCam_ext.interpolate_was_opd
       ~NIRCam_ext.load_wss_opd
       ~NIRCam_ext.load_wss_opd_by_date
+      ~NIRCam_ext.plot_bandpass
       ~NIRCam_ext.psf_grid
       ~NIRCam_ext.set_position_from_aperture_name
       ~NIRCam_ext.visualize_wfe_budget
@@ -88,6 +91,7 @@
       ~NIRCam_ext.siaf_ap
       ~NIRCam_ext.slowaxis
       ~NIRCam_ext.telescope
+      ~NIRCam_ext.use_fov_pix_plus1
       ~NIRCam_ext.wave_fit
       ~NIRCam_ext.include_ote_field_dependence
       ~NIRCam_ext.image_mask_list

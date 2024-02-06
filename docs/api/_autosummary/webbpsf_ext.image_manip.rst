@@ -14,14 +14,18 @@
    .. autosummary::
       :toctree:
    
+      add_ipc
+      add_ppc
       bp_fix
       convolve_image
       crop_zero_rows_cols
       cv_shift
       distort_image
+      expand_mask
       fourier_imshift
       frebin
       fshift
+      get_im_cen
       image_rescale
       make_disk_image
       model_to_hdulist

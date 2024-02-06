@@ -15,16 +15,11 @@
       :toctree:
    
       bias_dark_high_temp
-      bin_spectrum
-      build_mask
-      build_mask_detid
       channel_select
-      coron_ap_locs
-      coron_detector
-      coron_trans
       dark_ramp_80K
+      do_charge_migration
+      do_fft
       gen_unconvolved_point_source_image
-      get_detname
       grism_background
       grism_background_com
       grism_background_image
