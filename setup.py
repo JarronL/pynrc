@@ -92,12 +92,10 @@ with open('HISTORY.rst') as history_file:
 
 install_requires = [
     'tqdm>4',
-    'poppy>=1.0.3',
+    'poppy>=1.1.0',
     'webbpsf>=1.1.0',
     'webbpsf_ext>=1.0.4',
-    'pysynphot>=2.0.0',
     'astroquery>=0.4.6',
-    'pysiaf>=0.18.0',
     'jwst',
 ]
 
@@ -141,7 +139,6 @@ setup(
         # Specify the Python versions you support here. In particular, ensure
         # that you indicate whether you support Python 2, Python 3 or both.
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
@@ -166,7 +163,7 @@ setup(
     #    'dev': ['check-manifest>=0.34', 'lxml>=3.6.4', 'pytest>=3.0.2'],
     #},
     extras_require = {
-        'docs': ['docutils==0.16', 'sphinx>=3.4.1'],
+        'docs': ['docutils==0.18', 'sphinx>=3.4.1'],
     },
 
     # If there are data files included in your packages that need to be

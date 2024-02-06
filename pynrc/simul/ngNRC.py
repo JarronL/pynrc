@@ -53,6 +53,7 @@ from ..maths.image_manip import convolve_image
 from .. import conf
 
 from webbpsf_ext.image_manip import add_ipc, add_ppc
+from webbpsf_ext.synphot_ext import Observation
 
 from stdatamodels import fits_support
 import astropy.units as u
@@ -1245,7 +1246,7 @@ def make_gaia_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
         for k in sp_dict.keys():
             sp = sp_dict[k]
             sp = sp.renorm(0, 'vegamag', bp_g)
-            obs = S.Observation(sp, bp, binset=bp.wave)
+            obs = Observation(sp, bp, binset=bp.waveset)
             d[k] = obs.effstim('vegamag')
         bp_sp_dict[f] = d
     
@@ -1369,7 +1370,7 @@ def make_simbad_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
         for k in sp_dict.keys():
             sp = sp_dict[k]
             sp = sp.renorm(0, 'vegamag', bp_k)
-            obs = S.Observation(sp, bp, binset=bp.wave)
+            obs = Observation(sp, bp, binset=bp.waveset)
             d[k] = obs.effstim('vegamag')
         bp_sp_dict[f] = d
 

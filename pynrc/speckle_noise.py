@@ -628,7 +628,7 @@ def get_psf(opd, header, filter='F410M', mask=None, pupil=None,
 #    if (mask is not None) and ('WB' in mask):		
 #        # What is the effective wavelength of the filter?	
 #        #bp = pynrc.read_filter(filter)
-#        #w0 = bp.avgwave() / 1e4
+#        #w0 = bp.avgwave().to_value('um')
 #        w0 = float(filt[1:-1])/100
 #    
 #        # Choose wavelength from dictionary

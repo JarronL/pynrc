@@ -16,6 +16,8 @@ from .nrc_utils import *
 from .obs_nircam import obs_hci
 #from .obs_nircam import plot_contrasts, plot_contrasts_mjup, planet_mags, plot_planet_patches
 
+from webbpsf_ext.synphot_ext import Observation
+
 from tqdm.auto import tqdm, trange
 
 import logging
@@ -56,7 +58,7 @@ def model_info(source, filt, dist, model_dir=''):
     fname = source + '_' + filt_model +'sc.fits'
 
     bp = read_filter(filt_model)
-    w0 = bp.avgwave() / 1e4
+    w0 = bp.avgwave().to_value('um')
 
     # Model pixels are 4x oversampled
     detscale = (channel_select(bp))[0]
@@ -245,7 +247,7 @@ def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None,
         # Select detector for imaging mode
         if module=='B':
             bp = read_filter(filt)
-            detector = 'NRCB1' if bp.avgwave()/1e4<2.5 else 'NRCB5'
+            detector = 'NRCB1' if bp.avgwave().to_value('um') < 2.5 else 'NRCB5'
         else:
             detector = None
         
@@ -361,7 +363,7 @@ def obs_optimize(obs_dict, sp_opt=None, well_levels=None, tacq_max=2000, **kwarg
                 print(strout)
 
             # SW filter piggy-back on two LW filters, so 2 x tacq
-            # is_SW = obs.bandpass.avgwave()/1e4 < 2.5
+            # is_SW = obs.bandpass.avgwave().to_value('um') < 2.5
             # if is_SW: 
             #     v3 *= 2
             
@@ -946,7 +948,7 @@ def planet_mags(obs, age=10, entropy=13, mass_list=[10,5,2,1], av_vals=[0,25], a
         flux_list = []
         for j,av in enumerate(av_vals):
             sp = obs.planet_spec(mass=m, age=age, Av=av, entropy=entropy, atmo=atmo, **kwargs)
-            sp_obs = S.Observation(sp, obs.bandpass, binset=obs.bandpass.wave)
+            sp_obs = Observation(sp, obs.bandpass, binset=obs.bandpass.waveset)
             flux = sp_obs.effstim('vegamag')
             flux_list.append(flux)
         pmag[m] = tuple(flux_list)
@@ -978,7 +980,7 @@ def planet_mags(obs, age=10, entropy=13, mass_list=[10,5,2,1], av_vals=[0,25], a
             else:
                 #SB12 at A_V=0
                 sp = obs.planet_spec(mass=m, age=age, Av=0, entropy=entropy, atmo=atmo, **kwargs)
-                sp_obs = S.Observation(sp, obs.bandpass, binset=obs.bandpass.wave)
+                sp_obs = Observation(sp, obs.bandpass, binset=obs.bandpass.waveset)
                 sb12_mag = sp_obs.effstim('vegamag')
 
                 # Get magnitude offset due to extinction
@@ -1188,7 +1190,7 @@ def do_plot_contrasts(curves_ref, curves_roll, nsig, wfe_list, obs, age, age2=No
     # Magnitude of Jupiter at object's distance
     if jup_mag:
         jspec = jupiter_spec(dist=obs.distance)
-        jobs = S.Observation(jspec, obs.bandpass, binset=obs.bandpass.wave)
+        jobs = Observation(jspec, obs.bandpass, binset=obs.bandpass.waveset)
         jmag = jobs.effstim('vegamag')
         if jmag<np.max(ax.get_ylim()):
             ax.plot(xr, [jmag,jmag], color='C2', ls='--')
@@ -1645,7 +1647,7 @@ def plot_spectrum(src, bp_list, sptype=None, src_ref=None,
 
     bp = bp_list[-1]
     w = sp.wave / 1e4
-    o = S.Observation(sp, bp, binset=bp.wave)
+    o = Observation(sp, bp, binset=bp.waveset)
     sp.convert('photlam')
     f = sp.flux / sp.flux[(w>xr[0]) & (w<xr[1])].max()
 
