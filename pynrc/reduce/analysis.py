@@ -3,7 +3,7 @@ import os
 
 from tqdm import trange, tqdm
 
-from astropy.io import ascii
+from astropy.io import ascii, fits
 from astropy.convolution import convolve, Gaussian2DKernel
 
 from webbpsf_ext.utils import get_one_siaf, get_detname
@@ -586,6 +586,17 @@ def gen_diffusion_psf(nrc, diffusion_sigma, return_oversample=False, xyoffpix=(0
 #         'exclude_sub' : True,
 #     }
 
+import json
+class NumpyArrayEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        else:
+            return super(NumpyArrayEncoder, self).default(obj)
 
 class nrc_analyze():
 
@@ -713,8 +724,142 @@ class nrc_analyze():
                                       file_type=file_type)
             self.obs_dict[oid] = obs_dict
 
+    def _flag_bad_pixels(self, imarr, dqarr, nsig_spatial=10, nsig_temporal=10, ntemporal_limit=10, niter=3):
+        """Flag bad pixels in a single image or stack of images
+        
+        Returns updated dqarr
+        """
+
+        from webbpsf_ext import robust
+        from webbpsf_ext.image_manip import bp_fix
+        from webbpsf_ext.coords import dist_image
+
+        # 1. For each dither position, find consistent bad pixels in the median data.
+        # 2. For each dither position, flag pixels that are always the same value.
+        if len(imarr.shape)==3:
+            im_med = np.nanmedian(imarr, axis=0)
+            _, bp_med = bp_fix(im_med, sigclip=nsig_spatial, niter=niter,
+                               in_place=False, return_mask=True)
+            im_std = np.nanstd(imarr, axis=0)
+            bp_std = (im_std==0)
+            bp_all = bp_med | bp_std
+
+            # Flag all images in DQ array as NO_NOT_USE
+            for dq in dqarr:
+                dq[bp_all] |= dqflags.pixel['DO_NOT_USE']
+                
+        # 3. For a single image, flag pixels that are nsig times the standard deviation.
+        if len(imarr.shape)==3 and imarr.shape[0]>=ntemporal_limit:
+            robust.std
+            good_mask = robust.mean(imarr, Cut=nsig_temporal, axis=0, return_mask=True)
+            bp_mask = ~good_mask
+            # Flag bad pixels in DQ array as NO_NOT_USE 
+            dqarr[bp_mask] |= dqflags.pixel['DO_NOT_USE']
+
+        # 4. Find bad pixels in individual images
+        if len(imarr.shape)==3:
+            for im, dq in zip(imarr, dqarr):
+                _, bp = bp_fix(im, sigclip=nsig_spatial, niter=niter, 
+                                in_place=False, return_mask=True)
+                dq[bp] |= dqflags.pixel['DO_NOT_USE']
+        elif len(imarr.shape)==2:
+            _, bp = bp_fix(imarr, sigclip=nsig_spatial, niter=niter, 
+                            in_place=False, return_mask=True)
+            dqarr[bp] |= dqflags.pixel['DO_NOT_USE']
+        else:
+            raise ValueError(f"Unexpected shape for imarr: {imarr.shape}")
+        
+        # 5. Flag pixels that are 5-sigma below bg level
+        if len(imarr.shape)==3:
+            im_med = np.nanmedian(imarr, axis=0)
+            dq = np.bitwise_and.reduce(dqarr, axis=0)
+        else:
+            im_med = imarr
+            dq = dqarr
+        bp = get_dqmask(dq, ['DO_NOT_USE']) > 0
+        rval = 0.8 * np.max([imarr.shape[-2:]]) / 2
+        mask = ~bp & (dist_image(im_med) > rval) & ~np.isnan(im_med)
+        bg_val = robust.mode(im_med[mask])
+        bg_sig = robust.medabsdev(im_med[mask])
+        bg_bad = (im_med < bg_val - 5*bg_sig) & ~np.isnan(im_med)
+        # Flag all images in DQ array as NO_NOT_USE
+        if len(imarr.shape)==3:
+            for dq in dqarr:
+                dq[bg_bad] |= dqflags.pixel['DO_NOT_USE']
+        else:
+            dqarr[bg_bad] |= dqflags.pixel['DO_NOT_USE']
+
+        return dqarr
+
+    def flag_bad_pixels(self, nsig_spatial=10, nsig_temporal=10, ntemporal_limit=10, niter=3,
+                        save_dq_flags=True, save_suffix='_newdqflags.fits', force=False):
+        """ Flag bad pixels in each observation's DQ array
+
+        Will first search for already saved files with updated dq flags. If found, will not
+        re-run the flagging process unless force=True.
+
+        The process:
+        1. For each dither position, find consistent bad pixels in the median data.
+        2. For each dither position, flag pixels that are always the same value.
+        3. For a single image, flag pixels that are nsig times the standard deviation.
+        4. Find bad pixels in individual images.
+        5. Flag pixels that are 5-sigma below bg level
+
+        Parameters
+        ----------
+        nsig_spatial : float
+            Number of sigma for spatial bad pixel flagging
+        nsig_temporal : float
+            Number of sigma for temporal bad pixel flagging
+        ntemporal_limit : int
+            Minimum number of images for temporal flagging to be applied
+        niter : int
+            Number of iterations for sigma clipping
+        save_dq_flags : bool
+            Save the DQ flags to a new file
+        save_suffix : str
+            Suffix to append to the file name when saving DQ flags
+        force : bool
+            Force the function to run even if new DQ flags have already been saved
+        """
+        from webbpsf_ext.image_manip import bp_fix
+        from webbpsf_ext.coords import dist_image
+        from webbpsf_ext import robust
+
+        # Check if generate_obs_dict has been run
+        if len(self.obs_dict)==0:
+            raise ValueError("Run generate_obs_dict() first.")
+
+        kwargs = {
+            'nsig_spatial'    : nsig_spatial,
+            'nsig_temporal'   : nsig_temporal,
+            'ntemporal_limit' : ntemporal_limit,
+            'niter': niter,
+        }
+
+        obs_dict = self.obs_dict
+        for oid in self.obsids:
+            odict = obs_dict[oid]
+            for k in tqdm(odict.keys(), desc=f'Flagging bad pixels for Obs {oid}', leave=False):
+                # Search for existing DQ flags file
+                file = odict[k]['file']
+                file_dq = file.replace('.fits', save_suffix)
+                if os.path.exists(file_dq) and (force==False):
+                    # Load existing DQ flags
+                    dq = fits.getdata(file_dq, extname='DQ')
+                else:
+                    # Update dq array
+                    dq = self._flag_bad_pixels(odict[k]['data'], odict[k]['dq'], **kwargs)
+                    if save_dq_flags:
+                        hdr_dq = fits.getheader(file, extname='DQ')
+                        hdu = fits.PrimaryHDU(header=odict[k]['hdr0'])
+                        hdul = fits.HDUList([hdu])
+                        hdul.append(fits.ImageHDU(dq, header=hdr_dq))
+                        hdul.writeto(file_dq, overwrite=True)
+                odict[k]['dq'] = dq
+
     def get_expected_pos(self):
-        """Get the stellar positions"""
+        """Get the expected stellar positions based on header info"""
         from webbpsf_ext.imreg_tools import get_expected_loc
 
         # Get the expected location for each observation
@@ -844,9 +989,74 @@ class nrc_analyze():
         else:
             return psf_over
     
+
+    def simulate_psfs(self, xysub, use_com=True, force=False):
+
+        from webbpsf_ext.imreg_tools import load_cropped_files
+        from webbpsf_ext.imreg_tools import get_com, get_expected_loc
+
+        if self.nrc is None:
+            self.create_nircam_object(fov_pix=xysub)
+
+        # Saved file
+        obs_dict = self.obs_dict
+        save_dir = os.path.dirname(obs_dict[self.obsids[0]][0]['file'])
+
+        # Get all the file names
+        files = []
+        for oid in self.obsids:
+            odict = obs_dict[oid]
+            for k in odict.keys():
+                files.append(os.path.basename(odict[k]['file']))
+
+        # Crop array around star
+        find_func = get_com if use_com else get_expected_loc
+        res = load_cropped_files(save_dir, files, xysub=xysub, bgsub=False, find_func=find_func)
+        xyind_arr = res[2]
+
+        # Get x/y loc for each observation
+        # It will be the middle of the subarray; xyind_arr are subarray coords
+        xloc_ind = xyind_arr[:,:2].mean(axis=1)
+        yloc_ind = xyind_arr[:,2:].mean(axis=1)
+        xy_ind = np.array([xloc_ind, yloc_ind]).T
+        xy_sci = xy_ind + 1
+
+        # Convert to 'tel' V2V3 coords
+        ap = self.nrc.siaf_ap
+        xy_tel = np.array([ap.sci_to_tel(xy[0],xy[1]) for xy in xy_sci])
+        ndith = len(xy_tel)
+
+        # Simulate PSFs
+        # Create oversampled PSFs for each dither location
+        osamp = self.nrc.oversample
+        if (self.psfs_over is None) or (force==True):
+            psfs_over = []
+            xyoff_psfs_over = []
+            for i in trange(ndith, desc='Oversampled PSFs', leave=False):
+                v2, v3 = xy_tel[i]
+                res = self._simulate_psf(coord_vals=(v2,v3), coord_frame='tel',
+                                        fov_pix=xysub, oversample=osamp, return_xyoff=True)
+                psfs_over.append(res[0])
+                xyoff_psfs_over.append(res[1])
+            psfs_over = np.asarray(psfs_over)
+            xyoff_psfs_over = np.array(xyoff_psfs_over)
+
+            # Save for later
+            self.psfs_over = psfs_over
+            self.xyoff_psfs_over = xyoff_psfs_over
+        else:
+            psfs_over = self.psfs_over
+            xyoff_psfs_over = self.xyoff_psfs_over
+
+        return psfs_over, xyoff_psfs_over
+
+
     def get_star_positions(self, xysub=65, bgsub=False, use_com=True,
-                           med_dithers=True, force=False):
-        """Find the offset between the expected and actual position"""
+                           med_dithers=True, save=True, force=False):
+        """Find the offset between the expected and actual position
+        
+        Updates self.xy_loc_ind and self.xyshift
+        """
         from webbpsf_ext.imreg_tools import find_pix_offsets, load_cropped_files
         from webbpsf_ext.imreg_tools import get_com, get_expected_loc
         from webbpsf_ext.image_manip import get_im_cen, bp_fix
@@ -869,8 +1079,21 @@ class nrc_analyze():
 
         obs_dict = self.obs_dict
 
-        # Get all the file names
+        # Saved file
         save_dir = os.path.dirname(obs_dict[self.obsids[0]][0]['file'])
+        save_str1 = '_com' if use_com else '_exp'
+        save_str2 = '_med' if med_dithers else ''
+        save_file = f'star_positions{save_str1}{save_str2}.json'
+        save_path = os.path.join(save_dir, save_file)
+        if os.path.exists(save_path) and (force==False):
+            _log.info(f"Loading star positions from {save_path}")
+            with open(save_path, 'r') as f:
+                data = json.load(f)
+            self.xy_loc_ind = np.array(data['xy_loc_ind'])
+            self.xyshift = np.array(data['xyshift'])
+            return
+
+        # Get all the file names
         files = []
         for oid in self.obsids:
             odict = obs_dict[oid]
@@ -907,46 +1130,16 @@ class nrc_analyze():
         dqsub_arr = dqsub_arr.reshape(sh_orig)
         bp_masks = bp_masks.reshape(sh_orig)
 
-        # Get x/y loc for each observation
-        # It will be the middle of the subarray; xyind_arr are subarray coords
-        xloc_ind = xyind_arr[:,:2].mean(axis=1)
-        yloc_ind = xyind_arr[:,2:].mean(axis=1)
-        xy_ind = np.array([xloc_ind, yloc_ind]).T
-        xy_sci = xy_ind + 1
-
-        # Convert to 'tel' V2V3 coords
-        ap = self.nrc.siaf_ap
-        xy_tel = np.array([ap.sci_to_tel(xy[0],xy[1]) for xy in xy_sci])
-        ndith = len(xy_tel)
-
-        # Simulate PSFs
-        # Create oversampled PSFs for each dither location
-        osamp = self.nrc.oversample
-        if (self.psfs_over is None) or (force is True):
-            psfs_over = []
-            xyoff_psfs_over = []
-            for i in trange(ndith, desc='Oversampled PSFs', leave=False):
-                v2, v3 = xy_tel[i]
-                res = self._simulate_psf(coord_vals=(v2,v3), coord_frame='tel',
-                                        fov_pix=xysub, oversample=osamp, return_xyoff=True)
-                psfs_over.append(res[0])
-                xyoff_psfs_over.append(res[1])
-            psfs_over = np.asarray(psfs_over)
-            xyoff_psfs_over = np.array(xyoff_psfs_over)
-
-            # Save for later
-            self.psfs_over = psfs_over
-            self.xyoff_psfs_over = np.array(xyoff_psfs_over)
-        else:
-            psfs_over = self.psfs_over
-            xyoff_psfs_over = self.xyoff_psfs_over
+        # Simulate PSFs for each dither location
+        psfs_over, _ = self.simulate_psfs(xysub, use_com=use_com, force=force)
 
         # return imsub_arr, psfs_over, bp_masks, xyind_arr
 
         # Find best sub-pixel fit location for all images
         xy_loc_all = []
         # print("Finding offsets...")
-        itervals = trange(ndith, desc='Finding offsets', leave=False)
+        osamp = self.nrc.oversample
+        itervals = trange(ndither, desc='Finding offsets', leave=False)
         for i in itervals:
             # Get the PSF for this dither
             psf_over = psfs_over[i]
@@ -989,119 +1182,17 @@ class nrc_analyze():
             im = im[0]
         self.xyshift = get_im_cen(im) - self.xy_loc_ind
 
+        # Save xy_loc_ind and xyshift to file
+        if save:
+            _log.info(f"Saving star positions to {save_path}")
+            save_data = {'xy_loc_ind': self.xy_loc_ind, 'xyshift': self.xyshift}
+            with open(save_path, 'w') as f:
+                json.dump(save_data, f, cls=NumpyArrayEncoder)
+
         del imsub_arr, dqsub_arr, bp_masks
-
-    def _flag_bad_pixels(self, imarr, dqarr, nsig_spatial=10, nsig_temporal=10, ntemporal_limit=10, niter=3):
-        """Flag bad pixels in a single image or stack of images
-        
-        Returns updated dqarr
-        """
-
-        from webbpsf_ext import robust
-        from webbpsf_ext.image_manip import bp_fix
-        from webbpsf_ext.coords import dist_image
-
-        # 1. For each dither position, find consistent bad pixels in the median data.
-        # 2. For each dither position, flag pixels that are always the same value.
-        if len(imarr.shape)==3:
-            im_med = np.nanmedian(imarr, axis=0)
-            _, bp_med = bp_fix(im_med, sigclip=nsig_spatial, niter=niter,
-                               in_place=False, return_mask=True)
-            im_std = np.nanstd(imarr, axis=0)
-            bp_std = (im_std==0)
-            bp_all = bp_med | bp_std
-
-            # Flag all images in DQ array as NO_NOT_USE
-            for dq in dqarr:
-                dq[bp_all] |= dqflags.pixel['DO_NOT_USE']
-                
-        # 3. For a single image, flag pixels that are nsig times the standard deviation.
-        if len(imarr.shape)==3 and imarr.shape[0]>=ntemporal_limit:
-            robust.std
-            good_mask = robust.mean(imarr, Cut=nsig_temporal, axis=0, return_mask=True)
-            bp_mask = ~good_mask
-            # Flag bad pixels in DQ array as NO_NOT_USE 
-            dqarr[bp_mask] |= dqflags.pixel['DO_NOT_USE']
-
-        # 4. Find bad pixels in individual images
-        if len(imarr.shape)==3:
-            for im, dq in zip(imarr, dqarr):
-                _, bp = bp_fix(im, sigclip=nsig_spatial, niter=niter, 
-                                in_place=False, return_mask=True)
-                dq[bp] |= dqflags.pixel['DO_NOT_USE']
-        elif len(imarr.shape)==2:
-            _, bp = bp_fix(imarr, sigclip=nsig_spatial, niter=niter, 
-                            in_place=False, return_mask=True)
-            dqarr[bp] |= dqflags.pixel['DO_NOT_USE']
-        else:
-            raise ValueError(f"Unexpected shape for imarr: {imarr.shape}")
-        
-        # 5. Flag pixels that are 5-sigma below bg level
-        if len(imarr.shape)==3:
-            im_med = np.nanmedian(imarr, axis=0)
-            dq = np.bitwise_and.reduce(dqarr, axis=0)
-        else:
-            im_med = imarr
-            dq = dqarr
-        bp = get_dqmask(dq, ['DO_NOT_USE']) > 0
-        rval = 0.8 * np.max([imarr.shape[-2:]]) / 2
-        mask = ~bp & (dist_image(im_med) > rval) & ~np.isnan(im_med)
-        bg_val = robust.mode(im_med[mask])
-        bg_sig = robust.medabsdev(im_med[mask])
-        bg_bad = (im_med < bg_val - 5*bg_sig) & ~np.isnan(im_med)
-        # Flag all images in DQ array as NO_NOT_USE
-        if len(imarr.shape)==3:
-            for dq in dqarr:
-                dq[bg_bad] |= dqflags.pixel['DO_NOT_USE']
-        else:
-            dqarr[bg_bad] |= dqflags.pixel['DO_NOT_USE']
-
-        return dqarr
-
-
-    def flag_bad_pixels(self, nsig_spatial=10, nsig_temporal=10, ntemporal_limit=10, niter=3):
-        """ Flag bad pixels in each observation's DQ array
-        
-        The process:
-        1. For each dither position, find consistent bad pixels in the median data.
-        2. For each dither position, flag pixels that are always the same value.
-        3. For a single image, flag pixels that are nsig times the standard deviation.
-        4. Find bad pixels in individual images.
-        5. Flag pixels that are 5-sigma below bg level
-
-        Parameters
-        ----------
-        nsig_spatial : float
-            Number of sigma for spatial bad pixel flagging
-        nsig_temporal : float
-            Number of sigma for temporal bad pixel flagging
-        ntemporal_limit : int
-            Minimum number of images for temporal flagging to be applied
-        """
-        from webbpsf_ext.image_manip import bp_fix
-        from webbpsf_ext.coords import dist_image
-        from webbpsf_ext import robust
-
-        # Check if generate_obs_dict has been run
-        if len(self.obs_dict)==0:
-            raise ValueError("Run generate_obs_dict() first.")
-
-        kwargs = {
-            'nsig_spatial'    : nsig_spatial,
-            'nsig_temporal'   : nsig_temporal,
-            'ntemporal_limit' : ntemporal_limit,
-            'niter': niter,
-        }
-
-        obs_dict = self.obs_dict
-        for oid in self.obsids:
-            odict = obs_dict[oid]
-            for k in tqdm(odict.keys(), desc=f'Flagging bad pixels for Obs {oid}', leave=False):
-                # Update dq array
-                odict[k]['dq'] = self._flag_bad_pixels(odict[k]['data'], odict[k]['dq'], **kwargs)
                 
     def shift_to_center_int(self, med_dithers=True, return_results=False):
-        """Expand and shift images to place star in ~center of array
+        """Expand and shift images to place star roughly in center of array
         
         Does not perform any fractional shifts. Only integer shifts are applied.
 
@@ -1121,6 +1212,7 @@ class nrc_analyze():
 
         imarr = []
         dqarr = []
+        errarr = []
         bparr = []
         for oid in self.obsids:
             odict = self.obs_dict[oid]
@@ -1129,16 +1221,24 @@ class nrc_analyze():
                 if len(im.shape)==3 and med_dithers:
                     im = np.nanmedian(im, axis=0)
                 imarr.append(im)
+
+                err = odict[k]['err']
+                if len(err.shape)==3 and med_dithers:
+                    err = np.nanmedian(err, axis=0)
+                errarr.append(err)
+
                 dq = odict[k]['dq']
                 if len(dq.shape)==3 and med_dithers:
                     dq = np.bitwise_and.reduce(dq, axis=0)
                 dqarr.append(dq)
+
                 bpmask = get_dqmask(dq, ['DO_NOT_USE']) > 0
                 if len(bpmask.shape)==3 and med_dithers:
                     bpmask = np.bitwise_and.reduce(bpmask, axis=0)
                 bparr.append(bpmask)
                 
         imarr = np.asarray(imarr)
+        errarr = np.asarray(errarr)
         dqarr = np.asarray(dqarr)
         bparr = np.asarray(bparr)
 
@@ -1180,6 +1280,7 @@ class nrc_analyze():
         nxy_pad = np.max([nx_pad, ny_pad])
 
         imarr_shift = []
+        errarr_shift = []
         dqarr_shift = []
         bparr_shift = []
         for i in range(ndith):
@@ -1187,30 +1288,36 @@ class nrc_analyze():
             if nimg_per_dither==1:
                 im, xy = crop_image(imarr[i], nxy_pad, xyloc=xy_loc_all[i], return_xy=True)
                 fill_val = dqflags.pixel['FLUX_ESTIMATED'] | dqflags.pixel['DO_NOT_USE']
+                err = crop_image(errarr[i], nxy_pad, xyloc=xy_loc_all[i], fill_val=np.nanmax(errarr))
                 dq = crop_image(dqarr[i], nxy_pad, xyloc=xy_loc_all[i], fill_val=fill_val)
                 bp = crop_image(bparr[i], nxy_pad, xyloc=xy_loc_all[i], fill_val=True)
                 imarr_shift.append(im)
+                errarr_shift.append(err)
                 dqarr_shift.append(dq)
                 bparr_shift.append(bp)
                 xy_loc_shift[i,0] -= xy[0]
                 xy_loc_shift[i,1] -= xy[2]
             else:
                 imlist = []
+                errlist = []
                 dqlist = []
                 bplist = []
                 for j in range(nimg_per_dither):
                     xy_loc = xy_loc_all[i] if nsh_per_dither==1 else xy_loc_all[i,j]
                     im, xy = crop_image(imarr[i,j], nxy_pad, xyloc=xy_loc, return_xy=True)
                     fill_val = dqflags.pixel['FLUX_ESTIMATED'] | dqflags.pixel['DO_NOT_USE']
+                    err = crop_image(errarr[i,j], nxy_pad, xyloc=xy_loc, fill_val=np.nanmax(errarr))
                     dq = crop_image(dqarr[i,j], nxy_pad, xyloc=xy_loc, fill_val=fill_val)
                     bp = crop_image(bparr[i,j], nxy_pad, xyloc=xy_loc, fill_val=True)
                     imlist.append(im)
+                    errlist.append(err)
                     dqlist.append(dq)
                     bplist.append(bp)
                     if nsh_per_dither==2:
                         xy_loc_shift[i,j,0] -= xy[0]
                         xy_loc_shift[i,j,1] -= xy[2]
                 imarr_shift.append(np.asarray(imlist))
+                errarr_shift.append(np.asarray(errlist))
                 dqarr_shift.append(np.asarray(dqlist))
                 bparr_shift.append(np.asarray(bplist))
                 if nsh_per_dither==1:
@@ -1218,6 +1325,7 @@ class nrc_analyze():
                     xy_loc_shift[i,1] -= xy[2]
 
         imarr_shift = np.asarray(imarr_shift)
+        errarr_shift = np.asarray(errarr_shift)
         dqarr_shift = np.asarray(dqarr_shift)
         bparr_shift = np.asarray(bparr_shift)
 
@@ -1225,10 +1333,10 @@ class nrc_analyze():
         im_temp = imarr_shift.reshape([-1,ny_fin,nx_fin])[0]
         xyshift_new = get_im_cen(im_temp) - xy_loc_shift
 
-        
         if return_results:
             out = {
                 'imarr_shift' : imarr_shift,
+                'errarr_shift' : errarr_shift,
                 'dqarr_shift' : dqarr_shift,
                 'bparr_shift' : bparr_shift,
                 'xy_loc_ind'  : xy_loc_shift,
@@ -1243,6 +1351,7 @@ class nrc_analyze():
             for k in odict.keys():
                 del odict[k]['data'], odict[k]['dq']
                 odict[k]['data']  = imarr_shift[ii]
+                odict[k]['err']   = errarr_shift[ii]
                 odict[k]['dq']    = dqarr_shift[ii]
                 odict[k]['bp']    = bparr_shift[ii]
                 odict[k]['xyloc'] = xy_loc_shift[ii]
@@ -1252,10 +1361,10 @@ class nrc_analyze():
         self.xy_loc_ind = xy_loc_shift
         self.xyshift = xyshift_new
 
-    def get_dither_offsets(self, method='opencv', interp='lanczos', subsize=None, rebin=1, 
-                                 gstd_pix=None, inner_rad=10, outer_rad=32,
-                                 coarse_limits=(-3,3), fine_limits=(-0.5,0.5), 
-                                 return_results=False, **kwargs):
+    def get_dither_offsets(self, method='opencv', interp='lanczos', subsize=None, 
+                           rebin=1, gstd_pix=None, inner_rad=10, outer_rad=32,
+                           coarse_limits=(-3,3), fine_limits=(-0.5,0.5), 
+                           return_results=False, save=True, force=False, **kwargs):
         """Find the position offsets between dithered images via LSQ minimization
 
         Performs a coarse grid search to find the global minimum, and then a 
@@ -1351,6 +1460,22 @@ class nrc_analyze():
                 raise ValueError("Must use at least one of use_std=True or use_ssr=True.")
 
             return np.array([xsh_fine, ysh_fine])
+
+        obs_dict = self.obs_dict
+
+        # Saved file
+        save_dir = os.path.dirname(obs_dict[self.obsids[0]][0]['file'])
+        save_str = f'_{method}_{interp}_sub{subsize}_rebin{rebin}_gstd{gstd_pix}_irad{inner_rad}_orad{outer_rad}'
+        save_file = f'star_positions{save_str}.json'
+        save_path = os.path.join(save_dir, save_file)
+        if os.path.exists(save_path) and (force==False):
+            _log.info(f"Loading star positions from {save_path}")
+            with open(save_path, 'r') as f:
+                data = json.load(f)
+            self.xy_loc_ind = np.array(data['xy_loc_ind'])
+            self.xyshift = np.array(data['xyshift'])
+            self.shift_matrix = np.array(data['shift_matrix'])
+            return
 
         imarr = []
         dqarr = []
@@ -1473,13 +1598,21 @@ class nrc_analyze():
         xy_cen = get_im_cen(im)
         self.xy_loc_ind = xy_cen - self.xyshift
 
+        # Save xy_loc_ind and xyshift to file
+        if save:
+            _log.info(f"Saving star positions to {save_path}")
+            save_data = {'xy_loc_ind': self.xy_loc_ind, 'xyshift': self.xyshift,
+                         'shift_matrix': self.shift_matrix}
+            with open(save_path, 'w') as f:
+                json.dump(save_data, f, cls=NumpyArrayEncoder)
+
     def align_images(self, ref_obs=None, rebin=1, gstd_pix=None, 
                      med_dithers=False, method='opencv', interp='lanczos', **kwargs):
         """Align all images to a common reference frame
         
-        Adds 'data_aligned' and 'bp_aligned' to each observation dictionary in self.obs_dict.
-        The data have had their bad pixels fixed. The bad pixel masks have been shifted to match
-        the new image locations.
+        Adds 'data_aligned', 'dq_aligned', 'bp_aligned' to each observation dictionary in self.obs_dict.
+        The data have had their bad pixels fixed. The dq arrays and bad pixel masks have been shifted to 
+        match the new image locations.
 
         Parameters
         ----------
@@ -1523,9 +1656,13 @@ class nrc_analyze():
             odict = self.obs_dict[oid]
             for k in tqdm(odict.keys(), desc=f'Centering Obs {oid}', leave=False):
                 # Images reduced to 2D
-                im = odict[k]['data']
+                im = odict[k]['data'].copy()
                 if len(im.shape)==3 and med_dithers:
                     im = np.nanmedian(im, axis=0)
+
+                err = odict[k]['err'].copy()
+                if len(err.shape)==3 and med_dithers:
+                    err = np.sqrt(np.nanmean(err**2, axis=0))
 
                 # DQ arrays
                 dq = odict[k]['dq']
@@ -1547,11 +1684,18 @@ class nrc_analyze():
                     im = bp_fix(im, bpmask=bp, in_place=False, niter=5)
                 border = get_dqmask(dq, ['FLUX_ESTIMATED', 'REFERENCE_PIXEL']) > 0
                 im[border] = 0
+                err[border] = np.nanmax(err)
+                err[np.isnan(err)] = np.nanmax(err)
 
                 xsh, ysh = self.xyshift[ii] - np.array([xsh0, ysh0])
                 im_shift = fractional_image_shift(im, xsh, ysh, method=method, interp=interp,
                                                   oversample=rebin, gstd_pix=gstd_pix, 
                                                   return_oversample=True, total=total)
+                
+                var_shift = fractional_image_shift(err**2, xsh, ysh, method='fshift', interp='linear',
+                                                   oversample=rebin, gstd_pix=gstd_pix, 
+                                                   return_oversample=True, total=total)
+                err_shift = np.sqrt(var_shift)
                 
                 bp_shift = frebin(bp.astype('float'), scale=rebin, total=False)
                 bp_shift = fshift(bp_shift, xsh*rebin, ysh*rebin, interp='linear', pad=True, cval=1)
@@ -1565,6 +1709,7 @@ class nrc_analyze():
                 dq_shift = dq_shift.astype(dq.dtype)
 
                 odict[k]['data_aligned'] = im_shift
+                odict[k]['err_aligned'] = err_shift
                 odict[k]['bp_aligned'] = bp_shift
                 odict[k]['dq_aligned'] = dq_shift
                 odict[k]['xy_aligned'] = self.xy_loc_ind[ii] + np.array([xsh, ysh])
@@ -1572,6 +1717,73 @@ class nrc_analyze():
 
                 ii += 1
 
+
+    def _get_ref_obs(self, obsid, bin_ints=1, dith_pos=None, 
+                     med_dithers=False, data_key='data_aligned'):
+        """Get reference observations to use for PSF subtraction
+        
+        Parameters
+        ----------
+        obsid : int
+            Observation ID to use as science data
+        bin_ints : int
+            Number of integrations to bin together for reference data.
+        dith_pos : int or None
+            Dither position to use for reference data. If None, then use all dither 
+            positions in different obsid.
+        med_dithers : bool
+            If True, median combine integrations for each dither before subtracting.
+        data_key : str
+            Key in obs_dict to use for data. Default is 'data_aligned'.
+        """
+
+        if 'data' in data_key:
+            dq_key = data_key.replace('data', 'dq')
+            is_err = False
+        if 'err' in data_key:
+            dq_key = data_key.replace('err', 'dq')
+            is_err = True
+
+        ny, nx = self.obs_dict[self.obsids[0]][0][data_key].shape[-2:]
+
+        ref_obs = []
+        for oid2 in self.obsids:
+            # Skip if same observation ID (e.g., same roll angle)
+            if oid2==obsid:
+                continue
+            odict2 = self.obs_dict[oid2]
+
+            # Get dither positions to grab data from
+            if dith_pos is None:
+                dith_keys = odict2.keys()
+            elif isinstance(dith_pos, int):
+                dith_keys = [dith_pos]
+
+            for k in dith_keys:
+                imref = odict2[k][data_key].copy()
+                dqref = odict2[k][dq_key]
+                dqmask = get_dqmask(dqref, ['DO_NOT_USE']) > 0
+                imref[dqmask] = np.nan
+
+                sh_orig = imref.shape
+                ndim = len(sh_orig)
+                if ndim==3 and med_dithers:
+                    if is_err:
+                        imref = np.sqrt(np.nanmean(imref**2, axis=0))
+                    else:
+                        imref = np.nanmean(imref, axis=0)
+                elif ndim==3 and bin_ints>1:
+                    nbins = sh_orig[0] // bin_ints
+                    imref = imref[:nbins*bin_ints]
+                    if is_err:
+                        imref = np.sqrt(np.nanmean(imref.reshape(nbins,bin_ints,ny,nx)**2, axis=1))
+                    else:
+                        imref = np.nanmean(imref.reshape(nbins,bin_ints,ny,nx), axis=1)
+
+                ref_obs.append(imref)
+
+        ref_obs = np.array(ref_obs).reshape([-1,ny,nx])
+        return ref_obs.squeeze()
 
     def roll_subtraction(self, ref_obs=None, med_dithers=False, data_key='data_aligned',
                          bin_ints_sci=1, bin_ints_ref=1, all_pos=True, do_pca=True,
@@ -1590,78 +1802,14 @@ class nrc_analyze():
         bin_ints_ref : int
             Number of integrations to bin together for reference data.
         all_pos : bool
-            If True, use all dither positions as reference for PSF subtraction.
-            If False, use only the same dither position as the science data.
+            If True, use all dither positions in other roll as reference for PSF subtraction.
+            If False, only use the same dither position as the science data.
         """
 
         from . import pca
 
-        def get_ref_obs(obsid, bin_ints=1, dith_pos=None):
-
-            ny, nx = self.obs_dict[self.obsids[0]][0][data_key].shape[-2:]
-
-            ref_obs = []
-            for oid2 in self.obsids:
-                # Skip if same observation ID (e.g., same roll angle)
-                if oid2==obsid:
-                    continue
-                odict2 = self.obs_dict[oid2]
-
-                # Get dither positions to grab data from
-                if dith_pos is None:
-                    dith_keys = odict2.keys()
-                elif isinstance(dith_pos, int):
-                    dith_keys = [dith_pos]
-
-                for k in dith_keys:
-                    imref = odict2[k][data_key].copy()
-                    dqref = odict2[k][dq_key]
-                    dqmask = get_dqmask(dqref, ['DO_NOT_USE']) > 0
-                    imref[dqmask] = np.nan
-
-                    sh_orig = imref.shape
-                    ndim = len(sh_orig)
-                    if ndim==3 and med_dithers:
-                        imref = np.nanmedian(imref, axis=0)
-                    elif ndim==3 and bin_ints>1:
-                        nbins = sh_orig[0] // bin_ints
-                        imref = imref[:nbins*bin_ints]
-                        imref = np.nanmean(imref.reshape(nbins,bin_ints,ny,nx), axis=1)
-
-                    ref_obs.append(imref)
-
-            ref_obs = np.array(ref_obs).reshape([-1,ny,nx])
-            return ref_obs.squeeze()
-        
         def basic_subtraction(imarr, imref, func_mean=np.nanmean):
             """Basic subtraction of images"""
-
-            # # Get 0-masks for both science and reference images
-            # if len(imref.shape)==3:
-            #     zero_masks = imref==0
-            #     # Combine zero_masks for all integrations
-            #     ref_zeros = np.bitwise_or.reduce(zero_masks, axis=0)
-            # else:
-            #     ref_zeros = imref==0
-            # if len(imarr.shape)==3:
-            #     zero_masks = imarr==0
-            #     # Combine zero_masks for all integrations
-            #     sci_zeros = np.bitwise_or.reduce(zero_masks, axis=0)
-            # else:
-            #     sci_zeros = imarr==0
-
-            # # Combine zero_masks for both science and reference images
-            # all_zeros = sci_zeros | ref_zeros
-            # if len(imref.shape)==3:
-            #     imref[:, all_zeros] = 0
-            #     imref = func_mean(imref, axis=0)
-            # else:
-            #     imref[all_zeros] = 0
-
-            # if len(imarr.shape)==3:
-            #     imarr[:, all_zeros] = 0
-            # else:
-            #     imarr[all_zeros] = 0
 
             if len(imref.shape)==3:
                 imref = func_mean(imref, axis=0)
@@ -1678,12 +1826,9 @@ class nrc_analyze():
                 raise ValueError("Run align_images() first.")
             else:
                 raise KeyError(f"Key '{data_key}' not found in obs_dict.")
-        elif data_key=='data_aligned':
-            bp_key = 'bp_aligned'
-            dq_key = 'dq_aligned'
-        elif data_key=='data':
-            bp_key = 'bp'
-            dq_key = 'dq'
+            
+        dq_key = data_key.replace('data', 'dq')
+        bp_key = data_key.replace('data', 'bp')
 
         ny, nx = self.obs_dict[self.obsids[0]][0][data_key].shape[-2:]
 
@@ -1697,7 +1842,7 @@ class nrc_analyze():
             res_asec = 206265 * self.nrc.bandpass.pivot().to_value('m') / 6.5
             res_pix = res_asec / self.nrc.pixelscale
             fwhm_pix = 1.025 * res_pix
-            pca_params = pca.build_pca_dict(fwhm_pix, **kwargs)
+            # pca_params = pca.build_pca_dict(fwhm_pix, **kwargs)
 
         for oid in self.obsids:
             odict = self.obs_dict[oid]
@@ -1708,7 +1853,8 @@ class nrc_analyze():
 
             # Compile all reference observations
             if all_pos:
-                imarr_ref = get_ref_obs(oid, bin_ints=bin_ints_ref, dith_pos=None)
+                imarr_ref = self._get_ref_obs(oid, bin_ints=bin_ints_ref, dith_pos=None,
+                                              med_dithers=med_dithers, data_key=data_key)
 
             for k in odict.keys():
                 # Skip if dither position not in ref_obs
@@ -1717,7 +1863,8 @@ class nrc_analyze():
 
                 # Get reference observations in this dither position only
                 if not all_pos:
-                    imarr_ref = get_ref_obs(oid, bin_ints=bin_ints_ref, dith_pos=k)
+                    imarr_ref = self._get_ref_obs(oid, bin_ints=bin_ints_ref, dith_pos=k,
+                                                  med_dithers=med_dithers, data_key=data_key)
 
                 imarr = odict[k][data_key].copy()
                 sh_orig = imarr.shape
@@ -1736,7 +1883,7 @@ class nrc_analyze():
                     imarr = imarr[:nbins*bin_ints_sci]
                     imarr = np.nanmean(imarr.reshape(nbins,bin_ints_sci,ny,nx), axis=1)
 
-                print(imarr.shape, imarr_ref.shape)
+                # print(imarr.shape, imarr_ref.shape)
                 if do_pca:
                     fwhm_pix_bin = fwhm_pix * odict[k]['bin_aligned']
                     pca_params = pca.build_pca_dict(fwhm_pix_bin, **kwargs)
@@ -1760,9 +1907,8 @@ class nrc_analyze():
                 odict[k]['data_diff'] = imdiff
 
                 del imarr
-                
-        del imarr_ref
 
+        del imarr_ref
 
 
 

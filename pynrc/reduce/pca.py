@@ -864,7 +864,7 @@ def pca_subtraction(imarr, psfarr, fwhm_pix, do_loci=True,
     # Number of sub region masks
     nmasks = len(np.unique(sub_masks[sub_masks>0]))
 
-    print(numbasis, npsf_max, npsf)
+    # print(numbasis, npsf_max, npsf)
 
     # Maximum number of PSFs to use in library
     if (npsf_max is None) or (npsf_max > npsf):
@@ -890,7 +890,7 @@ def pca_subtraction(imarr, psfarr, fwhm_pix, do_loci=True,
     # Initialize array of de-rotated and subtracted images
     fin_arr = np.zeros([nint, nbasis_sets, ny, nx])
 
-    print(fin_arr.shape)
+    # print(fin_arr.shape)
 
     # Loop through all images
     for j in trange(nint, desc=f"Images", leave=False):
