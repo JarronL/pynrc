@@ -380,7 +380,8 @@ def _gen_nrc_class(filt, apname, date, fov_pix, oversample,
     # Remove image mask for TACONF1 apertures
     if ('FULL_TA' in apname) or ('FULL_FSTA' in apname):
         nrc.update_psf_coeff(image_mask='CLEAR')
-        nrc.ND_acq = True
+        # Add in ND throughput depending on aperture name
+        nrc.ND_acq = False if 'FSTA' in apname else True
 
     nrc._update_bg_class(fov_bg_match=True)
 
