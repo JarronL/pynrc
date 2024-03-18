@@ -6,7 +6,7 @@ docutils==0.16
 numpy==1.21.2
 matplotlib==3.5.0
 Cython
-astropy==4.2
+astropy==5.3.3
 astroquery==0.4.3
 astropy-helpers>=3.1
 pysynphot>=2.0.0
