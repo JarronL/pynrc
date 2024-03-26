@@ -1,6 +1,8 @@
 import numpy as np
 import os
 
+import json
+
 from tqdm import trange, tqdm
 
 from astropy.io import ascii, fits
@@ -394,12 +396,16 @@ def _gen_nrc_class(filt, apname, date, fov_pix, oversample,
 
     return nrc
 
-def nrc_from_file(fpath, fov_pix, oversample=4, **kwargs):
+def nrc_from_file(fpath, fov_pix, oversample=None, **kwargs):
     """Create NIRCam object from a given file"""
     from jwst import datamodels
+    from webbpsf_ext.imreg_tools import get_coron_apname
+
     data_model = datamodels.open(fpath)
 
-    apname = data_model.meta.aperture.name
+    # apname = data_model.meta.aperture.name
+    # Do a better job of parsing aperture name
+    apname = get_coron_apname(data_model)
     date = data_model.meta.observation.date_beg
 
     filt = data_model.meta.instrument.filter
@@ -417,6 +423,9 @@ def nrc_from_file(fpath, fov_pix, oversample=4, **kwargs):
         filt = pupil
 
     _log.info("Creating NIRCam object...")
+    if oversample is None:
+        # Check if coronagraphic observation
+        oversample = 2 if 'MASK' in apname else 4
     nrc = _gen_nrc_class(filt, apname, date, fov_pix, oversample, **kwargs)
 
     # Update detector readout parameters
@@ -586,7 +595,59 @@ def gen_diffusion_psf(nrc, diffusion_sigma, return_oversample=False, xyoffpix=(0
 #         'exclude_sub' : True,
 #     }
 
-import json
+def stellar_arguments(name, votdir='../votables/', fname=None, **kwargs):
+
+    from webbpsf_ext import bp_2mass
+    from webbpsf_ext.synphot_ext import ObsBandpass
+
+    # Define bandpasses and source information
+    bp_v = ObsBandpass('v')
+    bp_k = bp_2mass('k')
+
+    # Science   source,  dist, age, sptype, Teff, [Fe/H], log_g, mag, band
+    # dist in units of pc and age in units of Myr
+    stellar_dict = {
+        'MWC-758' : {
+            'name': 'MWC-758', 'fname': 'MWC758.vot',
+            'dist': 160, 'age': 5, 'sptype': 'A5V', 
+            'mag_val': 5.7, 'bp': bp_k, 
+        },
+        'HL-TAU' : {
+            'name': 'HL-Tau', 'fname': 'HLTau.vot',
+            'dist': 140, 'age': 5, 'sptype': 'K5V', 
+            'mag_val': 7.4, 'bp': bp_k, 
+        },
+        'SAO-206462' : {
+            'name': 'SAO-206462', 'fname': 'SAO206462.vot',
+            'dist': 135, 'age': 10, 'sptype': 'F8V', 
+            'mag_val': 5.8, 'bp': bp_k, 
+        },
+        'PDS-70' : {
+            'name': 'PDS-70', 'fname': 'PDS70.vot',
+            'dist': 112, 'age': 10, 'sptype': 'K7IV', 
+            'mag_val': 8.8, 'bp': bp_k, 
+        },
+        'HD 107146' : {
+            'name': 'HD 107146', 'fname': 'HD107146.vot',
+            'dist': 27.47, 'age': 200, 'sptype': 'G2V', 
+            'Teff': 5850, 'metallicity': +0.00, 'log_g': 4.5,
+            'Av': 0.0, 'mag_val': 5.54, 'bp': bp_k, 
+        },
+    }
+
+    try:
+        dict_sci = stellar_dict[name]
+    except KeyError:
+        raise ValueError(f"Source '{name}' not found in stellar dictionary.")
+    
+    fname = dict_sci.pop('fname')
+    dict_sci['votable_input'] = os.path.join(votdir, fname)
+
+    # Add any kwargs
+    dict_sci.update(kwargs)
+    
+    return dict_sci
+
 class NumpyArrayEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, np.integer):
@@ -893,7 +954,7 @@ class nrc_analyze():
         """Return expected position for a given observation"""
         return self.obs_dict[obsid][dither]['loc_exp'][frame]
 
-    def create_stellar_spectrum(self):
+    def create_stellar_spectrum(self, args_src=None, kwargs_src={}):
         """Create stellar spectrum"""
         from webbpsf_ext.spectra import source_spectrum
         from webbpsf_ext import bp_2mass
@@ -902,39 +963,40 @@ class nrc_analyze():
         if len(self.obs_dict)==0:
             raise ValueError("Run generate_obs_dict() first.")
 
-        hdr = self.obs_dict[self.obsids[0]][0]['hdr0']
+        if args_src is None:
+            hdr = self.obs_dict[self.obsids[0]][0]['hdr0']
 
-        target_name = hdr['TARGPROP']
-        # Various Bandpasses
-        bp_k = bp_2mass('k')
-        # Directory housing VOTables 
-        # http://vizier.u-strasbg.fr/vizier/sed/
-        votdir = '../votables/'
-        if target_name=='MWC-758':
-            vot_path = os.path.join(votdir, 'MWC758.vot')
-            #               dist, age, sptype,  vmag kmag  W1   W2
-            args_sources = (160,   5, 'A5V',    8.3, 5.7, 4.6, 3.5)
-        elif target_name=='HL-TAU':
-            vot_path = os.path.join(votdir, 'HLTau.vot')
-            #               dist, age, sptype,  vmag kmag  W1   W2
-            args_sources = (140,   5, 'K5V',  15.1, 7.4, 5.2, 3.3)
-        elif target_name=='SAO-206462':
-            vot_path = os.path.join(votdir, 'SAO206462.vot')
-            #               dist, age, sptype,  vmag kmag  W1   W2
-            args_sources = (135,   10, 'F8V',  8.7, 5.8, 5.0, 4.0)
-        elif target_name=='PDS-70':
-            vot_path = os.path.join(votdir, 'PDS70.vot')
-            #               dist, age, sptype,  vmag kmag  W1   W2
-            args_sources = (112,   10, 'K7IV',  12.2, 8.8, 8.0, 7.7)
-        else:
-            raise ValueError(f"Target params for {target_name} not yet defined.")
+            target_name = hdr['TARGPROP']
+            # Various Bandpasses
+            bp_k = bp_2mass('k')
+            # Directory housing VOTables 
+            # http://vizier.u-strasbg.fr/vizier/sed/
+            votdir = '../votables/'
+            if target_name=='MWC-758':
+                vot_path = os.path.join(votdir, 'MWC758.vot')
+                #               dist, age, sptype,  vmag kmag  W1   W2
+                args_sources = (160,   5, 'A5V',    8.3, 5.7, 4.6, 3.5)
+            elif target_name=='HL-TAU':
+                vot_path = os.path.join(votdir, 'HLTau.vot')
+                #               dist, age, sptype,  vmag kmag  W1   W2
+                args_sources = (140,   5, 'K5V',  15.1, 7.4, 5.2, 3.3)
+            elif target_name=='SAO-206462':
+                vot_path = os.path.join(votdir, 'SAO206462.vot')
+                #               dist, age, sptype,  vmag kmag  W1   W2
+                args_sources = (135,   10, 'F8V',  8.7, 5.8, 5.0, 4.0)
+            elif target_name=='PDS-70':
+                vot_path = os.path.join(votdir, 'PDS70.vot')
+                #               dist, age, sptype,  vmag kmag  W1   W2
+                args_sources = (112,   10, 'K7IV',  12.2, 8.8, 8.0, 7.7)
+            else:
+                raise ValueError(f"Target params for {target_name} not yet defined.")
 
-        dist_sci, age_sci, spt_sci, vmag_sci, kmag_sci, w1_sci, w2_sci = args_sources
-        mag_sci, bp_sci = kmag_sci, bp_k
-        args_src = (target_name, spt_sci, mag_sci, bp_sci, vot_path)
+            dist_sci, age_sci, spt_sci, vmag_sci, kmag_sci, w1_sci, w2_sci = args_sources
+            mag_sci, bp_sci = kmag_sci, bp_k
+            args_src = (target_name, spt_sci, mag_sci, bp_sci, vot_path)
 
         # Create spectral object and fit
-        src = source_spectrum(*args_src)
+        src = source_spectrum(*args_src, **kwargs_src)
         src.fit_SED(use_err=False, robust=False, wlim=[1,10], IR_excess=True, verbose=False)
 
         # Plot SED if desired
@@ -943,7 +1005,7 @@ class nrc_analyze():
         # Final source spectrum
         self.sp_sci = src.sp_model
 
-    def create_nircam_object(self, fov_pix=65, oversample=4):
+    def create_nircam_object(self, fov_pix=65, oversample=None):
         """Create NIRCam object"""
 
         setup_logging('WARN', verbose=False)
@@ -967,6 +1029,8 @@ class nrc_analyze():
         if oversample is not None:
             nrc.oversample = oversample
 
+        apname = self.nrc.siaf_ap.AperName
+
         # Unit response to create effective PSF
         bp = nrc.bandpass
         sp = self.sp_sci.renorm(bp.unit_response(), 'flam', bp)
@@ -975,13 +1039,51 @@ class nrc_analyze():
         diffusion_sigma = self.best_diffusion if diffusion_sigma is None else diffusion_sigma
 
         # Simulate PSF
+        use_bg_psf = True if nrc.is_coron else False
         psf_over = gen_diffusion_psf(nrc, diffusion_sigma, defocus_waves_2um=focus,
                                      return_oversample=True, return_hdul=False,
-                                     sp=sp, coord_vals=coord_vals, coord_frame=coord_frame)
+                                     sp=sp, coord_vals=coord_vals, coord_frame=coord_frame,
+                                     use_bg_psf=use_bg_psf, normalize='exit_pupil')
 
         # Reposition oversampled synthetic PSF to the center of array 
         # using center of mass algorithm
-        psf_over, xyoff_psfs_over = recenter_psf(psf_over, niter=3, halfwidth=15)
+        if nrc.is_coron:
+            if oversample==1:
+                halfwidth=1
+            elif oversample<=3:
+                # Prevent special case COM algorithm from not converging
+                if ('LWB' in apname) and 'F4' in nrc.filter:
+                    halfwidth=5
+                else:
+                    halfwidth=3
+            elif oversample<=5:
+                halfwidth=7
+        else:
+            halfwidth=15
+        _, xyoff_psfs_over = recenter_psf(psf_over, niter=3, halfwidth=halfwidth)
+
+        # Regenerate coronagraphic PSF
+        # Don't include diffusion or IPC yet. That comes later.
+        if nrc.is_coron:
+            # For certain coronagraphic observations, fit occulted 
+            # obs with bg PSF because of poor pointing
+            if (self.pid in [1412]) and (self.obsid in [2, 4, 5]):
+                use_bg_psf = True
+            elif self.pid in [1536, 1537, 1538] and '_MASK' in apname:
+                # These observations were intentionally offset 5" to the south
+                use_bg_psf = True
+            else:
+                use_bg_psf = False
+            psf_over = gen_diffusion_psf(nrc, diffusion_sigma, defocus_waves_2um=focus,
+                                        return_oversample=True, return_hdul=False,
+                                        sp=sp, coord_vals=coord_vals, coord_frame=coord_frame,
+                                        use_bg_psf=use_bg_psf, normalize='exit_pupil')
+
+        # Shift required to move PSF to center of array
+        # These are oversampled pixels
+        xsh_to_cen, ysh_to_cen = xyoff_psfs_over
+
+        psf_over = fourier_imshift(psf_over, xsh_to_cen, ysh_to_cen)
 
         # xyoff_psfs_over is the shift required to move simulated PSF to center of array
         if return_xyoff:
@@ -990,7 +1092,7 @@ class nrc_analyze():
             return psf_over
     
 
-    def simulate_psfs(self, xysub, use_com=True, force=False):
+    def simulate_psfs(self, xysub, use_com=True, force=False, diffusion_sigma=0):
 
         from webbpsf_ext.imreg_tools import load_cropped_files
         from webbpsf_ext.imreg_tools import get_com, get_expected_loc
@@ -1026,16 +1128,31 @@ class nrc_analyze():
         xy_tel = np.array([ap.sci_to_tel(xy[0],xy[1]) for xy in xy_sci])
         ndith = len(xy_tel)
 
+        # No need to do multiple PSFs if coronagraphic observations
+        if self.nrc.is_coron:
+            ndith = 1
+            coord_vals = coord_frame = None
+
         # Simulate PSFs
         # Create oversampled PSFs for each dither location
         osamp = self.nrc.oversample
         if (self.psfs_over is None) or (force==True):
             psfs_over = []
             xyoff_psfs_over = []
-            for i in trange(ndith, desc='Oversampled PSFs', leave=False):
-                v2, v3 = xy_tel[i]
-                res = self._simulate_psf(coord_vals=(v2,v3), coord_frame='tel',
-                                        fov_pix=xysub, oversample=osamp, return_xyoff=True)
+
+            if ndith == 1:
+                itervals = range(ndith)
+            else:
+                itervals = trange(ndith, desc='Oversampled PSFs', leave=False)
+
+            for i in itervals:
+                if not self.nrc.is_coron:
+                    v2, v3 = xy_tel[i]
+                    coord_vals, coord_frame = ((v2,v3), 'tel')
+
+                res = self._simulate_psf(coord_vals=coord_vals, coord_frame=coord_frame,
+                                         fov_pix=xysub, oversample=osamp, return_xyoff=True,
+                                         diffusion_sigma=diffusion_sigma)
                 psfs_over.append(res[0])
                 xyoff_psfs_over.append(res[1])
             psfs_over = np.asarray(psfs_over)
@@ -1081,9 +1198,10 @@ class nrc_analyze():
 
         # Saved file
         save_dir = os.path.dirname(obs_dict[self.obsids[0]][0]['file'])
+        save_str0 = '_obs' + '.'.join([str(obs) for obs in self.obsids])
         save_str1 = '_com' if use_com else '_exp'
         save_str2 = '_med' if med_dithers else ''
-        save_file = f'star_positions{save_str1}{save_str2}.json'
+        save_file = f'star_positions{save_str0}{save_str1}{save_str2}.json'
         save_path = os.path.join(save_dir, save_file)
         if os.path.exists(save_path) and (force==False):
             _log.info(f"Loading star positions from {save_path}")
@@ -1135,6 +1253,21 @@ class nrc_analyze():
 
         # return imsub_arr, psfs_over, bp_masks, xyind_arr
 
+        # Choose region to fit PSF
+        nrc = self.nrc
+        apname = nrc.siaf_ap.AperName
+        if nrc.is_coron and ('TAMASK' in apname):
+            # Target acquisitions
+            rin = 0
+        elif self.pid in [1536, 1537, 1538]:
+            rin = 0 
+        elif nrc.is_coron:
+            # All other coronagraphic observations
+            rin = 4
+        else:
+            # Direct Imaging
+            rin  = 0
+
         # Find best sub-pixel fit location for all images
         xy_loc_all = []
         # print("Finding offsets...")
@@ -1152,7 +1285,7 @@ class nrc_analyze():
             if len(bpmask.shape)==3 and med_dithers:
                 bpmask = np.bitwise_and.reduce(bpmask, axis=0)
             # Find the best PSF shifts to match science images
-            xysh_pix = find_pix_offsets(imsub, psf_over, psf_osamp=osamp, 
+            xysh_pix = find_pix_offsets(imsub, psf_over, psf_osamp=osamp, rin=rin,
                                         kipc=self.kipc, kppc=self.kppc, 
                                         diffusion_sigma=self.best_diffusion,
                                         bpmask_arr=bpmask, phase=False)
@@ -1921,3 +2054,4 @@ class nrc_analyze():
         
     #     """
         
+
