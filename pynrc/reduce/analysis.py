@@ -601,7 +601,6 @@ def stellar_arguments(name, votdir='../votables/', fname=None, **kwargs):
     from webbpsf_ext.synphot_ext import ObsBandpass
 
     # Define bandpasses and source information
-    bp_v = ObsBandpass('v')
     bp_k = bp_2mass('k')
 
     # Science   source,  dist, age, sptype, Teff, [Fe/H], log_g, mag, band
@@ -633,6 +632,12 @@ def stellar_arguments(name, votdir='../votables/', fname=None, **kwargs):
             'Teff': 5850, 'metallicity': +0.00, 'log_g': 4.5,
             'Av': 0.0, 'mag_val': 5.54, 'bp': bp_k, 
         },
+        'HD 111398' : {
+            'name': 'HD 111398', 'fname': 'HD111398.vot',
+            'sptype': 'G5V', 'Teff': 5689, 'metallicity': +0.07, 'log_g': 4.5,
+            'Av': 0.0, 'mag_val': 5.53, 'bp': bp_k, 
+        },
+
     }
 
     try:
@@ -664,9 +669,26 @@ class nrc_analyze():
     siaf = nrc_siaf
     _mastdir = os.getenv('JWSTDOWNLOAD_OUTDIR')
 
-    def __init__(self, pid, obsids, filter, sca, basedir=None):
+    def __init__(self, pid, obsids, filter, sca, obsids_ref=None, basedir=None):
+        """ Initialize NIRCam analysis class 
+        
+        Parameters
+        ----------
+        pid : int
+            Program ID
+        obsids : list
+            List of observation IDs
+        filter : str
+            NIRCam filter
+        sca : int
+            Detector SCA number
+        obsids_ref : list
+            List of reference observation IDs. Will create additional classes for each
+            set of reference observations.
+        """
         self.pid = pid
         self.obsids = obsids
+        self.obsids_ref = obsids_ref
         self.filter = filter
         self.sca = get_detname(sca, use_long=True)
 
@@ -699,6 +721,15 @@ class nrc_analyze():
         self.xy_loc_ind = None
         self.xyshift = None
         self.shift_matrix = None
+
+        # Create objects for each reference observation
+        if obsids_ref is not None:
+            self.ref_objs = []
+            for oid in obsids_ref:
+                ref_obj = nrc_analyze(pid, [oid], filter, sca, basedir=basedir)
+                self.ref_objs.append(ref_obj)
+        else:
+            self.ref_objs = None
 
     @property
     def uncal_dir(self):
@@ -784,6 +815,11 @@ class nrc_analyze():
             obs_dict = read_sgd_files(indir, self.pid, oid, self.filter, self.sca,
                                       file_type=file_type)
             self.obs_dict[oid] = obs_dict
+
+        # Call this same function in the reference objects
+        if self.ref_objs is not None:
+            for ref_obj in self.ref_objs:
+                ref_obj.generate_obs_dict(file_type=file_type)
 
     def _flag_bad_pixels(self, imarr, dqarr, nsig_spatial=10, nsig_temporal=10, ntemporal_limit=10, niter=3):
         """Flag bad pixels in a single image or stack of images
@@ -919,6 +955,13 @@ class nrc_analyze():
                         hdul.writeto(file_dq, overwrite=True)
                 odict[k]['dq'] = dq
 
+        # Call this same function in the reference objects
+        if self.ref_objs is not None:
+            for ref_obj in self.ref_objs:
+                ref_obj.flag_bad_pixels(nsig_spatial=nsig_spatial, nsig_temporal=nsig_temporal,
+                                        ntemporal_limit=ntemporal_limit, niter=niter,
+                                        save_dq_flags=save_dq_flags, save_suffix=save_suffix, force=force)
+
     def get_expected_pos(self):
         """Get the expected stellar positions based on header info"""
         from webbpsf_ext.imreg_tools import get_expected_loc
@@ -950,11 +993,16 @@ class nrc_analyze():
                     loc_dict[frame] = np.asarray(loc)
                 d['loc_exp'] = loc_dict
 
+        # Call this same function in the reference objects
+        if self.ref_objs is not None:
+            for ref_obj in self.ref_objs:
+                ref_obj.get_expected_pos()
+
     def expected_pos(self, obsid, dither, frame='sci'):
         """Return expected position for a given observation"""
         return self.obs_dict[obsid][dither]['loc_exp'][frame]
 
-    def create_stellar_spectrum(self, args_src=None, kwargs_src={}):
+    def create_stellar_spectrum(self, name=None, return_sp=False, **kwargs):
         """Create stellar spectrum"""
         from webbpsf_ext.spectra import source_spectrum
         from webbpsf_ext import bp_2mass
@@ -963,62 +1011,60 @@ class nrc_analyze():
         if len(self.obs_dict)==0:
             raise ValueError("Run generate_obs_dict() first.")
 
-        if args_src is None:
+        if name is None:
             hdr = self.obs_dict[self.obsids[0]][0]['hdr0']
+            name = hdr['TARGNAME']
+            try:
+                kwargs_src = stellar_arguments(name, **kwargs)
+            except KeyError:
+                name = hdr['TARGPROP']
+                kwargs_src = stellar_arguments(name, **kwargs)
+        else:
+            kwargs_src = stellar_arguments(name, **kwargs)
 
-            target_name = hdr['TARGPROP']
-            # Various Bandpasses
-            bp_k = bp_2mass('k')
-            # Directory housing VOTables 
-            # http://vizier.u-strasbg.fr/vizier/sed/
-            votdir = '../votables/'
-            if target_name=='MWC-758':
-                vot_path = os.path.join(votdir, 'MWC758.vot')
-                #               dist, age, sptype,  vmag kmag  W1   W2
-                args_sources = (160,   5, 'A5V',    8.3, 5.7, 4.6, 3.5)
-            elif target_name=='HL-TAU':
-                vot_path = os.path.join(votdir, 'HLTau.vot')
-                #               dist, age, sptype,  vmag kmag  W1   W2
-                args_sources = (140,   5, 'K5V',  15.1, 7.4, 5.2, 3.3)
-            elif target_name=='SAO-206462':
-                vot_path = os.path.join(votdir, 'SAO206462.vot')
-                #               dist, age, sptype,  vmag kmag  W1   W2
-                args_sources = (135,   10, 'F8V',  8.7, 5.8, 5.0, 4.0)
-            elif target_name=='PDS-70':
-                vot_path = os.path.join(votdir, 'PDS70.vot')
-                #               dist, age, sptype,  vmag kmag  W1   W2
-                args_sources = (112,   10, 'K7IV',  12.2, 8.8, 8.0, 7.7)
-            else:
-                raise ValueError(f"Target params for {target_name} not yet defined.")
-
-            dist_sci, age_sci, spt_sci, vmag_sci, kmag_sci, w1_sci, w2_sci = args_sources
-            mag_sci, bp_sci = kmag_sci, bp_k
-            args_src = (target_name, spt_sci, mag_sci, bp_sci, vot_path)
+        # Directory housing VOTables 
+        # http://vizier.u-strasbg.fr/vizier/sed/
+        # votdir = '../votables/'
 
         # Create spectral object and fit
-        src = source_spectrum(*args_src, **kwargs_src)
+        src = source_spectrum(**kwargs_src)
         src.fit_SED(use_err=False, robust=False, wlim=[1,10], IR_excess=True, verbose=False)
 
         # Plot SED if desired
         # src.plot_SED(xr=[0.5,30])
 
         # Final source spectrum
-        self.sp_sci = src.sp_model
+        if return_sp:
+            return src.sp_model
+        else:
+            self.sp_sci = src.sp_model
 
     def create_nircam_object(self, fov_pix=65, oversample=None):
         """Create NIRCam object"""
 
+        from ..nrc_utils import conf
+
+        log_prev = conf.logging_level
         setup_logging('WARN', verbose=False)
 
         fpath = self.obs_dict[self.obsids[0]][0]['file']
         self.nrc = nrc_from_file(fpath, fov_pix, oversample=oversample)
+
+        # Reset logging level
+        setup_logging(log_prev, verbose=False)
+
+        # Call this same function in the reference objects
+        if self.ref_objs is not None:
+            for ref_obj in self.ref_objs:
+                ref_obj.create_nircam_object(fov_pix=fov_pix, oversample=oversample)
         
     def _simulate_psf(self, coord_vals=None, coord_frame=None, 
-                      fov_pix=None, oversample=None,
+                      fov_pix=None, oversample=None, sp=None,
                       focus=0, diffusion_sigma=0, return_xyoff=False):
         """Simulate PSF placed in center of array"""
 
         from webbpsf_ext.imreg_tools import recenter_psf
+        from ..nrc_utils import conf
 
         if self.nrc is None:
             self.create_nircam_object()
@@ -1033,16 +1079,20 @@ class nrc_analyze():
 
         # Unit response to create effective PSF
         bp = nrc.bandpass
-        sp = self.sp_sci.renorm(bp.unit_response(), 'flam', bp)
+        sp = self.sp_sci
+        sp_norm = sp.renorm(bp.unit_response(), 'flam', bp)
 
         focus = 0 if focus is None else focus
         diffusion_sigma = self.best_diffusion if diffusion_sigma is None else diffusion_sigma
 
         # Simulate PSF
+        log_prev = conf.logging_level
+        setup_logging('WARN', verbose=False)
+
         use_bg_psf = True if nrc.is_coron else False
         psf_over = gen_diffusion_psf(nrc, diffusion_sigma, defocus_waves_2um=focus,
                                      return_oversample=True, return_hdul=False,
-                                     sp=sp, coord_vals=coord_vals, coord_frame=coord_frame,
+                                     sp=sp_norm, coord_vals=coord_vals, coord_frame=coord_frame,
                                      use_bg_psf=use_bg_psf, normalize='exit_pupil')
 
         # Reposition oversampled synthetic PSF to the center of array 
@@ -1075,9 +1125,12 @@ class nrc_analyze():
             else:
                 use_bg_psf = False
             psf_over = gen_diffusion_psf(nrc, diffusion_sigma, defocus_waves_2um=focus,
-                                        return_oversample=True, return_hdul=False,
-                                        sp=sp, coord_vals=coord_vals, coord_frame=coord_frame,
-                                        use_bg_psf=use_bg_psf, normalize='exit_pupil')
+                                         return_oversample=True, return_hdul=False,
+                                         sp=sp, coord_vals=coord_vals, coord_frame=coord_frame,
+                                         use_bg_psf=use_bg_psf, normalize='exit_pupil')
+            
+        # Reset logging level
+        setup_logging(log_prev, verbose=False)
 
         # Shift required to move PSF to center of array
         # These are oversampled pixels
@@ -1093,6 +1146,11 @@ class nrc_analyze():
     
 
     def simulate_psfs(self, xysub, use_com=True, force=False, diffusion_sigma=0):
+        """Simulate PSFs for each dither position
+        
+        For corongraphic observations, this only simulates a single PSF
+        that is centered on the coronagraphic mask.
+        """
 
         from webbpsf_ext.imreg_tools import load_cropped_files
         from webbpsf_ext.imreg_tools import get_com, get_expected_loc
@@ -1100,9 +1158,16 @@ class nrc_analyze():
         if self.nrc is None:
             self.create_nircam_object(fov_pix=xysub)
 
+        # Ensure stellar spectrum has been created
+        if self.sp_sci is None:
+            self.create_stellar_spectrum()
+
         # Saved file
         obs_dict = self.obs_dict
         save_dir = os.path.dirname(obs_dict[self.obsids[0]][0]['file'])
+
+        # Coronagraphic observations?
+        is_coron = self.nrc.is_coron
 
         # Get all the file names
         files = []
@@ -1126,12 +1191,9 @@ class nrc_analyze():
         # Convert to 'tel' V2V3 coords
         ap = self.nrc.siaf_ap
         xy_tel = np.array([ap.sci_to_tel(xy[0],xy[1]) for xy in xy_sci])
-        ndith = len(xy_tel)
 
         # No need to do multiple PSFs if coronagraphic observations
-        if self.nrc.is_coron:
-            ndith = 1
-            coord_vals = coord_frame = None
+        ndith = 1 if is_coron else len(xy_tel)
 
         # Simulate PSFs
         # Create oversampled PSFs for each dither location
@@ -1146,7 +1208,9 @@ class nrc_analyze():
                 itervals = trange(ndith, desc='Oversampled PSFs', leave=False)
 
             for i in itervals:
-                if not self.nrc.is_coron:
+                if is_coron:
+                    coord_vals = coord_frame = None
+                else:
                     v2, v3 = xy_tel[i]
                     coord_vals, coord_frame = ((v2,v3), 'tel')
 
@@ -1175,7 +1239,7 @@ class nrc_analyze():
         Updates self.xy_loc_ind and self.xyshift
         """
         from webbpsf_ext.imreg_tools import find_pix_offsets, load_cropped_files
-        from webbpsf_ext.imreg_tools import get_com, get_expected_loc
+        from webbpsf_ext.imreg_tools import get_com, get_expected_loc, get_sgd_offsets
         from webbpsf_ext.image_manip import get_im_cen, bp_fix
 
         # Check if generate_obs_dict has been run
@@ -1209,120 +1273,138 @@ class nrc_analyze():
                 data = json.load(f)
             self.xy_loc_ind = np.array(data['xy_loc_ind'])
             self.xyshift = np.array(data['xyshift'])
-            return
 
-        # Get all the file names
-        files = []
-        for oid in self.obsids:
-            odict = obs_dict[oid]
-            for k in odict.keys():
-                files.append(os.path.basename(odict[k]['file']))
-
-        # Crop array around star
-        find_func = get_com if use_com else get_expected_loc
-        _log.info("Loading cropped files and fixing pixels...")
-        res = load_cropped_files(save_dir, files, xysub=xysub, bgsub=bgsub, find_func=find_func)
-        imsub_arr, dqsub_arr, xyind_arr, bp_masks = res
-
-        # Fix bad pixels
-        # Flag additional bad pixels
-        ndither = len(imsub_arr)
-        for i in range(ndither):
-            dqsub_arr[i] = self._flag_bad_pixels(imsub_arr[i], dqsub_arr[i])
-        sh_orig = imsub_arr.shape
-        ny, nx = sh_orig[-2:]
-        imsub_arr = imsub_arr.reshape([-1, ny, nx])
-        dqsub_arr = dqsub_arr.reshape([-1, ny, nx])
-        bp_masks = bp_masks.reshape([-1, ny, nx])
-
-        for i in range(ndither):
-            bp1 = bp_masks[i]
-            bp2 = get_dqmask(dqsub_arr[i], ['DO_NOT_USE']) > 0
-            bp = bp1 | bp2
-            im = bp_fix(imsub_arr[i], bpmask=bp, in_place=True, niter=3)
-            border = get_dqmask(dqsub_arr[i], ['FLUX_ESTIMATED', 'REFERENCE_PIXEL']) > 0
-            im[border] = 0
-            imsub_arr[i] = im
-
-        imsub_arr = imsub_arr.reshape(sh_orig)
-        dqsub_arr = dqsub_arr.reshape(sh_orig)
-        bp_masks = bp_masks.reshape(sh_orig)
-
-        # Simulate PSFs for each dither location
-        psfs_over, _ = self.simulate_psfs(xysub, use_com=use_com, force=force)
-
-        # return imsub_arr, psfs_over, bp_masks, xyind_arr
-
-        # Choose region to fit PSF
-        nrc = self.nrc
-        apname = nrc.siaf_ap.AperName
-        if nrc.is_coron and ('TAMASK' in apname):
-            # Target acquisitions
-            rin = 0
-        elif self.pid in [1536, 1537, 1538]:
-            rin = 0 
-        elif nrc.is_coron:
-            # All other coronagraphic observations
-            rin = 4
         else:
-            # Direct Imaging
-            rin  = 0
+            # Get all the file names
+            files = []
+            for oid in self.obsids:
+                odict = obs_dict[oid]
+                for k in odict.keys():
+                    files.append(os.path.basename(odict[k]['file']))
 
-        # Find best sub-pixel fit location for all images
-        xy_loc_all = []
-        # print("Finding offsets...")
-        osamp = self.nrc.oversample
-        itervals = trange(ndither, desc='Finding offsets', leave=False)
-        for i in itervals:
-            # Get the PSF for this dither
-            psf_over = psfs_over[i]
-            # Get the image(s) for this dither
-            imsub = imsub_arr[i]
-            if len(imsub.shape)==3 and med_dithers:
-                imsub = np.nanmedian(imsub, axis=0)
-            # Get the bad pixel mask(s) for this dither
-            bpmask = bp_masks[i]
-            if len(bpmask.shape)==3 and med_dithers:
-                bpmask = np.bitwise_and.reduce(bpmask, axis=0)
-            # Find the best PSF shifts to match science images
-            xysh_pix = find_pix_offsets(imsub, psf_over, psf_osamp=osamp, rin=rin,
-                                        kipc=self.kipc, kppc=self.kppc, 
-                                        diffusion_sigma=self.best_diffusion,
-                                        bpmask_arr=bpmask, phase=False)
+            # Crop array around star
+            find_func = get_com if use_com else get_expected_loc
+            _log.info("Loading cropped files and fixing pixels...")
+            res = load_cropped_files(save_dir, files, xysub=xysub, bgsub=bgsub, find_func=find_func)
+            imsub_arr, dqsub_arr, xyind_arr, bp_masks = res
 
-            # Multiply by -1 to get current position relative to center of cropped subarray
-            xysh_pix *= -1
+            # Fix bad pixels
+            # Flag additional bad pixels
+            ndither = len(imsub_arr)
+            for i in range(ndither):
+                dqsub_arr[i] = self._flag_bad_pixels(imsub_arr[i], dqsub_arr[i])
+            sh_orig = imsub_arr.shape
+            ny, nx = sh_orig[-2:]
+            imsub_arr = imsub_arr.reshape([-1, ny, nx])
+            dqsub_arr = dqsub_arr.reshape([-1, ny, nx])
+            bp_masks = bp_masks.reshape([-1, ny, nx])
 
-            im = imsub if len(imsub.shape)==2 else imsub[0]
-            xc_sub, yc_sub = get_im_cen(im)
-            # Get locations within the subarray
-            xy_loc_sub = xysh_pix + np.array([xc_sub, yc_sub])
-            # Locations in full science frame
-            xy_loc = xy_loc_sub + xyind_arr[i, 0::2]
+            for i in range(ndither):
+                bp1 = bp_masks[i]
+                bp2 = get_dqmask(dqsub_arr[i], ['DO_NOT_USE']) > 0
+                bp = bp1 | bp2
+                im = bp_fix(imsub_arr[i], bpmask=bp, in_place=True, niter=3)
+                border = get_dqmask(dqsub_arr[i], ['FLUX_ESTIMATED', 'REFERENCE_PIXEL']) > 0
+                im[border] = 0
+                imsub_arr[i] = im
 
-            xy_loc_all.append(xy_loc)
-        xy_loc_all = np.array(xy_loc_all)
+            imsub_arr = imsub_arr.reshape(sh_orig)
+            dqsub_arr = dqsub_arr.reshape(sh_orig)
+            bp_masks = bp_masks.reshape(sh_orig)
 
-        if len(xy_loc_all.shape)==3:
-            xy_loc_all = np.mean(xy_loc_all, axis=1)
+            # Simulate PSFs for each dither location
+            psfs_over, _ = self.simulate_psfs(xysub, use_com=use_com, force=force)
 
-        # Index positions of star in reduced data
-        self.xy_loc_ind = xy_loc_all
+            # return imsub_arr, psfs_over, bp_masks, xyind_arr
 
-       # Get shift values necessary to center the star in reduce image array
-        im = obs_dict[self.obsids[0]][0]['data']
-        if len(im.shape)==3:
-            im = im[0]
-        self.xyshift = get_im_cen(im) - self.xy_loc_ind
+            # Choose region to fit PSF
+            nrc = self.nrc
+            apname = nrc.siaf_ap.AperName
+            if nrc.is_coron and ('TAMASK' in apname):
+                # Target acquisitions
+                rin = 0
+            elif self.pid in [1536, 1537, 1538]:
+                rin = 0 
+            elif nrc.is_coron:
+                # All other coronagraphic observations
+                rin = 4
+            else:
+                # Direct Imaging
+                rin  = 0
 
-        # Save xy_loc_ind and xyshift to file
-        if save:
-            _log.info(f"Saving star positions to {save_path}")
-            save_data = {'xy_loc_ind': self.xy_loc_ind, 'xyshift': self.xyshift}
-            with open(save_path, 'w') as f:
-                json.dump(save_data, f, cls=NumpyArrayEncoder)
+            # Find best sub-pixel fit location for all images
+            xy_loc_all = []
+            # print("Finding offsets...")
+            osamp = self.nrc.oversample
+            itervals = trange(ndither, desc='Finding offsets', leave=False)
+            for i in itervals:
+                # Get the PSF for this dither
+                psf_over = psfs_over[0] if psfs_over.shape[0]==1 else psfs_over[i]
+                # Get the image(s) for this dither
+                imsub = imsub_arr[i]
+                if len(imsub.shape)==3 and med_dithers:
+                    imsub = np.nanmedian(imsub, axis=0)
+                # Get the bad pixel mask(s) for this dither
+                bpmask = bp_masks[i]
+                if len(bpmask.shape)==3 and med_dithers:
+                    bpmask = np.bitwise_and.reduce(bpmask, axis=0)
+                # Find the best PSF shifts to match science images
+                xysh_pix = find_pix_offsets(imsub, psf_over, psf_osamp=osamp, rin=rin,
+                                            kipc=self.kipc, kppc=self.kppc, 
+                                            diffusion_sigma=self.best_diffusion,
+                                            bpmask_arr=bpmask, phase=False)
 
-        del imsub_arr, dqsub_arr, bp_masks
+                # Multiply by -1 to get current position relative to center of cropped subarray
+                xysh_pix *= -1
+
+                im = imsub if len(imsub.shape)==2 else imsub[0]
+                xc_sub, yc_sub = get_im_cen(im)
+                # Get locations within the subarray
+                xy_loc_sub = xysh_pix + np.array([xc_sub, yc_sub])
+                # Locations in full science frame
+                xy_loc = xy_loc_sub + xyind_arr[i, 0::2]
+
+                xy_loc_all.append(xy_loc)
+            xy_loc_all = np.array(xy_loc_all)
+
+            if len(xy_loc_all.shape)==3:
+                xy_loc_all = np.mean(xy_loc_all, axis=1)
+
+            # Index positions of star in reduced data
+            self.xy_loc_ind = xy_loc_all
+
+            # Get shift values necessary to center the star in reduce image array
+            im = obs_dict[self.obsids[0]][0]['data']
+            if len(im.shape)==3:
+                im = im[0]
+            self.xyshift = get_im_cen(im) - self.xy_loc_ind
+
+            # Special case for SGD, assume ideal offsets
+            hdr0 = obs_dict[self.obsids[0]][0]['hdr0']
+            if hdr0.get('SUBPXPAT') == 'SMALL-GRID-DITHER':
+                sgd_patt = hdr0.get('SMGRDPAT', None)
+                xoff_asec, yoff_asec = get_sgd_offsets(sgd_patt)
+                xoff_pix = xoff_asec / nrc.pixelscale
+                yoff_pix = yoff_asec / nrc.pixelscale
+
+                # Update xyshift and xy_loc_ind
+                self.xyshift = np.mean(self.xyshift, axis=0) - np.array([xoff_pix, yoff_pix]).T
+                self.xy_loc_ind = get_im_cen(im) - self.xyshift
+
+            # Save xy_loc_ind and xyshift to file
+            if save:
+                _log.info(f"Saving star positions to {save_path}")
+                save_data = {'xy_loc_ind': self.xy_loc_ind, 'xyshift': self.xyshift}
+                with open(save_path, 'w') as f:
+                    json.dump(save_data, f, cls=NumpyArrayEncoder)
+
+            del imsub_arr, dqsub_arr, bp_masks
+
+        # Call this same function in the reference objects
+        if self.ref_objs is not None:
+            for ref_obj in self.ref_objs:
+                ref_obj.get_star_positions(xysub=xysub, bgsub=bgsub, use_com=use_com,
+                                           med_dithers=med_dithers, save=save, force=force)
                 
     def shift_to_center_int(self, med_dithers=True, return_results=False):
         """Expand and shift images to place star roughly in center of array
@@ -1342,6 +1424,15 @@ class nrc_analyze():
         from webbpsf_ext.imreg_tools import crop_image
         from webbpsf_ext.image_manip import get_im_cen
         from jwst.datamodels import dqflags
+
+        # Determine if SGD data
+        hdr0 = self.obs_dict[self.obsids[0]][0]['hdr0']
+        is_sgd = hdr0.get('SUBPXPAT') == 'SMALL-GRID-DITHER'
+
+        # Enforce med_dithers=True for SGD data
+        if is_sgd and not med_dithers:
+            _log.warning("Forcing med_dithers=True for SGD data.")
+            med_dithers = True
 
         imarr = []
         dqarr = []
@@ -1394,6 +1485,8 @@ class nrc_analyze():
             # Reduce to single shift value per dither
             xyshift = np.mean(xyshift, axis=1)
             xy_loc_shift = np.mean(xy_loc_shift, axis=1)
+
+        # Determine pad size and number of shift values per dither
         if len(xyshift.shape)==2:
             xoff_int = round_int(xyshift[:, 0])
             yoff_int = round_int(xyshift[:, 1])
@@ -1419,11 +1512,12 @@ class nrc_analyze():
         for i in range(ndith):
             # Case of single image per dither
             if nimg_per_dither==1:
-                im, xy = crop_image(imarr[i], nxy_pad, xyloc=xy_loc_all[i], return_xy=True)
+                xy_loc = xy_loc_all[0] if is_sgd else xy_loc_all[i]
+                im, xy = crop_image(imarr[i], nxy_pad, xyloc=xy_loc, return_xy=True)
+                err = crop_image(errarr[i], nxy_pad, xyloc=xy_loc, fill_val=np.nanmax(errarr))
                 fill_val = dqflags.pixel['FLUX_ESTIMATED'] | dqflags.pixel['DO_NOT_USE']
-                err = crop_image(errarr[i], nxy_pad, xyloc=xy_loc_all[i], fill_val=np.nanmax(errarr))
-                dq = crop_image(dqarr[i], nxy_pad, xyloc=xy_loc_all[i], fill_val=fill_val)
-                bp = crop_image(bparr[i], nxy_pad, xyloc=xy_loc_all[i], fill_val=True)
+                dq = crop_image(dqarr[i], nxy_pad, xyloc=xy_loc, fill_val=fill_val)
+                bp = crop_image(bparr[i], nxy_pad, xyloc=xy_loc, fill_val=True)
                 imarr_shift.append(im)
                 errarr_shift.append(err)
                 dqarr_shift.append(dq)
@@ -1436,10 +1530,12 @@ class nrc_analyze():
                 dqlist = []
                 bplist = []
                 for j in range(nimg_per_dither):
+                    if is_sgd:
+                        raise RuntimeError("SGD should have med_dithers=True, so not sure how we got here!")
                     xy_loc = xy_loc_all[i] if nsh_per_dither==1 else xy_loc_all[i,j]
                     im, xy = crop_image(imarr[i,j], nxy_pad, xyloc=xy_loc, return_xy=True)
-                    fill_val = dqflags.pixel['FLUX_ESTIMATED'] | dqflags.pixel['DO_NOT_USE']
                     err = crop_image(errarr[i,j], nxy_pad, xyloc=xy_loc, fill_val=np.nanmax(errarr))
+                    fill_val = dqflags.pixel['FLUX_ESTIMATED'] | dqflags.pixel['DO_NOT_USE']
                     dq = crop_image(dqarr[i,j], nxy_pad, xyloc=xy_loc, fill_val=fill_val)
                     bp = crop_image(bparr[i,j], nxy_pad, xyloc=xy_loc, fill_val=True)
                     imlist.append(im)
@@ -1493,6 +1589,11 @@ class nrc_analyze():
         # Update class attributes
         self.xy_loc_ind = xy_loc_shift
         self.xyshift = xyshift_new
+
+        # Call this same function in the reference objects
+        if self.ref_objs is not None:
+            for ref_obj in self.ref_objs:
+                ref_obj.shift_to_center_int(med_dithers=med_dithers, return_results=False)
 
     def get_dither_offsets(self, method='opencv', interp='lanczos', subsize=None, 
                            rebin=1, gstd_pix=None, inner_rad=10, outer_rad=32,
@@ -1722,7 +1823,7 @@ class nrc_analyze():
         xysh_arr = np.array(xysh_arr)
         xysh_mean =  np.mean(xysh_arr, axis=0).T
 
-        # New shifts necessry to center the star in their existing image arrays
+        # New shifts necessary to center the star in their existing image arrays
         self.xyshift = xysh_mean
 
         # Update best-guess locations of star in existing image arrays
@@ -1738,6 +1839,15 @@ class nrc_analyze():
                          'shift_matrix': self.shift_matrix}
             with open(save_path, 'w') as f:
                 json.dump(save_data, f, cls=NumpyArrayEncoder)
+
+        # Call this same function in the reference objects
+        if self.ref_objs is not None:
+            for ref_obj in self.ref_objs:
+                ref_obj.get_dither_offsets(method=method, interp=interp, subsize=subsize, 
+                                           rebin=rebin, gstd_pix=gstd_pix, inner_rad=inner_rad, 
+                                           outer_rad=outer_rad, coarse_limits=coarse_limits, 
+                                           fine_limits=fine_limits, return_results=False, 
+                                           save=save, force=force, **kwargs)
 
     def align_images(self, ref_obs=None, rebin=1, gstd_pix=None, 
                      med_dithers=False, method='opencv', interp='lanczos', **kwargs):
@@ -1773,16 +1883,25 @@ class nrc_analyze():
             xsh0 = ysh0 = 0
         else:
             oid0, pos0 = ref_obs
-            ii = 0
+            # Determine if reference observation is in the current object or in a reference object
+            if oid0 in self.obsids:
+                obj = self
+            elif (self.ref_objs is not None) and (oid0 in self.obsids_ref):
+                obsids_ref = list(self.obsids_ref)
+                obj = self.ref_objs[obsids_ref.index(oid0)]
+            else:
+                raise ValueError(f"Observation {oid0} not found in self.obsids or self.obsids_ref.")
+
             # Loop through dictionary to find index of reference observations
-            for oid in self.obsids:
-                odict = self.obs_dict[oid]
+            ii = 0
+            for oid in obj.obsids:
+                odict = obj.obs_dict[oid]
                 for k in odict.keys():
                     if oid==oid0 and k==pos0:
                         ii_ref = ii
                         break
                     ii += 1
-            xsh0, ysh0 = self.xyshift[ii_ref]
+            xsh0, ysh0 = obj.xyshift[ii_ref]
 
         ii = 0
         for oid in self.obsids:
