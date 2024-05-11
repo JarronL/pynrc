@@ -90,7 +90,6 @@ class nrc_hci(NIRCam):
             self.gen_wfedrift_coeff()
             # Enable mask-dependent
             self.gen_wfemask_coeff(large_grid=large_grid)
-            self.calc_psf_offset_from_center()
 
         log_prev = conf.logging_level
         setup_logging('WARN', verbose=False)
@@ -204,10 +203,10 @@ class nrc_hci(NIRCam):
             sampling = self.oversample if return_oversample else 1
             psf = self.recenter_psf(psf, sampling=sampling)
 
-        # Being coronagraphic mask attenuation
         if not self.is_coron:
             return psf
 
+        # Begin coronagraphic mask attenuation
 
         # Determine if any throughput loss due to coronagraphic mask
         # artifacts, such as the mask holder or ND squares.
@@ -268,7 +267,7 @@ class nrc_hci(NIRCam):
         elif self.is_coron:
             full = True if 'FULL' in wind_mode else False
             if full:
-                xcen, ycen = self.siaf_ap.reference_point('det')
+                xcen, ycen = (self.siaf_ap.XDetRef, self.siaf_ap.YDetRef)
             else:
                 cdict = coron_ap_locs(self.module, self.channel, self.image_mask, full=full)
                 xcen, ycen = cdict['cen']
@@ -737,7 +736,7 @@ class obs_hci(nrc_hci):
         # Recenter PSFs
         if self.psf_list is not None:
             for hdu in self.psf_list:
-                if recenter:
+                if recenter and hdu.header.get('RECENTER',False)==False:
                     hdu.data = self.recenter_psf(hdu.data, sampling=self.oversample)
                     hdu.header['RECENTER'] = (True, 'PSF was recentered')
                 else:
@@ -1235,9 +1234,10 @@ class obs_hci(nrc_hci):
         PA : float
             Position angle of roll position (counter-clockwise, from West to East).
             Scence will rotate in opposite direction.
-        xyoff_asec : 
+        xyoff_asec : None or tuple
             Positional offset of scene from reference location in 'idl' coords.
-            Shift occurs after PA rotation.
+            Shift occurs after PA rotation. Default is (0,0), but set to None to 
+            get the default dither position from self.pointing_info.
         do_ref : bool
             Slope image for reference star observation using `self.wfe_ref_drift`.
         do_roll2 : bool
@@ -1414,10 +1414,16 @@ class obs_hci(nrc_hci):
         ##################################
 
         if do_ref:
-            no_disk = no_planets = True
+            no_disk = True
+            no_planets = True
         else:
             no_disk    = exclude_disk    and exclude_noise
             no_planets = exclude_planets and exclude_noise
+
+        if self.disk_hdulist is None:
+            no_disk = True
+        if len(self.planets)==0:
+            no_planets = True
 
         # Make sure to include planets and disks for Poisson noise calculations
         # Telescope PA is counter-clockwise, therefore image rotation is opposite direction
