@@ -557,7 +557,11 @@ class NIRCam(NIRCam_ext):
         self._update_bg_class(**kwargs)
 
         # Initialize PSF offset to center of image
-        self.psf_offset_to_center = np.array([0,0])
+        # Calculate PSF offset from center if _nrc_bg coefficients are available
+        if self._nrc_bg.psf_coeff is not None:
+            self.calc_psf_offset_from_center()
+        else:
+            self.psf_offset_to_center = np.array([0,0])
 
         # Check aperture info is consistent if not explicitly specified
         # TODO: This might fail because self.Detector has not yet been initialized??
@@ -1409,16 +1413,19 @@ class NIRCam(NIRCam_ext):
         oversample = self.oversample
 
         # Determine shift amount to place PSF in center of array
-        if oversample==1:
-            halfwidth=1
-        elif oversample<=3:
-            # Prevent special case COM algorithm from not converging
-            if ('LWB' in self.aperturename) and 'F4' in self.filter:
-                halfwidth=5
-            else:
-                halfwidth=3
-        elif oversample<=5:
-            halfwidth=7
+        if self.is_lyot:
+            if oversample==1:
+                halfwidth=1
+            elif oversample<=3:
+                # Prevent special case COM algorithm from not converging
+                if ('LWB' in self.aperturename) and 'F4' in self.filter:
+                    halfwidth=5
+                else:
+                    halfwidth=3
+            elif oversample<=5:
+                halfwidth=7
+        else:
+            halfwidth = 15
         _, xyoff_psf_over = recenter_psf(psf_over, niter=3, halfwidth=halfwidth)
 
         # Convert to detector pixels
