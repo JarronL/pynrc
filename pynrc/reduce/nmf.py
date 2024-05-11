@@ -693,10 +693,10 @@ def NMFmodelling(sci, components, n_components=None, mask_components=None, mask_
     components_column_all = components_column_all / norm_val
     
     if mask_data_imputation is not None:
-        flag_di = 1
+        flag_di = True
         _log.info('Data Imputation!')
     else:
-        flag_di = 0
+        flag_di = False
         mask_data_imputation = np.ones(sci.shape, dtype='bool')
     
     # Ignore pixels that are False in either mask (ie., True in both masks)
@@ -725,14 +725,14 @@ def NMFmodelling(sci, components, n_components=None, mask_components=None, mask_
         chi2, time_used = sci_img.SolveNMF(H_only=True, maxiters=maxiters, **kwargs)
 
     coefs = sci_img.H
-    if flag_di == 0: # do not do data imputation
-        model_column = np.dot(components_column, coefs)
-        model = data_masked_only_revert(model_column, mask)
-        model[~mask] = np.nan
-    elif flag_di == 1: # do data imputation
+    if flag_di: # do data imputation
         model_column = np.dot(components_column_all, coefs)
         model = data_masked_only_revert(model_column, mask_components)
         model[~mask_components] = np.nan
+    else: # do not do data imputation
+        model_column = np.dot(components_column, coefs)
+        model = data_masked_only_revert(model_column, mask)
+        model[~mask] = np.nan
 
     return model.flatten() #model_column.T.flatten()
     

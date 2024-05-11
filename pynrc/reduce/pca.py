@@ -292,8 +292,7 @@ def klip_subtract(sci_opt, bg_opt, numbasis=None, svd_frac=0.9,
         bg_mean_sub = bg_opt if not isnan_bg else np.nan_to_num(bg_opt)
         sci_mean_sub = sci_opt if not isnan_sci else np.nan_to_num(sci_opt)
     
-    kpsf = mkpsf_klip(bg_mean_sub, sci_mean_sub, 
-                          nsvd=numbasis, svd_frac=svd_frac)
+    kpsf = mkpsf_klip(bg_mean_sub, sci_mean_sub, nsvd=numbasis, svd_frac=svd_frac)
     res = sci_mean_sub - kpsf
     
     return res
