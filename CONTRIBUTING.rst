@@ -122,18 +122,21 @@ A reminder for the maintainers on how to deploy. First, make sure the following 
 .. code-block:: sh
 
    $ pip install sphinx_automodapi
+   $ pip install pandoc
    $ conda install sphinx_rtd_theme
    $ conda install nbsphinx
    $ conda install twine
-   $ conda install docutils=0.16
+   $ conda install docutils=0.18
    $ conda install bump2version
 
+
+
 1. Add entries to HISTORY.rst. Make sure all your changes are committed to git.
-2. Update version using ``bumpversion``, which automatically updates ``pynrc.version``. Usage: ``bump2version [options] part [file]``, where "part" is either major, minor, or patch (e.g., major.minor.patch). See https://github.com/c4urself/bump2version for more details.
+2. Update version using ``bump2version``, which automatically updates ``pynrc.version``. Usage: ``bump2version [options] part [file]``, where "part" is either major, minor, or patch (e.g., major.minor.patch). See https://github.com/c4urself/bump2version for more details. For instance, ``bump2version minor`` will update from 1.0.5 to 1.1.0
 
    .. code-block:: sh
 
-      $ bumpversion patch
+      $ bump2version [major | minor | patch]
 
 3. Generate documentation locally:
 

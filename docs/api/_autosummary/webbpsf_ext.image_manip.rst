@@ -14,12 +14,22 @@
    .. autosummary::
       :toctree:
    
+      add_ipc
+      add_ppc
+      apply_pixel_diffusion
+      bp_fix
       convolve_image
+      crop_image
+      crop_observation
       crop_zero_rows_cols
+      cv_shift
       distort_image
+      expand_mask
       fourier_imshift
+      fractional_image_shift
       frebin
       fshift
+      get_im_cen
       image_rescale
       make_disk_image
       model_to_hdulist

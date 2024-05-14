@@ -884,8 +884,9 @@ class det_timing(object):
         avg_groups : bool
             For groups where nf>1, the telescope data gets averaged via a 
             bit-shifter. Setting ``avg_groups=True`` also averages the
-            pixel times in a similar manner. Default is True.
+            pixel times in a similar manner. Default is False.
         return_flat : bool
+            Return a single array rather than image array.
         
         Keyword Args
         ------------
@@ -954,8 +955,8 @@ class det_timing(object):
         nticks = fticks * nframes
         
         # Make large array of pixel timing
-        arr = np.arange(nticks, dtype=np.float).reshape([nframes,-1])
-        arr_reset = np.arange(fticks, dtype=np.float)
+        arr = np.arange(nticks, dtype=float).reshape([nframes,-1])
+        arr_reset = np.arange(fticks, dtype=float)
         if reset_zero:
             arr += arr_reset.max() + 1
         

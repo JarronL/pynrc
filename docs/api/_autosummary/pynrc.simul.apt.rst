@@ -37,6 +37,7 @@
       populate_obs_params
       read_subarray_definition_file
       update_eng_detectors
+      update_subarray_imaging
    
    
 

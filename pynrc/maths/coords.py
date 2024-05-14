@@ -9,13 +9,14 @@ __epsilon = np.finfo(float).eps
 import pysiaf
 from pysiaf import JWST_PRD_VERSION, rotations, Siaf
 # Create this once since it takes time to call multiple times
+# from ..nrc_utils import siaf_nrc
 siaf_nrc = Siaf('NIRCam')
 siaf_nrc.generate_toc()
 
 # Functions transferred to webbpsf_ext
 from webbpsf_ext.coords import dist_image
 from webbpsf_ext.coords import xy_to_rtheta, rtheta_to_xy, xy_rot
-from webbpsf_ext.coords import ap_radec, radec_to_v2v3, v2v3_to_pixel
+from webbpsf_ext.coords import ap_radec, radec_to_coord, radec_to_v2v3, v2v3_to_pixel
 from webbpsf_ext.coords import get_NRC_v2v3_limits, NIRCam_V2V3_limits
 from webbpsf_ext.coords import get_NRC_v2v3_limits as get_v2v3_limits # Original name
 from webbpsf_ext.coords import plotAxes
@@ -23,6 +24,7 @@ from webbpsf_ext.coords import plotAxes
 # New stuff from webbpsf_ext
 from webbpsf_ext.coords import gen_sgd_offsets, get_idl_offset, radec_offset
 from webbpsf_ext.coords import jwst_point
+from webbpsf_ext.coron_masks import det_to_sci, sci_to_det
 
 ###########################################################################
 #
@@ -111,7 +113,7 @@ def siafap_sci_coords(inst, coord_vals=None, coord_frame='tel'):
     # Get a reference point if coord_vals not set
     if coord_vals is None:
         try:
-            coord_vals = self.siaf_ap.reference_point(coord_frame)
+            ap = self.siaf_ap
         except:
             _log.warning("`self.siaf_ap` may not be set")
             apname = self.get_siaf_apname()
@@ -121,7 +123,15 @@ def siafap_sci_coords(inst, coord_vals=None, coord_frame='tel'):
             else:
                 _log.warning('`self.siaf_ap` not defined; assuming {}'.format(apname))
                 ap = self.siaf[apname]
-                coord_vals = ap.reference_point(coord_frame)
+                
+        if coord_frame=='tel':
+            coord_vals = (ap.V2Ref, ap.V3Ref)
+        elif coord_frame=='sci':
+            coord_vals = (ap.XSciRef, ap.YSciRef)
+        elif coord_frame=='det':
+            coord_vals = (ap.XDetRef, ap.YDetRef)
+        elif coord_frame=='idl':
+            coord_vals = (0.0, 0.0)
 
     # Determine V2/V3 coordinates
     detector = detector_position = apname = None
@@ -152,68 +162,3 @@ def siafap_sci_coords(inst, coord_vals=None, coord_frame='tel'):
 
     return (detector, detector_position, apname)
 
-def det_to_sci(image, detid):
-    """ Detector to science orientation
-    
-    Reorient image from detector coordinates to 'sci' coordinate system.
-    This places +V3 up and +V2 to the LEFT. Detector pixel (0,0) is assumed 
-    to be in the bottom left. Simply performs axes flips.
-    
-    Parameters
-    ----------
-    image : ndarray
-        Input image to tranform.
-    detid : int or str
-        NIRCam detector/SCA ID, either 481-490 or A1-B5.
-    """
-    
-    # Check if SCA ID (481-489) where passed through detname rather than A1-B5
-    try:
-        detid = int(detid)
-    except ValueError:
-        detname = detid
-    else:
-        scaids = {481:'A1', 482:'A2', 483:'A3', 484:'A4', 485:'A5',
-                  486:'B1', 487:'B2', 488:'B3', 489:'B4', 490:'B5'}
-        detname = scaids[detid]
-    
-    xflip = ['A1','A3','A5','B2','B4']
-    yflip = ['A2','A4','B1','B3','B5']
-
-    # Handle multiple array of images
-    ndim = len(image.shape)
-    if ndim==2:
-        # Convert to image cube
-        ny, nx = image.shape
-        image = image.reshape([1,ny,nx])
-    
-    for s in xflip:
-        if detname in s:
-            image = image[:,:,::-1] 
-    for s in yflip:
-        if detname in s:
-            image = image[:,::-1,:] 
-    
-    # Convert back to 2D if input was 2D
-    if ndim==2:
-        image = image.reshape([ny,nx])
-
-    return image
-    
-def sci_to_det(image, detid):
-    """ Science to detector orientation
-    
-    Reorient image from 'sci' coordinates to detector coordinate system.
-    Assumes +V3 up and +V2 to the LEFT. The result places the detector
-    pixel (0,0) in the bottom left. Simply performs axes flips.
-
-    Parameters
-    ----------
-    image : ndarray
-        Input image to tranform.
-    detid : int or str
-        NIRCam detector/SCA ID, either 481-490 or A1-B5.
-    """
-    
-    # Flips occur along the same axis and manner as in det_to_sci()
-    return det_to_sci(image, detid)

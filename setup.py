@@ -13,19 +13,7 @@ import sys
 import importlib #imp
 import ast
 
-################################################################
-# astropy-helpers
-################################################################
-
-import ah_bootstrap
-#A dirty hack to get around some early import/configurations ambiguities
-import builtins
-builtins._ASTROPY_SETUP_ = True
-
-from astropy_helpers.setup_helpers import (
-    register_commands, get_debug_option, get_package_info)
-from astropy_helpers.git_helpers import get_git_devstr
-from astropy_helpers.version_helpers import generate_version_py
+from git_helpers import get_git_devstr
 
 ################################################################
 # boiler plate
@@ -103,17 +91,11 @@ with open('HISTORY.rst') as history_file:
     history = history_file.read()
 
 install_requires = [
-    'Click>=6.0',
-    'numpy>=1.19.0',
-    'matplotlib>=3.3.0',
-    'scipy>=1.5.0',
-    'pysynphot>=2.0.0',
-    'poppy>=1.0.1',
-    'webbpsf>=1.0.0',
-    'webbpsf_ext>=1.0.4',
     'tqdm>4',
-    'astropy>=4.2',
-    'astroquery>=0.4.3',
+    'poppy>=1.2.0',
+    'webbpsf>=1.2.0',
+    'webbpsf_ext>=1.2.1',
+    'astroquery>=0.4.6',
     'jwst',
 ]
 
@@ -135,7 +117,7 @@ setup(
 
     # Author details
     author='Jarron Leisenring',
-    author_email='jarronl@email.arizona.edu',
+    author_email='jarronl@arizona.edu',
     license='MIT license',
     keywords='jwst nircam etc simulator',
 
@@ -157,9 +139,8 @@ setup(
         # Specify the Python versions you support here. In particular, ensure
         # that you indicate whether you support Python 2, Python 3 or both.
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.7',
-        'Programming Language :: Python :: 3.8',
-        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
     ],
 
     # You can just specify the packages manually here if your project is
@@ -180,8 +161,9 @@ setup(
     #extras_require={
     #    'dev': ['check-manifest>=0.34', 'lxml>=3.6.4', 'pytest>=3.0.2'],
     #},
-    extras_require = {'docs': 
-        ['docutils==0.16', 'sphinx>=3.4.1']},
+    extras_require = {
+        'docs': ['docutils==0.18', 'sphinx>=3.4.1'],
+    },
 
     # If there are data files included in your packages that need to be
     # installed, specify them here.  If using Python 2.6 or less, then these

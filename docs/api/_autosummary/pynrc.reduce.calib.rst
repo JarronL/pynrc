@@ -25,6 +25,7 @@
       chisqr_red
       cube_fit
       deconv_single_image
+      detname_to_scaid
       find_group_sat
       find_sat
       fit_corr_powspec

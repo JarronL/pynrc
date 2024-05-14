@@ -16,6 +16,8 @@ from .nrc_utils import *
 from .obs_nircam import obs_hci
 #from .obs_nircam import plot_contrasts, plot_contrasts_mjup, planet_mags, plot_planet_patches
 
+from webbpsf_ext.synphot_ext import Observation
+
 from tqdm.auto import tqdm, trange
 
 import logging
@@ -56,7 +58,7 @@ def model_info(source, filt, dist, model_dir=''):
     fname = source + '_' + filt_model +'sc.fits'
 
     bp = read_filter(filt_model)
-    w0 = bp.avgwave() / 1e4
+    w0 = bp.avgwave().to_value('um')
 
     # Model pixels are 4x oversampled
     detscale = (channel_select(bp))[0]
@@ -64,7 +66,7 @@ def model_info(source, filt, dist, model_dir=''):
     
     # File name, arcsec/pix, dist (pc), wavelength (um), flux units, cen_star?
     model_dict = {
-        'file'       : model_dir+fname, 
+        'file'       : os.path.join(model_dir, fname), 
         'pixscale'   : model_scale, 
         'dist'       : dist, 
         'wavelength' : w0, 
@@ -173,7 +175,8 @@ def disk_rim_model(a_asec, b_asec, pa=0, sig_asec=0.1, flux_frac=0.5,
 
 def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None, 
             wind_mode='WINDOW', subsize=None, fov_pix=None, verbose=False, narrow=False,
-            model_dir=None, large_grid=False, **kwargs):
+            model_dir=None, large_grid=True, sgd_type=None, slew_std=0, fsm_std=0, 
+            quiet=False, **kwargs):
     """
     For a given WFE drift and series of filters, create a list of 
     NIRCam observations.
@@ -185,14 +188,16 @@ def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None,
     for filt, mask, pupil in filt_list:
         # Create identification key
         key = make_key(filt, mask=mask, pupil=pupil)
-        print(key)
+        if not quiet:
+            print(key)
 
         # Disk Model
         if args_disk is None:
             args_disk_temp = None
         elif 'auto' in args_disk:
             # Convert to photons/sec in specified filter
-            args_disk_temp = model_info(sp_sci.name, filt, dist, model_dir=model_dir)
+            name = sp_sci.name.replace(' ', '')
+            args_disk_temp = model_info(name, filt, dist, model_dir=model_dir)
         else:
             args_disk_temp = args_disk
                         
@@ -230,25 +235,37 @@ def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None,
         # Other coronagraph vs direct imaging settings
         module, oversample = ('B', 4) if mask is None else ('A', 2)
         
-        if narrow and ('SWB' in mask):
-            bar_offset=-8
+        if mask is None:
+            bar_offset = None
+        elif narrow and ('SWB' in mask):
+            bar_offset = -8
         elif narrow and ('LWB' in mask):
-            bar_offset=8
+            bar_offset = 8
         else:
-            bar_offset=None
+            bar_offset = None
+
+        # Select detector for imaging mode
+        if module=='B':
+            bp = read_filter(filt)
+            detector = 'NRCB1' if bp.avgwave().to_value('um') < 2.5 else 'NRCB5'
+        else:
+            detector = None
         
         # Initialize and store the observation
         # A reference observation is stored inside each parent obs_hci class.
         obs = obs_hci(sp_sci, dist, sp_ref=sp_ref, filter=filt, image_mask=mask, pupil_mask=pupil, 
-                      module=module, wind_mode=wind_mode, xpix=subuse, ypix=subuse,
+                      detector=detector, wind_mode=wind_mode, xpix=subuse, ypix=subuse,
                       wfe_ref_drift=wfe_ref_drift, fov_pix=fov_pix, oversample=oversample, 
                       disk_params=args_disk_temp, verbose=verbose, bar_offset=bar_offset,
-                      autogen_coeffs=False, **kwargs)
+                      autogen_coeffs=False, sgd_type=sgd_type, slew_std=slew_std, fsm_std=fsm_std, **kwargs)
+
         obs.gen_psf_coeff()
         # Enable WFE drift
         obs.gen_wfedrift_coeff()
         # Enable mask-dependent
         obs.gen_wfemask_coeff(large_grid=large_grid)
+        # Calculate PSF offset to center
+        obs.calc_psf_offset_from_center()
 
         obs_dict[key] = obs
         fov_pix = fov_pix_orig
@@ -265,17 +282,26 @@ def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None,
             obs.sp_sci = sp_sci * (1 - disk_flux / star_flux)
             obs.sp_sci.name = sp_sci.name
 
+            if verbose:
+                filt = key.split('_')[0]
+                print(f'{filt:6} | {disk_flux:9.0f} | {star_flux:9.0f} | {obs.star_flux():9.0f}')
+
+
             if sp_ref is sp_sci:
                 obs.sp_ref = obs.sp_sci
                 
     # Generation mask position dependent PSFs
-    for key in tqdm(obs_dict.keys(), desc='Obs', leave=False):
+    if quiet or (args_disk_temp is None):
+        iter_vals = obs_dict.keys()
+    else:
+        iter_vals = tqdm(obs_dict.keys(), desc='Obs', leave=False)
+    for key in iter_vals:
         obs_dict[key].gen_disk_psfs()
 
     return obs_dict
 
 
-def obs_optimize(obs_dict, sp_opt=None, well_levels=None, tacq_max=1800, **kwargs):
+def obs_optimize(obs_dict, sp_opt=None, well_levels=None, tacq_max=2000, **kwargs):
     """
     Perform ramp optimization on each science and reference observation
     in a list of filter observations. Updates the detector MULTIACCUM
@@ -289,6 +315,8 @@ def obs_optimize(obs_dict, sp_opt=None, well_levels=None, tacq_max=1800, **kwarg
     ng_max = 10
     """
 
+    verbose = kwargs.pop('verbose', True)
+
     # A very faint bg object on which to maximize S/N
     # If sp_opt is not set, then default to a 20th magnitude flat source
     if sp_opt is None:
@@ -297,25 +325,24 @@ def obs_optimize(obs_dict, sp_opt=None, well_levels=None, tacq_max=1800, **kwarg
     
     # Some observations may saturate, so define a list of  maximum well level
     # values that we will incrementally check until a ramp setting is found
-    # that meets the contraints.
+    # that meets the constraints.
     if well_levels is None:
         well_levels = [0.8, 1.5, 3.0, 5.0, 10.0, 20.0, 100.0, 150.0, 300.0, 500.0]
-   
+
+    if verbose:
+        print(['Pattern', 'NGRP', 'NINT', 't_int', 't_exp', 't_acq', 'SNR', 'Well', 'eff'])
+
     filt_keys = list(obs_dict.keys())
     filt_keys.sort()
-    print(['Pattern', 'NGRP', 'NINT', 't_int', 't_exp', 't_acq', 'SNR', 'Well', 'eff'])
     for j, key in enumerate(filt_keys):
-        print('')
-        print(key)
+        if verbose:
+            print('')
+            print(key)
 
         obs = obs_dict[key]
-        obs_ref = obs.nrc_ref
 
         sp_sci, sp_ref = (obs.sp_sci, obs.sp_ref)
         
-        # SW filter piggy-back on two LW filters, so 2 x tacq
-        is_SW = obs.bandpass.avgwave()/1e4 < 2.5
-
         # Ramp optimization for both science and reference targets
         for j, sp in enumerate([sp_sci, sp_ref]):
             i = nrow = 0
@@ -332,18 +359,21 @@ def obs_optimize(obs_dict, sp_opt=None, well_levels=None, tacq_max=1800, **kwarg
             strout = '{:10} {:4.0f} {:4.0f}'.format(vals[0], vals[1], vals[2])
             for v in vals[3:]:
                 strout = strout + ', {:.4f}'.format(v)
-            print(strout)
+            if verbose:
+                print(strout)
 
             # SW filter piggy-back on two LW filters, so 2 x tacq
-            # is_SW = obs.bandpass.avgwave()/1e4 < 2.5
+            # is_SW = obs.bandpass.avgwave().to_value('um') < 2.5
             # if is_SW: 
             #     v3 *= 2
             
             # Coronagraphic observations have two roll positions, so cut NINT by 2
-            if obs.image_mask is not None: 
-                v3 = int(v3/2) 
-            obs2 = obs if j==0 else obs_ref
-            obs2.update_detectors(read_mode=v1, ngroup=v2, nint=v3)
+            # if obs.image_mask is not None: 
+            #     v3 = int(v3/2) 
+            if j==0:
+                obs.update_detectors(read_mode=v1, ngroup=v2, nint=v3)
+            else:
+                obs.update_detectors(read_mode=v1, ngroup=v2, nint=v3, do_ref=True)
         
 
 
@@ -358,7 +388,7 @@ def do_opt(obs_dict, tacq_max=1800, **kwargs):
 
 
 # For each filter setting, generate a series of contrast curves at different WFE values
-def do_contrast(obs_dict, wfe_list, filt_keys, nsig=5, roll_angle=10, verbose=False, **kwargs):
+def do_contrast(obs_dict, wfe_list, filt_keys, nsig=5, roll_angle=10, verbose=True, **kwargs):
     """
     kwargs to pass to calc_contrast() and their defaults:
 
@@ -372,28 +402,39 @@ def do_contrast(obs_dict, wfe_list, filt_keys, nsig=5, roll_angle=10, verbose=Fa
     ref_scale_all = False
     """
     contrast_all = {}
-    for i in trange(len(filt_keys), desc='Observations'):
+    if verbose:
+        iter_vals = trange(len(filt_keys), leave=False)
+    else:
+        iter_vals = range(len(filt_keys))
+
+    for i in iter_vals:
         key = filt_keys[i]
         obs = obs_dict[key]
         if verbose: 
-            print(key)
-
-        wfe_roll_temp = obs.wfe_roll_drift
-        wfe_ref_temp  = obs.wfe_ref_drift
+            iter_vals.set_description(key, refresh=True)
 
         # Stores tuple of (Radial Distances, Contrast, and Sensitivity) for each WFE drift
         curves = []
-        for wfe_drift in tqdm(wfe_list, leave=False, desc='WFE Drift'):
+        if verbose:
+            jter_vals = tqdm(wfe_list, leave=False, desc='WFE Drift')
+        else:
+            jter_vals = wfe_list
+        for wfe_drift in jter_vals:
             
-            if ('no_ref' in list(kwargs.keys())) and (kwargs['no_ref']==True):
-                obs.wfe_roll_drift = wfe_drift
+            no_ref = kwargs.get('no_ref', False)
+            if no_ref:
+                wfe_ref_drift = 0
+                wfe_roll_drift = wfe_drift
             else:
-                obs.wfe_ref_drift = wfe_drift
+                # Assume drift between Roll1 and Roll2 is 2 nm WFE or less
+                wfe_ref_drift = wfe_drift
+                wfe_roll_drift = wfe_ref_drift/2 if wfe_ref_drift<=2 else 2
+
+            kwargs['wfe_ref_drift'] = wfe_ref_drift
+            kwargs['wfe_roll_drift'] = wfe_roll_drift
+
             result = obs.calc_contrast(roll_angle=roll_angle, nsig=nsig, **kwargs)
             curves.append(result)
-            
-        obs.wfe_roll_drift = wfe_roll_temp
-        obs.wfe_ref_drift = wfe_ref_temp
             
         contrast_all[key] = curves
     return contrast_all
@@ -412,7 +453,7 @@ def do_gen_hdus(obs_dict, filt_keys, wfe_ref_drift, wfe_roll_drift,
     exclude_disk  = False
     exclude_noise = False
     no_ref        = False
-    opt_diff      = True
+    opt_diff      = False
     use_cmask     = False
     ref_scale_all = False
     xyoff_roll1   = None
@@ -433,23 +474,59 @@ def do_gen_hdus(obs_dict, filt_keys, wfe_ref_drift, wfe_roll_drift,
     return hdulist_dict
 
 def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True, 
-                  plot=True, xylim=2.5, return_fig_axes=False):
+                  charge_migration=True, niter=5, satmax=1, corners=True,
+                  plot=True, xylim=2.5, return_fig_axes=False, return_more=False,
+                  **kwargs):
 
-    """Only for obs.hci classes"""
+    """Only for obs.hci classes
     
-    ng_max = obs.det_info['ngroup'] if ng_max is None else ng_max
+    return_more will return (sat_rad, sci_levels2_max, ref_levels2_max)
+
+    keywords of interest: charge_migration, satmax, niter, corners
+    """
+
+    # Charge migration keywords
+    kwargs['charge_migration'] = charge_migration
+    kwargs['niter'] = niter
+    kwargs['satmax'] = satmax
+    kwargs['corners'] = corners
+    
+    ng_max_sci = obs.Detector.multiaccum.ngroup if ng_max is None else ng_max
+    ng_max_ref = obs.Detector_ref.multiaccum.ngroup if ng_max is None else ng_max
     kw_gen_psf = {'return_oversample': False,'return_hdul': False}
     
     # Well level of each pixel for science source
     image = obs.calc_psf_from_coeff(sp=obs.sp_sci, **kw_gen_psf)
-    sci_levels1 = obs.saturation_levels(ngroup=ng_min, image=image)
-    sci_levels2 = obs.saturation_levels(ngroup=ng_max, image=image)
+    sci_levels1 = obs.saturation_levels(ngroup=ng_min, image=image, **kwargs)
+    sci_levels2 = obs.saturation_levels(ngroup=ng_max_sci, image=image, **kwargs)
+    if charge_migration:
+        # Get max well fill without charge migration
+        kwargs_temp = kwargs.copy()
+        kwargs_temp['charge_migration'] = False
+        sci_levels1_temp = obs.saturation_levels(ngroup=ng_min, image=image, **kwargs_temp)
+        sci_levels2_temp = obs.saturation_levels(ngroup=ng_max_sci, image=image, **kwargs_temp)
+        sci_levels1_max = sci_levels1_temp.max()
+        sci_levels2_max = sci_levels2_temp.max()
+    else:
+        sci_levels1_max = sci_levels1.max()
+        sci_levels2_max = sci_levels2.max()
 
     # Well level of each pixel for reference source
     image = obs.calc_psf_from_coeff(sp=obs.sp_ref, **kw_gen_psf)
-    ref_levels1 = obs.saturation_levels(ngroup=ng_min, image=image, do_ref=True)
-    ref_levels2 = obs.saturation_levels(ngroup=ng_max, image=image, do_ref=True)
-    
+    ref_levels1 = obs.saturation_levels(ngroup=ng_min, image=image, do_ref=True, **kwargs)
+    ref_levels2 = obs.saturation_levels(ngroup=ng_max_ref, image=image, do_ref=True, **kwargs)
+    if charge_migration:
+        # Get max well fill without charge migration
+        kwargs_temp = kwargs.copy()
+        kwargs_temp['charge_migration'] = False
+        ref_levels1_temp = obs.saturation_levels(ngroup=ng_min, image=image, do_ref=True, **kwargs_temp)
+        ref_levels2_temp = obs.saturation_levels(ngroup=ng_max_ref, image=image, do_ref=True, **kwargs_temp)
+        ref_levels1_max = ref_levels1_temp.max()
+        ref_levels2_max = ref_levels2_temp.max()
+    else:
+        ref_levels1_max = ref_levels1.max()
+        ref_levels2_max = ref_levels2.max()
+        
     # Which pixels are saturated?
     sci_mask1 = sci_levels1 > satval
     sci_mask2 = sci_levels2 > satval
@@ -467,25 +544,31 @@ def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True,
     nsat2_ref = len(ref_levels2[ref_mask2])
 
     # Get saturation radius
+    pixscale = obs.pixelscale
     if nsat1_sci == nsat1_ref == 0:
-        sat_rad = 0
+        sat_rad_max = sat_rad = 0
     else:
         mask_temp = sci_mask1 if nsat1_sci>nsat1_ref else ref_mask1
-        rho_asec = dist_image(mask_temp, pixscale=obs.pix_scale)
-        sat_rad = rho_asec[mask_temp].max()
+        rho_asec = dist_image(mask_temp, pixscale=pixscale)
+        sat_rad_max = rho_asec[mask_temp].max()
+        sat_rad = np.sqrt(nsat1_sci / np.pi) * pixscale
     
     if verbose:
         print('Sci: {}'.format(obs.sp_sci.name))
         print('  {} saturated pixel at NGROUP={}; Max Well: {:.2f}'\
-            .format(nsat1_sci, ng_min, sci_levels1.max()))
+            .format(nsat1_sci, ng_min, sci_levels1_max))
         print('  {} saturated pixel at NGROUP={}; Max Well: {:.2f}'\
-            .format(nsat2_sci, ng_max, sci_levels2.max()))
-        print('  Sat Dist NG={}: {:.2f} arcsec'.format(ng_min, sat_rad))
+            .format(nsat2_sci, ng_max_sci, sci_levels2_max))
+
         print('Ref: {}'.format(obs.sp_ref.name))
         print('  {} saturated pixel at NGROUP={}; Max Well: {:.2f}'.\
-            format(nsat1_ref, ng_min, ref_levels1.max()))
+            format(nsat1_ref, ng_min, ref_levels1_max))
         print('  {} saturated pixel at NGROUP={}; Max Well: {:.2f}'.\
-            format(nsat2_ref, ng_max, ref_levels2.max()))
+            format(nsat2_ref, ng_max_ref, ref_levels2_max))
+
+        print(f'Sat Max Dist NG={ng_min}: {sat_rad_max/pixscale:.2f} pix ({sat_rad_max:.2f} arcsec)')
+        print(f'Sat Avg Dist NG={ng_min}: {sat_rad/pixscale:.2f} pix ({sat_rad:.2f} arcsec)')
+
 
     if (nsat2_sci==nsat2_ref==0) and (plot==True):
         plot=False
@@ -503,24 +586,32 @@ def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True,
 
         xpix, ypix = (obs.det_info['xpix'], obs.det_info['ypix'])
         bar_offpix = obs.bar_offset / obs.pixelscale
-        if ('FULL' in obs.det_info['wind_mode']) and (obs.image_mask is not None):
-            cdict = coron_ap_locs(obs.module, obs.channel, obs.image_mask, full=True)
-            xcen, ycen = cdict['cen_V23']
-            xcen += bar_offpix
+        # Determine final shift amounts to location along bar
+        # Shift to position relative to center of image
+        if (('FULL' in obs.det_info['wind_mode']) and (obs.image_mask is not None)) or obs._use_ap_info:
+            xcen, ycen = (obs.siaf_ap.XSciRef - 1, obs.siaf_ap.YSciRef - 1)
+            # Offset relative to center of image
+            delx_pix = (xcen - (xpix/2 - 0.5))  # 'sci' pixel shifts
+            dely_pix = (ycen - (ypix/2 - 0.5))  # 'sci' pixel shifts
         else:
-            xcen, ycen = (xpix/2 + bar_offpix, ypix/2)
-        # rho = dist_image(sci_mask1, center=(xcen,ycen))
+            # Otherwise assumed mask is in center of subarray for simplicity
+            # For odd dimensions, this is in a pixel center.
+            # For even dimensions, this is at the pixel boundary.
+            xcen, ycen = (xpix/2. - 0.5, ypix/2. - 0.5)
+            # Add bar offset
+            xcen += bar_offpix  # Add bar offset
+            delx_pix, dely_pix = (bar_offpix, 0)
 
         delx, dely = (xcen - xpix/2, ycen - ypix/2)
         extent_pix = np.array([-xpix/2-delx,xpix/2-delx,-ypix/2-dely,ypix/2-dely])
-        extent = extent_pix * obs.pix_scale
+        extent = extent_pix * obs.pixelscale
 
         axes = axes_all[0]
         axes[0].imshow(sat_mask1, extent=extent)
         axes[1].imshow(sat_mask2, extent=extent)
 
         axes[0].set_title('{} Saturation (NGROUP=2)'.format(sp.name))
-        axes[1].set_title('{} Saturation (NGROUP={})'.format(sp.name,ng_max))
+        axes[1].set_title('{} Saturation (NGROUP={})'.format(sp.name, ng_max_sci))
 
         for ax in axes:
             ax.set_xlabel('Arcsec')
@@ -543,7 +634,7 @@ def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True,
         axes[1].imshow(sat_mask2, extent=extent)
 
         axes[0].set_title('{} Saturation (NGROUP=2)'.format(sp.name))
-        axes[1].set_title('{} Saturation (NGROUP={})'.format(sp.name,ng_max))
+        axes[1].set_title('{} Saturation (NGROUP={})'.format(sp.name, ng_max_ref))
 
         for ax in axes:
             ax.set_xlabel('Arcsec')
@@ -558,11 +649,15 @@ def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True,
 
         fig.tight_layout()
         
+    if return_more:
+        res = (sat_rad, sci_levels2_max, ref_levels2_max)
+    else:
+        res = sat_rad
         
     if return_fig_axes and plot:
-        return (fig, axes), sat_rad
+        return (fig, axes), res
     else:
-        return sat_rad
+        return res
     
 ###########################################
 # Simulated Data
@@ -784,11 +879,12 @@ def plot_contrasts(curves, nsig, wfe_list, obs=None, sat_rad=None, ax=None,
         lin_vals = np.linspace(0.3,0.8,len(wfe_list))
         colors = plt.cm.Blues_r(lin_vals)
         
+    delta_str = '$\Delta$'
     for j in range(len(wfe_list)): #for j, wfe_ref_drift in enumerate(wfe_list):
         rr, contrast, mag_sens = curves[j]
         xvals = rr[rr>sat_rad]
         yvals = mag_sens[rr>sat_rad]
-        label='$\Delta$' + "WFE = {} nm".format(wfe_list[j])
+        label= f"{delta_str}WFE = {wfe_list[j]} nm"
         ax.plot(xvals, yvals, label=label, color=colors[j], zorder=1, lw=2)
 
     if xr is not None: ax.set_xlim(xr)
@@ -808,7 +904,7 @@ def plot_contrasts(curves, nsig, wfe_list, obs=None, sat_rad=None, ax=None,
         ax2 = ax.twinx()
         ax2.set_yscale('log')
         ax2.set_ylim(yr2)
-        ax2.set_ylabel('{:.0f}-$\sigma$ Contrast'.format(nsig))
+        ax2.set_ylabel(f'{nsig:.0f}-$\sigma$ Contrast ({obs.filter})')
 
         ax3 = ax.twiny()
         xr3 = np.array(ax.get_xlim()) * obs.distance
@@ -852,7 +948,7 @@ def planet_mags(obs, age=10, entropy=13, mass_list=[10,5,2,1], av_vals=[0,25], a
         flux_list = []
         for j,av in enumerate(av_vals):
             sp = obs.planet_spec(mass=m, age=age, Av=av, entropy=entropy, atmo=atmo, **kwargs)
-            sp_obs = S.Observation(sp, obs.bandpass, binset=obs.bandpass.wave)
+            sp_obs = Observation(sp, obs.bandpass, binset=obs.bandpass.waveset)
             flux = sp_obs.effstim('vegamag')
             flux_list.append(flux)
         pmag[m] = tuple(flux_list)
@@ -884,7 +980,7 @@ def planet_mags(obs, age=10, entropy=13, mass_list=[10,5,2,1], av_vals=[0,25], a
             else:
                 #SB12 at A_V=0
                 sp = obs.planet_spec(mass=m, age=age, Av=0, entropy=entropy, atmo=atmo, **kwargs)
-                sp_obs = S.Observation(sp, obs.bandpass, binset=obs.bandpass.wave)
+                sp_obs = Observation(sp, obs.bandpass, binset=obs.bandpass.waveset)
                 sb12_mag = sp_obs.effstim('vegamag')
 
                 # Get magnitude offset due to extinction
@@ -972,7 +1068,7 @@ def plot_hdulist(hdulist, ext=0, xr=None, yr=None, ax=None, return_ax=False,
         oversamp = hdulist[ext].header['OSAMP']
         shft = 0.5*oversamp
         hdul = deepcopy(hdulist)
-        hdul[0].data = fshift(hdul[0].data, shft, shft)
+        hdul[0].data = fourier_imshift(hdul[0].data, shft, shft)
     else:
         hdul = hdulist
 
@@ -1094,7 +1190,7 @@ def do_plot_contrasts(curves_ref, curves_roll, nsig, wfe_list, obs, age, age2=No
     # Magnitude of Jupiter at object's distance
     if jup_mag:
         jspec = jupiter_spec(dist=obs.distance)
-        jobs = S.Observation(jspec, obs.bandpass, binset=obs.bandpass.wave)
+        jobs = Observation(jspec, obs.bandpass, binset=obs.bandpass.waveset)
         jmag = jobs.effstim('vegamag')
         if jmag<np.max(ax.get_ylim()):
             ax.plot(xr, [jmag,jmag], color='C2', ls='--')
@@ -1251,7 +1347,7 @@ def do_plot_contrasts2(key1, key2, curves_all, nsig, obs_dict, wfe_list, age, sa
                             ax=ax, colors=c2, xr=xr, linder_models=linder_models)
 
     mod_str = 'BEX' if linder_models else 'COND'
-    ax.set_title('Mass Sensitivities -- {} Models'.format(mod_str))
+    ax.set_title(f'Mass Sensitivities -- {mod_str} Models')
 
     # Update fancy y-axis scaling on right plot
     ax = axes2_all[0]
@@ -1268,7 +1364,8 @@ def do_plot_contrasts2(key1, key2, curves_all, nsig, obs_dict, wfe_list, age, sa
     h3 = handles[2*nwfe:]
     h1_t = [mpatches.Patch(color='none', label=label1)]
     h2_t = [mpatches.Patch(color='none', label=label2)]
-    h3_t = [mpatches.Patch(color='none', label='{} ({})'.format(mod_str, obs_dict[key1].filter))]
+    lfilt = obs_dict[key1].filter
+    h3_t = [mpatches.Patch(color='none', label=f'{mod_str} ({lfilt})')]
     if planet_patches:
         if key2 is not None:
             handles_new = h1_t + h1 + h2_t + h2 + h3_t + h3
@@ -1304,11 +1401,11 @@ def do_plot_contrasts2(key1, key2, curves_all, nsig, obs_dict, wfe_list, age, sa
     # Title
     name_sci = obs.sp_sci.name
     dist = obs.distance
-    age_str = 'Age = {:.0f} Myr'.format(age)
-    dist_str = 'Distance = {:.1f} pc'.format(dist) if dist is not None else ''
-    title_str = '{} ({}, {})'.format(name_sci,age_str,dist_str)
+    age_str = f'Age = {age:.0f} Myr'
+    dist_str = f'Distance = {dist:.1f} pc' if dist is not None else ''
+    title_str = f'{name_sci} ({age_str}, {dist_str})'
 
-    fig.suptitle(title_str, fontsize=16);
+    fig.suptitle(title_str, fontsize=16)
 
     fig.tight_layout()
     fig.subplots_adjust(top=0.8, bottom=0.1 , left=0.05, right=0.95)
@@ -1454,12 +1551,15 @@ def plot_images_swlw(obs_dict, hdu_dict, filt_keys, wfe_drift, fov=10,
         data_mod = frebin(data_mod, scale=header_mod['PIXELSCL']/header['PIXELSCL'])
         rho_mod    = dist_image(data_mod, pixscale=header['PIXELSCL'])
         data_mod_r2 = data_mod*rho_mod**2
-        vmax  = np.max(data_mod)
-        vmax2 = np.max(data_mod_r2)
+        # Ignore inner pixels
+        mask_good = rho_mod > 0.15
+        vmax  = np.max(data_mod[mask_good])
+        vmax2 = np.max(data_mod_r2[mask_good])
         
         # Scale value for data
         im_temp = pad_or_cut_to_size(data_mod, hdu_sim[0].data.shape)
-        mask_good = im_temp>(0.1*vmax)
+        rho_temp = dist_image(im_temp, pixscale=header['PIXELSCL'])
+        mask_good = (im_temp>(0.1*vmax)) & (rho_temp>0.15)
         scl1 = np.nanmedian(hdu_sim[0].data[mask_good] / im_temp[mask_good])
         scl1 = np.abs(scl1)
         
@@ -1511,7 +1611,7 @@ def plot_images_swlw(obs_dict, hdu_dict, filt_keys, wfe_drift, fov=10,
 
     name_sci = obs.sp_sci.name
     wfe_text = "WFE Drift = {} nm".format(wfe_drift)
-    fig.suptitle('{} ({})'.format(name_sci, wfe_text), fontsize=16);
+    fig.suptitle('{} ({})'.format(name_sci, wfe_text), fontsize=16)
     fig.tight_layout()
 
     fig.subplots_adjust(wspace=0.1, hspace=0.1, top=0.9, bottom=0.07 , left=0.05, right=0.97)
@@ -1520,5 +1620,74 @@ def plot_images_swlw(obs_dict, hdu_dict, filt_keys, wfe_drift, fov=10,
     if save_fig: 
         fig.savefig(outdir+fname)
         
+    if return_fig_axes:
+        return fig, axes
+
+def plot_spectrum(src, bp_list, sptype=None, src_ref=None,
+                  return_fig_axes=False, save_fig=False, outdir='', 
+                  xr=[2.5, 5.5], **kwargs):
+
+    name = src.name
+    sp = src.sp_model
+
+    # Plot spectra 
+    fig, axes = plt.subplots(1,2, figsize=(12,4))
+
+    ax = axes[0]
+    src.plot_SED(ax=axes[0], xr=[0.5,30])
+
+    spt_label = '' if sptype is None else f' ({sptype})'
+    ax.set_title(f'{name} SED{spt_label}')
+    ax.set_xlabel(r'Wavelength ($\mathdefault{\mu m}$)')
+    # ax.set_ylim([0.5,20])
+    # ax.set_xscale('linear')
+    # ax.xaxis.set_minor_locator(AutoMinorLocator())
+
+    ax = axes[1]
+
+    bp = bp_list[-1]
+    w = sp.wave / 1e4
+    o = Observation(sp, bp, binset=bp.waveset)
+    sp.convert('photlam')
+    f = sp.flux / sp.flux[(w>xr[0]) & (w<xr[1])].max()
+
+    ind = (w>=xr[0]) & (w<=xr[1])
+    ax.plot(w[ind], f[ind], lw=1, label=sp.name)
+    ax.set_ylabel('Normalized Flux (photons/s/wave)')
+    sp.convert('flam')
+
+    if src_ref is not None:
+        sp_ref = src_ref.sp_model
+        sp_ref.convert('photlam')
+        w_ref = sp_ref.wave / 1e4
+        f_ref = sp_ref.flux / sp_ref.flux[(w_ref>xr[0]) & (w_ref<xr[1])].max()
+        ind = (w_ref>=xr[0]) & (w_ref<=xr[1])
+        label = f"{sp_ref.name} (Ref)"
+        ax.plot(w_ref[ind], f_ref[ind], lw=1, label=label, color='C3', alpha=0.75)
+        sp_ref.convert('flam')
+
+    ax.set_xlim(xr)
+    ax.set_xlabel(r'Wavelength ($\mathdefault{\mu m}$)')
+    ax.set_title(f'{sp.name} Spectrum and Bandpasses')
+
+    # Overplot Filter Bandpass
+    ax2 = ax.twinx()
+    cols = plt.rcParams['axes.prop_cycle'].by_key()['color']
+    for i, bp in enumerate(bp_list):
+        ax2.plot(bp.wave/1e4, bp.throughput, color=cols[i+1], label=bp.name+' Bandpass')
+    ax2.set_ylim([0,1.1*ax2.get_ylim()[1]])
+    ax2.set_xlim(xr)
+    ax2.set_ylabel('Bandpass Throughput')
+
+    ax.legend(loc='upper left')
+    ax2.legend(loc='upper right')
+
+    fig.tight_layout()
+
+    if save_fig: 
+        name_str = name.replace(' ','')
+        fig_path = os.path.join(outdir, f'{name_str}_SED.pdf')
+        fig.savefig(fig_path, bbox_inches='tight')
+
     if return_fig_axes:
         return fig, axes

@@ -194,7 +194,10 @@ dmypy.json
 
 # No FITS files
 *.fits
+!example.fits
 
 # Ignore GO notebooks
 notebooks/GO/
 *.aptbackup
+
+notebooks/git_ignore/

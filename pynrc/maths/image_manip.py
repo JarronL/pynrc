@@ -5,15 +5,132 @@ _log = logging.getLogger('pynrc')
 from poppy.utils import krebin
 
 from .coords import dist_image
-from scipy.ndimage import fourier_shift
-from scipy.ndimage.interpolation import rotate
+from scipy.ndimage import fourier_shift, rotate
 from astropy.io import fits
 
-from webbpsf_ext.image_manip import pad_or_cut_to_size, fshift, fourier_imshift, frebin
+from webbpsf_ext.image_manip import pad_or_cut_to_size, crop_image, crop_observation
+from webbpsf_ext.image_manip import fshift, fourier_imshift, frebin
 from webbpsf_ext.image_manip import rotate_offset, rotate_shift_image
 from webbpsf_ext.image_manip import image_rescale, model_to_hdulist
 from webbpsf_ext.image_manip import convolve_image, crop_zero_rows_cols
+from webbpsf_ext.image_manip import get_im_cen
+from webbpsf_ext.image_manip import add_ipc, add_ppc, apply_pixel_diffusion
 from webbpsf_ext.maths import hist_indices, binned_statistic, fit_bootstrap
+
+from webbpsf_ext.imreg_tools import crop_observation as _crop_observation
+
+def crop_observation(im_full, ap, xysub, xyloc=None, delx=0, dely=0, 
+                     shift_func=fourier_imshift, interp='cubic',
+                     return_xy=False, fill_val=0, **kwargs):
+    
+    """Crop around aperture reference location
+
+    `xysub` specifies the desired crop size.
+    if `xysub` is an array, dimension order should be [nysub,nxsub]
+
+    `xyloc` provides a way to manually supply the central position. 
+    Set `ap` to None will crop around `xyloc` or center of array.
+
+    delx and delx will shift array by some offset before cropping
+    to allow for sub-pixel shifting. To change integer crop positions,
+    recommend using `xyloc` instead.
+
+    Shift function can be fourier_imshfit, fshift, or cv_shift.
+    The interp keyword only works for the latter two options.
+    Consider 'lanczos' for cv_shift.
+
+    Setting `return_xy` to True will also return the indices 
+    used to perform the crop.
+
+    Parameters
+    ----------
+    im_full : ndarray
+        Input image.
+    ap : pysiaf aperture
+        Aperture to use for cropping. Will crop around the aperture
+        reference point by default. Will be overridden by `xyloc`.
+    xysub : int, tuple, or list
+        Size of subarray to extract. If a single integer is provided,
+        then a square subarray is extracted. If a tuple or list is
+        provided, then it should be of the form (ny, nx).
+    xyloc : tuple or list
+        (x,y) pixel location around which to crop the image. If None,
+        then the image aperture refernece point is used.
+    
+    Keyword Args
+    ------------
+    delx : int or float
+        Integer pixel offset in x-direction. This shifts the image by
+        some number of pixels in the x-direction. Positive values shift
+        the image to the right.
+    dely : int or float
+        Integer pixel offset in y-direction. This shifts the image by
+        some number of pixels in the y-direction. Positive values shift
+        the image up.
+    shift_func : function
+        Function to use for shifting. Default is `fourier_imshift`.
+        If delx and dely are both integers, then `fshift` is used.
+    interp : str
+        Interpolation method to use for shifting. Default is 'cubic'.
+        Options are 'nearest', 'linear', 'cubic', and 'quadratic'
+        for `fshift`.
+    return_xy : bool
+        If True, then return the x and y indices used to crop the
+        image prior to any shifting from `delx` and `dely`. 
+        Default is False.
+    fill_val : float
+        Value to use for filling in the empty pixels after shifting.
+        Default = 0.
+    """
+    return _crop_observation(im_full, ap, xysub, xyloc=xyloc, delx=delx, dely=dely,
+                              shift_func=shift_func, interp=interp,
+                              return_xy=return_xy, fill_val=fill_val, **kwargs)
+
+
+def crop_image(im, xysub, xyloc=None, **kwargs):
+    """Crop input image around center using integer offsets only
+
+    If size is exceeded, then the image is expanded and filled with NaNs.
+
+    Parameters
+    ----------
+    im : ndarray
+        Input image.
+    xysub : int, tuple, or list
+        Size of subarray to extract. If a single integer is provided,
+        then a square subarray is extracted. If a tuple or list is
+        provided, then it should be of the form (ny, nx).
+    xyloc : tuple or list
+        (x,y) pixel location around which to crop the image. If None,
+        then the image center is used.
+    
+    Keyword Args
+    ------------
+    delx : int or float
+        Integer pixel offset in x-direction. This shifts the image by
+        some number of pixels in the x-direction. Positive values shift
+        the image to the right.
+    dely : int or float
+        Integer pixel offset in y-direction. This shifts the image by
+        some number of pixels in the y-direction. Positive values shift
+        the image up.
+    shift_func : function
+        Function to use for shifting. Default is `fourier_imshift`.
+        If delx and dely are both integers, then `fshift` is used.
+    interp : str
+        Interpolation method to use for shifting. Default is 'cubic'.
+        Options are 'nearest', 'linear', 'cubic', and 'quadratic'
+        for `fshift`.
+    return_xy : bool
+        If True, then return the x and y indices used to crop the
+        image prior to any shifting from `delx` and `dely`. 
+        Default is False.
+    fill_val : float
+        Value to use for filling in the empty pixels after shifting.
+        Default = 0.
+    """
+    return crop_observation(im, None, xysub, xyloc=xyloc, **kwargs)
+
 
 def shift_subtract(params, reference, target, mask=None, pad=False, interp='cubic',
                    shift_function=fshift):
@@ -58,11 +175,176 @@ def shift_subtract(params, reference, target, mask=None, pad=False, interp='cubi
     else:
         return ( target - beta * offset ).ravel() #.flatten()
 
-def align_LSQ(reference, target, mask=None, pad=False, interp='cubic',
-              shift_function=fshift):
+
+def subtract_psf(image, psf, weights=None, osamp=1, 
+                 xyshift=(0,0), psf_scale=1, psf_offset=0,
+                 func_shift=fourier_imshift, interp='cubic', pad=False, 
+                 kipc=None, **kwargs):
+    """ Subtract a PSF from an image
+
+    Parameters
+    ----------
+    image : ndarray
+        Observed science image
+    psf_over : ndarray
+        Input oversampled PSF to fit and align
+
+    Keyword Args
+    ------------
+    weights : ndarray
+        Weights to apply to the image. Default is None.
+    osamp : int
+        Oversampling factor of the PSF. Default is 1.
+    xyshift : tuple
+        (x,y) pixel shift to apply to the PSF. Default is (0,0).
+    psf_scale : float
+        Scale factor to apply to the PSF. Default is 1.
+    psf_offset : float
+        Offset to apply to the PSF. Default is 0.
+    func_shift : func
+        Which function to use for sub-pixel shifting.
+        Options are fourier_imshift, fshift, or cv_shift.
+    interp : str
+        Interpolation for fshift or cv_shift functions. 
+        Options are 'linear', 'cubic', or 'quintic'.
+        Default is 'cubic'. 
+    pad : bool
+        Should we pad the array before shifting, then truncate?
+        Otherwise, the image is wrapped.
+    kipc : ndarray
+        2D kernel to apply for IPC. Default is None.
+    """
+
+    # Shift oversampled PSF and rebin to detector sampled
+    xsh_over, ysh_over = np.array(xyshift) * osamp
+    if func_shift is None:
+        psf_det = frebin(psf_over, scale=1/osamp) if osamp!=1 else psf_over
+    else:
+        psf_over = func_shift(psf, xsh_over, ysh_over, pad=pad, interp=interp)
+        psf_det = frebin(psf_over, scale=1/osamp) if osamp!=1 else psf_over
+        
+    # Add IPC to detector-sampled PSF
+    if kipc is not None:
+        psf_det = add_ipc(psf_det, kernel=kipc)
+    
+    # Apply weighting function
+    diff = image - (psf_det * psf_scale + psf_offset) 
+    if weights is not None:
+        diff = diff * weights
+        
+    return diff
+
+def align_leastsq(image, psf_over, osamp=1, bpmask=None, weights=None,
+                  params0=[0.0,0.0,1.0,0.0], kipc=None,
+                  func_shift=fourier_imshift, interp='cubic', pad=True, **kwargs):
     """Find best shift value
     
-    LSQ optimization with option of shift alignment algorithm
+    LSQ optimization with option of shift alignment algorithm.
+    In practice, the 'reference' image gets shifted to match
+    the 'target' image.
+    
+    Parameters
+    ----------
+    image : ndarray
+        Observed science image
+    psf_over : ndarray
+        Input oversampled PSF to fit and align
+        
+    Keyword Args
+    ------------
+    osamp : int
+        Oversampling factor of PSF
+    bpmask : ndarray, None
+        Bad pixel mask indicating what pixels in input
+        image to ignore.
+    weights : ndarray, None
+        Array of weights to use during the fitting process.
+    params0 : list
+        Initial guess for (x, y, scale, offset) values.
+    func_shift : func
+        Which function to use for sub-pixel shifting.
+        Options are fourier_imshift, fshift, or cv_shift.
+    interp : str
+        Interpolation for fshift or cv_shift functions. 
+        Options are 'linear', 'cubic', or 'quintic'.
+        Default is 'cubic'. 
+    pad : bool
+        Should we pad the array before shifting, then truncate?
+        Otherwise, the image is wrapped.
+
+    Returns
+    -------
+    list
+        (x, y, scale, offset) values from LSQ optimization, where (x, y) 
+        are the misalignment of target from reference and scale
+        is the fraction by which the target intensity must be
+        reduced to match the intensity of the reference. Offset gives
+        the difference in the mean intensity of the two images.
+    """
+    from scipy.optimize import least_squares#, leastsq
+
+    def psf_diff(params, image, psf, **kwargs):
+        """PSF differencing helper"""
+
+        kwargs['xyshift'] = params[0:2]
+
+        if len(params)==1:
+            kwargs['xyshift'] = (0,0)
+            psf_scale = 1.0
+            psf_offset = 0.0
+        elif len(params)==2:
+            psf_scale = 1.0
+            psf_offset = 0.0
+        elif len(params)==3:
+            psf_scale = params[-1]
+            psf_offset = 0.0
+        elif len(params)==4:
+            psf_scale = params[-2]
+            psf_offset = params[-1]
+        else:
+            raise ValueError("params must be length 2, 3, or 4")
+
+        kwargs['psf_scale'] = psf_scale
+        kwargs['psf_offset'] = psf_offset
+
+        return subtract_psf(image, psf, **kwargs).ravel()
+
+    # Set weights image to pass to differencing function
+    if bpmask is not None:
+        weights = np.ones_like(image) if weights is None else weights
+        weights[bpmask] = 0
+    
+    # Keywords to pass 
+    kwargs2 = {
+        'weights'    : weights,
+        'osamp'      : osamp,
+        'func_shift' : func_shift,
+        'interp'     : interp,
+        'pad'        : pad,
+        'kipc'       : kipc,
+    }
+    kwargs_pass = kwargs.copy()
+    kwargs_pass.update(kwargs2)
+    
+    # Use loss='soft_l1' for least squares robust against outliers
+    # May want to play around with f_scale...
+    res = least_squares(psf_diff, params0, #diff_step=0.1, loss='soft_l1', f_scale=1.0, 
+                        args=(image, psf_over), kwargs=kwargs_pass, **kwargs)
+    out = res.x
+
+    if len(out)==1:
+        return out[0]
+    else:
+        return out
+
+
+def align_LSQ(reference, target, mask=None, pad=False, interp='cubic',
+              shift_function=fshift, init_pars=[0.0, 0.0, 1.0]):
+    """Find best shift value
+    
+    LSQ optimization with option of shift alignment algorithm.
+    In practice, the 'reference' image gets shifted to match
+    the 'target' image.
     
     Parameters
     ----------
@@ -94,8 +376,6 @@ def align_LSQ(reference, target, mask=None, pad=False, interp='cubic',
         reduced to match the intensity of the reference.
     """
     from scipy.optimize import least_squares#, leastsq
-
-    init_pars = [0.0, 0.0, 1.0]
 
     # Use loss='soft_l1' for least squares robust against outliers
     # May want to play around with f_scale...
@@ -171,7 +451,7 @@ def scale_ref_image(im1, im2, mask=None, smooth_imgs=False,
     im2 : ndarray
         Reference star observation.
     mask : bool array or None
-        Use this mask to exclude pixels for performing standard deviation.
+        Use this mask to exclude pixels.
         Boolean mask where True is included and False is excluded.
     smooth_imgs : bool
         Smooth the images with nearest neighbors to remove bad pixels?
@@ -181,7 +461,7 @@ def scale_ref_image(im1, im2, mask=None, smooth_imgs=False,
     
     # Mask for generating standard deviation
     if mask is None:
-        mask = np.ones(im1.shape, dtype=np.bool)
+        mask = np.ones(im1.shape, dtype=bool)
     nan_mask = ~(np.isnan(im1) | np.isnan(im2))
     mask = (mask & nan_mask)
 
@@ -197,12 +477,22 @@ def scale_ref_image(im1, im2, mask=None, smooth_imgs=False,
         im1 = np.nanmedian(np.array(im1_smth), axis=0)
         im2 = np.nanmedian(np.array(im2_smth), axis=0)
         
-    # Perform linear least squares fit on difference function
+    scale_init = np.nanmedian(im1[mask]) / np.nanmedian(im2[mask])
     if return_shift_values:
-        return align_LSQ(im2[mask], im1[mask], shift_function=fshift)
+        params = [0.0, 0.0, scale_init]
     else:
-        _, _, scl = align_LSQ(im2[mask], im1[mask], shift_function=None)
-        return scl
+        params = [scale_init]
+
+    # Perform linear least squares fit on difference function
+    return align_leastsq(im1, im2, bpmask=~mask, weights=None,
+                         params0=params, func_shift=fshift, interp='linear')
+
+
+    # if return_shift_values:
+    #     return align_LSQ(im2[mask], im1[mask], shift_function=fshift)
+    # else:
+    #     _, _, scl = align_LSQ(im2[mask], im1[mask], shift_function=None)
+    #     return scl
 
     # ind = np.where(im1==im1[mask].max())
     # ind = [ind[0][0], ind[1][0]]
@@ -280,7 +570,7 @@ def optimal_difference(im_sci, im_ref, scale, binsize=1, center=None,
     
     # Only perform operations on pixels where mask_good=True
     if mask_good is None:
-        mask_good = np.ones(rho.shape, dtype=np.bool)
+        mask_good = np.ones(rho.shape, dtype=bool)
     nan_mask1 = np.isnan(diff1)
     nan_mask2 = np.isnan(diff2)
     mask_good = mask_good & (~nan_mask1) & (~nan_mask2)

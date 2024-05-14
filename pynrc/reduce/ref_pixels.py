@@ -47,12 +47,12 @@ class NRC_refs(object):
     
     """
 
-    def __init__(self, data, header, DMS=False, altcol=True, do_all=False, **kwargs):
+    def __init__(self, data, header, DMS=True, altcol=True, do_all=False, **kwargs):
     
         # Convert to float if necessary
         if 'float' not in data.dtype.name:
             type_in = data.dtype.name
-            data = data.astype(np.float, copy=False)
+            data = data.astype(float, copy=False)
             type_out = data.dtype.name
             #print('Converting data from {} to {}'.format(type_in, type_out))
 
@@ -206,7 +206,19 @@ class NRC_refs(object):
         else:
             return None
 
-    
+    @property
+    def mask_ref(self):
+        """Reference pixel mask for det coordinates"""
+        return self.detector.mask_ref
+    @property
+    def mask_act(self):
+        """Active pixel mask for det coordinates"""
+        return self.detector.mask_act
+    @property
+    def mask_channels(self):
+        """Channel masks for det coordinates"""
+        return self.detector.mask_channels
+
     def calc_avg_amps(self, top_ref=True, bot_ref=True):
         """Calculate amplifier averages
         
@@ -435,7 +447,7 @@ def reffix_hxrg(cube, nchans=4, in_place=True, fixcol=False, **kwargs):
     # Convert to float
     if 'float' not in cube.dtype.name:
         copy = (not in_place)
-        cube = cube.astype(np.float, copy=copy)
+        cube = cube.astype(float, copy=copy)
 
     if not in_place:
         cube = np.copy(cube)

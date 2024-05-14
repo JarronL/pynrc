@@ -19,8 +19,9 @@ import multiprocessing as mp
 from tqdm.auto import trange, tqdm
 
 from webbpsf_ext import robust
-from webbpsf_ext.image_manip import fshift, pad_or_cut_to_size
+from webbpsf_ext.image_manip import fshift, pad_or_cut_to_size, bp_fix
 from webbpsf_ext.maths import hist_indices, jl_poly_fit, jl_poly
+from ..maths.coords import det_to_sci, sci_to_det 
 
 # import pynrc
 from ..nrc_utils import var_ex_model
@@ -35,14 +36,26 @@ import logging
 from pynrc import logging_utils
 _log = logging.getLogger('pynrc')
 
+def detname_to_scaid(det_id):
+
+    from ..nrc_utils import get_detname
+    detname = get_detname(det_id)
+
+    det_dict = {'NRCA1':481, 'NRCA2':482, 'NRCA3':483, 'NRCA4':484, 'NRCA5':485,
+                'NRCB1':486, 'NRCB2':487, 'NRCB3':488, 'NRCB4':489, 'NRCB5':490}
+
+    return det_dict[detname]
+
 class nircam_dark(object):
+    """NIRCam dark calibration"""
 
     def __init__(self, scaid, datadir, outdir, lindir=None, DMS=False, 
                  same_scan_direction=False, reverse_scan_direction=False):
         
         self.DMS = DMS
 
-        self.scaid = scaid
+        # In case detname (A1...B5) is specified rather than scaid (481...490)
+        self.scaid = detname_to_scaid(scaid)
         # Directory information
         self._create_dir_structure(datadir, outdir, lindir=lindir)
 
@@ -371,7 +384,7 @@ class nircam_dark(object):
         # TODO: Add DMS support for temperature
         if self.DMS:
             self._temperature_dict = None
-            _log.error("DMS data not yet supported obtaining FPA temperatures")
+            _log.warn("DMS data not yet supported obtaining FPA temperatures")
             return
         
         savename = self.paths_dict['temperatures_file']
@@ -798,7 +811,7 @@ class nircam_dark(object):
             en_spat_list = []
             #en_temp_list = []
             for patt in tqdm(patterns, leave=False, desc='Patterns'):
-                res = calc_eff_noise(allfiles, superbias=superbias, read_pattern=patt, temporal=False)
+                res = calc_eff_noise(allfiles, DMS=self.DMS, superbias=superbias, read_pattern=patt, temporal=False)
                 # ng_all, eff_noise_temp, eff_noise_spa = res
                 ng_all, eff_noise_spat = res
                 
@@ -1145,7 +1158,7 @@ class nircam_dark(object):
 
             self._pow_spec_dict['ps_corr_scale'] = scales
 
-    def get_super_flats(self, split_low_high=True, smth_sig=10, force=False, **kwargs):
+    def get_super_flats(self, split_low_high=False, smth_sig=10, force=False, **kwargs):
         """Get flat field information
         
         Splits flat field into to lflats and pflats (low and high frequency).
@@ -1192,7 +1205,7 @@ class nircam_dark(object):
             det = create_detops(hdr, DMS=self.DMS)
             data = apply_linearity(data, det, self.linear_dict)
 
-            # Perform fit to data in DN/sec
+            # Perform fit to data (e-/group)
             tarr = np.arange(1,len(data)+1)
             cf_arr = cube_fit(tarr, data, deg=1, sat_vals=det.well_level, sat_frac=0.8, fit_zero=False)
             im_slope = cf_arr[1]
@@ -1203,9 +1216,10 @@ class nircam_dark(object):
                                           smth_sig=smth_sig, ref_info=det.ref_info)
             super_flats = np.asarray(super_flats)
 
-            # Save superbias frame to directory
+            # Save super flats to directory
             hdu = fits.PrimaryHDU(super_flats)
-            hdu.header['SMTH_SIG'] = smth_sig
+            if split_low_high:
+                hdu.header['SMTH_SIG'] = smth_sig
             hdu.writeto(savename, overwrite=True)
 
         sh = super_flats.shape
@@ -1214,11 +1228,11 @@ class nircam_dark(object):
             if nz==2:
                 lflats, pflats = super_flats
             else:
-                lflats = None
                 pflats = super_flats
+                lflats = np.ones_like(pflats)
         else:
-            lflats = None
             pflats = super_flats
+            lflats = np.ones_like(pflats)
 
         self.lflats = lflats
         self.pflats = pflats
@@ -2127,12 +2141,12 @@ class nircam_dark(object):
         xvals = tvals
         for ch in range(nchan):
             thr_e = det.pixel_noise(ng=ng_all, rn=read_noise[ch], idark=idark[ch], 
-                                        ideal_Poisson=ideal_Poisson, p_excess=p_excess)
+                                    ideal_Poisson=ideal_Poisson, p_excess=p_excess, scale_ints=False)
             yvals2 = (thr_e * tvals) / gain
             axes[0].plot(xvals, yvals2,  color=colarr[ch], lw=10, alpha=0.3, label=f'Ch{ch} - Theory')
             axes[1].plot(xvals, yvals2/tvals,  color=colarr[ch], lw=10, alpha=0.3, label=f'Ch{ch} - Theory')
         ch = -1
-        thr_e = det.pixel_noise(ng=ng_all, rn=read_noise_ref, idark=0, p_excess=[0,0])
+        thr_e = det.pixel_noise(ng=ng_all, rn=read_noise_ref, idark=0, p_excess=[0,0], scale_ints=False)
         yvals2 = (thr_e * tvals) / gain
         axes[0].plot(xvals, yvals2,  color=colarr[ch], lw=10, alpha=0.3, label=f'Ref - Theory')
         axes[1].plot(xvals, yvals2/tvals,  color=colarr[ch], lw=10, alpha=0.3, label=f'Ref - Theory')
@@ -2217,7 +2231,7 @@ class nircam_dark(object):
 
             ng_all = ng_all_list[i]
             thr_e = det_new.pixel_noise(ng=ng_all, rn=read_noise, idark=idark_avg, 
-                                        ideal_Poisson=ideal_Poisson, p_excess=[0,0])
+                                        ideal_Poisson=ideal_Poisson, p_excess=[0,0], scale_ints=False)
             
             yvals = (thr_e * tvals) / gain
             ax.plot(xvals, yvals, color='C1', label='Theory')
@@ -2225,7 +2239,7 @@ class nircam_dark(object):
             tvals = tarr_all[i]
             ng_all = ng_all_list[i]
             thr_e = det_new.pixel_noise(ng=ng_all, rn=read_noise, idark=idark_avg, 
-                                        ideal_Poisson=ideal_Poisson, p_excess=p_excess)
+                                        ideal_Poisson=ideal_Poisson, p_excess=p_excess, scale_ints=False)
             
             yvals = (thr_e * tvals) / gain
             ax.plot(xvals, yvals, marker='.', color='C1', ls='--', label='Theory + Excess')
@@ -2373,7 +2387,8 @@ class nircam_cal(nircam_dark):
         self.DMS = DMS
 
         # Directory information
-        self.scaid = scaid
+        # In case detname (A1...B5) is specified rather than scaid (481...490)
+        self.scaid = detname_to_scaid(scaid)
         caldir = os.path.join(conf.PYNRC_PATH, 'calib') + '/'
         self._create_dir_structure(None, caldir)
 
@@ -2542,7 +2557,7 @@ def get_fits_data(fits_file, return_header=False, bias=None, reffix=False,
     if grp_ind is not None:
         data = data[grp_ind[0]:grp_ind[1]]
     # Convert to float
-    data = data.astype(np.float)
+    data = data.astype(float)
     hdul.close()
 
     if bias is not None:
@@ -2649,7 +2664,7 @@ def _wrap_super_bias_for_mp(arg):
     return cf[0]
 
 def gen_super_bias(allfiles, DMS=False, mn_func=np.median, std_func=robust.std, 
-                   return_std=False, deg=1, nsplit=3, **kwargs):
+                   return_std=False, deg=1, nsplit=3, return_all=False, **kwargs):
     """ Generate a Super Bias Image
 
     Read in a number of dark ramps, perform a polynomial fit to the data,
@@ -2665,20 +2680,24 @@ def gen_super_bias(allfiles, DMS=False, mn_func=np.median, std_func=robust.std,
     kw = kwargs.copy()
     kw['deg'] = deg
     kw['DMS'] = DMS
+
     if DMS:
         worker_args = []
         for f in allfiles:
             hdr = fits.getheader(f)
             # Account for multiple ints in each file
             for i in range(hdr['NINTS']):
-                kw['int_ind'] = i
-                worker_args.append(([f],kw))
+                kw_i = kw.copy()
+                kw_i['int_ind'] = i
+                worker_args.append(([f],kw_i))
     else:
         worker_args = [([f],kw) for f in allfiles]
     
     nfiles = len(allfiles)
     
-    if nsplit>1:
+    if nsplit is None or nsplit<=1:
+        bias_all = np.asarray([_wrap_super_bias_for_mp(wa) for wa in tqdm(worker_args)])
+    else:
         bias_all = []
         # pool = mp.Pool(nsplit)
         try:
@@ -2702,9 +2721,10 @@ def gen_super_bias(allfiles, DMS=False, mn_func=np.median, std_func=robust.std,
             _log.info('Closing multiprocess pool.')
             # pool.close()
 
-        bias_all = np.array(bias_all)
-    else:
-        bias_all = np.array([_wrap_super_bias_for_mp(wa) for wa in tqdm(worker_args)])
+        bias_all = np.asarray(bias_all)
+
+    if return_all:
+        return bias_all
 
     # Set back to previous logging level
     setup_logging(log_prev, verbose=False)
@@ -4060,12 +4080,12 @@ def calc_eff_noise(allfiles, superbias=None, temporal=True, spatial=True,
     # Calculate effective noise spatially
     if spatial:
         eff_noise_all = []
-        for f in tqdm(allfiles, desc="Spatial", leave=False):
+        for fname in tqdm(allfiles, desc="Spatial", leave=False):
             # If DMS, then might be multiple integrations per FITS file
             nint = fits.getheader(fname)['NINTS'] if DMS else 1
             iter_range = trange(nint, desc='Ramps', leave=False) if nint>1 else range(nint)
             for i in iter_range:
-                data = get_fits_data(f, bias=superbias, reffix=True, 
+                data = get_fits_data(fname, bias=superbias, reffix=True, 
                                      DMS=DMS, ind_int=i, **kw_ref)
 
                 # Reformat data?
@@ -4136,7 +4156,7 @@ def fit_func_var_ex(params, det, patterns, ng_all_list, en_dn_list,
 
         ng_all = ng_all_list[i]
         thr_e = det_new.pixel_noise(ng=ng_all, rn=read_noise, idark=idark, 
-                                    ideal_Poisson=ideal_Poisson, p_excess=[0,0])
+                                    ideal_Poisson=ideal_Poisson, p_excess=[0,0], scale_ints=False)
         
         tvals = (ng_all - 1) * det_new.time_group
         var_ex_obs = (en_dn_list[i] * gain * tvals)**2 - (thr_e * tvals)**2
@@ -5485,7 +5505,8 @@ def get_linear_coeffs(allfiles, super_bias=None, DMS=False, kppc=None, kipc=None
 
 def pixel_linearity_gains(frame, coeff_arr, use_legendre=True, lxmap=[0,1e5]):
     """
-    Given some image data and coefficient
+    Given some image data and coefficients, determine effective 
+    gain value to use to go from DN to electrons.
     """
 
     # from numpy.polynomial import legendre
@@ -5536,6 +5557,7 @@ def apply_linearity(cube, det, coeff_dict):
              - 'cf_nonlin_low' : Coefficients for flux values below counts_cut
 
     """
+
     nz, _, _ = cube.shape
     nx, ny = (det.xpix, det.ypix)
 
@@ -5705,10 +5727,9 @@ def apply_nonlin(cube, det, coeff_dict, randomize=True, rand_seed=None):
 
     return res
 
-def get_flat_fields(im_slope, split_low_high=True, smth_sig=10, ref_info=[4,4,4,4]):
+def get_flat_fields(im_slope, split_low_high=False, smth_sig=10, ref_info=[4,4,4,4]):
     """ Calculate QE variations in flat field"""
 
-    
     from astropy.convolution import convolve_fft, Gaussian2DKernel
 
     ny, nx = im_slope.shape
@@ -5726,7 +5747,7 @@ def get_flat_fields(im_slope, split_low_high=True, smth_sig=10, ref_info=[4,4,4,
 
     # Perform a quick median filter
     imarr = []
-    xysh = 3
+    xysh = 2
     for xsh in np.arange(-xysh, xysh):
         for ysh in np.arange(-xysh, xysh):
             if not xsh==ysh==0:
@@ -5738,9 +5759,9 @@ def get_flat_fields(im_slope, split_low_high=True, smth_sig=10, ref_info=[4,4,4,
 
     del imarr
 
-    # Replace outliers with their median values
+    # Replace outliers with the median of their surrounding values
     diff = qe_frac - im_med
-    mask_good = robust.mean(diff, return_mask=True)
+    mask_good = robust.mean(diff, Cut=20, return_mask=True)
     mask_bad = ~mask_good
     qe_frac[mask_bad] = im_med[mask_bad]
 
@@ -5760,3 +5781,4 @@ def get_flat_fields(im_slope, split_low_high=True, smth_sig=10, ref_info=[4,4,4,
         return lflats, pflats
     else:
         return pad_or_cut_to_size(qe_frac, (ny,nx), fill_val=1)
+

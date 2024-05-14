@@ -2,15 +2,17 @@ sphinx-automodapi==0.13
 sphinx==4.2.0
 sphinx_rtd_theme==0.4.3
 nbsphinx==0.8.7
-docutils==0.16
-numpy==1.21.2
-matplotlib==3.5.0
+docutils==0.18
+numpy>=1.24.3
+matplotlib==3.7.0
 Cython
-astropy==4.2
-astroquery==0.4.3
-astropy-helpers>=3.1
-pysynphot>=2.0.0
-poppy>=1.0.1
-webbpsf>=1.0.0
+astropy>=5.2
+astroquery==0.4.6
+# astropy-helpers>=3.1
+synphot>=1.2.0
+stynphot>=1.2.0
+poppy>=1.1.0
+webbpsf>=1.2.0
 jwst
-webbpsf_ext
+pysiaf
+webbpsf_ext>=1.2.0

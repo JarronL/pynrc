@@ -1,4 +1,5 @@
 """pyNRC utility functions"""
+from copy import deepcopy
 import os, re
 
 # Import libraries
@@ -27,9 +28,13 @@ import sys, platform
 import multiprocessing as mp
 import traceback
 
+# Progress bar
+from tqdm.auto import trange, tqdm
+
 from astropy.io import fits, ascii
 from astropy.table import Table
 from astropy.time import Time
+import astropy.units as u
 # from astropy import units
 
 #from scipy.optimize import least_squares#, leastsq
@@ -39,8 +44,6 @@ from numpy.polynomial import legendre
 
 from . import conf
 from .logging_utils import setup_logging
-
-from webbpsf_ext.bandpasses import nircam_com_th, nircam_com_nd
 
 from .maths import robust
 from .maths.fast_poly import *
@@ -64,6 +67,7 @@ _log = logging.getLogger('pynrc')
 
 try:
     import webbpsf_ext
+    from webbpsf_ext.utils import get_one_siaf
 except ImportError:
     raise ImportError('webbpsf_ext is not installed. pyNRC depends on its inclusion.')
 
@@ -71,14 +75,6 @@ except ImportError:
 import webbpsf, poppy
 from poppy import (radial_profile, measure_radial, measure_fwhm, measure_ee)
 from poppy import (measure_sharpness, measure_centroid) #, measure_strehl)
-
-import pysynphot as S
-# Extend default wavelength range to 5.6 um
-S.refs.set_default_waveset(minwave=500, maxwave=56000, num=10000.0, delta=None, log=False)
-# JWST 25m^2 collecting area
-# Flux loss from masks and occulters are taken into account in WebbPSF
-# S.refs.setref(area = 25.4e4) # cm^2
-S.refs.setref(area = 25.78e4) # cm^2 according to jwst_pupil_RevW_npix1024.fits.gz
 
 # The following won't work on readthedocs compilation
 if not on_rtd:
@@ -108,9 +104,9 @@ import pysiaf
 from pysiaf import JWST_PRD_VERSION, rotations, Siaf
 
 # Create this once since it takes time to call multiple times
-siaf_nrc = Siaf('NIRCam')
+from webbpsf_ext.utils import siaf_nrc as siaf_nrc_wext
+siaf_nrc = deepcopy(siaf_nrc_wext)
 siaf_nrc.generate_toc()
-
 
 #__location__ = os.path.realpath(os.path.join(os.getcwd(), os.path.dirname(__file__)))
 #__location__ += '/'
@@ -120,12 +116,13 @@ __epsilon = np.finfo(float).eps
 
 ###########################################################################
 #
-#    Pysynphot Bandpasses
+#    Bandpasses
 #
 ###########################################################################
 
 from webbpsf_ext.bandpasses import bp_igood, bp_wise, bp_2mass, bp_gaia
 from webbpsf_ext.bandpasses import nircam_filter as read_filter
+from webbpsf_ext.bandpasses import nircam_com_th, nircam_com_nd
 
 
 ###########################################################################
@@ -137,6 +134,7 @@ from webbpsf_ext.bandpasses import nircam_filter as read_filter
 from webbpsf_ext.bandpasses import nircam_grism_res as grism_res
 from webbpsf_ext.bandpasses import nircam_grism_wref as grism_wref
 from webbpsf_ext.maths import radial_std
+from webbpsf_ext.utils import get_detname
 
 def channel_select(bp):
     """Select wavelength channel
@@ -147,11 +145,11 @@ def channel_select(bp):
 
     Parameters
     ----------
-    bp : :mod:`pysynphot.obsbandpass`
+    bp : :class:`webbpsf_ext.synphot_ext.Bandpass`
         NIRCam filter bandpass.
     """
 
-    if bp.avgwave()/1e4 < 2.3:
+    if bp.avgwave().to_value('um') < 2.3:
         pix_scale = pixscale_SW # pixel scale (arcsec/pixel)
         idark = 0.003      # dark current (e/sec)
         pex = (1.0,5.0)
@@ -161,36 +159,6 @@ def channel_select(bp):
         pex = (1.5,10.0)
 
     return (pix_scale, idark, pex)
-
-
-def get_detname(det_id):
-    """Return NRC[A-B][1-5] for valid detector/SCA IDs"""
-
-    det_dict = {481:'A1', 482:'A2', 483:'A3', 484:'A4', 485:'A5',
-                486:'B1', 487:'B2', 488:'B3', 489:'B4', 490:'B5'}
-    scaids = det_dict.keys()
-    detids = det_dict.values()
-    detnames = ['NRC' + idval for idval in detids]
-
-    # If already valid, then return
-    if det_id in detnames:
-        return det_id
-    elif det_id in scaids:
-        detname = 'NRC' + det_dict[det_id]
-    elif det_id in detids:
-        detname = 'NRC' + det_id
-    else:
-        detname = det_id
-
-    # If NRCALONG or or NRCBLONG, change 'LONG' to '5' 
-    if 'LONG' in detname:
-        detname = detname[0:4] + '5'
-
-    if detname not in detnames:
-        raise ValueError("Invalid detector: {} \n\tValid names are: {}" \
-                  .format(detname, ', '.join(detnames)))
-        
-    return detname
 
 def var_ex_model(ng, nf, params):
     """ Variance Excess Model
@@ -345,7 +313,7 @@ def pix_noise(ngroup=2, nf=1, nd2=0, tf=10.73677, rn=15.0, ktc=29.0, p_excess=(0
 
 ###########################################################################
 #
-#    Pysynphot Spectrum Wrappers
+#    Spectrum Wrappers
 #
 ###########################################################################
 
@@ -353,59 +321,6 @@ from webbpsf_ext.spectra import BOSZ_spectrum, stellar_spectrum, source_spectrum
 from webbpsf_ext.spectra import planets_sb12, sp_accr, jupiter_spec, companion_spec
 from webbpsf_ext.spectra import linder_table, linder_filter, cond_table, cond_filter
 from webbpsf_ext.spectra import bin_spectrum, mag_to_counts
-
-def bin_spectrum(sp, wave, waveunits='um'):
-    """Rebin spectrum
-
-    Rebin a :mod:`pysynphot.spectrum` to a different wavelength grid.
-    This function first converts the input spectrum to units
-    of counts then combines the photon flux onto the
-    specified wavelength grid.
-
-    Output spectrum units are the same as the input spectrum.
-
-    Parameters
-    -----------
-    sp : :mod:`pysynphot.spectrum`
-        Spectrum to rebin.
-    wave : array_like
-        Wavelength grid to rebin onto.
-    waveunits : str
-        Units of wave input. Must be recognizeable by Pysynphot.
-
-    Returns
-    -------
-    :mod:`pysynphot.spectrum`
-        Rebinned spectrum in same units as input spectrum.
-    """
-
-    waveunits0 = sp.waveunits
-    fluxunits0 = sp.fluxunits
-
-    # Convert wavelength of input spectrum to desired output units
-    sp.convert(waveunits)
-    # We also want input to be in terms of counts to conserve flux
-    sp.convert('flam')
-
-    edges = S.binning.calculate_bin_edges(wave)
-    ind = (sp.wave >= edges[0]) & (sp.wave <= edges[-1])
-    binflux = binned_statistic(sp.wave[ind], sp.flux[ind], np.mean, bins=edges)
-
-    # Interpolate over NaNs
-    ind_nan = np.isnan(binflux)
-    finterp = interp1d(wave[~ind_nan], binflux[~ind_nan], kind='cubic')
-    binflux[ind_nan] = finterp(wave[ind_nan])
-
-    sp2 = S.ArraySpectrum(wave, binflux, waveunits=waveunits, fluxunits='flam')
-    sp2.convert(waveunits0)
-    sp2.convert(fluxunits0)
-
-    # Put back units of original input spectrum
-    sp.convert(waveunits0)
-    sp.convert(fluxunits0)
-
-    return sp2
-
 
 def zodi_spec(zfact=None, ra=None, dec=None, thisday=None, **kwargs):
     """Zodiacal light spectrum.
@@ -451,9 +366,9 @@ def zodi_spec(zfact=None, ra=None, dec=None, thisday=None, **kwargs):
 
     Returns
     -------
-    :mod:`pysynphot.spectrum`
-        Output is a Pysynphot spectrum with default units of flam (erg/s/cm^2/A/sr).
-        Note: Pysynphot doesn't recognize that it's per steradian, but we must keep
+    :mod:`webbpsf_ext.synphot_ext..Spectrum`
+        Output is a synphot spectrum with default units of flam (erg/s/cm^2/A/sr).
+        Note: synphot doesn't recognize that it's per steradian, but we must keep
         that in mind when integrating the flux per pixel.
 
     Notes
@@ -476,6 +391,7 @@ def zodi_spec(zfact=None, ra=None, dec=None, thisday=None, **kwargs):
 
     """
 
+    from webbpsf_ext.synphot_ext import ArraySpectrum, BlackBody, convert_flux
     
     if (ra is not None) and (dec is not None):
         if _jbt_exists == False:
@@ -501,13 +417,12 @@ def zodi_spec(zfact=None, ra=None, dec=None, thisday=None, **kwargs):
                         ind = np.where(calendar==thisday)[0][0]
                         ftot = farr[ind]
                     else:
-                        _log.warning("The input calendar day {}".format(thisday)+" is not available. \
-                                    Choosing closest visible day.")
+                        _log.warning("The input calendar day {}".format(thisday)+" is not available. Choosing closest visible day.")
                         diff = np.abs(calendar-thisday)
                         ind = np.argmin(diff)
                         ftot = farr[ind]
 
-                sp = S.ArraySpectrum(wave=wvals*1e4, flux=ftot*1e6, fluxunits='Jy')
+                sp = ArraySpectrum(wave=wvals*1e4, flux=ftot*1e6, fluxunits='Jy')
                 sp.convert('flam')
                 sp.name = 'Total Background'
 
@@ -523,14 +438,13 @@ def zodi_spec(zfact=None, ra=None, dec=None, thisday=None, **kwargs):
     else:
         f1 = f2 = zfact
     # These values have been scaled to match JWST-CALC-003894 values
-    # in order to work with Pysynphot's blackbody function.
-    # Pysynphot's BB function is normalized to 1Rsun at 1kpc by default.
+    # in order to work with synphot's blackbody function.
+    # synphot's BB function is normalized to 1Rsun at 1kpc by default.
     f1 *= 4.0e7
     f2 *= 2.0e13
 
-    bb1 = f1 * S.BlackBody(5300.0)
-    bb2 = f2 * S.BlackBody(282.0)
-
+    bb1 = f1 * BlackBody(5300.0)
+    bb2 = f2 * BlackBody(282.0)
 
     # Query Euclid Background Model
     locstr = kwargs.get('locstr')
@@ -542,12 +456,10 @@ def zodi_spec(zfact=None, ra=None, dec=None, thisday=None, **kwargs):
         waves = np.array([1.0,5.5])
         vals = zodi_euclid(locstr, year, day, waves, **kwargs)
 
-        bb1.convert('Jy')
-        bb2.convert('Jy')
-
         # MJy at wavelength locations
-        f_bb1 = bb1.sample(waves*1e4) / 1e6
-        f_bb2 = bb2.sample(waves*1e4) / 1e6
+        uwaves = waves * u.um
+        f_bb1 = convert_flux(uwaves, bb1(uwaves), 'MJy').value
+        f_bb2 = convert_flux(uwaves, bb2(uwaves), 'MJy').value
 
         bb1 *= (vals[0]-f_bb2[0])/f_bb1[0]
         bb2 *= (vals[1]-f_bb1[1])/f_bb2[1]
@@ -669,7 +581,7 @@ def zodi_euclid(locstr, year, day, wavelengths=[1,5.5], ido_viewin=0, **kwargs):
 # 	Default is 2
 # 	"""
 #
-# 	bb1 = S.BlackBody(5800.); bb2 = S.BlackBody(300.)
+# 	bb1 = BlackBody(5800.); bb2 = BlackBody(300.)
 # 	sp_zodi = (1.7e7*bb1 + 2.3e13*bb2) * 3.73
 # 	sp_zodi.convert('flam')
 #
@@ -740,7 +652,7 @@ def grism_background(filter, pupil='GRISM0', module='A', sp_bg=None,
         Either 'GRISM0' ('GRISMR') or 'GRISM90' ('GRISMC').
     module : str
         NIRCam 'A' or 'B' module.
-    sp_bg : :mod:`pysynphot.spectrum`
+    sp_bg : :mod:`webbpsf_ext.synphot_ext.Spectrum`
         Spectrum of Zodiacal background emission, which gets
         multiplied by bandpass throughput to determine final
         wavelength-dependent flux that is then dispersed.
@@ -770,6 +682,8 @@ def grism_background(filter, pupil='GRISM0', module='A', sp_bg=None,
         Calendar day to use for background calculation.  If not given, will 
         use the average of visible calendar days.
     """
+
+    from webbpsf_ext.synphot_ext import Observation
     
     # Option for GRISMR/GRISMC
     if 'GRISMR' in pupil:
@@ -804,15 +718,14 @@ def grism_background(filter, pupil='GRISM0', module='A', sp_bg=None,
         res, dw = grism_res(pupil, module, grism_order) # Resolution and dispersion
         
         # Observation spectrum converted to count rate
-        obs_bg = S.Observation(sp_bg, bp, bp.wave)
-        obs_bg.convert('counts')
+        obs_bg = Observation(sp_bg, bp, bp.wave)
 
         # Total background flux per pixel (not dispersed)
         area_scale = (pix_scale/206265.0)**2
         fbg_tot = obs_bg.countrate() * area_scale
         # Total counts/sec within each wavelength bin
-        binwave = obs_bg.binwave/1e4
-        binflux = obs_bg.binflux*area_scale
+        binwave = obs_bg.binset.to_value('um')
+        binflux = area_scale * obs_bg.sample_binned(flux_unit='count').value
             
         # Interpolation function
         fint = interp1d(binwave, binflux, kind='cubic')
@@ -821,16 +734,6 @@ def grism_background(filter, pupil='GRISM0', module='A', sp_bg=None,
         # Get flux values and preserve total flux
         flux_vals = fint(wave_vals)
         flux_vals = fbg_tot * flux_vals / flux_vals.sum()
-        
-        # # Wavelengths at each pixel to interpolate
-        # wave_vals = np.arange(bp.wave.min()/1e4, bp.wave.max()/1e4, dw)
-    
-        # # Rebin onto desired wavelength grid
-        # sp_new = bin_spectrum(sp_bg, wave_vals, waveunits='um')
-        # obs_bg = S.Observation(sp_new, bp, binset=sp_new.wave)
-        # # Get flux values per pixel
-        # obs_bg.convert('counts')
-        # flux_vals = obs_bg.binflux * (pix_scale/206265.0)**2
     
         # Index of reference wavelength
         iref = int((wref - wave_vals[0]) / (wave_vals[1] - wave_vals[0]))
@@ -861,6 +764,7 @@ def grism_background(filter, pupil='GRISM0', module='A', sp_bg=None,
 def grism_background_com(filter, pupil='GRISM90', module='A', sp_bg=None, 
                          wref=None, **kwargs):
     
+    from webbpsf_ext.synphot_ext import Observation
     
     # Option for GRISMR/GRISMC
     if 'GRISMR' in pupil:
@@ -901,15 +805,14 @@ def grism_background_com(filter, pupil='GRISM90', module='A', sp_bg=None,
     ny_com, nx_com = im_com.shape
 
     # Observation spectrum converted to count rate
-    obs_bg = S.Observation(sp_bg, bp, bp.wave)
-    obs_bg.convert('counts')
+    obs_bg = Observation(sp_bg, bp, bp.wave)
 
     # Total background flux per pixel (not dispersed)
     area_scale = (pix_scale/206265.0)**2
     fbg_tot = obs_bg.countrate() * area_scale
     # Total counts/sec within each wavelength bin
-    binwave = obs_bg.binwave/1e4
-    binflux = obs_bg.binflux*area_scale
+    binwave = obs_bg.binset.to_value('um')
+    binflux = area_scale * obs_bg.sample_binned(flux_unit='count').value
 
     # Interpolation function
     fint = interp1d(binwave, binflux, kind='cubic')
@@ -957,13 +860,13 @@ def grism_background_com(filter, pupil='GRISM90', module='A', sp_bg=None,
     return res
 
 
-def make_grism_slope(nrc, src_tbl, tel_pointing, expnum, add_offset=None, **kwargs):
-    """ Create slope image 
+def make_grism_slope(nrc, src_tbl, tel_pointing, expnum, add_offset=None, spec_ang=0, **kwargs):
+    """ Create grism slope image 
+    Parameters
     """
     
     # Set SIAF aperture info
-    siaf_ap_obs = tel_pointing.siaf_ap_obs
-    ap_siaf = siaf_ap_obs
+    ap_siaf = tel_pointing.siaf_ap_obs
     ap_obs = ap_siaf.AperName
     
     # Convert expnum to int if input as string
@@ -1028,7 +931,7 @@ def make_grism_slope(nrc, src_tbl, tel_pointing, expnum, add_offset=None, **kwar
 
     # Build final image
     wspec_all = []
-    for i in range(xpix.size):
+    for i in trange(xpix.size, leave=False, desc='Spectra'):
         # Get stellar spectrum
         teff_i = teff[i]   if teff   is not None else None
         sptp_i = sptype[i] if sptype is not None else 'G2V'
@@ -1037,7 +940,9 @@ def make_grism_slope(nrc, src_tbl, tel_pointing, expnum, add_offset=None, **kwar
 
         # Create spectral image
         xr, yr = xpix[i], ypix[i]
-        wspec, imspec = place_grism_spec(nrc, sp, xr, yr, wref=wref, return_oversample=False)
+        cen_rot = (ap_siaf.XSciRef, ap_siaf.YSciRef)
+        wspec, imspec = place_grism_spec(nrc, sp, xr, yr, wref=wref, return_oversample=False,
+                                         spec_ang=spec_ang, cen_rot=cen_rot)
 
         im_slope += imspec
         wspec_all.append(wspec)
@@ -1047,7 +952,8 @@ def make_grism_slope(nrc, src_tbl, tel_pointing, expnum, add_offset=None, **kwar
 
     return wspec_all, im_slope
 
-def place_grism_spec(nrc, sp, xpix, ypix, wref=None, return_oversample=False):
+def place_grism_spec(nrc, sp, xpix, ypix, wref=None, return_oversample=False, 
+                     spec_ang=0, cen_rot=None):
     """ Create spectral image and place ref wavelenght at (x,y) location 
     
     Given a NIRCam instrument object and input spectrum, create a dispersed
@@ -1055,6 +961,35 @@ def place_grism_spec(nrc, sp, xpix, ypix, wref=None, return_oversample=False):
     (xpix,ypix) coordinates (assuming 'sci' coords). 
 
     Returned values will be a tuple of (wspec, imspec) 
+
+    Parameters
+    ==========
+    nrc : :class:`~pynrc.NIRCam`
+        pynrc.NIRCam class
+    sp : :mod:`webbpsf_ext.synphot_ext.Spectrum`
+        A synphot spectrum of target.
+        Should already be normalized to the apparent flux.
+    xpix : float
+        Pixel position along x-axis to place reference wavelength.
+        Specified in 'sci' coordinates. Assumes no spectral rotation.
+    xpix : float
+        Pixel position along y-axis to place reference wavelength.
+        Specified in 'sci' coordinates. Assumes no spectral rotation.
+
+    Keyword Args
+    ============
+    wref : float
+        Undeviated reference wavelength in mircons associated with grism.
+        Automatically determined from :func:`grism_wref` if not specified.
+    return_oversample : bool
+        Return 
+    spec_ang : float
+        Optionally set a rotation angle (deg) of the dispersion.
+        Rotates in clockwise direction.
+    cen_rot : tuple
+        Position in 'sci' coordinates to rotate around if
+        `spec_ang` is set. If not specified, then will rotate
+        around center of image.
 
     """
 
@@ -1105,6 +1040,23 @@ def place_grism_spec(nrc, sp, xpix, ypix, wref=None, return_oversample=False):
     arr = np.arange(nx_over)
     cf = jl_poly_fit(arr[~ind_nan], wspec[~ind_nan])
     wspec[ind_nan] = jl_poly(arr[ind_nan], cf)
+
+    # Expand to image
+    wspec = wspec.reshape([1,-1]).repeat(imspec.shape[0], axis=0)
+
+    # Clock spectrum
+    if spec_ang!=0:
+        cen_rot = np.asarray(cen_rot)
+        cen_rot_over = (cen_rot - 0.5) * oversample
+        imspec = rotate_offset(imspec, spec_ang, cen=cen_rot_over, 
+                               recenter=False, reshape=False)
+        wspec = rotate_offset(wspec, spec_ang, cen=cen_rot_over, 
+                              recenter=False, reshape=False, cval=np.nan)
+
+        # Ensure we are croppsed to the correct size
+        sh = (ny_over, nx_over)
+        wspec = pad_or_cut_to_size(wspec, sh)
+        imspec = pad_or_cut_to_size(imspec, sh)
 
     if return_oversample:
         return wspec, imspec
@@ -1228,8 +1180,8 @@ def pickoff_xy(ap_obs_name):
     # Convert to science pixel positions
     x_new, y_new = ap_siaf.tel_to_sci(v2_all, v3_all)
     # sci pixel values are use are X.5
-    x1, x2 = np.array([x_new.min(), x_new.max()]).astype(np.int) + 0.5
-    y1, y2 = np.array([y_new.min(), y_new.max()]).astype(np.int) + 0.5
+    x1, x2 = np.array([x_new.min(), x_new.max()]).astype(int) + 0.5
+    y1, y2 = np.array([y_new.min(), y_new.max()]).astype(int) + 0.5
 
     return (x1, x2, y1, y2)
 
@@ -1293,8 +1245,8 @@ def pickoff_image(ap_obs, v2_obj, v3_obj, flux_obj, oversample=1):
     yvals_os = (ypix - y1) * oversample
 
     # separate into an integers and fractions
-    intx = xvals_os.astype(np.int)
-    inty = yvals_os.astype(np.int)
+    intx = xvals_os.astype(int)
+    inty = yvals_os.astype(int)
     fracx = xvals_os - intx
     fracy = yvals_os - inty
     
@@ -1324,10 +1276,41 @@ def pickoff_image(ap_obs, v2_obj, v3_obj, flux_obj, oversample=1):
     return xsci, ysci, oversized_image 
 
 
-def gen_unconvolved_point_source_image(nrc, tel_pointing, ra_deg, dec_deg, mags, 
-                                       expnum=1, osamp=1, siaf_ap_obs=None, **kwargs):
+def gen_unconvolved_point_source_image(nrc, tel_pointing, ra_deg, dec_deg, mags, expnum=1, 
+    osamp=1, siaf_ap_obs=None, add_offset=None, **kwargs):
     """ Create an unconvolved image with sub-pixel shifts
     
+    Parameters
+    ==========
+    nrc : :class:`~pynrc.NIRCam`
+        NIRCam instrument class for PSF generation.
+    tel_pointing : :class:`webbpsf_ext.jwst_point`
+        JWST telescope pointing information. Holds pointing coordinates 
+        and dither information for a given telescope visit.
+    ra_deg : ndarray
+        Array of RA positions of point sources in degrees.
+    dec_deg : ndarray
+        Array of Declination of points sourcesin degrees.
+    mags : ndarray
+        Magnitudes associated with each RA/Dec position.
+        Corresponds to ``nrc.bandpass``.
+
+    Keyword Args
+    ============
+    expnum : int
+        Exposure number to use in ``tel_pointing``.
+    osamp : int
+        Output sampling of image.
+    siaf_ap_obs : pysiaf Aperture
+        Option to specify observed SIAF aperture. Otherwise defaults to ``nrc.siaf_ap``.
+    add_offset : tuple or None
+        If specififed, then will add an additional 'idl' offset to source positions.
+    sp_type : str
+        Spectral type to assume when calculating total counts. 
+        Defaults to 'G0V'.
+    mag_units : str
+        Assumed magnitude units of ``mags``. 
+        Default assumes 'vegamag'.
     """    
     from .obs_nircam import attenuate_with_coron_mask, gen_coron_mask
     
@@ -1345,8 +1328,10 @@ def gen_unconvolved_point_source_image(nrc, tel_pointing, ra_deg, dec_deg, mags,
     ind = np.where(tel_pointing.exp_nums == expnum)[0][0]
 
     # Convert RA, Dec coordiantes into V2/V3 (arcsec)
-    # ra_deg, dec_deg = (tbl['ra'], tbl['dec'])
-    idl_off = [tel_pointing.position_offsets_act[ind]]
+    # Include a offset shift to better reposition spectrum?
+    add_offset = np.array([0,0]) if add_offset is None else np.asarray(add_offset)
+    idl_off = np.array([(tel_pointing.position_offsets_act[ind])]) + add_offset
+    # idl_off = [tel_pointing.position_offsets_act[ind]]
     v2_obj, v3_obj = tel_pointing.radec_to_frame((ra_deg, dec_deg), frame_out='tel', idl_offsets=idl_off)
     
     # Create initial POM image, then contract to reasonable size
@@ -1488,6 +1473,9 @@ def nproc_use_convolve(fov_pix, oversample, npsf=None):
 #
 ###########################################################################
 
+from webbpsf_ext.coron_masks import coron_trans, coron_ap_locs, coron_detector
+from webbpsf_ext.coron_masks import build_mask, build_mask_detid
+
 def offset_bar(filt, mask):
     """Bar mask offset locations
 
@@ -1501,8 +1489,8 @@ def offset_bar(filt, mask):
     if (mask is not None) and ('WB' in mask):
         # What is the effective wavelength of the filter?
         #bp = pynrc.read_filter(filter)
-        #w0 = bp.avgwave() / 1e4
-        w0 = np.float(filt[1:-1])/100
+        #w0 = bp.avgwave().to_value('um')
+        w0 = float(filt[1:-1])/100
 
         # Choose wavelength from dictionary
         wdict = {'F182M': 1.84, 'F187N': 1.88, 'F210M': 2.09, 'F212N': 2.12,
@@ -1537,558 +1525,255 @@ def offset_bar(filt, mask):
     #print(r, theta)
     return r, theta
 
+#############################
 
-def coron_trans(name, module='A', pixelscale=None, npix=None, oversample=1, 
-    nd_squares=True, shift_x=None, shift_y=None, filter=None):
-    """
-    Build a transmission image of a coronagraphic mask spanning
-    the 20" coronagraphic FoV.
-
-    oversample is used only if pixelscale is set to None.
-
-    Returns the intensity transmission (square of the amplitude transmission). 
-    """
-
-    from webbpsf.optics import NIRCam_BandLimitedCoron
-
-    shifts = {'shift_x': shift_x, 'shift_y': shift_y}
-
-    bar_offset = None
-    if name=='MASK210R':
-        pixscale = pixscale_SW
-        channel = 'short'
-        filter = 'F210M' if filter is None else filter
-    elif name=='MASK335R':
-        pixscale = pixscale_LW
-        channel = 'long'
-        filter = 'F335M' if filter is None else filter
-    elif name=='MASK430R':
-        pixscale = pixscale_LW
-        channel = 'long'
-        filter = 'F430M' if filter is None else filter
-    elif name=='MASKSWB':
-        pixscale = pixscale_SW
-        channel = 'short'
-        filter = 'F210M' if filter is None else filter
-        bar_offset = 0
-    elif name=='MASKLWB':
-        pixscale = pixscale_LW
-        channel = 'long'
-        filter = 'F430M' if filter is None else filter
-        bar_offset = 0
-
-    if pixelscale is None:
-        pixelscale = pixscale / oversample
-        if npix is None:
-            npix = 320 if channel=='long' else 640
-            npix = int(npix * oversample + 0.5)
-    elif npix is None:
-        # default to 20" if pixelscale is set but no npix
-        npix = int(20 / pixelscale + 0.5)
-
-    mask = NIRCam_BandLimitedCoron(name=name, module=module, bar_offset=bar_offset, auto_offset=None, 
-                                   nd_squares=nd_squares, **shifts)
-
-    # Create wavefront to pass through mask and obtain transmission image
-    bandpass = read_filter(filter)
-    wavelength = bandpass.avgwave() / 1e10
-    wave = poppy.Wavefront(wavelength=wavelength, npix=npix, pixelscale=pixelscale)
+def segment_pupil_opd(hdu, segment_name, npix=1024):
+    """Extract single segment pupil from input full OPD map
     
-    # Square the amplitude transmission to get intensity transmission
-    im = mask.get_transmission(wave)**2    
-
-    return im
-
-
-def build_mask(module='A', pixscale=None, filter=None, nd_squares=True):
-    """Create coronagraphic mask image
-
-    Return a truncated image of the full coronagraphic mask layout
-    for a given module. Assumes each mask is exactly 20" across.
-
-    +V3 is up, and +V2 is to the left.
-    """
-    if module=='A':
-        names = ['MASK210R', 'MASK335R', 'MASK430R', 'MASKSWB', 'MASKLWB']
-    elif module=='B':
-        names = ['MASKSWB', 'MASKLWB', 'MASK430R', 'MASK335R', 'MASK210R']
-
-    if pixscale is None:
-        pixscale=pixscale_LW
-
-    npix = int(20 / pixscale + 0.5)
-    allims = []
-    for name in names:
-        res = coron_trans(name, module=module, pixelscale=pixscale, npix=npix, nd_squares=nd_squares)
-        allims.append(res)
-    im_out = np.concatenate(allims, axis=1)
-
-    # Multiply COM throughputs sampled at filter wavelength
-    if filter is not None:
-        bandpass = read_filter(filter)
-        w_um = bandpass.avgwave() / 1e4
-        com_th = nircam_com_th(wave_out=w_um)
-        com_nd = 10**(-1*nircam_com_nd(wave_out=w_um))
-
-        ind_nd = (im_out<0.0011) & (im_out>0.0009)
-        im_out[ind_nd] = com_nd
-        im_out *= com_th
-
-    return im_out
-
-
-def build_mask_detid(detid, oversample=1, ref_mask=None, pupil=None, filter=None, 
-    nd_squares=True, mask_holder=True):
-    """Create mask image for a given detector
-
-    Return a full coronagraphic mask image as seen by a given SCA.
-    +V3 is up, and +V2 is to the left.
-
-    Parameters
-    ----------
-    detid : str
-        Name of detector, 'A1', A2', ... 'A5' (or 'ALONG'), etc.
-    oversample : float
-        How much to oversample output mask relative to detector sampling.
-    ref_mask : str or None
-        Reference mask for placement of coronagraphic mask elements.
-        If None, then defaults are chosen for each detector.
-    pupil : str or None
-        Which Lyot pupil stop is being used? This affects holder placement.
-        If None, then defaults based on ref_mask.
-    """
-
-    names = ['A1', 'A2', 'A3', 'A4', 'A5',
-             'B1', 'B2', 'B3', 'B4', 'B5']
-
-    # In case input is 'NRC??'
-    if 'NRC' in detid:
-        detid = detid[3:]
-
-    # Convert ALONG to A5 name
-    module = detid[0]
-    detid = '{}5'.format(module) if 'LONG' in detid else detid
-
-    # Make sure we have a valid name
-    if detid not in names:
-        raise ValueError("Invalid detid: {0} \n  Valid names are: {1}" \
-              .format(detid, ', '.join(names)))
-
-    pixscale = pixscale_LW if '5' in detid else pixscale_SW
-    pixscale_over = pixscale / oversample
-
-    # Build the full mask
-    xpix = ypix = 2048
-    xpix_over = int(xpix * oversample)
-    ypix_over = int(ypix * oversample)
-
-    cmask = np.ones([ypix_over, xpix_over], dtype='float64')
-
-    # These detectors don't see any of the mask structure
-    if detid in ['A1', 'A3', 'B2', 'B4']:
-        return cmask
-
-    if detid=='A2':
-        cnames = ['MASK210R', 'MASK335R', 'MASK430R']
-        ref_mask = 'MASK210R' if ref_mask is None else ref_mask
-    elif detid=='A4':
-        cnames = ['MASK430R', 'MASKSWB', 'MASKLWB']
-        ref_mask = 'MASKSWB' if ref_mask is None else ref_mask
-    elif detid=='A5':
-        cnames = ['MASK210R', 'MASK335R', 'MASK430R', 'MASKSWB', 'MASKLWB']
-        ref_mask = 'MASK430R' if ref_mask is None else ref_mask
-    elif detid=='B1':
-        cnames = ['MASK430R', 'MASK335R', 'MASK210R']
-        ref_mask = 'MASK210R' if ref_mask is None else ref_mask
-    elif detid=='B3':
-        cnames = ['MASKSWB', 'MASKLWB', 'MASK430R']
-        ref_mask = 'MASKSWB' if ref_mask is None else ref_mask
-    elif detid=='B5':
-        cnames = ['MASKSWB', 'MASKLWB', 'MASK430R', 'MASK335R', 'MASK210R']
-        ref_mask = 'MASK430R' if ref_mask is None else ref_mask
-
-    # Generate sub-images for each aperture
-    # npix = int(ypix / len(cnames))
-    npix = int(20.5 / pixscale_over + 0.5)
-    npix_large = int(26 / pixscale_over + 0.5)
-    allims = []
-    for cname in cnames:
-        res = coron_trans(cname, module=module, pixelscale=pixscale_over, npix=npix_large, 
-                          filter=filter, nd_squares=nd_squares)
-        allims.append(res)
     
-    if pupil is None:
-        pupil = 'WEDGELYOT' if ('WB' in ref_mask) else 'CIRCLYOT'
-
-    # For each sub-image, expand and move to correct location
-    channel = 'LW' if '5' in detid else 'SW'
-    for i, name in enumerate(cnames):
-        cdict = coron_ap_locs(module, channel, name, pupil=pupil, full=False)
-        # Crop off large size
-        im_crop = pad_or_cut_to_size(allims[i], (npix, npix_large))
-        # Expand and offset
-        xsci, ysci = cdict['cen_sci']
-        xoff = xsci*oversample - ypix_over/2
-        yoff = ysci*oversample - xpix_over/2
-        im_expand = pad_or_cut_to_size(im_crop+1000, (ypix_over, xpix_over), offset_vals=(yoff,xoff))
-        ind_good = ((cmask<100) & (im_expand>100)) | ((cmask==1001) & (im_expand>100))
-        cmask[ind_good] = im_expand[ind_good]
-
-    # Remove offsets
-    cmask[cmask>100] = cmask[cmask>100] - 1000
-
-    # Multiply COM throughputs sampled at filter wavelength
-    if filter is not None:
-        bandpass = read_filter(filter)
-        w_um = bandpass.avgwave() / 1e4
-        com_th = nircam_com_th(wave_out=w_um)
-        com_nd = 10**(-1*nircam_com_nd(wave_out=w_um))
-
-        ind_nd = (cmask<0.0011) & (cmask>0.0009)
-        cmask[ind_nd] = com_nd
-        cmask *= com_th
-
-    # Place cmask in detector coords
-    cmask = sci_to_det(cmask, detid)
-
-    ############################################
-    # Place blocked region from coronagraph holder
-    # Also ensure region outside of COM has throughput=1
-    if mask_holder:
-        if detid=='A2':
-            if 'CIRCLYOT' in pupil:
-                i1, i2 = [int(920*oversample), int(390*oversample)]
-                cmask[0:i1,0:i2] = 0
-                cmask[i1:,0:i2]  = 1
-                i1 = int(220*oversample)
-                cmask[0:i1,:] = 0
-                i2 = int(974*oversample)
-                cmask[i2:,:] = 1
-            else:
-                i1, i2 = [int(935*oversample), int(393*oversample)]
-                cmask[0:i1,0:i2] = 0
-                cmask[i1:, 0:i2] = 1
-                i1 = int(235*oversample)
-                cmask[0:i1,:] = 0
-                i2 = int(985*oversample)
-                cmask[i2:,:] = 1
-                
-        elif detid=='A4':
-            if 'CIRCLYOT' in pupil:
-                i1, i2 = [int(920*oversample), int(1463*oversample)]
-                cmask[0:i1,i2:] = 0
-                cmask[i1:, i2:] = 1
-                i1 = int(220*oversample)
-                cmask[0:i1,:] = 0
-                i2 = int(974*oversample)
-                cmask[i2:,:] = 1
-            else:
-                i1, i2 = [int(935*oversample), int(1465*oversample)]
-                cmask[0:i1,i2:] = 0
-                cmask[i1:, i2:] = 1
-                i1 = int(235*oversample)
-                cmask[0:i1,:] = 0
-                i2 = int(985*oversample)
-                cmask[i2:,:] = 1
-                
-        elif detid=='A5':
-            if 'CIRCLYOT' in pupil:
-                i1, i2 = [int(1480*oversample), int(270*oversample)]
-                cmask[i1:,0:i2]  = 0
-                cmask[0:i1,0:i2] = 1
-                i1, i2 = [int(1480*oversample), int(1880*oversample)]
-                cmask[i1:,i2:]  = 0
-                cmask[0:i1,i2:] = 1
-                i1 = int(1825*oversample)
-                cmask[i1:,:] = 0
-                i2 = int(1452*oversample)
-                cmask[0:i2,:] = 1
-            else:
-                i1, i2 = [int(1485*oversample), int(275*oversample)]
-                cmask[i1:,0:i2]  = 0
-                cmask[0:i1,0:i2] = 1
-                i1, i2 = [int(1485*oversample), int(1883*oversample)]
-                cmask[i1:,i2:]  = 0
-                cmask[0:i1,i2:] = 1
-                i1 = int(1830*oversample)
-                cmask[i1:,:] = 0
-                i2 = int(1462*oversample)
-                cmask[0:i2,:] = 1
-                
-        elif detid=='B1':
-            if 'CIRCLYOT' in pupil:
-                i1, i2 = [int(910*oversample), int(1615*oversample)]
-                cmask[0:i1,i2:] = 0
-                cmask[i1:,i2:]  = 1
-                i1 = int(210*oversample)
-                cmask[0:i1,:] = 0
-                i2 = int(956*oversample)
-                cmask[i2:,:] = 1
-            else:
-                i1, i2 = [int(905*oversample), int(1609*oversample)]
-                cmask[0:i1,i2:] = 0
-                cmask[i1:,i2:]  = 1
-                i1 = int(205*oversample)
-                cmask[0:i1,:] = 0
-                i2 = int(951*oversample)
-                cmask[i2:,:] = 1
-
-        elif detid=='B3':
-            if 'CIRCLYOT' in pupil:
-                i1, i2 = [int(920*oversample), int(551*oversample)]
-                cmask[0:i1,0:i2] = 0
-                cmask[i1:,0:i2]  = 1
-                i1 = int(210*oversample)
-                cmask[0:i1,:] = 0
-                i2 = int(966*oversample)
-                cmask[i2:,:] = 1
-            else:
-                i1, i2 = [int(920*oversample), int(548*oversample)]
-                cmask[0:i1,0:i2] = 0
-                cmask[i1:,0:i2]  = 1
-                i1 = int(210*oversample)
-                cmask[0:i1,:] = 0
-                i2 = int(963*oversample)
-                cmask[i2:,:] = 1
-
-        elif detid=='B5':
-            if 'CIRCLYOT' in pupil:
-                i1, i2 = [int(555*oversample), int(207*oversample)]
-                cmask[0:i1,0:i2] = 0
-                cmask[i1:, 0:i2] = 1
-                i1, i2 = [int(545*oversample), int(1815*oversample)]
-                cmask[0:i1,i2:] = 0
-                cmask[i1:, i2:] = 1
-                i1 = int(215*oversample)
-                cmask[0:i1,:] = 0
-                i2 = int(578*oversample)
-                cmask[i2:,:] = 1
-            else:
-                i1, i2 = [int(555*oversample), int(211*oversample)]
-                cmask[0:i1,0:i2] = 0 
-                cmask[i1:, 0:i2] = 1
-                i1, i2 = [int(545*oversample), int(1819*oversample)]
-                cmask[0:i1,i2:] = 0
-                cmask[i1:, i2:] = 1
-                i1 = int(215*oversample)
-                cmask[0:i1,:] = 0
-                i2 = int(578*oversample)
-                cmask[i2:,:] = 1
-
-    ############################################
-    # Fix SW/LW wedge abuttment
-    if detid=='A4':
-        if 'CIRCLYOT' in pupil:
-            x0 = 819
-            x1 = 809
-            x2 = x1 + 10
-        else:
-            x0 = 821
-            x1 = 812
-            x2 = x1 + 9
-        y1, y2 = (400, 650)
-        ix0 = int(x0*oversample)
-        iy1, iy2 = int(y1*oversample), int(y2*oversample)
-        ix1, ix2 = int(x1*oversample), int(x2*oversample)
-        cmask[iy1:iy2,ix1:ix2] = cmask[iy1:iy2,ix0].reshape([-1,1])
-    elif detid=='A5':
-        if 'CIRCLYOT' in pupil:
-            x0 = 587
-            x1 = x0 + 1
-            x2 = x1 + 5
-        else:
-            x0 = 592
-            x1 = x0 + 1
-            x2 = x1 + 5
-        y1, y2 = (1600, 1750)
-        ix0 = int(x0*oversample)
-        iy1, iy2 = int(y1*oversample), int(y2*oversample)
-        ix1, ix2 = int(x1*oversample), int(x2*oversample)
-        cmask[iy1:iy2,ix1:ix2] = cmask[iy1:iy2,ix0].reshape([-1,1])
-            
-    elif detid=='B3':
-        if 'CIRCLYOT' in pupil:
-            x0 = 1210
-            x1 = 1196
-            x2 = x1 + 14
-        else:
-            x0 = 1204
-            x1 = 1192
-            x2 = x1 + 12
-        y1, y2 = (350, 650)
-        ix0 = int(x0*oversample)
-        iy1, iy2 = int(y1*oversample), int(y2*oversample)
-        ix1, ix2 = int(x1*oversample), int(x2*oversample)
-        cmask[iy1:iy2,ix1:ix2] = cmask[iy1:iy2,ix0].reshape([-1,1])
-    elif detid=='B5':
-        if 'CIRCLYOT' in pupil:
-            x0 = 531
-            x1 = 525
-            x2 = x1 + 6
-        else:
-            x0 = 535
-            x1 = 529
-            x2 = x1 + 6
-        y1, y2 = (300, 420)
-        ix0 = int(x0*oversample)
-        iy1, iy2 = int(y1*oversample), int(y2*oversample)
-        ix1, ix2 = int(x1*oversample), int(x2*oversample)
-        cmask[iy1:iy2,ix1:ix2] = cmask[iy1:iy2,ix0].reshape([-1,1])
-
-    # Convert back to 'sci' orientation
-    cmask = det_to_sci(cmask, detid)
-
-    return cmask
-
-
-def coron_ap_locs(module, channel, mask, pupil=None, full=False):
-    """Coronagraph mask aperture locations and sizes
-
-    Returns a dictionary of the detector aperture sizes
-    and locations. Attributes 'cen' and 'loc' are in terms
-    of (x,y) detector pixels. 'cen_sci' is sci coords location.
+    Input a OPD map HDU and name of segment (or ``segment_name=="ALL"``).
+    Returns both the pupil mask and OPD image as separate HDULists.
     """
-
-    if channel=='long':
-        channel = 'LW'
-    elif channel=='short':
-        channel = 'SW'
     
-    if pupil is None:
-        pupil = 'WEDGELYOT' if 'WB' in mask else 'CIRCLYOT'
+    from webbpsf.webbpsf_core import segname, one_segment_pupil
+    webbpsf_data_path = webbpsf.utils.get_webbpsf_data_path()
 
-    if module=='A':
-        if channel=='SW':
-            if '210R' in mask:
-                cdict_rnd = {'det':'A2', 'cen':(712,525), 'size':640}
-                cdict_bar = {'det':'A2', 'cen':(716,536), 'size':640}
-            elif '335R' in mask:
-                cdict_rnd = {'det':'A2', 'cen':(1368,525), 'size':640}
-                cdict_bar = {'det':'A2', 'cen':(1372,536), 'size':640}
-            elif '430R' in mask:
-                cdict_rnd = {'det':'A2', 'cen':(2025,525), 'size':640}
-                cdict_bar = {'det':'A2', 'cen':(2029,536), 'size':640}
-            elif 'SWB' in mask:
-                cdict_rnd = {'det':'A4', 'cen':(487,523), 'size':640}
-                cdict_bar = {'det':'A4', 'cen':(490,536), 'size':640}
-            elif 'LWB' in mask:
-                cdict_rnd = {'det':'A4', 'cen':(1141,523), 'size':640}
-                cdict_bar = {'det':'A4', 'cen':(1143,536), 'size':640}
-            else:
-                raise ValueError('Mask {} not recognized for {} channel'\
-                                 .format(mask, channel))
-        elif channel=='LW':
-            if '210R' in mask:
-                cdict_rnd = {'det':'A5', 'cen':(1720, 1672), 'size':320}
-                cdict_bar = {'det':'A5', 'cen':(1725, 1682), 'size':320}
-            elif '335R' in mask:
-                cdict_rnd = {'det':'A5', 'cen':(1397,1672), 'size':320}
-                cdict_bar = {'det':'A5', 'cen':(1402,1682), 'size':320}
-            elif '430R' in mask:
-                cdict_rnd = {'det':'A5', 'cen':(1074,1672), 'size':320}
-                cdict_bar = {'det':'A5', 'cen':(1078,1682), 'size':320}
-            elif 'SWB' in mask:
-                cdict_rnd = {'det':'A5', 'cen':(752,1672), 'size':320}
-                cdict_bar = {'det':'A5', 'cen':(757,1682), 'size':320}
-            elif 'LWB' in mask:
-                cdict_rnd = {'det':'A5', 'cen':(430,1672), 'size':320}
-                cdict_bar = {'det':'A5', 'cen':(435,1682), 'size':320}
-            else:
-                raise ValueError('Mask {} not recognized for {} channel'\
-                                 .format(mask, channel))
-        else:
-            raise ValueError('Channel {} not recognized'.format(channel))
+    # Pupil and segment information
+    # pupil_file = os.path.join(webbpsf_data_path, "jwst_pupil_RevW_npix1024.fits.gz")
 
+    # get the master pupil file, which may or may not be gzipped
+    pupil_file = os.path.join(webbpsf_data_path, f"jwst_pupil_RevW_npix{npix}.fits")
+    if not os.path.exists(pupil_file):
+        # try with .gz
+        pupil_file = os.path.join(webbpsf_data_path, f"jwst_pupil_RevW_npix{npix}.fits.gz")
+    pupil_hdul = fits.open(pupil_file)
 
-    elif module=='B':
-        if channel=='SW':
-            if '210R' in mask:
-                cdict_rnd = {'det':'B1', 'cen':(1293,513), 'size':640}
-                cdict_bar = {'det':'B1', 'cen':(1287,508), 'size':640}
-            elif '335R' in mask:
-                cdict_rnd = {'det':'B1', 'cen':(637,513), 'size':640}
-                cdict_bar = {'det':'B1', 'cen':(632,508), 'size':640}
-            elif '430R' in mask:
-                cdict_rnd = {'det':'B1', 'cen':(-20,513), 'size':640}
-                cdict_bar = {'det':'B1', 'cen':(-25,508), 'size':640}
-            elif 'SWB' in mask:
-                cdict_rnd = {'det':'B3', 'cen':(874,519), 'size':640}
-                cdict_bar = {'det':'B3', 'cen':(870,516), 'size':640}
-            elif 'LWB' in mask:
-                cdict_rnd = {'det':'B3', 'cen':(1532,519), 'size':640}
-                cdict_bar = {'det':'B3', 'cen':(1526,516), 'size':640}
-            else:
-                raise ValueError('Mask {} not recognized for {} channel'\
-                                 .format(mask, channel))
-        elif channel=='LW':
-            if '210R' in mask:
-                cdict_rnd = {'det':'B5', 'cen':(1656,360), 'size':320}
-                cdict_bar = {'det':'B5', 'cen':(1660,360), 'size':320}
-            elif '335R' in mask:
-                cdict_rnd = {'det':'B5', 'cen':(1334,360), 'size':320}
-                cdict_bar = {'det':'B5', 'cen':(1338,360), 'size':320}
-            elif '430R' in mask:
-                cdict_rnd = {'det':'B5', 'cen':(1012,360), 'size':320}
-                cdict_bar = {'det':'B5', 'cen':(1015,360), 'size':320}
-            elif 'SWB' in mask:
-                cdict_rnd = {'det':'B5', 'cen':(366,360), 'size':320}
-                cdict_bar = {'det':'B5', 'cen':(370,360), 'size':320}
-            elif 'LWB' in mask:
-                cdict_rnd = {'det':'B5', 'cen':(689,360), 'size':320}
-                cdict_bar = {'det':'B5', 'cen':(693,360), 'size':320}
-            else:
-                raise ValueError('Mask {} not recognized for {} channel'\
-                                 .format(mask, channel))
-        else:
-            raise ValueError('Channel {} not recognized'.format(channel))
+    if segment_name.upper()=='ALL':
+        opd_im, opd_header = (hdu.data, hdu.header)
+
+        # New Pupil HDUList
+        hdu = fits.PrimaryHDU(pupil_hdul[0].data)
+        hdu.header = pupil_hdul[0].header.copy()
+        pupil_all_hdul = fits.HDUList([hdu])
+        
+        # New OPD HDUList
+        hdu = fits.PrimaryHDU(opd_im * pupil_all_hdul[0].data)
+        hdu.header = opd_header.copy()
+        opd_all_hdul = fits.HDUList([hdu])
+        
+        return (pupil_all_hdul, opd_all_hdul)
 
     else:
-        raise ValueError('Module {} not recognized'.format(module))
+        # Parse out segment number
+        # segment_official_name = segname(segment_name)
+        # Parse out the segment number
+        # num = int(segment_official_name.split('-')[1])
+        # Index of segment to grab
+        # iseg = num - 1
 
-    # Choose whether to use round or bar Lyot mask
-    cdict = cdict_rnd if 'CIRC' in pupil else cdict_bar
+        # Pupil mask of segment only
+        pupil_seg_hdul = one_segment_pupil(segment_name, npix=npix)
+        
+        opd_im, opd_header = (hdu.data, hdu.header)
+        opd_im_seg = opd_im * pupil_seg_hdul[0].data
+        
+        # New Pupil HDUList
+        hdu = fits.PrimaryHDU(pupil_seg_hdul[0].data)
+        hdu.header = pupil_seg_hdul[0].header.copy()
+        pupil_seg_hdul = fits.HDUList([hdu])
 
-    x0, y0 = np.array(cdict['cen']) - cdict['size']/2
-    cdict['loc'] = (int(x0), int(y0))
+        # New OPD HDUList
+        hdu = fits.PrimaryHDU(opd_im_seg * pupil_seg_hdul[0].data)
+        hdu.header = opd_header.copy()
+        opd_seg_hdul = fits.HDUList([hdu])
+        
+        return (pupil_seg_hdul, opd_seg_hdul)
 
+def bias_dark_high_temp(darks_80K_dir, T=80, sca=485):
+    """Extrapolate a bias and dark at some temperature """
 
-    # Add in 'sci' coordinates (V2/V3 orientation)
-    # X is flipped for A5, Y is flipped for all others
-    cen = cdict['cen']
-    if cdict['det'] == 'A5':
-        cdict['cen_sci'] = (2048-cen[0], cen[1])
-    else:
-        cdict['cen_sci'] = (cen[0], 2048-cen[1])
-
-    if full:
-        cdict['size'] = 2048
-        cdict['loc'] = (0,0)
-
-    return cdict
-
-def coron_detector(mask, module, channel=None):
-    """
-    Return detector name for a given coronagraphic mask, module,
-    and channel.
-    """
+    from .reduce.ref_pixels import NRC_refs
     
-    # Grab default channel
-    if channel is None:
-        if ('210R' in mask) or ('SW' in mask):
-            channel = 'SW'
-        else:
-            channel = 'LW'
+    # Grab the appropriate dark ramp
+    dark_files = [f for f in os.listdir(darks_80K_dir)]
+    matching = [s for s in dark_files if (("_{}_".format(sca) in s) and (s.endswith(".fits")))]
+    fname = os.path.join(darks_80K_dir, matching[0])
+
+    # Open the 80K dark fits
+    hdul = fits.open(fname)
+
+    header = hdul[0].header
+    nint   = header['NINT']
+    ng     = header['NGROUP']
+
+    # Reference pixel correction
+    data_mn = np.zeros([ng,2048,2048])
+    for i in range(nint):
+        data_int = hdul[0].data[i*ng:(i+1)*ng]
+        ref = NRC_refs(data_int, header)
+        ref.calc_avg_amps()
+        ref.correct_amp_refs()
+
+        data_mn += ref.data
+
+    data_mn /= nint
+    hdul.close()
+
+    # Perform linear fit to averaged ramps
+    det = ref.detector
+    tarr = (np.arange(det.multiaccum.ngroup)+1) * ref.detector.time_group
+    bias_80K, dark_80K = jl_poly_fit(tarr, data_mn)
     
-    # If LW, always A5 or B5
-    # If SW, bar masks are A4/B3, round masks A2/B1; M430R is invalid
-    if channel=='LW':
-        detname = module + '5'
-    elif (channel=='SW') and ('430R' in mask):
-        raise AttributeError("MASK430R not valid for SW channel")
+    # pynrc data path
+    pynrc_data_path = conf.PYNRC_PATH
+    
+    # calib sub-directory info for dark and bias
+    subdir_dark = os.path.join('calib', f'{sca}', 'SUPER_DARK')
+    subdir_bias = os.path.join('calib', f'{sca}', 'SUPER_BIAS')
+
+    # file names
+    file_dark0 = f'SUPER_DARK_{sca}.FITS'
+    file_bias0 = f'SUPER_BIAS_{sca}.FITS'
+
+    # Full paths
+    path_dark0 = os.path.join(pynrc_data_path, subdir_dark, file_dark0)
+    path_bias0 = os.path.join(pynrc_data_path, subdir_bias, file_bias0)
+    
+    hdul_dark0 = fits.open(path_dark0)
+    hdul_bias0 = fits.open(path_bias0)
+    
+    dark0 = hdul_dark0[0].data
+    bias0 = hdul_bias0[0].data
+    
+    # Some interpolation/extrapolation
+    # Assume linear with log(dark) vs 1/T (Rule07 relationship)
+    f = ((1/T - 1/39) / (1/80 - 1/39))
+    dark_new = 10**(np.log10(dark_80K)*f + np.log10(dark0)*(1-f))
+
+    # Assume bias offset is linear with temperature 
+    f = ((T-39.0) / (80.0-39.0))
+    bias_new = (bias_80K*f + bias0*(1-f))
+
+    # Make sure reference pixels are 0
+    dark_new[det.mask_ref] = 0
+    # Fix any additional NaNs
+    dark_new[np.isnan(dark_new)] = 0
+
+    # Close HDULists
+    hdul_dark0.close()
+    hdul_bias0.close()
+
+    return (bias_new, dark_new)
+
+def dark_ramp_80K(darks_80K_dir, sca=485):
+    """Return dark ramp over time"""
+
+    from .reduce.ref_pixels import NRC_refs
+
+    # Grab the appropriate dark ramp
+    dark_dir = darks_80K_dir
+    dark_files = [f for f in os.listdir(dark_dir)]
+    matching = [s for s in dark_files if (("_{}_".format(sca) in s) and (s.endswith(".fits")))]
+    fname = dark_dir + matching[0]
+
+    # Open the 80K dark fits
+    hdul = fits.open(fname)
+
+    header = hdul[0].header
+    nint   = header['NINT']
+    ng     = header['NGROUP']
+
+    # Reference pixel correction
+    data_mn = np.zeros([ng,2048,2048])
+    for i in range(nint):
+        data_int = hdul[0].data[i*ng:(i+1)*ng]
+        ref = NRC_refs(data_int, header)
+        ref.calc_avg_amps()
+        ref.correct_amp_refs()
+
+        data_mn += ref.data
+
+    data_mn /= nint
+    hdul.close()
+
+    det = ref.detector
+    tarr = (np.arange(det.multiaccum.ngroup)+1) * det.time_group
+    
+    return tarr, data_mn
+
+def do_charge_migration(image, satmax=1.5, niter=5, corners=True, **kwargs):
+    """Migration of charge from saturated pixels to immediate neighbors"""
+
+    ny, nx = image.shape
+    ind_lock = np.zeros([ny,nx], dtype=bool)
+
+    sat_image = image.copy()
+    for j in range(niter):
+        ind_sat = (sat_image >= satmax) & (~ind_lock)
+        yxind = np.where(ind_sat)
+        # for each saturated pixel, migrate charge to neighbors
+        # starting with the brightest
+        isort = np.argsort(sat_image[ind_sat])[::-1]
+        for i in isort:
+            y, x = yxind[0][i], yxind[1][i]
+            # Find neighbors
+            xind = np.array([x-1, x+1, x, x])
+            yind = np.array([y, y, y-1, y+1])
+            # Find corners
+            xind_corn = np.array([x-1, x+1, x-1, x+1])
+            yind_corn = np.array([y-1, y-1, y+1, y+1])
+
+            # Remove neighbors outside of array or locked
+            ind_good = (xind>=0) & (xind<nx) & (yind>=0) & (yind<ny) & \
+                        (ind_lock[yind,xind]==False)
+            xind, yind = (xind[ind_good], yind[ind_good])
+            ind_good = (xind_corn>=0) & (xind_corn<nx) & (yind_corn>=0) & (yind_corn<ny) & \
+                        (ind_lock[yind_corn,xind_corn]==False)
+            xind_corn, yind_corn = (xind_corn[ind_good], yind_corn[ind_good])
+
+            # Total charge to distribute
+            qtot = sat_image[y,x] - 1
+            # Distribute charge to neighbors and corners
+            n_neighbors = len(xind)
+            n_corners = len(xind_corn) if corners else 0
+            if n_neighbors + n_corners <= 0:
+                continue
+
+            # Corners get sqrt(2) less charge
+            q_neighbors = qtot / (n_neighbors + n_corners / np.sqrt(2))
+            q_corners = q_neighbors / np.sqrt(2)
+
+            # Add charge to neighbors
+            if n_neighbors>0:
+                sat_image[yind,xind] += q_neighbors
+            # Add charge to corners
+            if n_corners>0:
+                sat_image[yind_corn,xind_corn] += q_corners
+            # Lock this pixel from further charge migration
+            ind_lock[y,x] = True
+            # Remove charge from this pixel
+            sat_image[y,x] = satmax
+
+    return sat_image
+
+# Option to implement MKL FFT
+try:
+    import mkl_fft
+    _MKLFFT_AVAILABLE = True
+except ImportError:
+    _MKLFFT_AVAILABLE = False
+
+def do_fft(a, n=None, axis=-1, norm=None, inverse=False, real=False, use_mkl=True):
+    """Perform FFT using either numpy or MKL FFT"""
+
+    if _MKLFFT_AVAILABLE and use_mkl:
+        fft_func = mkl_fft.ifft if inverse else mkl_fft.fft
+        if n is None:
+            n = a.shape[axis]
+        return fft_func(a, n=n, axis=axis, norm=norm)
     else:
-        if module=='A':
-            detname = 'A2' if mask[-1]=='R' else 'A4'
+        if real:
+            fft_func = np.fft.irfft if inverse else np.fft.rfft
         else:
-            detname = 'B1' if mask[-1]=='R' else 'B3'
-            
-    return detname
+            fft_func = np.fft.ifft if inverse else np.fft.fft
+        return fft_func(a, n=n, axis=axis, norm=norm)

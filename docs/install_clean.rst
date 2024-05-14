@@ -44,31 +44,26 @@ Now your ``.condarc`` file should look something like the following:
 
 -------------------------------------
 
-.. _install_pysynphot:
+.. _install_synphot:
 
-Installing Pysynphot
-====================
+Installing **stsynphot** and **synphot**
+=========================================
 
-With the AstroConda channel added, it's a simple matter to run:
-
-.. code-block:: sh
-
-    $ conda install pysynphot
-
-or from PyPi:
+From PyPi:
 
 .. code-block:: sh
 
-    $ pip install pysynphot
+    $ pip install synphot
+    $ pip install stsynphot
 
-Data files for Pysynphot are distributed through the
-`Calibration Reference Data System <http://www.stsci.edu/hst/observatory/crds/throughput.html>`_. 
+Data files for Synphot are distributed through the
+`Calibration Reference Data System <https://www.stsci.edu/hst/instrumentation/reference-data-for-calibration-and-tools>`_. 
 They are expected to follow a certain directory structure under the root
 directory, identified by the ``PYSYN_CDBS`` environment variable that *must* be
 set prior to using this package.
 
-1. Download the following file: 
-   `cdbs.tar.gz <http://mips.as.arizona.edu/~jleisenring/pynrc/cdbs.tar.gz>`_  [approx. 760 MB]
+1. Download 
+   `cdbs.tar.gz <https://arizona.box.com/shared/static/cbkxlwvokml7n1gref8nw3neg98kzcwn.gz>`_ [approx. 900 MB] to obtain the full set of Synphot data files. Or download a minimum subset of files `here <https://arizona.box.com/shared/static/wgq7ymqsp8e7jfno8yk6o2igbnqlad8z.zip>`_ [approx 50 MB].
 2. Untar into a directory of your choosing.
 3. Set the environment variable ``PYSYN_CDBS`` to point to that directory. 
    For example, in .bashrc shell file, add:
@@ -77,7 +72,7 @@ set prior to using this package.
 
        export PYSYN_CDBS='$HOME/data/cdbs/'
 
-You should now be able to successfully ``import pysynphot`` in a Python session.
+You should now be able to successfully ``import synphot`` and ``import stsynphot`` in a Python session.
 
 -------------------------------------
 
@@ -90,20 +85,17 @@ The easiest way to install WebbPSF without inducing package conflicts is to inst
 
 .. code-block:: sh
 
-    $ conda install photutils 
+    $ pip install photutils 
     $ pip install pysiaf poppy
-    $ pip install webbpsf --no-deps
+    $ pip install webbpsf
 
-.. note::
-
-   The ``synphot`` package has been ignored in this case, because ``pynrc`` currently uses the slightly older ``pysynphot`` package. For details on installing ``synphot`` as well as other installation methods, see the `WebbPSF documentation <https://webbpsf.readthedocs.io/en/stable/installation.html#installing-or-updating-synphot>`_. 
-   Configuring ``pynrc`` to use ``synphot`` is under development.
+This will install WebbPSF without installing its dependencies, which should mostly be already installed. 
 
 WebbPSF Data Files
 --------------------------
 
-You will also need to download and install WebbPSF data files: 
-`webbpsf-data-1.0.0.tar.gz <https://stsci.box.com/shared/static/34o0keicz2iujyilg4uz617va46ks6u9.gz>`_  [approx. 280 MB]. Follow the same procedure as with the Pysynphot data files, setting the ``WEBBPSF_PATH`` environment variable to point towards your ``webbpsf-data`` directory.
+You will also need to download and install `WebbPSF data files 
+<https://webbpsf.readthedocs.io/en/stable/installation.html#installing-the-required-data-files>`_  [approx. 70 MB]. Follow the same procedure as with the **stsynphot** data files, setting the ``WEBBPSF_PATH`` environment variable to point towards your ``webbpsf-data`` directory.
 
 
 Matplotlib Backends
@@ -141,11 +133,11 @@ Installing Astroquery
 
 Astroquery is a set of tools for querying astronomical web forms and databases. It is used within ``pynrc`` to query Simbad and Gaia databases to search for sources and obtain basic astrometry, fluxes, and spectral types.
 
-Install via ``conda``:
+From PyPi:
 
 .. code-block:: sh
 
-    $ conda install astroquery
+    $ pip install astroquery
 
 -------------------------------------
 

@@ -16,10 +16,12 @@
    
       NIRCam_V2V3_limits
       ap_radec
+      convert_to_sky
       dist_image
       gen_sgd_offsets
       get_NRC_v2v3_limits
       get_idl_offset
+      get_sgd_offsets
       plotAxes
       radec_offset
       radec_to_coord

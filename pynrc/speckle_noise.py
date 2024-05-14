@@ -227,15 +227,15 @@ class OPD_extract(object):
         pmask = self._mask_segs[i]
         outmask, pixelscale = self._sample_mask(pmask)
 
-        pix_rad = np.int(np.ceil(((pmask.side+pmask.gap) / pixelscale).value))
+        pix_rad = int(np.ceil(((pmask.side+pmask.gap) / pixelscale).value))
         pix_cen = pmask._hex_center(i+1)
         xc = pix_cen[1] / pixelscale.value + outmask.shape[1] / 2
         yc = pix_cen[0] / pixelscale.value + outmask.shape[0] / 2
 
         # Grab the pixel ranges
-        x1 = np.int(xc - pix_rad)
+        x1 = int(xc - pix_rad)
         x2 = x1 + 2*pix_rad
-        y1 = np.int(yc - pix_rad)
+        y1 = int(yc - pix_rad)
         y2 = y1 + 2*pix_rad
 
         # Limits on x/y positions
@@ -628,8 +628,8 @@ def get_psf(opd, header, filter='F410M', mask=None, pupil=None,
 #    if (mask is not None) and ('WB' in mask):		
 #        # What is the effective wavelength of the filter?	
 #        #bp = pynrc.read_filter(filter)
-#        #w0 = bp.avgwave() / 1e4
-#        w0 = np.float(filt[1:-1])/100
+#        #w0 = bp.avgwave().to_value('um')
+#        w0 = float(filt[1:-1])/100
 #    
 #        # Choose wavelength from dictionary
 #        wdict = {'F182M': 1.84, 'F187N': 1.88, 'F210M': 2.09, 'F212N': 2.12, 

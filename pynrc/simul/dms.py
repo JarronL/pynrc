@@ -15,6 +15,7 @@ from jwst.datamodels import Level1bModel
 import warnings
 
 from .apt import DMS_input
+NONE_STR = str(None).upper()
 
 import logging
 _log = logging.getLogger('pynrc')
@@ -47,9 +48,9 @@ def jw_obs_id(pid, obs_num, visit_num, visit_gp, seq_id, act_id, exp_num):
     eeeee: exposure number
     segNNN: the text “seg” followed by a three-digit segment number (optional)
     
-    detector: detector name (e.g. ‘nrca1’, ‘nrcblong’, ‘mirimage’)
+    detector: detector name (e.g. 'nrca1', 'nrcblong', 'mirimage')
     
-    prodType: product type identifier (e.g. ‘uncal’, ‘rate’, ‘cal’)
+    prodType: product type identifier (e.g. 'uncal', 'rate', 'cal')
     
     An example Stage 1 product FITS file name is:
     jw93065002001_02101_00001_nrca1_rate.fits
@@ -106,6 +107,58 @@ def DMS_filename(obs_id_info, detname, segNum=None, prodType='uncal'):
     
     fname = part1 + part2 + part3
     return fname
+
+def filename_visit_info(filename):
+    """
+    Extract visit information from filename
+
+    jw<ppppp><ooo><vvv>_<gg><s><aa>_<eeeee>(-<”seg”NNN>)_<detector>_<prodType>.fits
+
+    ppppp: program ID number
+    ooo: observation number
+    vvv: visit number
+    
+    gg: visit group
+    s: parallel sequence ID (1=prime, 2-5=parallel)
+    aa: activity number (base 36) (only for WFSC, coarse and fine phasing)
+    
+    eeeee: exposure number
+    segNNN: the text “seg” followed by a three-digit segment number (optional)
+    
+    detector: detector name (e.g. 'nrca1', 'nrcblong', 'mirimage')
+
+    prodType: product type identifier (e.g. 'uncal', 'rate', 'cal')
+    """
+    from ..nrc_utils import get_detname
+    
+    fname = filename.split('/')[-1]
+    fname_arr = fname.split('_')
+    
+    i0 = fname_arr[0].find('jw') + 2 # Increment index by 2
+    pid = int(fname_arr[0][i0:i0+5])
+    oid = int(fname_arr[0][i0+5:i0+8])
+    vid = int(fname_arr[0][i0+8:])
+    
+    grp = int(fname_arr[1][0:2])
+    seq = int(fname_arr[1][2])
+    act = int(fname_arr[1][3:])
+    
+    expid = fname_arr[2]
+    if '-seg' in expid:
+        segid = int(expid.split('-')[1][3:])
+        expid = int(expid.split('-')[0])
+    else:
+        expid = int(expid)
+        segid = None
+    
+    det = fname_arr[3]
+    
+    res = jw_obs_id(pid, oid, vid, grp, seq, act, expid)
+    res['detector'] = get_detname(det)
+    res['segid'] = segid
+    res['filename'] = fname
+    
+    return res
 
 ###  Copied and modified from MIRAGE
 def create_group_entry(integration, groupnum, endday, endmilli, endsubmilli, endgroup,
@@ -239,13 +292,13 @@ def populate_group_table(starttime, grouptime, ramptime, numint, numgroup, ny, n
         # If the integration has a single group, force endday to be an array
         if isinstance(endday, float):
             endday = np.array([endday])
-        enddayint = [np.int(s) for s in endday]
+        enddayint = [int(s) for s in endday]
 
         # Now to get end_milliseconds, we need milliseconds from the beginning
         # of the day
         inday = TimeDelta(endday - enddayint, format='jd')
         endmilli = inday.sec * 1000.
-        endmilli_int = [np.int(s) for s in endmilli]
+        endmilli_int = [int(s) for s in endmilli]
 
         # Submilliseconds - just use a random number
         endsubmilli = (endmilli - endmilli_int)*1000
@@ -367,8 +420,21 @@ def level1b_data_model(obs_params, sci_data=None, zero_data=None):
         pupil = 'MASKRND'
     elif 'WEDGE' in pupil:
         pupil = 'MASKBAR'
-    filt  = 'UNKNOWN' if filt  is None else filt
-    pupil = 'UNKNOWN' if pupil is None else pupil
+    filt  = 'CLEAR' if filt  is None else filt
+    pupil = 'CLEAR' if pupil is None else pupil
+
+    # Update filter and pupil settings for narrowband filters in pupil wheel
+    if filt in ['F162M', 'F164N']:
+        pupil = filt
+        filt = 'F150W2'
+    elif filt=='F323N':
+        pupil = filt
+        filt = 'F322W2'
+    elif filt in ['F405N', 'F466N','F470N']:
+        pupil = filt
+        filt = 'F444W'
+
+    # Set fiter and pupil in datamodel
     outModel.meta.instrument.filter = filt
     outModel.meta.instrument.pupil  = pupil
 
@@ -692,7 +758,7 @@ def update_headers_pynrc_info(filename, obs_params, **kwargs):
 
     # Add file info from kwargs
     kw_to_hkey = {
-        # Keyword Arg        : (Header key, Header comment)
+        # Keyword Arg   : (Header key, Header comment)
         'json_file'     : ('APTJSON',  'APT JSON file input.'),
         'sm_acct_file'  : ('APTSMRT',  'APT smart accounting file input.'),
         'pointing_file' : ('APTPOINT', 'APT pointing file input.'),
@@ -700,7 +766,7 @@ def update_headers_pynrc_info(filename, obs_params, **kwargs):
     }
     for kw in kw_to_hkey.keys():
         hkey, comment = kw_to_hkey[kw]
-        pheader[hkey] = (kwargs.get(kw), comment)
+        pheader[hkey] = (kwargs.get(kw, NONE_STR), comment)
 
     # Insert pynrc header comment
     hkey_first = 'APTJSON'
@@ -709,13 +775,19 @@ def update_headers_pynrc_info(filename, obs_params, **kwargs):
     pheader.insert(hkey_first, '', after=False)
 
     # Input telescope pointing info
-    pheader['RA_IN']    = (obs_params['ra_obs'],'RA of observered SIAF aperture.')
-    pheader['DEC_IN']   = (obs_params['dec_obs'], 'DEC of observered SIAF aperture.')
-    pheader['PAV3_IN']  = (obs_params['pa_v3'], 'Telescope position angle relative to V3.')
-    pheader['ROLL_IN']  = (obs_params['roll_offset'], 'Roll angle relative to nominal V3 PA.')
-    pheader['ELONG_IN'] = (obs_params['solar_elong'], 'Solar elongation (deg).')
-    pheader['PITCH_IN'] = (obs_params['pitch_ang'], 'Telescope pitch angle relative to sun (deg).')
-    pheader['WFEDRIFT'] = (obs_params['wfe_drift'], 'Delta WFE drift from baseline OPD (nm RMS)')
+    kw_to_hkey = {
+        # Keyword Arg : (Header key, Header comment)
+        'ra_obs'      : ('RA_IN',    'RA of observered SIAF aperture.'),
+        'dec_obs'     : ('DEC_IN',   'DEC of observered SIAF aperture.'),
+        'pa_v3'       : ('PAV3_IN',  'Telescope position angle relative to V3.'),
+        'roll_offset' : ('ROLL_IN',  'Roll angle relative to nominal V3 PA.'),
+        'solar_elong' : ('ELONG_IN', 'Solar elongation (deg).'),
+        'pitch_ang'   : ('PITCH_IN', 'Telescope pitch angle relative to sun (deg).'),
+        'wfe_drift'   : ('WFEDRIFT', 'Delta WFE drift from baseline OPD (nm RMS)'),
+    }
+    for kw in kw_to_hkey.keys():
+        hkey, comment = kw_to_hkey[kw]
+        pheader[hkey] = (obs_params.get(kw, NONE_STR), comment)
 
     # Add actual dither offset information
     kw_to_hkey = {
@@ -725,17 +797,19 @@ def update_headers_pynrc_info(filename, obs_params, **kwargs):
     }
     for kw in kw_to_hkey.keys():
         hkey, comment = kw_to_hkey[kw]
-        pheader[hkey] = (kwargs.get(kw), comment)
+        pheader[hkey] = (kwargs.get(kw, NONE_STR), comment)
 
     # Add random seed info
-    rand_init  = obs_params.get('rand_seed_init')
-    rand_dith  = obs_params.get('rand_seed_dith')
-    rand_noise = obs_params.get('rand_seed_noise')
-    rand_dwfe  = obs_params.get('rand_seed_dwfe')
-    pheader['RANDINIT'] = (rand_init, "Random seed to init program sim")
-    pheader['RANDDITH'] = (rand_dith, "Random seed for dither errors")
-    pheader['RANDNOIS'] = (rand_noise, "Random seed for ramp noise init")
-    pheader['RANDDWFE'] = (rand_dwfe, "Random seed for delta WFE IEC component")
+    kw_to_hkey = {
+        # Keyword Arg     : (Header key, Header comment)
+        'rand_seed_init'  : ('RANDINIT', 'Random seed to init program sim'),
+        'rand_seed_dith'  : ('RANDDITH', 'Random seed for dither errors'),
+        'rand_seed_noise' : ('RANDNOIS', 'Random seed for ramp noise init'),
+        'rand_seed_dwfe'  : ('RANDDWFE', 'Random seed for delta WFE IEC component'),
+    }
+    for kw in kw_to_hkey.keys():
+        hkey, comment = kw_to_hkey[kw]
+        pheader[hkey] = (obs_params.get(kw, NONE_STR), comment)
 
     # Add noise parameter settings
     kw_to_hkey = {
@@ -763,7 +837,19 @@ def update_headers_pynrc_info(filename, obs_params, **kwargs):
     }
     for kw in kw_to_hkey.keys():
         hkey, comment = kw_to_hkey[kw]
-        pheader[hkey] = (kwargs.get(kw), comment)
+        pheader[hkey] = (kwargs.get(kw, NONE_STR), comment)
+
+    # Add ice and nvr info
+    kw_to_hkey = {
+        # Keyword Arg     : (Header key, Header comment)
+        'ice_scale' : ('ICESCALE', 'Scale relative to 0.0131 um thickness'),
+        'nvr_scale' : ('NVRSCALE', 'Scale relative to 0.280 um thickness'),
+        'nc_scale'  : ('NCSCALE',  'Scale of NVR=0.189 um and H2O=0.050 um'),
+        'ote_scale' : ('OTESCALE', 'Scale relative to 0.0131 um thickness'),
+    }
+    for kw in kw_to_hkey.keys():
+        hkey, comment = kw_to_hkey[kw]
+        pheader[hkey] = (kwargs.get(kw, NONE_STR), comment)
 
     hdulist.flush()
     hdulist.close()

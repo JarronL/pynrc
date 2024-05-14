@@ -52,6 +52,9 @@ from ..maths.coords import det_to_sci, sci_to_det
 from ..maths.image_manip import convolve_image
 from .. import conf
 
+from webbpsf_ext.image_manip import add_ipc, add_ppc
+from webbpsf_ext.synphot_ext import Observation
+
 from stdatamodels import fits_support
 import astropy.units as u
 
@@ -82,11 +85,11 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
         name that exists within the observation. Only that aperture will
         be simulated.
     filter : None or str
-        Specify a filter within observation to be simulated. Can be combined
-        with `detname` and `apname` keywords. Should have the form "ABC:XYZ",
-        or "ObsNum:VisitNum" (e.g., "005:001" for observation 5, visit 1).
+        Specify a filter or list of filters within observation to be simulated. 
+        Can be combined with `detname` and `apname` keywords.
     visit_id : None or str
-        Specify the visit ID to simulate.
+        Specify the visit ID to simulate. Should have the form "ABC:XYZ",
+        or "ObsNum:VisitNum" (e.g., "005:001" for observation 5, visit 1).
     dry_run : bool or None
         Won't generate any image data, but instead runs through each 
         observation, printing detector info, SIAF aperture name, filter,
@@ -175,9 +178,11 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
     # WFE Drift information
     if kwargs_wfedrift is None:
         wfe_dict = None
+        rand_seed_dwfe = None
     elif kwargs_wfedrift.get('wfe_dict') is not None:
         # wfe_dict already exists in passed parameters
         wfe_dict = kwargs_wfedrift.get('wfe_dict')
+        rand_seed_dwfe = None
     else:
         plot_fig = kwargs_wfedrift.get('plot', False)
         figname = kwargs_wfedrift.get('figname', None)
@@ -200,9 +205,16 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
     if detname is None:
         udetnames = np.unique(obs_detnames)
     else:
-        udetnames =[get_detname(detname)]
-        # udetnames = ['NRCA5']
+        # Option to pass multiple names
+        if isinstance(detname, str):
+            udetnames = [get_detname(detname)]
+        else:
+            udetnames = np.unique(detname)
         
+    if dry_run:
+        print('DetID SIAFAperture Filter TargetName VisitID GSAid exp# (idl_off_act) dWFE time')
+
+
     for detname in udetnames:
         # print('detname: ', detname)
 
@@ -217,20 +229,27 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
         if (not dry_run) and save_dms:
             cal_obj = nircam_cal(det.scaid, caldir, verbose=False)
 
-        ulabels= np.unique(obs_labels[ind])
+        # Grab labels for only the specific detectors
+        ulabels, ulabels_ind = np.unique(obs_labels[ind], return_index=True)
+        # Grab the associated apnames and filters
+        uapnames = obs_apnames[ind][ulabels_ind]
+        ufilters = obs_filters[ind][ulabels_ind]
+        # Create masks for desired filters and apnames
+        if filter is not None:
+            filt_select = [filter] if isinstance(filter, str) else np.unique(filter)
+            filt_mask = np.array([ff in filt_select for ff in ufilters])
+        if apname is not None:
+            ap_select = [apname] if isinstance(apname, str) else np.unique(apname)
+            ap_mask = np.array([aa in ap_select for aa in uapnames])
+        # Select specific labels, which get parsed later
         if (apname is not None) and (filter is not None):
-            ind_mask1 = np.array([apname in a for a in ulabels])
-            ind_mask2 = np.array([filter in a for a in ulabels])
-            ind_mask = ind_mask1 & ind_mask2
-            ulabels = ulabels[ind_mask]
+            ulabels = ulabels[filt_mask & ap_mask]
             log_print = _log.info
         elif (apname is not None) and (filter is None):
-            ind_mask = np.array([apname in a for a in ulabels])
-            ulabels = ulabels[ind_mask]
+            ulabels = ulabels[ap_mask]
             log_print = _log.info
         elif (apname is None) and (filter is not None):
-            ind_mask = np.array([filter in a for a in ulabels])
-            ulabels = ulabels[ind_mask]
+            ulabels = ulabels[filt_mask]
             log_print = _log.info
         else:
             log_print = _log.warn
@@ -240,15 +259,14 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
             log_print(f'  SCA: {detname}, SIAF: {apname}, Filter: {filter}')
             continue
 
-        # ulabels = ['NRCA5_FULL_F277W']
+        # Cycle through all labels
         for label in ulabels:
             aname = '_'.join(label.split('_')[0:-2])
             fname = label.split('_')[-2]
             tname = label.split('_')[-1]
 
-            # print(' label: ', label)
+            # Ensure this label matches one in the full list
             ind2 = (obs_labels == label)
-            
             if ind2.sum()==0:
                 _log.warn(f'Skipping {aname} + {fname} + {tname} for {detname}...')
                 continue
@@ -288,12 +306,15 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
             try:
                 target_info = params_targets[target_id]
             except KeyError:
-                _log.error(f"Cannot find {target_id} target! Skipping {aname} + {fname} for {detname}...")
-                continue
+                try:
+                    target_info = params_targets[target_id+'_ref']
+                except KeyError:
+                    _log.error(f"Cannot find {target_id} target! Skipping {aname} + {fname} for {detname}...")
+                    continue
 
             # More target info
-            src_tbl     = target_info.get('src_tbl')
-            star_info   = target_info.get('params_star')
+            src_tbl   = target_info.get('src_tbl')
+            star_info = target_info.get('params_star')
             sp_star   = None if star_info is None else star_info.get('sp')
             dist_pc   = target_info.get('dist_pc')
             age_Myr   = target_info.get('age_Myr')
@@ -302,15 +323,19 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
 
             # Gather info to create NIRCam instrument object
             filt  = op_temp['filter']
-            pupil = None if op_temp['pupil']=='CLEAR'     else op_temp['pupil']
-            mask  = None if op_temp['coron_mask']=='None' else op_temp['coron_mask']
+            pupil = None if op_temp['pupil']=='CLEAR'             else op_temp['pupil']
+            mask  = None if op_temp['coron_mask'].upper()=='NONE' else op_temp['coron_mask']
             ap_obs_name = siaf_ap.AperName
             ap_nrc_name = ap_obs_name
 
             # Is this a high-contrast imaging observation?
             is_hci = ('MASK' in ap_nrc_name) or (sp_star is not None)
 
-            if not dry_run:
+            # Set pupil to None for some cases of coron and imaging mixing, eg. eng template
+            if (pupil is not None) and ('MASK' in pupil) and ('MASK' not in ap_nrc_name):
+                pupil = None
+
+            if (not dry_run):
                 # Get rid of previous instances
                 try: del nrc
                 except: pass
@@ -391,10 +416,11 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                     grp_id = grp_ids[j]
                     seq_id = seq_ids[j]
                     act_id = act_ids[j]
-                    act_int = np.int(act_id, 36) # Convert base 36 to integer number
+                    act_int = int(act_id, 36) # Convert base 36 to integer number
                     # print('   exp_num: ', exp_num)
-                    obs_params = obs_input.gen_obs_params(vid, exp_num, detname,
-                                                          grp_id=grp_id, seq_id=seq_id, act_id=act_id)
+                    obs_params = obs_input.gen_obs_params(vid, exp_num, detname, grp_id=grp_id, 
+                                                          seq_id=seq_id, act_id=act_id)
+
                     # Update some target info
                     obs_params['catalog_name'] = target_info.get('TargetArchiveName', 'UNKNOWN')
                     if 'RAProperMotion' in obs_params.keys():
@@ -414,21 +440,31 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                         _log.warn(f'  Visit {vid}, Exp {exp_num}, Grp {grp_id}, Seq {seq_id}, Act {act_id}')
                         continue
                     if tup=='T_ACQ':
+                        # First target acq image involves small SAM (~3 pixels) from initial slew
+                        # These are super accurate
                         rand_seed_base = rand_seed_dith = visit_dict['rand_seed_dith']
-                        base_std = large_slew_uncert
+                        base_std = ta_sam_uncert #large_slew_uncert
                         dith_std = 0
                     elif (tup=='CONFIRM') and (ddist==0):
+                        # First TA_CONF image is same position as T_ACQ
+                        # These are super accurate
                         rand_seed_base = rand_seed_dith= visit_dict['rand_seed_dith']
-                        base_std = large_slew_uncert
+                        base_std = ta_sam_uncert #large_slew_uncert
                         dith_std = 0
                     elif (tup=='CONFIRM'):
-                        rand_seed_base = rand_seed_dith= visit_dict['rand_seed_dith'] + 1
-                        base_std = ta_sam_uncert
+                        # Second TA_CONF has a small SAM from ND square to coron mask
+                        rand_seed_base = rand_seed_dith = visit_dict['rand_seed_dith'] + 1
+                        base_std = std_sam_uncert
                         dith_std = 0
                     elif (tup=='SCIENCE') and (lup=='TARGET'):
+                        # Initial observation
                         rand_seed_base = visit_dict['rand_seed_dith'] + 1
                         rand_seed_dith = rand_seed_base + 1
-                        base_std = large_slew_uncert if type_arr[0].upper()=='SCIENCE' else ta_sam_uncert
+                        base_std = large_slew_uncert if type_arr[0].upper()=='SCIENCE' else std_sam_uncert
+                    elif (tup=='SCIENCE') and (lup=='TILE'):
+                        rand_seed_base = visit_dict['rand_seed_dith'] + 1
+                        rand_seed_dith = rand_seed_base + 1 + grp_id*act_int*nexp + exp_num
+                        base_std = std_sam_uncert
                     elif (tup=='SCIENCE') and (lup=='FILTER'):
                         rand_seed_base = visit_dict['rand_seed_dith'] + 1
                         if ddist==0:
@@ -452,7 +488,7 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                         first_dith_zero = True if (lup=='TARGET' or ddist==0) else False
                         # Create jwst_pointing class
                         tel_pointing = gen_jwst_pointing(visit_dict, obs_params, base_std=base_std)
-                        # Update standard and SGD uncertainties and regenerage random pointings
+                        # Update standard and SGD uncertainties and regenerate random pointings
                         tel_pointing._std_sig = std_sam_uncert
                         tel_pointing._sgd_sig = sgd_sam_uncert
                         tel_pointing.gen_random_offsets(rand_seed=rand_seed_dith, rand_seed_base=rand_seed_base,
@@ -460,16 +496,24 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                         tel_pointing.exp_nums = np.arange(tel_pointing.ndith) + 1 
 
                     # Save random seed in obs_params
-                    obs_params['rand_seed_init'] = rand_seed_init
-                    obs_params['rand_seed_dith'] = rand_seed_dith
+                    obs_params['rand_seed_init']  = rand_seed_init
+                    obs_params['rand_seed_dith']  = rand_seed_dith
                     obs_params['rand_seed_noise'] = rand_seed_noise_j
-                    obs_params['rand_seed_dwfe'] = rand_seed_dwfe
+                    obs_params['rand_seed_dwfe']  = rand_seed_dwfe
 
                     # Skip slope creation if obs_label doesn't match NIRCam class
                     a = obs_params['siaf_ap'].AperName
                     f = obs_params['filter']
                     t = obs_params['target_name']
                     if label != f'{a}_{f}_{t}':
+                        continue
+
+                    # Some detectors don't have coronagraphic SIAF apertures.
+                    # We want to skip creation of their FITS files, because those
+                    # simulated observations would assume direct imaging apertures, 
+                    # which would produce incorrect PSFs and wrong pointing info.
+                    p = obs_params['pupil']
+                    if (p is not None) and ('MASK' in p) and ('MASK' not in a):
                         continue
 
                     # Create dictionary of parameters to save to FITS header
@@ -488,8 +532,8 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                     kwargs_pynrc['pa_v3'] = obs_params['pa_v3']
 
                     # WFE drift values
+                    tval_exp = obs_params['texp_start_relative']  # seconds
                     if wfe_dict is not None:
-                        tval_exp = obs_params['texp_start_relative']  # seconds
                         tval_all = wfe_dict['time_sec']
                         wfe_total = wfe_dict['total']
                         wfe_drift_exp = np.interp(tval_exp, tval_all, wfe_total)
@@ -502,6 +546,7 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                         idl_off_str = f'({idl_off[0]:+0.3f}, {idl_off[1]:+0.3f})'
                         gsa_str = f'{grp_id:02d}{seq_id:01d}{act_id}'
                         dwfe = f'{wfe_drift_exp:.2f}'
+
                         print(detname, a, f, t, vid, gsa_str, exp_num, idl_off_str, dwfe, tval_exp)
 
                         # Save Level1b DMS FITS files without any data
@@ -533,9 +578,11 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                                                          hdul_psfs=hdul_psfs, im_bg=0, 
                                                          wfe_drift=wfe_drift_exp)
 
+                        # return nrc, obs_params['pa_v3'],idl_off,wfe_drift_exp
+
                         # Create slope image from HCI observation
-                        # if isinstance(nrc, obs_hci):
-                        if is_hci:
+                        # Only add if a stellar source was included
+                        if is_hci and (sp_star is not None):
                             pa_v3 = obs_params['pa_v3']
                             im_slope += nrc.gen_slope_image(PA=pa_v3, xyoff_asec=idl_off, 
                                                             zfact=0, exclude_noise=True, 
@@ -612,7 +659,7 @@ def slope_to_level1b(im_slope, obs_params, cal_obj=None, save_dir=None,
     obs_params : dict
         Dictionary of parameters to populate DMS header. 
         See `create_DMS_HDUList` in dms.py.
-    cal_obj : :class:`pynrc.nircam_cal`
+    cal_obj : :class:`~pynrc.nircam_cal`
         DMS object built from exported APT files. 
         See `DMS_input` in apt.py.
     save_dir : None or str
@@ -677,11 +724,10 @@ def slope_to_level1b(im_slope, obs_params, cal_obj=None, save_dir=None,
 
     # Put into 'sci' coords
     if cframe=='det':
-        im_slope = det_to_sci(im_slope)
+        im_slope = det_to_sci(im_slope, det.detid)
     
     if cal_obj is None:
-        caldir = os.path.join(conf.PYNRC_PATH, 'calib', str(det.scaid))
-        cal_obj = nircam_cal(det.scaid, caldir)
+        cal_obj = nircam_cal(det.scaid, verbose=False)
         
     # Simulate data for a single ramp
     sci_data = []
@@ -715,11 +761,11 @@ def sources_to_slope(source_table, nircam_obj, obs_params, tel_pointing,
         Table of objects in across the region, including headers
         'ra', 'dec', and object fluxes in NIRCam filter in vega mags where
         headers are labeled the filter name (e.g, 'F444W').
-    nircam_obj : :class:`pynrc.NIRCam`
+    nircam_obj : :class:`~pynrc.NIRCam`
         NIRCam instrument class for PSF generation.
     obs_params : dict
         Dictionary of parameters to populate DMS header. 
-        See `create_obs_params` in apt.py and `level1b_data_model` in dms.py.
+        See ``create_obs_params`` in apt.py and ``level1b_data_model`` in dms.py.
     tel_pointing : :class:`webbpsf_ext.jwst_point`
         JWST telescope pointing information. Holds pointing coordinates 
         and dither information for a given telescope visit.
@@ -740,15 +786,16 @@ def sources_to_slope(source_table, nircam_obj, obs_params, tel_pointing,
         view. If a coronagraphic observation, then this is for the nominal
         coronagrahic field of view.
     sptype : str
-        Spectral type, such as 'A0V' or 'K2III'.
+        Spectral type to assume point source when generating total counts.
+        Default is 'G0V'.
     wfe_drift : float
         Desired WFE drift value relative to default OPD.
     osamp : int
         Sampling of output PSF relative to detector sampling. If `hdul_psfs` is 
         specified, then the 'OSAMP' header keyword takes precedence.
     use_coeff : bool
-        If True, uses `calc_psf_from_coeff`, other WebbPSF's built-in `calc_psf`.
-        Coefficients are much faster
+        If True, uses ``calc_psf_from_coeff``, other WebbPSF's built-in ``calc_psf``.
+        Coefficients are much faster. Default is True.
     """
 
     nrc = nircam_obj
@@ -847,7 +894,7 @@ def sources_to_slope(source_table, nircam_obj, obs_params, tel_pointing,
     im_slope = im_slope + im_bg
 
     if cframe_out=='det':
-        im_slope = sci_to_det(im_slope)
+        im_slope = sci_to_det(im_slope, det.detid)
 
     return im_slope
 
@@ -872,7 +919,7 @@ def sources_to_level1b(source_table, nircam_obj, obs_params, tel_pointing,
         Table of objects in across the region, including headers
         'ra', 'dec', and object fluxes in NIRCam filter in vega mags where
         headers are labeled the filter name (e.g, 'F444W').
-    nircam_obj : :class:`pynrc.NIRCam`
+    nircam_obj : :class:`~pynrc.NIRCam`
         NIRCam instrument class for PSF generation.
     obs_params : dict
         Dictionary of parameters to populate DMS header. 
@@ -880,7 +927,7 @@ def sources_to_level1b(source_table, nircam_obj, obs_params, tel_pointing,
     tel_pointing : :class:`webbpsf_ext.jwst_point`
         JWST telescope pointing information. Holds pointing coordinates 
         and dither information for a given telescope visit.
-    cal_obj : :class:`pynrc.nircam_cal`
+    cal_obj : :class:`~pynrc.nircam_cal`
         NIRCam calibration class that holds the necessary calibration 
         info to simulate a ramp.
     im_bg : None or ndarray
@@ -1057,7 +1104,7 @@ def slope_to_fitswriter(det, cal_obj, im_slope=None, cframe='det',
             
     # FITSWriter (ISIM format)
     if cframe=='sci':
-        im_slope = sci_to_det(im_slope)
+        im_slope = sci_to_det(im_slope, det.detid)
 
     data = simulate_detector_ramp(det, cal_obj, im_slope=im_slope, cframe='det',
                                   out_ADU=out_ADU, return_zero_frame=False, 
@@ -1081,7 +1128,7 @@ def slope_to_fitswriter(det, cal_obj, im_slope=None, cframe='det',
 
 
 def make_gaia_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
-    teff_default=5800):
+    teff_default=5800, dist_crossmatch=0.1):
     """ Create source table from GAIA DR2 query
 
     Generates a table of objects by performing a cone search around a set
@@ -1099,20 +1146,23 @@ def make_gaia_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
 
     Parameters
     ==========
-    coords : SkyCoords
-        Astropy SkyCoords object.
+    coords : SkyCoord
+        Astropy SkyCoord object.
     remove_cen_star : bool
         Output will exclude the star associated with the input
-        coordinates (anything with 0.1" is removed from table).
+        coordinates (anything with ``dist_crossmatch`` is removed 
+        from table).
     radius : Units
         Radius to perfrom search. Default is 6', which should encompass
         NIRCam's full FoV, including both Modules A and B.
     teff_default : string
         Default stellar effective temperature to assume for sources 
         without GAIA information to extrapolate to longer wavelengths.
+    dist_crossmatch : float
+        Crossmatch GAIA coordinates with input coordinates within this distance.
+        Defalult: 0.1".
     """
     
-    from astroquery.simbad import Simbad
     from astroquery.gaia import Gaia
     from astropy.table import Table
     from astropy.time import Time
@@ -1135,7 +1185,7 @@ def make_gaia_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
     ind_nomag = gaia_tbl['phot_g_mean_mag'].data.mask
     if remove_cen_star:
         dist_asec = gaia_tbl['dist'].data * 3600
-        ind_dist  = dist_asec.data < 0.1
+        ind_dist  = dist_asec.data < dist_crossmatch
         ind_remove = np.where(ind_nomag | ind_dist)
     else:
         ind_remove = np.where(ind_nomag)
@@ -1196,7 +1246,7 @@ def make_gaia_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
         for k in sp_dict.keys():
             sp = sp_dict[k]
             sp = sp.renorm(0, 'vegamag', bp_g)
-            obs = S.Observation(sp, bp, binset=bp.wave)
+            obs = Observation(sp, bp, binset=bp.waveset)
             d[k] = obs.effstim('vegamag')
         bp_sp_dict[f] = d
     
@@ -1230,7 +1280,7 @@ def make_gaia_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
 
 
 def make_simbad_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
-    spt_default='G2V'):
+    spt_default='G2V', dist_crossmatch=0.1):
 
     from astroquery.simbad import Simbad
     from astropy.table import Table
@@ -1251,7 +1301,7 @@ def make_simbad_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
     ind_star = np.array(['Star' in val for val in sim_tbl['OTYPE_V'].data.data])
     ind_nokband = sim_tbl['FLUX_K'].data.mask
     if remove_cen_star:
-        ind_dist  = (sim_tbl['DISTANCE_RESULT'] < 0.1).data
+        ind_dist  = (sim_tbl['DISTANCE_RESULT'] < dist_crossmatch).data
         # ind_remove = np.where((~ind_star) | ind_nok | ind_dist)
         ind_remove = np.where(ind_nokband | ind_dist)
     else:
@@ -1277,13 +1327,18 @@ def make_simbad_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
     # Assume solar temperature for null data
     sptype[sim_tbl['SP_TYPE'].data.mask] = spt_default
     sptype[sim_tbl['SP_TYPE'].data==''] = spt_default
+    for i in range(len(sptype)):
+        spt = sptype[i]
+        if (spt=='') or (len(spt)<2) or (spt[0] not in 'OBAFGKM'):
+            sptype[i] = spt_default
 
     # Create stellar spectra of each unique temperature
     sp_dict = {}
     for spt in np.unique(sptype):
-        if spt=='':
+        if (spt==''):
             continue
         spt2 = spt.split('+')[0]
+        # print(spt, spt2)
         spt2 = spt2 + 'V' if len(spt2)==2 else spt2
         sp_dict[spt2] = stellar_spectrum(spt2)
         
@@ -1315,7 +1370,7 @@ def make_simbad_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
         for k in sp_dict.keys():
             sp = sp_dict[k]
             sp = sp.renorm(0, 'vegamag', bp_k)
-            obs = S.Observation(sp, bp, binset=bp.wave)
+            obs = Observation(sp, bp, binset=bp.waveset)
             d[k] = obs.effstim('vegamag')
         bp_sp_dict[f] = d
 
@@ -1365,7 +1420,7 @@ def gen_wfe_drift(obs_input, case='BOL', iec_period=300, slew_init=10, rand_seed
     iec_period : float
         IEC heater switching period in seconds.
     slew_init : float
-        Assumed slew difference relative to previous program
+        Assumed slew difference relative to previous program (degress of pitch angle).
     rand_seed : None or int
         Seed value to initialize random number generator to obtain
         repeatable values.
@@ -1396,7 +1451,9 @@ def gen_wfe_drift(obs_input, case='BOL', iec_period=300, slew_init=10, rand_seed
         ax = axes[0]
         ax.plot(tvals.value, slew_angles, marker='.')
         ax.set_ylabel('Pitch Angle (deg)')
-        ax.set_title(f'OPD w/ Initial Slew of 5 deg (PID 1194, {case})')
+        k0 = list(obs_input.program_info.keys())[0]
+        pid = int(obs_input.program_info[k0]['obs_id_info'][0]['program_number'])
+        ax.set_title(f'OPD w/ Initial Slew of {slew_init:.0f} deg (PID {pid}, {case})')
 
         ylims = ax.get_ylim()
         dy = ylims[1]-ylims[0]
@@ -1430,6 +1487,9 @@ def gen_wfe_drift(obs_input, case='BOL', iec_period=300, slew_init=10, rand_seed
 
         ax = axes[1]
         for k in keys:
+            # Don't plot time vs time!!
+            if 'time' in k:
+                continue
             lw = 2 if 'total' in k else 1
             alpha = 0.5 if 'total' in k else 1
             ax.plot(tvals.value, wfe_dict2[k], label=k, lw=lw, alpha=alpha)
@@ -1439,7 +1499,8 @@ def gen_wfe_drift(obs_input, case='BOL', iec_period=300, slew_init=10, rand_seed
             ax.legend()
             ax.set_ylabel('$\Delta$WFE (nm RMS)')
 
-        xlim = [-1,18.5]
+        # xlim = [-0.1,ax.get_xlim()[1]]
+        xlim = [-0.1,tvals.value.max()]
         ax.set_xlim(xlim)
         ylim = ax.get_ylim()
         if np.abs(ylim[0])>ylim[1]:
@@ -1527,177 +1588,6 @@ def gen_wfe_drift(obs_input, case='BOL', iec_period=300, slew_init=10, rand_seed
         plot_wfe(figname=figname)
 
     return wfe_dict
-
-def add_ipc(im, alpha_min=0.0065, alpha_max=None, kernel=None):
-    """Convolve image with IPC kernel
-    
-    Given an image in electrons, apply IPC convolution.
-    NIRCam average IPC values (alpha) reported 0.005 - 0.006.
-    
-    Parameters
-    ==========
-    im : ndarray
-        Input image or array of images.
-    alpha_min : float
-        Minimum coupling coefficient between neighboring pixels.
-        If alpha_max is None, then this is taken to be constant
-        with respect to signal levels.
-    alpha_max : float or None
-        Maximum value of coupling coefficent. If specificed, then
-        coupling between pixel pairs is assumed to vary depending
-        on signal values. See Donlon et al., 2019, PASP 130.
-    kernel : ndarry or None
-        Option to directly specify the convolution kernel. 
-        `alpha_min` and `alpha_max` are ignored.
-    
-    Examples
-    ========
-    Constant Kernel
-
-        >>> im_ipc = add_ipc(im, alpha_min=0.0065)
-
-    Constant Kernel (manual)
-
-        >>> alpha = 0.0065
-        >>> k = np.array([[0,alpha,0], [alpha,1-4*alpha,alpha], [0,alpha,0]])
-        >>> im_ipc = add_ipc(im, kernel=k)
-
-    Signal-dependent Kernel
-
-        >>> im_ipc = add_ipc(im, alpha_min=0.0065, alpha_max=0.0145)
-
-    """
-    
-    sh = im.shape
-    ndim = len(sh)
-    if ndim==2:
-        im = im.reshape([1,sh[0],sh[1]])
-        sh = im.shape
-    
-    if kernel is None:
-        xp = yp = 1
-    else:
-        yp, xp = np.array(kernel.shape) / 2
-        yp, xp = int(yp), int(xp)
-
-    # Pad images to have a pixel border of zeros
-    im_pad = np.pad(im, ((0,0), (yp,yp), (xp,xp)), 'symmetric')
-    
-    # Check for custom kernel (overrides alpha values)
-    if (kernel is not None) or (alpha_max is None):
-        # Reshape to stack all images along horizontal axes
-        im_reshape = im_pad.reshape([-1, im_pad.shape[-1]])
-    
-        if kernel is None:
-            kernel = np.array([[0.0, alpha_min, 0.0],
-                               [alpha_min, 1.-4*alpha_min, alpha_min],
-                               [0.0, alpha_min, 0.0]])
-    
-        # Convolve IPC kernel with images
-        im_ipc = convolve(im_reshape, kernel).reshape(im_pad.shape)
-    
-    # Exponential coupling strength
-    # Equation 7 of Donlon et al. (2018)
-    else:
-        arrsqr = im_pad**2
-
-        amin = alpha_min
-        amax = alpha_max
-        ascl = (amax-amin) / 2
-        
-        alpha_arr = []
-        for ax in [1,2]:
-            # Shift by -1
-            diff = np.abs(im_pad - np.roll(im_pad, -1, axis=ax))
-            sumsqr = arrsqr + np.roll(arrsqr, -1, axis=ax)
-            
-            imtemp = amin + ascl * np.exp(-diff/20000) + \
-                     ascl * np.exp(-np.sqrt(sumsqr / 2) / 10000)
-            alpha_arr.append(imtemp)
-            # Take advantage of symmetries to shift in other direction
-            alpha_arr.append(np.roll(imtemp, 1, axis=ax))
-            
-        alpha_arr = np.array(alpha_arr)
-
-        # Flux remaining in parent pixel
-        im_ipc = im_pad * (1 - alpha_arr.sum(axis=0))
-        # Flux shifted to adjoining pixels
-        for i, (shft, ax) in enumerate(zip([-1,+1,-1,+1], [1,1,2,2])):
-            im_ipc += alpha_arr[i]*np.roll(im_pad, shft, axis=ax)
-        del alpha_arr
-
-    # Trim excess
-    im_ipc = im_ipc[:,yp:-yp,xp:-xp]
-    if ndim==2:
-        im_ipc = im_ipc.squeeze()
-    return im_ipc
-    
-    
-def add_ppc(im, ppc_frac=0.002, nchans=4, kernel=None,
-    same_scan_direction=False, reverse_scan_direction=False,
-    in_place=False):
-    """ Add Post-Pixel Coupling (PPC)
-    
-    This effect is due to the incomplete settling of the analog
-    signal when the ADC sample-and-hold pulse occurs. The measured
-    signals for a given pixel will have a value that has not fully
-    transitioned to the real analog signal. Mathematically, this
-    can be treated in the same way as IPC, but with a different
-    convolution kernel.
-    
-    Parameters
-    ==========
-    im : ndarray
-        Image or array of images
-    ppc_frac : float
-        Fraction of signal contaminating next pixel in readout. 
-    kernel : ndarry or None
-        Option to directly specify the convolution kernel, in
-        which case `ppc_frac` is ignored.
-    nchans : int
-        Number of readout output channel amplifiers.
-    same_scan_direction : bool
-        Are all the output channels read in the same direction?
-        By default fast-scan readout direction is ``[-->,<--,-->,<--]``
-        If ``same_scan_direction``, then all ``-->``
-    reverse_scan_direction : bool
-        If ``reverse_scan_direction``, then ``[<--,-->,<--,-->]`` or all ``<--``
-    in_place : bool
-        Apply in place to input image.
-    """
-
-                       
-    sh = im.shape
-    ndim = len(sh)
-    if ndim==2:
-        im = im.reshape([1,sh[0],sh[1]])
-        sh = im.shape
-
-    nz, ny, nx = im.shape
-    chsize = nx // nchans
-    
-    # Do each channel separately
-    if kernel is None:
-        kernel = np.array([[0.0, 0.0, 0.0],
-                           [0.0, 1.0-ppc_frac, ppc_frac],
-                           [0.0, 0.0, 0.0]])
-
-    res = im if in_place else im.copy()
-    for ch in np.arange(nchans):
-        if same_scan_direction:
-            k = kernel[:,::-1] if reverse_scan_direction else kernel
-        elif np.mod(ch,2)==0:
-            k = kernel[:,::-1] if reverse_scan_direction else kernel
-        else:
-            k = kernel if reverse_scan_direction else kernel[:,::-1]
-
-        x1 = chsize*ch
-        x2 = x1 + chsize
-        res[:,:,x1:x2] = add_ipc(im[:,:,x1:x2], kernel=k)
-    
-    if ndim==2:
-        res = res.squeeze()
-    return res
 
 
 def gen_col_noise(ramp_column_varations, prob_bad, nz=108, nx=2048, rand_seed=None):
@@ -1820,6 +1710,7 @@ def gen_ramp_biases(ref_dict, nchan=None, data_shape=(2,2048,2048),
     """
 
     rng = np.random.default_rng(rand_seed)
+
     
     if nchan is None:
         nchan = len(ref_dict['amp_offset_mean'])
@@ -1892,8 +1783,9 @@ def gen_ramp_biases(ref_dict, nchan=None, data_shape=(2,2048,2048),
     return cube
 
 
-def fft_noise(pow_spec, nstep_out=None, fmin=None, f=None, 
-              pad_mode='edge', rand_seed=None, **kwargs):
+
+def fft_noise(pow_spec, nstep_out=None, nseq=1, fmin=None, f=None, 
+              pad_mode='edge', rand_seed=None, use_mkl=False, **kwargs):
     """ Random Noise from Power Spectrum
     
     Returns a noised array where the instrinsic distribution
@@ -1908,6 +1800,10 @@ def fft_noise(pow_spec, nstep_out=None, fmin=None, f=None,
         Desired size of the output noise array. If smaller than `pow_spec`
         then it just truncates the results to the appropriate size.
         If larger, then pow_spec gets padded by the specified `pad_mode`.
+    nseq : int
+        How many independent random time series do we want to produce 
+        simultaneoulsy? If `nseq>1`, then returns an array of size
+        (nseq, nstep_out).
     fmin : float or None
         Low-frequency cutoff. Power spectrum values below this cut-off
         point get set equal to the power spectrum value at fmin.
@@ -1953,12 +1849,15 @@ def fft_noise(pow_spec, nstep_out=None, fmin=None, f=None,
 
     """
     
+    from ..nrc_utils import do_fft
+
     rng = np.random.default_rng(rand_seed)
 
     if nstep_out is None:
         nstep_out = 2 * (len(pow_spec) - 1)
         
     nstep = nstep_out
+    # For large data sets, this is faster than going to the next power of 2
     nstep2 = int(2**np.ceil(np.log2(nstep-1))) + 1
 
     lin_spec = np.sqrt(pow_spec) 
@@ -1987,31 +1886,32 @@ def fft_noise(pow_spec, nstep_out=None, fmin=None, f=None,
     the_std = 2 * np.sqrt(np.sum(w**2) + w_last**2) / n_ifft
     
     # Generate scaled random power + phase
-    # sr = lin_spec
-    # sr = rng.normal(scale=lin_spec)
-    # si = rng.normal(scale=lin_spec)
     # For large numbers, faster to gen with scale=1, then multiply
-    sr = rng.normal(size=len(lin_spec)) * lin_spec
-    si = rng.normal(size=len(lin_spec)) * lin_spec
+    # sr = rng.normal(size=len(lin_spec)) * lin_spec
+    # si = rng.normal(size=len(lin_spec)) * lin_spec
+    sr = rng.normal(size=[nseq, len(lin_spec)]) * lin_spec.reshape([1,-1])
+    si = rng.normal(size=[nseq, len(lin_spec)]) * lin_spec.reshape([1,-1])
+    del lin_spec
 
     # If the signal length is even, frequencies +/- 0.5 are equal
     # so the coefficient must be real.
     if (nstep2 % 2) == 0: 
-        si[-1] = 0
+        si[:,-1] = 0
 
     # Regardless of signal length, the DC component must be real
-    si[0] = 0
+    si[:,0] = 0
 
     # Combine power + corrected phase to Fourier components
     thefft  = sr + 1J * si
+    del sr, si
 
     # Apply the pinkening filter.
-    result = np.fft.irfft(thefft)
+    result = do_fft(thefft, real=True, inverse=True, use_mkl=use_mkl)
+    del thefft
     
     # Keep requested nstep and scale to unit variance
-    result = result[:nstep_out] / the_std
-
-    return result
+    result = result[:, :nstep_out] / the_std
+    return result.squeeze()
 
 
 def pink_noise(nstep_out, pow_spec=None, f=None, fmin=None, alpha=-1, **kwargs):
@@ -2240,9 +2140,9 @@ def sim_noise_data(det, rd_noise=[5,5,5,5], u_pink=[1,1,1,1], c_pink=3,
     f2 = np.fft.rfftfreq(2*nstep2)
     f2[0] = f2[1] # First element should not be 0
     alpha = -1
-    p_filter2 = np.sqrt(f2**alpha)
+    p_filter2 = f2**alpha
     p_filter2[0] = 0.
-    
+
     # Add correlated pink noise.
     if (c_pink is not None) and (c_pink > 0):
         rng = rng_dict['c_pink']
@@ -2446,7 +2346,7 @@ def gen_dark_ramp(dark, out_shape, tf=10.73677, gain=1, ref_info=None,
     return result 
 
 def sim_dark_ramp(det, slope_image, ramp_avg_ch=None, ramp_avg_tf=10.73677, 
-    out_ADU=False, verbose=False, **kwargs):
+                  out_ADU=False, verbose=False, **kwargs):
     """
     Simulate a dark current ramp based on input det class and a
     super dark image. 
@@ -2474,9 +2374,9 @@ def sim_dark_ramp(det, slope_image, ramp_avg_ch=None, ramp_avg_tf=10.73677,
     out_ADU : bool
         Divide by gain to get value in ADU (float).
     include_poisson : bool
-        Include Poisson noise from photons?
+        Include Poisson noise from photoelectrons?
     verbose : bool
-        Print some messages.
+        Print some info messages.
     """
     
     nchan = det.nout
@@ -2605,11 +2505,12 @@ def apply_flat(cube, det, imflat_full):
     cube : ndarray
         Simulated ramp data in e-. These should be intrinsic
         flux values with Poisson noise, but prior to read noise,
-        kTC, IPC, etc. Size (nz,ny,nx). In det coords.
-        Can either be full frame or match `det` subarray. 
-        Returns `det` subarray shape.
+        kTC, IPC, etc. Size (nz,ny,nx). In 'det' coords.
+        Can either be full frame or match ``det`` subarray. 
+        Returns ``det`` subarray shape.
     det : Detector Class
-        Desired detector class output
+        Desired detector class output. Mainly just utilizes detector
+        subarray position and shape.
     imflat_full : ndarray
         Full field image of flat field in det coords. Will get trimmed
         if necessary.
@@ -2690,8 +2591,8 @@ def add_cosmic_rays(data, scenario='SUNMAX', scale=1, tframe=10.73677, ref_info=
 
             # Add CRs jump to current frame and all sequentional
             # separate into an integers and fractions
-            intx = xpos_rand.astype(np.int)
-            inty = ypos_rand.astype(np.int)
+            intx = xpos_rand.astype(int)
+            inty = ypos_rand.astype(int)
             fracx = xpos_rand - intx
             fracy = ypos_rand - inty
             
@@ -2731,7 +2632,7 @@ def xtalk_image(frame, det, coeffs=None):
     ----------
     frame : ndarray
         An image to calculate and add crosstalk to.
-    det : :class:`pynrc.DetectorOps`
+    det : :class:`~pynrc.DetectorOps`
         Detector class corresponding to data.
     coeffs : None or Table
         Table of coefficients corresponding to detector
@@ -2786,7 +2687,7 @@ def add_xtalk(data, det, coeffs=None):
     ----------
     data : ndarray
         2D or 3D data cube
-    det : :class:`pynrc.DetectorOps`
+    det : :class:`~pynrc.DetectorOps`
         Detector class corresponding to data.
     coeffs : None or Table
         Table of coefficients corresponding to detector
@@ -2819,7 +2720,7 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
                            add_crs=True, cr_model='SUNMAX', cr_scale=1, apply_flats=None, 
                            apply_nonlinearity=True, random_nonlin=False, latents=None,
                            rand_seed=None, return_zero_frame=None, return_full_ramp=False, 
-                           prog_bar=True, **kwargs):
+                           prog_bar=True, super_bias=None, super_dark=None, **kwargs):
     
     """ Return a single simulated ramp
     
@@ -2835,7 +2736,7 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
         Can either be full frame or match `det` subarray. 
         Returns `det` subarray shape.
     cframe : str
-        Coordinate frame of input image, 'sci' or 'det'.
+        Coordinate frame of input slope image, 'sci' or 'det'.
         Output will be in same coordinates.
 
     Keyword Args
@@ -2849,12 +2750,22 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
         frames within the ramp. The last set of `nd2` drop frames are omitted.
     out_ADU : bool
         If true, divide by gain and convert to 16-bit UINT.
-    include_poisson : bool
-        Include photon noise?
+    super_bias : ndarray or None
+        Option to include a custom super bias image. If set to None, then
+        grabs from ``cal_obj``. Can either be same shape as ``im_slope``
+        or full frame version. Values assumed to be in units of DN.
+        Assumed to be in 'det' coordinates.
+    super_dark : ndarray or None
+        Option to include a custom super dark image. If set to None, then
+        grabs from ``cal_obj``. Can either be same shape as ``im_slope``
+        or full frame version. Values assumed to be in units of DN.
+        Assumed to be in 'det' coordinates.
     include_dark : bool
         Add dark current?
     include_bias : bool
         Add detector bias?
+    include_poisson : bool
+        Include photon noise?
     include_ktc : bool
         Add kTC noise?
     include_rn : bool
@@ -2898,6 +2809,7 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
         Show a progress bar for this ramp generation?
     """
     
+    import gc
     from ..reduce.calib import apply_nonlin
 
     ################################
@@ -2905,8 +2817,10 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     dco = cal_obj
 
     # Super bias and darks
-    super_bias = dco.super_bias_deconv # DN
-    super_dark = dco.super_dark_deconv # DN/sec
+    if super_bias is None:
+        super_bias = dco.super_bias_deconv # DN
+    if super_dark is None:
+        super_dark = dco.super_dark_deconv # DN/sec
 
     # IPC/PPC kernel information
     k_ipc = dco.kernel_ipc
@@ -2945,9 +2859,11 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     x1, x2 = (det.x0, det.x0 + nx)
     y1, y2 = (det.y0, det.y0 + ny)
     
-    # Crop super bias and super dark for subarray observations
-    super_bias = super_bias[y1:y2,x1:x2]
-    super_dark = super_dark[y1:y2,x1:x2]
+    # Do we need to crop out subarray?
+    if super_bias.shape!=(ny,nx):
+        super_bias = super_bias[y1:y2,x1:x2]
+    if super_dark.shape!=(ny,nx):
+        super_dark = super_dark[y1:y2,x1:x2]
     
     # Number of total frames up the ramp (including drops)
     ma     = det.multiaccum
@@ -3110,9 +3026,6 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
                                   rand_seed=rseed, verbose=False)
     if prog_bar: pbar.update(1)
 
-
-
-
     ####################
     # Add reference offsets
     if prog_bar: pbar.set_description("Ref Pixel Offsets")
@@ -3154,6 +3067,7 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
     if cframe=='sci':
         data = det_to_sci(data, det.detid)
 
+    gc.collect()
     if return_full_ramp:
         if return_zero_frame:
             return data, data[0].copy()

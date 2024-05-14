@@ -1,4 +1,4 @@
-pynrc.detops.nrc\_header
+﻿pynrc.detops.nrc\_header
 ========================
 
 .. currentmodule:: pynrc.detops

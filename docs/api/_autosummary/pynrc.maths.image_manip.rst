@@ -15,10 +15,14 @@
       :toctree:
    
       align_LSQ
+      align_leastsq
+      crop_image
+      crop_observation
       fix_nans_with_med
       optimal_difference
       scale_ref_image
       shift_subtract
+      subtract_psf
    
    
 

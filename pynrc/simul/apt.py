@@ -18,8 +18,9 @@ import yaml, json
 import pysiaf
 from pysiaf import JWST_PRD_VERSION, rotations, Siaf
 # Create this once since it takes time to call multiple times
-siaf_nrc = Siaf('NIRCam')
-siaf_nrc.generate_toc()
+from ..nrc_utils import siaf_nrc
+# siaf_nrc = Siaf('NIRCam')
+# siaf_nrc.generate_toc()
 
 from astropy.table import Table
 from astropy.io import ascii
@@ -763,7 +764,7 @@ class AptInput:
                 elif line.split()[0] == 'JWST':
                     propid_header = line.split()[7]
                     try:
-                        propid = np.int(propid_header)
+                        propid = int(propid_header)
                     except ValueError:
                         # adopt value passed to function
                         pass
@@ -808,7 +809,7 @@ class AptInput:
                         # These have Exp values of 0. Sigh.
 
 
-                        if ((np.int(elements[1]) > 0) & ('NRC' in elements[4]
+                        if ((int(elements[1]) > 0) & ('NRC' in elements[4]
                                                          or 'NIS' in elements[4]
                                                          or 'FGS' in elements[4]
                                                          or 'NRS' in elements[4]
@@ -838,11 +839,11 @@ class AptInput:
                             # number to be constructed.
                             seq = '1'
                             seq_id.append(seq)
-                            tar.append(np.int(elements[0]))
-                            tile.append(np.int(elements[1]))
+                            tar.append(int(elements[0]))
+                            tile.append(int(elements[1]))
                             exnum = str(elements[2]).zfill(5)
                             exp.append(exnum)
-                            dith.append(np.int(elements[3]))
+                            dith.append(int(elements[3]))
 
                             ap = elements[4]
                             if ('GRISMR_WFSS' in elements[4]):
@@ -851,23 +852,23 @@ class AptInput:
                                 ap = ap.replace('GRISMC_WFSS', 'FULL')
 
                             aperture.append(ap)
-                            targ1.append(np.int(elements[5]))
+                            targ1.append(int(elements[5]))
                             targ2.append(elements[6])
                             ra.append(elements[7])
                             dec.append(elements[8])
                             basex.append(elements[9])
                             basey.append(elements[10])
-                            dithx.append(np.float(elements[11]))
-                            dithy.append(np.float(elements[12]))
-                            v2.append(np.float(elements[13]))
-                            v3.append(np.float(elements[14]))
-                            idlx.append(np.float(elements[15]))
-                            idly.append(np.float(elements[16]))
+                            dithx.append(float(elements[11]))
+                            dithy.append(float(elements[12]))
+                            v2.append(float(elements[13]))
+                            v3.append(float(elements[14]))
+                            idlx.append(float(elements[15]))
+                            idly.append(float(elements[16]))
                             level.append(elements[17])
                             type_str.append(elements[18])
-                            expar.append(np.int(elements[19]))
-                            dkpar.append(np.int(elements[20]))
-                            ddist.append(np.float(elements[21]))
+                            expar.append(int(elements[19]))
+                            dkpar.append(int(elements[20]))
+                            ddist.append(float(elements[21]))
 
                             # For the moment we assume that the instrument being simulated is not being
                             # run in parallel, so the parallel proposal number will be all zeros,
@@ -911,7 +912,8 @@ class AptInput:
 
         # We'll always be changing NIRCam to FGS, so set up the NIRCam siaf
         # instance outside of loop
-        nrc_siaf = Siaf('nircam')['NRCA3_FULL']
+        nrc_ap = siaf_nrc['NRCA3_FULL']
+        # nrc_siaf = Siaf('nircam')['NRCA3_FULL']
 
         ga_index = np.array(obs_dict['APTTemplate']) == 'WfscGlobalAlignment'
 
@@ -937,7 +939,7 @@ class AptInput:
 
             # Update the pointing info for the FGS exposures
             fgs = Siaf('fgs')[fgs_aperture]
-            basex, basey = fgs.tel_to_idl(nrc_siaf.V2Ref, nrc_siaf.V3Ref)
+            basex, basey = fgs.tel_to_idl(nrc_ap.V2Ref, nrc_ap.V3Ref)
             dithx = np.array(obs_dict['dithx'])[obs_indexes[to_fgs]]
             dithy = np.array(obs_dict['dithy'])[obs_indexes[to_fgs]]
             idlx = basex + dithx
@@ -1217,7 +1219,7 @@ class ReadAPTXML():
 
         # Proposal ID
         try:
-            prop_id = '{:05d}'.format(np.int(proposal_info.find(self.apt + 'ProposalID').text))
+            prop_id = '{:05d}'.format(int(proposal_info.find(self.apt + 'ProposalID').text))
         except:
             prop_id = '{:05d}'.format(propid_default)
 
@@ -1355,7 +1357,7 @@ class ReadAPTXML():
                 self.target_info[targ_name] = ('0', '0')
 
             # extract visit numbers
-            visit_numbers = [np.int(element.items()[0][1]) for element in obs if
+            visit_numbers = [int(element.items()[0][1]) for element in obs if
                              element.tag.split(self.apt)[1] == 'Visit']
 
             prop_params = [pi_name, prop_id, prop_title, prop_category,
@@ -1677,7 +1679,7 @@ class ReadAPTXML():
 
                 # Deal with cases like 2TIGHTGAPS, 8NIRSPEC, etc.
                 try:
-                    test = np.int(number_of_primary_dithers)
+                    test = int(number_of_primary_dithers)
                 except ValueError:
                     number_of_primary_dithers = observation_dict[dither_key_name][0]
 
@@ -1690,9 +1692,9 @@ class ReadAPTXML():
                     # Handle the special case for MIRI
                     number_of_subpixel_dithers = 3
                 elif "-WITH-NIRISS" in observation_dict['SubpixelDitherType']:
-                    number_of_subpixel_dithers = np.int(observation_dict['SubpixelDitherType'][0])
+                    number_of_subpixel_dithers = int(observation_dict['SubpixelDitherType'][0])
                 elif observation_dict['SubpixelDitherType'] in ['STANDARD', 'IMAGING', 'SMALL-GRID-DITHER']:
-                    number_of_subpixel_dithers = np.int(observation_dict['SubpixelPositions'])
+                    number_of_subpixel_dithers = int(observation_dict['SubpixelPositions'])
             else:
                 # For parallel instrument we ignore any dither info and set values to 0
                 number_of_primary_dithers = 0
@@ -1712,16 +1714,16 @@ class ReadAPTXML():
                     # In the case where PrimaryDithers is e.g. 2-POINT-WITH-NIRCam,
                     # extract the '2' and place it in the PrimaryDithers field
                     try:
-                        int_dithers = np.int(observation_dict['PrimaryDithers'])
+                        int_dithers = int(observation_dict['PrimaryDithers'])
                     except ValueError:
                         observation_dict['PrimaryDitherType'] = copy.deepcopy(observation_dict['PrimaryDithers'])
                         observation_dict['PrimaryDithers'] = observation_dict['PrimaryDithers'][0]
                     observation_dict['DitherSize'] = prime_template.find(prime_ns + 'DitherSize').text
-                    number_of_primary_dithers = np.int(observation_dict['PrimaryDithers'][0])
+                    number_of_primary_dithers = int(observation_dict['PrimaryDithers'][0])
                     number_of_subpixel_dithers = 1
 
             # Combine primary and subpixel dithers
-            number_of_dithers = str(np.int(number_of_primary_dithers) * number_of_subpixel_dithers)
+            number_of_dithers = str(int(number_of_primary_dithers) * number_of_subpixel_dithers)
             self.logger.info('Number of dithers: {} primary * {} subpixel = {}'.format(number_of_primary_dithers,
                                                                                        number_of_subpixel_dithers,
                                                                                        number_of_dithers))
@@ -1827,7 +1829,7 @@ class ReadAPTXML():
                     number_of_primary_dithers = int(element.text)
                 elif element_tag_stripped == 'SubpixelPositions':
                     if element.text != 'NONE':
-                        number_of_subpixel_positions = np.int(element.text)
+                        number_of_subpixel_positions = int(element.text)
                 elif element_tag_stripped == 'PrimaryDithers':
                     if (element.text is not None) & (element.text != 'NONE'):
                         number_of_primary_dithers = int(element.text)
@@ -1876,7 +1878,7 @@ class ReadAPTXML():
                         if (number_of_dithers is None) | (number_of_dithers == 'NONE'):
                             number_of_dithers = 1 * number_of_subpixel_positions
 
-                        exposure_dict[dither_key_name] = np.int(number_of_dithers)
+                        exposure_dict[dither_key_name] = int(number_of_dithers)
                         exposure_dict['number_of_dithers'] = exposure_dict[dither_key_name]
 
                         for exposure_parameter in exposure:
@@ -3090,7 +3092,7 @@ class ReadAPTXML():
             astrometric_exp_dict = {}
             astrometric_exposures = copy.deepcopy(self.empty_exposures_dictionary)
 
-            astrometric_exp_dict[dither_key_name] = np.int(number_of_astrometric_dithers)
+            astrometric_exp_dict[dither_key_name] = int(number_of_astrometric_dithers)
             astrometric_exp_dict['number_of_dithers'] = astrometric_exp_dict[dither_key_name]
             astrometric_exp_dict[filter_key_name] = ta_filter
             astrometric_exp_dict['ReadoutPattern'] = astrom_readout_pattern
@@ -3140,7 +3142,7 @@ class ReadAPTXML():
                 exposure_dict = {}
 
                 # Load dither information into dictionary
-                exposure_dict[dither_key_name] = np.int(number_of_dithers)
+                exposure_dict[dither_key_name] = int(number_of_dithers)
                 exposure_dict['number_of_dithers'] = exposure_dict[dither_key_name]
                 exposure_dict['SubpixelDitherType'] = subpix_dither_type
                 exposure_dict['ReadoutPattern'] = element.find(ncc + 'ReadoutPattern').text
@@ -3376,7 +3378,7 @@ class ReadAPTXML():
                 exposure_dict = {}
 
                 # Load dither information into dictionary
-                exposure_dict[dither_key_name] = np.int(number_of_dithers)
+                exposure_dict[dither_key_name] = int(number_of_dithers)
                 exposure_dict['number_of_dithers'] = exposure_dict[dither_key_name]
                 exposure_dict['SubpixelDitherType'] = subpix_dither_type
                 exposure_dict['ReadoutPattern'] = element.find(mc + 'ReadoutPattern').text
@@ -3657,11 +3659,11 @@ class ReadAPTXML():
         if primary_dithers.upper() != 'NONE':
             number_of_primary_dithers = int(primary_dithers)
         if subpix_dithers.upper() != 'NONE':
-            number_of_subpixel_dithers = np.int(subpix_dithers)
+            number_of_subpixel_dithers = int(subpix_dithers)
         if direct_imaging.upper() == 'TRUE':
             image_dithers = template.find(ns + 'ImageDithers').text
             if image_dithers.upper() != 'NONE':
-                number_of_direct_dithers = np.int(image_dithers)
+                number_of_direct_dithers = int(image_dithers)
             else:
                 number_of_direct_dithers = 1
 
@@ -3720,11 +3722,11 @@ class ReadAPTXML():
                     direct_dict = {}
 
                     # Load dither information into dictionary
-                    exposure_dict[dither_key_name] = np.int(number_of_dithers)
+                    exposure_dict[dither_key_name] = int(number_of_dithers)
                     exposure_dict['number_of_dithers'] = exposure_dict[dither_key_name]
 
                     if direct_imaging.upper() == 'TRUE':
-                        direct_dict[dither_key_name] = np.int(number_of_direct_dithers)
+                        direct_dict[dither_key_name] = int(number_of_direct_dithers)
                         direct_dict['number_of_dithers'] = direct_dict[dither_key_name]
 
                     # Store all entries in exposure_dict as lists, so that everything
@@ -3902,7 +3904,7 @@ class ReadAPTXML():
             dither_direct = prime_template.find(prime_ns + 'DitherNirissWfssDirectImages').text
             sdither_type_grism = prime_template.find(prime_ns + 'CoordinatedParallelSubpixelPositions').text
             try:
-                sdither_grism = str(np.int(sdither_type_grism[0]))
+                sdither_grism = str(int(sdither_type_grism[0]))
             except ValueError:
                 sdither_grism = prime_template.find(prime_ns + 'SubpixelPositions').text
         else:
@@ -3925,14 +3927,14 @@ class ReadAPTXML():
             # (e.g. '2-POINT-LARGE-NIRCam')
             dvalue = template.find(ns + 'PrimaryDithers').text
             try:
-                pdither_grism = str(np.int(dvalue))
+                pdither_grism = str(int(dvalue))
             except ValueError:
                 # When NIRISS is prime with NIRCam parallel, the PrimaryDithers field can be
                 # (e.g. '2-POINT-LARGE-NIRCAM'), where the first character is always the number
                 # of dither positions. Not sure how to save both this name as well as the DitherSize
                 # value. I don't think there are header keywords for both, with PATTTYPE being the
                 # only keyword for dither pattern names.
-                pdither_grism = str(np.int(dvalue[0]))
+                pdither_grism = str(int(dvalue[0]))
 
         # Check if this observation has parallels
         coordinated_parallel = obs.find(self.apt + 'CoordinatedParallel').text
@@ -4243,8 +4245,8 @@ def _make_start_times(obs_info):
 
         # Find the readpattern of the file
         readpatt = obs_info['ReadoutPattern'][i]
-        groups = np.int(obs_info['Groups'][i])
-        integrations = np.int(obs_info['Integrations'][i])
+        groups = int(obs_info['Groups'][i])
+        integrations = int(obs_info['Integrations'][i])
 
         if instrument.lower() in ['miri', 'nirspec']:
             nframe.append(0)
@@ -4275,8 +4277,8 @@ def _make_start_times(obs_info):
                                     .format(readpatt)))
 
             # Now get nframe and nskip so we know how many frames in a group
-            fpg = np.int(readpatt_def['nframe'][match2][0])
-            spg = np.int(readpatt_def['nskip'][match2][0])
+            fpg = int(readpatt_def['nframe'][match2][0])
+            spg = int(readpatt_def['nskip'][match2][0])
             nframe.append(fpg)
             nskip.append(spg)
 
@@ -4600,7 +4602,7 @@ def get_pointing_info(pointing_files, propid=0, verbose=False, all_inst=False):
             elif line.split()[0] == 'JWST':
                 propid_header = line.split()[7]
                 try:
-                    propid = np.int(propid_header)
+                    propid = int(propid_header)
                 except ValueError:
                     # adopt value passed to function
                     pass
@@ -4641,10 +4643,14 @@ def get_pointing_info(pointing_files, propid=0, verbose=False, all_inst=False):
 
                     # Only care about NIRCam
                     if all_inst:
-                        do_this = (np.int(elements[1]) > 0)
+                        do_this = (int(elements[1]) > 0)
                     else:
-                        do_this = ((np.int(elements[1]) > 0) & ('NRC' in elements[4])) or \
+                        do_this = ((int(elements[1]) > 0) & ('NRC' in elements[4])) or \
                             (('TA' in elements[4]) & ('NRC' in elements[4]))
+
+                    # Skip visit name lines that might sneak past above
+                    if line[0:2] == '* ':
+                        do_this = False
 
                     if do_this:
 
@@ -4685,11 +4691,11 @@ def get_pointing_info(pointing_files, propid=0, verbose=False, all_inst=False):
 
                         # Set activity ID to 1
 
-                        tar.append(np.int(elements[0]))
-                        tile.append(np.int(elements[1]))
-                        exnum = np.int(elements[2])
+                        tar.append(int(elements[0]))
+                        tile.append(int(elements[1]))
+                        exnum = int(elements[2])
                         # exp.append(str(exnum).zfill(5))
-                        dith_pos = np.int(elements[3])
+                        dith_pos = int(elements[3])
                         dith.append(dith_pos)
                         # If pointing file exp and dith are both 1, then reset exposure num to 1
                         # otherwise increment by 1.
@@ -4712,23 +4718,23 @@ def get_pointing_info(pointing_files, propid=0, verbose=False, all_inst=False):
                         #     ap = ap.replace('GRISMC_WFSS', 'FULL')
 
                         aperture.append(ap)
-                        targ1.append(np.int(elements[5]))
+                        targ1.append(int(elements[5]))
                         targ2.append(elements[6])
-                        ra.append(np.float(elements[7]))
-                        dec.append(np.float(elements[8]))
-                        basex.append(np.float(elements[9]))
-                        basey.append(np.float(elements[10]))
-                        dithx.append(np.float(elements[11]))
-                        dithy.append(np.float(elements[12]))
-                        v2.append(np.float(elements[13]))
-                        v3.append(np.float(elements[14]))
-                        idlx.append(np.float(elements[15]))
-                        idly.append(np.float(elements[16]))
+                        ra.append(float(elements[7]))
+                        dec.append(float(elements[8]))
+                        basex.append(float(elements[9]))
+                        basey.append(float(elements[10]))
+                        dithx.append(float(elements[11]))
+                        dithy.append(float(elements[12]))
+                        v2.append(float(elements[13]))
+                        v3.append(float(elements[14]))
+                        idlx.append(float(elements[15]))
+                        idly.append(float(elements[16]))
                         level_arr.append(level)
                         type_str.append(elements[18])
-                        expar.append(np.int(elements[19]))
-                        dkpar.append(np.int(elements[20]))
-                        ddist.append(np.float(elements[21]))
+                        expar.append(int(elements[19]))
+                        dkpar.append(int(elements[20]))
+                        ddist.append(float(elements[21]))
 
                         # For the moment we assume that the instrument being simulated is not being
                         # run in parallel, so the parallel proposal number will be all zeros,
@@ -4754,7 +4760,8 @@ def get_pointing_info(pointing_files, propid=0, verbose=False, all_inst=False):
                             expnum = 1 # Reset exposure counter
                         # Increment activity coun
                         elif type_val=='CONFIRM':
-                            act_counter += 1 
+                            if 'TA' in ap:
+                                act_counter += 1 
                             expnum = 1 # Reset exposure counter
 
                 except ValueError as e:
@@ -4857,6 +4864,58 @@ def get_siaf_detectors(apname):
     else:
         return [detid]
 
+def update_subarray_imaging(visit_dict):
+    """Update detectors and apertures used or subaray observations"""
+
+    apt_template = visit_dict.get('APTTemplate')
+    if (apt_template is not None) and ('nircamimaging' not in apt_template.lower()):
+        _log.warn(f'APT template {apt_template} is not NircamImaging. Returning...')
+        return
+
+    # Update names of apertures and detectors
+    apertures = []
+    detectors = []
+    for i, subname in enumerate(visit_dict['subarray_name']):
+        if subname=='FULL':
+            if mod=='A':
+                aps = 'NRCAS_FULL'
+            elif mod=='B':
+                aps = 'NRCBS_FULL'
+            else:
+                aps = 'NRCALL_FULL'
+
+            dets = get_siaf_detectors(aps)
+        elif ('SUB' in subname):
+            mod = visit_dict['ModuleAPT'][i]
+            pix = subname[3:]
+            subp = subname[-1]=='P'
+            if subp:
+                pix = pix[:-1]
+
+            if subp:
+                aps_amod = [f'NRCA{j}_SUB{pix}P' for j in [3,5]]
+                aps_bmod = [f'NRCB{j}_SUB{pix}P' for j in [1,5]]
+            else:
+                aps_amod = [f'NRCA{j}_SUB{pix}' for j in [1,2,3,4,5]]
+                aps_bmod = [f'NRCB{j}_SUB{pix}' for j in [1,2,3,4,5]]
+
+            if mod=='A':
+                aps = aps_amod
+            elif mod=='B':
+                aps = aps_bmod
+            else:
+                aps = aps_amod + aps_bmod
+
+            # Get detector name for each aperture
+            dets = [get_siaf_detectors(ap)[0] for ap in aps]
+
+        apertures.append(aps)
+        detectors.append(dets)
+
+    visit_dict['aperture'] = np.array(apertures)
+    visit_dict['detectors'] = np.array(detectors)
+
+
 def update_eng_detectors(visit_dict):
     """Update detectors used for engineering templates
     
@@ -4872,12 +4931,20 @@ def update_eng_detectors(visit_dict):
         _log.warn(f'APT template {apt_template} is not Engineering. Returning...')
         return
     
-    det_amod = ['NRCA1', 'NRCA2', 'NRCA3', 'NRCA4', 'NRCA5']
-    det_bmod = ['NRCB1', 'NRCB2', 'NRCB3', 'NRCB4', 'NRCB5']
-
     # Update detectors used
     detectors = []
-    for mod in visit_dict['ModuleAPT']:
+    for i, mod in enumerate(visit_dict['ModuleAPT']):
+
+        swpupil = visit_dict['sw_pupils'][i]
+        if ('MASKRND' in swpupil) or ('MASKBAR' in swpupil):
+            # det_amod = ['NRCA2', 'NRCA4', 'NRCA5']
+            # det_bmod = ['NRCB1', 'NRCB3', 'NRCB5']
+            det_amod = ['NRCA1', 'NRCA2', 'NRCA3', 'NRCA4', 'NRCA5']
+            det_bmod = ['NRCB1', 'NRCB2', 'NRCB3', 'NRCB4', 'NRCB5']
+        else:
+            det_amod = ['NRCA1', 'NRCA2', 'NRCA3', 'NRCA4', 'NRCA5']
+            det_bmod = ['NRCB1', 'NRCB2', 'NRCB3', 'NRCB4', 'NRCB5']
+
         if mod=='A':
             dets = det_amod
         elif mod=='B':
@@ -5237,6 +5304,7 @@ def gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file, rand_se
                 d[k] = dith_info[k][ind]#[0]
 
         # Add a random seed for random dither offsets and noise
+        d['rand_seed_init']  = rand_seed
         d['rand_seed_dith']  = rng.integers(0, 2**32-1)
         d['rand_seed_noise'] = rng.integers(0, 2**32-1)
             
@@ -5265,6 +5333,8 @@ def gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file, rand_se
         template_name = d.get(template_key)
         if (template_name is not None) and ('engineering' in template_name.lower()):
             update_eng_detectors(d)
+        elif (template_name is not None) and ('nircamimaging' in template_name.lower()):
+            update_subarray_imaging(d)
 
     return visits_dict
 
@@ -5677,7 +5747,7 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs='12:00:0
     int_range : list
         Integration indices to use 
     obs_params : dict
-        An initial obs_params dictionary. Any duplicate keywords will be
+        An initial ``obs_params`` dictionary. Any duplicate keywords will be
         updated.
     """
 
@@ -5710,6 +5780,7 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs='12:00:0
     obs_label     = visit_dict['obs_label'][ind_mask][0]
 
     # Get siaf aperture names
+    # First, do reference aperture
     exp_apnames = visit_dict['aperture'][ind_mask]
     if exp_apnames.size==1:
         apname = visit_dict['aperture'][ind_mask][0]
@@ -5717,9 +5788,31 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs='12:00:0
         ind_det = (visit_dict['detectors'][ind_mask] == det_id)
         apname = visit_dict['aperture'][ind_mask][ind_det][0]
     siaf_ap_ref = siaf_nrc[apname]
+
+    # Next, update observed aperture
     if ('NRCAS' in apname) or ('NRCBS' in apname) or ('NRCALL' in apname):
-        apname = det_id + '_FULL'
-    # pysiaf aperture
+        # Account for coronagraphic masks in engineering templates
+        # No SIAF aperture for B Module
+        sw_pupil = visit_dict['sw_pupils'][ind_mask][0]
+        lw_pupil = visit_dict['lw_pupils'][ind_mask][0]
+        if ('A5' in det_id) and lw_pupil=='MASKRND':
+            apname = 'NRCA5_FULL_MASK335R'
+        elif ('A5' in det_id) and lw_pupil=='MASKBAR':
+            apname = 'NRCA5_FULL_MASKLWB'
+        elif ('A2' in det_id) and ('MASK' in sw_pupil):
+            apname = 'NRCA2_FULL_MASK210R'
+        elif ('A4' in det_id) and ('MASK' in sw_pupil):
+            apname = 'NRCA4_FULL_MASKSWB'
+        else:
+            apname = det_id + '_FULL'
+    
+        #  Check if any of the above apertures throws an exception
+        try:
+            _ = siaf_nrc[apname]
+        except:
+            apname_new = det_id + '_FULL'
+            _log.error(f'{apname} does not exist. Falling back to {apname_new}.')
+            apname = apname_new
     siaf_ap = siaf_nrc[apname]
 
     # Subarray name
@@ -6014,7 +6107,8 @@ class DMS_input():
         self.proposal_info = get_proposal_info(xml_file)
         # Series of dictionaries, one per visit
         # Dictionaries are ordered according to smart accounting order information
-        self.program_info = gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file, rand_seed=rand_seed_init)
+        self.program_info = gen_all_apt_visits(xml_file, pointing_file, sm_acct_file, json_file, 
+                                               rand_seed=rand_seed_init)
 
         # Create unique labels for each exposure
         self.labels = self._gen_obs_labels()
@@ -6095,16 +6189,29 @@ class DMS_input():
                        grp_id=1, seq_id=1, act_id='01'):
         """Generate a single set of observation parameters for a given exposure"""
 
+        # Visit dictionary
+        visit_dict = self.program_info[visit_id]
+
         kwargs = self.proposal_info
         date_obs = self.obs_date
         time_obs = self.obs_time
         pa_v3 = self.pa_v3
 
+        # observation id information
         kwargs['grp_id'] = grp_id
         kwargs['seq_id'] = seq_id
         kwargs['act_id'] = act_id
+        act_int = int(act_id, 36) # Convert base 36 to integer number
 
-        visit_dict = self.program_info[visit_id]
+        # Populate random seed information
+        nexp = len(visit_dict['obs_id_info'])
+        rand_seed_noise = visit_dict.get('rand_seed_noise')
+        if rand_seed_noise is not None:
+            rand_seed_noise_j = rand_seed_noise + int(grp_id)*act_int*nexp + int(exp_id)
+            kwargs['rand_seed_noise'] = rand_seed_noise_j
+        kwargs['rand_seed_init']  = visit_dict.get('rand_seed_init')
+        kwargs['rand_seed_dith']  = visit_dict.get('rand_seed_dith')
+
         detname = get_detname(det_id)
         res = populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs=time_obs, pa_v3=pa_v3, 
                                   det=det, segNum=seg_num, segTot=seg_tot, int_range=int_range, **kwargs)
@@ -6220,7 +6327,7 @@ class DMS_input():
 
 def gen_pointing_info(*args, **kwargs):
     """
-    **Deprecated. Use ``gen_jwst_pointing`` instead.**
+    **Deprecated. Use :func:`gen_jwst_pointing` instead.**
     Create telescope pointing sequence for a given visit / exposure.
     """
 
@@ -6228,7 +6335,7 @@ def gen_pointing_info(*args, **kwargs):
     return gen_jwst_pointing(*args, **kwargs)
 
 def gen_jwst_pointing(visit_dict, obs_params, base_std=None, dith_std=None, 
-                      rand_seed=None, rand_seed_base=None):
+                      rand_seed=None, rand_seed_base=None, **kwargs):
     """
     Create telescope pointing sequence for a given visit / exposure.
 
@@ -6290,7 +6397,7 @@ def gen_jwst_pointing(visit_dict, obs_params, base_std=None, dith_std=None,
 
 def get_tel_angles(ra, dec, obs_date='2022-03-01', obs_time='12:00:00'):
     """
-    For a given RA, Dec and date, return the telescope pitch and V3 PA angles.
+    For a given RA, Dec and date, return the nominal telescope pitch and V3 PA angles.
     """
     
     import datetime

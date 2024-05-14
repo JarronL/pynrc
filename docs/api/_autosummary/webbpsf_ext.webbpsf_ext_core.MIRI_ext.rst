@@ -1,4 +1,4 @@
-webbpsf\_ext.webbpsf\_ext\_core.MIRI\_ext
+﻿webbpsf\_ext.webbpsf\_ext\_core.MIRI\_ext
 =========================================
 
 .. currentmodule:: webbpsf_ext.webbpsf_ext_core
@@ -18,6 +18,7 @@ webbpsf\_ext.webbpsf\_ext\_core.MIRI\_ext
    
       ~MIRI_ext.__init__
       ~MIRI_ext.calc_datacube
+      ~MIRI_ext.calc_datacube_fast
       ~MIRI_ext.calc_psf
       ~MIRI_ext.calc_psf_from_coeff
       ~MIRI_ext.calc_psfs_grid
@@ -33,8 +34,11 @@ webbpsf\_ext.webbpsf\_ext\_core.MIRI\_ext
       ~MIRI_ext.get_opd_file_full_path
       ~MIRI_ext.get_opd_info
       ~MIRI_ext.get_optical_system
+      ~MIRI_ext.get_wfe
       ~MIRI_ext.interpolate_was_opd
-      ~MIRI_ext.load_was_opd
+      ~MIRI_ext.load_wss_opd
+      ~MIRI_ext.load_wss_opd_by_date
+      ~MIRI_ext.plot_bandpass
       ~MIRI_ext.psf_grid
       ~MIRI_ext.set_position_from_aperture_name
       ~MIRI_ext.visualize_wfe_budget
@@ -74,6 +78,7 @@ webbpsf\_ext.webbpsf\_ext\_core.MIRI\_ext
       ~MIRI_ext.siaf_ap
       ~MIRI_ext.slowaxis
       ~MIRI_ext.telescope
+      ~MIRI_ext.use_fov_pix_plus1
       ~MIRI_ext.wave_fit
       ~MIRI_ext.include_ote_field_dependence
       ~MIRI_ext.image_mask_list

@@ -1,4 +1,4 @@
-pynrc.detops.config2
+﻿pynrc.detops.config2
 ====================
 
 .. currentmodule:: pynrc.detops
