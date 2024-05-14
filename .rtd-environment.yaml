@@ -1,12 +1,12 @@
 name: pynrc
 
 dependencies:
-    - python>=3.8
+    - python>=3.11
     - numpy>=1.24
-    - matplotlib>=3.7.0
+    - matplotlib>=3.7.1
     - scipy>=1.5.0
     - tqdm>4
-    - astropy>=5.2
+    - astropy>=5.3
     - Cython
     - pip
     - pip:
@@ -17,7 +17,8 @@ dependencies:
         - docutils==0.18
         - astroquery>=0.4.6
         - synphot>=1.2
+        - stsynphot>=1.2
         - poppy>=1.1.0
         - webbpsf>=1.2.0
         - jwst>=1.10
-        - webbpsf_ext>=1.1.0
+        - webbpsf_ext>=1.2.0
