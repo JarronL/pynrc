@@ -1,0 +1,2665 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Produced with astropy.io.votable version 5.3
+     http://www.astropy.org/ -->
+<VOTABLE version="1.4" xmlns="http://www.ivoa.net/xml/VOTable/v1.3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.ivoa.net/xml/VOTable/v1.3 http://www.ivoa.net/xml/VOTable/VOTable-1.4.xsd">
+ <RESOURCE type="results">
+  <TABLE ID="VizieR_0" name="allVizieR">
+   <DESCRIPTION>
+    all VizieR catalogues
+   </DESCRIPTION>
+   <FIELD ID="_RAJ2000" datatype="double" name="_RAJ2000" precision="10" ucd="pos.eq.ra" unit="deg" width="14">
+    <DESCRIPTION>
+     Right ascension (FK5, Equinox=J2000.0) at Epoch=J2000, proper
+     motions taken into account
+    </DESCRIPTION>
+   </FIELD>
+   <FIELD ID="_DEJ2000" datatype="double" name="_DEJ2000" precision="10" ucd="pos.eq.dec" unit="deg" width="14">
+    <DESCRIPTION>
+     Declination (FK5, Equinox=J2000.0) at Epoch=J2000, proper motions
+     taken into account
+    </DESCRIPTION>
+   </FIELD>
+   <FIELD ID="_tabname" arraysize="32" datatype="char" name="_tabname" ucd="meta.table">
+    <DESCRIPTION>
+     Table name
+    </DESCRIPTION>
+    <LINK href="http://vizier.cds.unistra.fr/viz-bin/VizieR-5?-info=XML&amp;-out.add=.&amp;-source=${_tabname}&amp;${_ID}"/>
+   </FIELD>
+   <FIELD ID="_ID" arraysize="64" datatype="char" name="_ID" ucd="meta.id">
+    <DESCRIPTION>
+     String which identifies the row
+    </DESCRIPTION>
+   </FIELD>
+   <FIELD ID="_tab15_64" datatype="double" name="_tab15_64" precision="6" ucd="time.epoch" unit="d" width="14">
+    <DESCRIPTION>
+     time (JD) in TCB/barycenter
+    </DESCRIPTION>
+   </FIELD>
+   <FIELD ID="_tab15_65" datatype="double" name="_tab15_65" precision="1" ucd="stat.error;time.epoch" unit="---" width="7">
+    <DESCRIPTION>
+     time error (uncertainty and time conversion)
+    </DESCRIPTION>
+   </FIELD>
+   <FIELD ID="sed_freq" datatype="double" name="sed_freq" precision="E6" ucd="em.freq" unit="GHz" width="10">
+    <DESCRIPTION>
+     Mean frequency, in GHz
+    </DESCRIPTION>
+   </FIELD>
+   <FIELD ID="sed_flux" datatype="float" name="sed_flux" precision="E3" ucd="phot.flux.density" unit="Jy" width="9">
+    <DESCRIPTION>
+     Corresponding flux density, in Jy
+    </DESCRIPTION>
+   </FIELD>
+   <FIELD ID="sed_eflux" datatype="float" name="sed_eflux" precision="E2" ucd="stat.error;phot.flux.density" unit="Jy" width="8">
+    <DESCRIPTION>
+     Mean error (standard deviations) of flux density
+    </DESCRIPTION>
+   </FIELD>
+   <FIELD ID="sed_filter" arraysize="32" datatype="char" name="sed_filter" ucd="meta.id;instr.filter" unit="---" width="32">
+    <DESCRIPTION>
+     Filter designation, in the form photoSystem:filterName; a
+     designation starting by ':=' is an assumed monochromatic point;
+     this column is empty when the frequency is specified for each
+     data point.
+    </DESCRIPTION>
+    <LINK href="http://cdsarc.u-strasbg.fr/viz-bin/metafilter?${_sed_filter}"/>
+   </FIELD>
+   <DATA>
+    <TABLEDATA>
+     <TR>
+      <TD>160.9069955189</TD>
+      <TD>-30.8674386780</TD>
+      <TD>I/239/tyc_main</TD>
+      <TD>recno=747236</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    541430</TD>
+      <TD>     4.42</TD>
+      <TD/>
+      <TD>Johnson:V</TD>
+     </TR>
+     <TR>
+      <TD>160.9069955189</TD>
+      <TD>-30.8674386780</TD>
+      <TD>I/239/tyc_main</TD>
+      <TD>recno=747236</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    563630</TD>
+      <TD>     3.89</TD>
+      <TD>    0.03</TD>
+      <TD>HIP:VT</TD>
+     </TR>
+     <TR>
+      <TD>160.9069955189</TD>
+      <TD>-30.8674386780</TD>
+      <TD>I/239/tyc_main</TD>
+      <TD>recno=747236</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    713280</TD>
+      <TD>    0.772</TD>
+      <TD>    0.01</TD>
+      <TD>HIP:BT</TD>
+     </TR>
+     <TR>
+      <TD>160.9069833300</TD>
+      <TD>-30.8674361100</TD>
+      <TD>I/270/cpirss01</TD>
+      <TD>recno=25530</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    2940.6</TD>
+      <TD>        1</TD>
+      <TD/>
+      <TD>IRAS:100</TD>
+     </TR>
+     <TR>
+      <TD>160.9069833300</TD>
+      <TD>-30.8674361100</TD>
+      <TD>I/270/cpirss01</TD>
+      <TD>recno=25530</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    4847.1</TD>
+      <TD>      0.4</TD>
+      <TD/>
+      <TD>IRAS:60</TD>
+     </TR>
+     <TR>
+      <TD>160.9069833300</TD>
+      <TD>-30.8674361100</TD>
+      <TD>I/270/cpirss01</TD>
+      <TD>recno=25530</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     12554</TD>
+      <TD>    0.322</TD>
+      <TD/>
+      <TD>IRAS:25</TD>
+     </TR>
+     <TR>
+      <TD>160.9069833300</TD>
+      <TD>-30.8674361100</TD>
+      <TD>I/270/cpirss01</TD>
+      <TD>recno=25530</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     25866</TD>
+      <TD>     1.42</TD>
+      <TD/>
+      <TD>IRAS:12</TD>
+     </TR>
+     <TR>
+      <TD>160.9069892401</TD>
+      <TD>-30.8674345437</TD>
+      <TD>I/280B/ascc</TD>
+      <TD>recno=1757642</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    138550</TD>
+      <TD>     20.3</TD>
+      <TD>     0.7</TD>
+      <TD>2MASS:Ks</TD>
+     </TR>
+     <TR>
+      <TD>160.9069892401</TD>
+      <TD>-30.8674345437</TD>
+      <TD>I/280B/ascc</TD>
+      <TD>recno=1757642</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    181750</TD>
+      <TD>     28.7</TD>
+      <TD>     6.2</TD>
+      <TD>2MASS:H</TD>
+     </TR>
+     <TR>
+      <TD>160.9069892401</TD>
+      <TD>-30.8674345437</TD>
+      <TD>I/280B/ascc</TD>
+      <TD>recno=1757642</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    241960</TD>
+      <TD>     18.1</TD>
+      <TD>     3.6</TD>
+      <TD>2MASS:J</TD>
+     </TR>
+     <TR>
+      <TD>160.9069842600</TD>
+      <TD>-30.8674369800</TD>
+      <TD>I/294A/ucac2bss</TD>
+      <TD>recno=32360</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    181750</TD>
+      <TD>     28.7</TD>
+      <TD/>
+      <TD>2MASS:H</TD>
+     </TR>
+     <TR>
+      <TD>160.9069842600</TD>
+      <TD>-30.8674369800</TD>
+      <TD>I/294A/ucac2bss</TD>
+      <TD>recno=32360</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    241960</TD>
+      <TD>     18.1</TD>
+      <TD/>
+      <TD>2MASS:J</TD>
+     </TR>
+     <TR>
+      <TD>160.9069842600</TD>
+      <TD>-30.8674369800</TD>
+      <TD>I/294A/ucac2bss</TD>
+      <TD>recno=32360</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    563630</TD>
+      <TD>     3.92</TD>
+      <TD/>
+      <TD>HIP:VT</TD>
+     </TR>
+     <TR>
+      <TD>160.9069842600</TD>
+      <TD>-30.8674369800</TD>
+      <TD>I/294A/ucac2bss</TD>
+      <TD>recno=32360</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    713280</TD>
+      <TD>    0.765</TD>
+      <TD/>
+      <TD>HIP:BT</TD>
+     </TR>
+     <TR>
+      <TD>160.9069842000</TD>
+      <TD>-30.8674372000</TD>
+      <TD>I/297/out</TD>
+      <TD>NOMAD1===0591-0260274&amp;-c=160.9069842 -30.8674372,eq=J2000&amp;-c.rs=</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    138550</TD>
+      <TD>     20.3</TD>
+      <TD/>
+      <TD>2MASS:Ks</TD>
+     </TR>
+     <TR>
+      <TD>160.9069842000</TD>
+      <TD>-30.8674372000</TD>
+      <TD>I/297/out</TD>
+      <TD>NOMAD1===0591-0260274&amp;-c=160.9069842 -30.8674372,eq=J2000&amp;-c.rs=</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    181750</TD>
+      <TD>     28.7</TD>
+      <TD/>
+      <TD>2MASS:H</TD>
+     </TR>
+     <TR>
+      <TD>160.9069842000</TD>
+      <TD>-30.8674372000</TD>
+      <TD>I/297/out</TD>
+      <TD>NOMAD1===0591-0260274&amp;-c=160.9069842 -30.8674372,eq=J2000&amp;-c.rs=</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    241960</TD>
+      <TD>     18.1</TD>
+      <TD/>
+      <TD>2MASS:J</TD>
+     </TR>
+     <TR>
+      <TD>160.9069850000</TD>
+      <TD>-30.8674350000</TD>
+      <TD>I/305/out</TD>
+      <TD>GSC2.3===S597000349&amp;-c=160.906985 -30.867435,eq=J2000&amp;-c.rs=0.00</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    674900</TD>
+      <TD>    0.827</TD>
+      <TD>   0.015</TD>
+      <TD>Johnson:B</TD>
+     </TR>
+     <TR>
+      <TD>160.9069910000</TD>
+      <TD>-30.8674340000</TD>
+      <TD>I/305/out</TD>
+      <TD>GSC2.3===S597019606&amp;-c=160.906991 -30.867434,eq=J2000&amp;-c.rs=0.00</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    674900</TD>
+      <TD>     1.29</TD>
+      <TD>    0.01</TD>
+      <TD>Johnson:B</TD>
+     </TR>
+     <TR>
+      <TD>160.9069910000</TD>
+      <TD>-30.8674340000</TD>
+      <TD>I/305/out</TD>
+      <TD>GSC2.3===S597021035&amp;-c=160.906991 -30.867434,eq=J2000&amp;-c.rs=0.00</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    674900</TD>
+      <TD>     1.29</TD>
+      <TD>    0.01</TD>
+      <TD>Johnson:B</TD>
+     </TR>
+     <TR>
+      <TD>160.9069890000</TD>
+      <TD>-30.8674320000</TD>
+      <TD>I/317/sample</TD>
+      <TD>PPMXL===3574437914115054963&amp;-c=160.906989 -30.867432,eq=J2000&amp;-c</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    138550</TD>
+      <TD>     20.3</TD>
+      <TD>     0.7</TD>
+      <TD>2MASS:Ks</TD>
+     </TR>
+     <TR>
+      <TD>160.9069890000</TD>
+      <TD>-30.8674320000</TD>
+      <TD>I/317/sample</TD>
+      <TD>PPMXL===3574437914115054963&amp;-c=160.906989 -30.867432,eq=J2000&amp;-c</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    181750</TD>
+      <TD>     28.7</TD>
+      <TD>     6.2</TD>
+      <TD>2MASS:H</TD>
+     </TR>
+     <TR>
+      <TD>160.9069890000</TD>
+      <TD>-30.8674320000</TD>
+      <TD>I/317/sample</TD>
+      <TD>PPMXL===3574437914115054963&amp;-c=160.906989 -30.867432,eq=J2000&amp;-c</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    241960</TD>
+      <TD>     18.1</TD>
+      <TD>     3.6</TD>
+      <TD>2MASS:J</TD>
+     </TR>
+     <TR>
+      <TD>160.9069689000</TD>
+      <TD>-30.8674609000</TD>
+      <TD>I/320/spm4</TD>
+      <TD>-c=160.9069689 -30.8674609,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    138550</TD>
+      <TD>     20.3</TD>
+      <TD/>
+      <TD>2MASS:Ks</TD>
+     </TR>
+     <TR>
+      <TD>160.9069689000</TD>
+      <TD>-30.8674609000</TD>
+      <TD>I/320/spm4</TD>
+      <TD>-c=160.9069689 -30.8674609,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    181750</TD>
+      <TD>     28.7</TD>
+      <TD/>
+      <TD>2MASS:H</TD>
+     </TR>
+     <TR>
+      <TD>160.9069689000</TD>
+      <TD>-30.8674609000</TD>
+      <TD>I/320/spm4</TD>
+      <TD>-c=160.9069689 -30.8674609,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    241960</TD>
+      <TD>     18.1</TD>
+      <TD/>
+      <TD>2MASS:J</TD>
+     </TR>
+     <TR>
+      <TD>160.9069689000</TD>
+      <TD>-30.8674609000</TD>
+      <TD>I/320/spm4</TD>
+      <TD>-c=160.9069689 -30.8674609,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    541430</TD>
+      <TD>     4.42</TD>
+      <TD/>
+      <TD>Johnson:V</TD>
+     </TR>
+     <TR>
+      <TD>160.9069689000</TD>
+      <TD>-30.8674609000</TD>
+      <TD>I/320/spm4</TD>
+      <TD>-c=160.9069689 -30.8674609,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    674900</TD>
+      <TD>     1.24</TD>
+      <TD/>
+      <TD>Johnson:B</TD>
+     </TR>
+     <TR>
+      <TD>160.9069842000</TD>
+      <TD>-30.8674373000</TD>
+      <TD>I/322A/out</TD>
+      <TD>UCAC4===296-065132&amp;-c=160.9069842 -30.8674373,eq=J2000&amp;-c.rs=0.0</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    138550</TD>
+      <TD>     20.3</TD>
+      <TD>     0.7</TD>
+      <TD>2MASS:Ks</TD>
+     </TR>
+     <TR>
+      <TD>160.9069842000</TD>
+      <TD>-30.8674373000</TD>
+      <TD>I/322A/out</TD>
+      <TD>UCAC4===296-065132&amp;-c=160.9069842 -30.8674373,eq=J2000&amp;-c.rs=0.0</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    181750</TD>
+      <TD>     28.7</TD>
+      <TD>     6.1</TD>
+      <TD>2MASS:H</TD>
+     </TR>
+     <TR>
+      <TD>160.9069842000</TD>
+      <TD>-30.8674373000</TD>
+      <TD>I/322A/out</TD>
+      <TD>UCAC4===296-065132&amp;-c=160.9069842 -30.8674373,eq=J2000&amp;-c.rs=0.0</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    241960</TD>
+      <TD>     18.1</TD>
+      <TD>     3.5</TD>
+      <TD>2MASS:J</TD>
+     </TR>
+     <TR>
+      <TD>160.9069811842</TD>
+      <TD>-30.8674364242</TD>
+      <TD>I/337/gaia</TD>
+      <TD>-c=160.9067764844 -30.8675136469,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD/>
+      <TD>    445460</TD>
+      <TD>     6.81</TD>
+      <TD/>
+      <TD>Gaia:G</TD>
+     </TR>
+     <TR>
+      <TD>160.9069811827</TD>
+      <TD>-30.8674364259</TD>
+      <TD>I/337/tgasptyc</TD>
+      <TD>recno=1516097</TD>
+      <TD/>
+      <TD/>
+      <TD>    563630</TD>
+      <TD>     3.92</TD>
+      <TD>    0.04</TD>
+      <TD>HIP:VT</TD>
+     </TR>
+     <TR>
+      <TD>160.9069811827</TD>
+      <TD>-30.8674364259</TD>
+      <TD>I/337/tgasptyc</TD>
+      <TD>recno=1516097</TD>
+      <TD/>
+      <TD/>
+      <TD>    713280</TD>
+      <TD>    0.765</TD>
+      <TD>   0.013</TD>
+      <TD>HIP:BT</TD>
+     </TR>
+     <TR>
+      <TD>160.9069811615</TD>
+      <TD>-30.8674367523</TD>
+      <TD>I/339/hsoy</TD>
+      <TD>-c=160.9069811615 -30.8674367523,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    181750</TD>
+      <TD>     28.7</TD>
+      <TD>     6.2</TD>
+      <TD>2MASS:H</TD>
+     </TR>
+     <TR>
+      <TD>160.9069811615</TD>
+      <TD>-30.8674367523</TD>
+      <TD>I/339/hsoy</TD>
+      <TD>-c=160.9069811615 -30.8674367523,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    241960</TD>
+      <TD>     18.1</TD>
+      <TD>     3.6</TD>
+      <TD>2MASS:J</TD>
+     </TR>
+     <TR>
+      <TD>160.9069811615</TD>
+      <TD>-30.8674367523</TD>
+      <TD>I/339/hsoy</TD>
+      <TD>-c=160.9069811615 -30.8674367523,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    445460</TD>
+      <TD>     6.81</TD>
+      <TD>    0.01</TD>
+      <TD>Gaia:G</TD>
+     </TR>
+     <TR>
+      <TD>160.9069924440</TD>
+      <TD>-30.8673546120</TD>
+      <TD>I/340/ucac5</TD>
+      <TD>-c=160.9070047 -30.8673456,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    181750</TD>
+      <TD>     28.7</TD>
+      <TD/>
+      <TD>2MASS:H</TD>
+     </TR>
+     <TR>
+      <TD>160.9069924440</TD>
+      <TD>-30.8673546120</TD>
+      <TD>I/340/ucac5</TD>
+      <TD>-c=160.9070047 -30.8673456,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    241960</TD>
+      <TD>     18.1</TD>
+      <TD/>
+      <TD>2MASS:J</TD>
+     </TR>
+     <TR>
+      <TD>160.9069924440</TD>
+      <TD>-30.8673546120</TD>
+      <TD>I/340/ucac5</TD>
+      <TD>-c=160.9070047 -30.8673456,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    445460</TD>
+      <TD>     6.81</TD>
+      <TD/>
+      <TD>Gaia:G</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816751</TD>
+      <TD>-30.8674361935</TD>
+      <TD>I/345/gaia2</TD>
+      <TD>-c=160.90676976568 -30.86751627280,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    388100</TD>
+      <TD>     11.9</TD>
+      <TD>       0</TD>
+      <TD>GAIA/GAIA2:Grp</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816751</TD>
+      <TD>-30.8674361935</TD>
+      <TD>I/345/gaia2</TD>
+      <TD>-c=160.90676976568 -30.86751627280,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    481500</TD>
+      <TD>     6.74</TD>
+      <TD>       0</TD>
+      <TD>GAIA/GAIA2:G</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816751</TD>
+      <TD>-30.8674361935</TD>
+      <TD>I/345/gaia2</TD>
+      <TD>-c=160.90676976568 -30.86751627280,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    594100</TD>
+      <TD>     3.31</TD>
+      <TD>       0</TD>
+      <TD>GAIA/GAIA2:Gbp</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816386</TD>
+      <TD>-30.8674368475</TD>
+      <TD>I/350/gaiaedr3</TD>
+      <TD>-c=160.90676292601 -30.86751880649,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    393400</TD>
+      <TD>     11.7</TD>
+      <TD>       0</TD>
+      <TD>GAIA/GAIA3:Grp</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816386</TD>
+      <TD>-30.8674368475</TD>
+      <TD>I/350/gaiaedr3</TD>
+      <TD>-c=160.90676292601 -30.86751880649,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    514900</TD>
+      <TD>     6.55</TD>
+      <TD>    0.02</TD>
+      <TD>GAIA/GAIA3:G</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816386</TD>
+      <TD>-30.8674368475</TD>
+      <TD>I/350/gaiaedr3</TD>
+      <TD>-c=160.90676292601 -30.86751880649,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    595300</TD>
+      <TD>     3.39</TD>
+      <TD>    0.01</TD>
+      <TD>GAIA/GAIA3:Gbp</TD>
+     </TR>
+     <TR>
+      <TD>160.9069625539</TD>
+      <TD>-30.8674455522</TD>
+      <TD>I/350/tyc2tdsc</TD>
+      <TD>recno=1805362</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    563630</TD>
+      <TD>     3.92</TD>
+      <TD>    0.04</TD>
+      <TD>HIP:VT</TD>
+     </TR>
+     <TR>
+      <TD>160.9069625539</TD>
+      <TD>-30.8674455522</TD>
+      <TD>I/350/tyc2tdsc</TD>
+      <TD>recno=1805362</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    713280</TD>
+      <TD>    0.765</TD>
+      <TD>   0.013</TD>
+      <TD>HIP:BT</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816751</TD>
+      <TD>-30.8674361935</TD>
+      <TD>I/353/gsc242</TD>
+      <TD>-c=160.90676976568 -30.86751627280,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD/>
+      <TD>     13571</TD>
+      <TD>    0.301</TD>
+      <TD>   0.006</TD>
+      <TD>WISE:W4</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816751</TD>
+      <TD>-30.8674361935</TD>
+      <TD>I/353/gsc242</TD>
+      <TD>-c=160.90676976568 -30.86751627280,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD/>
+      <TD>     25934</TD>
+      <TD>     0.95</TD>
+      <TD>   0.015</TD>
+      <TD>WISE:W3</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816751</TD>
+      <TD>-30.8674361935</TD>
+      <TD>I/353/gsc242</TD>
+      <TD>-c=160.90676976568 -30.86751627280,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD/>
+      <TD>     65172</TD>
+      <TD>      6.6</TD>
+      <TD>     1.7</TD>
+      <TD>WISE:W2</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816751</TD>
+      <TD>-30.8674361935</TD>
+      <TD>I/353/gsc242</TD>
+      <TD>-c=160.90676976568 -30.86751627280,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD/>
+      <TD>     89490</TD>
+      <TD>     10.2</TD>
+      <TD>     4.7</TD>
+      <TD>WISE:W1</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816751</TD>
+      <TD>-30.8674361935</TD>
+      <TD>I/353/gsc242</TD>
+      <TD>-c=160.90676976568 -30.86751627280,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD/>
+      <TD>    138550</TD>
+      <TD>     20.3</TD>
+      <TD>     0.7</TD>
+      <TD>2MASS:Ks</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816751</TD>
+      <TD>-30.8674361935</TD>
+      <TD>I/353/gsc242</TD>
+      <TD>-c=160.90676976568 -30.86751627280,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD/>
+      <TD>    181750</TD>
+      <TD>     28.7</TD>
+      <TD>     6.2</TD>
+      <TD>2MASS:H</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816751</TD>
+      <TD>-30.8674361935</TD>
+      <TD>I/353/gsc242</TD>
+      <TD>-c=160.90676976568 -30.86751627280,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD/>
+      <TD>    241960</TD>
+      <TD>     18.1</TD>
+      <TD>     3.6</TD>
+      <TD>2MASS:J</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816751</TD>
+      <TD>-30.8674361935</TD>
+      <TD>I/353/gsc242</TD>
+      <TD>-c=160.90676976568 -30.86751627280,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD/>
+      <TD>    392660</TD>
+      <TD>     11.1</TD>
+      <TD>     0.9</TD>
+      <TD>SDSS:i</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816751</TD>
+      <TD>-30.8674361935</TD>
+      <TD>I/353/gsc242</TD>
+      <TD>-c=160.90676976568 -30.86751627280,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD/>
+      <TD>    445460</TD>
+      <TD>     2.83</TD>
+      <TD>       0</TD>
+      <TD>Gaia:G</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816751</TD>
+      <TD>-30.8674361935</TD>
+      <TD>I/353/gsc242</TD>
+      <TD>-c=160.90676976568 -30.86751627280,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD/>
+      <TD>    445460</TD>
+      <TD>     13.7</TD>
+      <TD>       0</TD>
+      <TD>Gaia:G</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816751</TD>
+      <TD>-30.8674361935</TD>
+      <TD>I/353/gsc242</TD>
+      <TD>-c=160.90676976568 -30.86751627280,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD/>
+      <TD>    445460</TD>
+      <TD>     6.17</TD>
+      <TD>       0</TD>
+      <TD>Gaia:G</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816751</TD>
+      <TD>-30.8674361935</TD>
+      <TD>I/353/gsc242</TD>
+      <TD>-c=160.90676976568 -30.86751627280,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD/>
+      <TD>    479900</TD>
+      <TD>        4</TD>
+      <TD>     0.7</TD>
+      <TD>SDSS:r</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816751</TD>
+      <TD>-30.8674361935</TD>
+      <TD>I/353/gsc242</TD>
+      <TD>-c=160.90676976568 -30.86751627280,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD/>
+      <TD>    621980</TD>
+      <TD>     1.33</TD>
+      <TD>    0.27</TD>
+      <TD>SDSS:g</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816751</TD>
+      <TD>-30.8674361935</TD>
+      <TD>I/353/gsc242</TD>
+      <TD>-c=160.90676976568 -30.86751627280,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD/>
+      <TD>1.2967e+06</TD>
+      <TD> 0.000315</TD>
+      <TD>   8e-06</TD>
+      <TD>GALEX:NUV</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816386</TD>
+      <TD>-30.8674368475</TD>
+      <TD>I/355/gaiadr3</TD>
+      <TD>-c=160.90676292601 -30.86751880649,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    393400</TD>
+      <TD>     11.7</TD>
+      <TD>       0</TD>
+      <TD>GAIA/GAIA3:Grp</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816386</TD>
+      <TD>-30.8674368475</TD>
+      <TD>I/355/gaiadr3</TD>
+      <TD>-c=160.90676292601 -30.86751880649,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    514900</TD>
+      <TD>     6.55</TD>
+      <TD>    0.02</TD>
+      <TD>GAIA/GAIA3:G</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816386</TD>
+      <TD>-30.8674368475</TD>
+      <TD>I/355/gaiadr3</TD>
+      <TD>-c=160.90676292601 -30.86751880649,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    595300</TD>
+      <TD>     3.39</TD>
+      <TD>    0.01</TD>
+      <TD>GAIA/GAIA3:Gbp</TD>
+     </TR>
+     <TR>
+      <TD>160.9067629260</TD>
+      <TD>-30.8675188065</TD>
+      <TD>I/360/syntphot</TD>
+      <TD>-c=160.90676292601 -30.86751880649,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    380160</TD>
+      <TD>     13.2</TD>
+      <TD/>
+      <TD>Cousins:I</TD>
+     </TR>
+     <TR>
+      <TD>160.9067629260</TD>
+      <TD>-30.8675188065</TD>
+      <TD>I/360/syntphot</TD>
+      <TD>-c=160.90676292601 -30.86751880649,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    392660</TD>
+      <TD>     15.8</TD>
+      <TD/>
+      <TD>SDSS:i</TD>
+     </TR>
+     <TR>
+      <TD>160.9067629260</TD>
+      <TD>-30.8675188065</TD>
+      <TD>I/360/syntphot</TD>
+      <TD>-c=160.90676292601 -30.86751880649,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    392660</TD>
+      <TD>     11.8</TD>
+      <TD/>
+      <TD>SDSS:i</TD>
+     </TR>
+     <TR>
+      <TD>160.9067629260</TD>
+      <TD>-30.8675188065</TD>
+      <TD>I/360/syntphot</TD>
+      <TD>-c=160.90676292601 -30.86751880649,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    463430</TD>
+      <TD>      7.9</TD>
+      <TD/>
+      <TD>Cousins:R</TD>
+     </TR>
+     <TR>
+      <TD>160.9067629260</TD>
+      <TD>-30.8675188065</TD>
+      <TD>I/360/syntphot</TD>
+      <TD>-c=160.90676292601 -30.86751880649,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    479900</TD>
+      <TD>     7.12</TD>
+      <TD/>
+      <TD>SDSS:r</TD>
+     </TR>
+     <TR>
+      <TD>160.9067629260</TD>
+      <TD>-30.8675188065</TD>
+      <TD>I/360/syntphot</TD>
+      <TD>-c=160.90676292601 -30.86751880649,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    548100</TD>
+      <TD>      4.4</TD>
+      <TD/>
+      <TD>Cousins:V</TD>
+     </TR>
+     <TR>
+      <TD>160.9067629260</TD>
+      <TD>-30.8675188065</TD>
+      <TD>I/360/syntphot</TD>
+      <TD>-c=160.90676292601 -30.86751880649,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    621980</TD>
+      <TD>     2.23</TD>
+      <TD/>
+      <TD>SDSS:g</TD>
+     </TR>
+     <TR>
+      <TD>160.9067629260</TD>
+      <TD>-30.8675188065</TD>
+      <TD>I/360/syntphot</TD>
+      <TD>-c=160.90676292601 -30.86751880649,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    687600</TD>
+      <TD>     1.33</TD>
+      <TD/>
+      <TD>Cousins:B</TD>
+     </TR>
+     <TR>
+      <TD>160.9070450000</TD>
+      <TD>-30.8674510000</TD>
+      <TD>II/246/out</TD>
+      <TD>2MASS===10433769-3052028 &amp;-c=160.907045 -30.867451,eq=J2000&amp;-c.r</TD>
+      <TD>2451260.696800</TD>
+      <TD> 1108.6</TD>
+      <TD>    136890</TD>
+      <TD>     19.6</TD>
+      <TD>     0.7</TD>
+      <TD>Johnson:K</TD>
+     </TR>
+     <TR>
+      <TD>160.9070450000</TD>
+      <TD>-30.8674510000</TD>
+      <TD>II/246/out</TD>
+      <TD>2MASS===10433769-3052028 &amp;-c=160.907045 -30.867451,eq=J2000&amp;-c.r</TD>
+      <TD>2451260.696800</TD>
+      <TD> 1108.6</TD>
+      <TD>    183920</TD>
+      <TD>     28.5</TD>
+      <TD>     6.1</TD>
+      <TD>Johnson:H</TD>
+     </TR>
+     <TR>
+      <TD>160.9070450000</TD>
+      <TD>-30.8674510000</TD>
+      <TD>II/246/out</TD>
+      <TD>2MASS===10433769-3052028 &amp;-c=160.907045 -30.867451,eq=J2000&amp;-c.r</TD>
+      <TD>2451260.696800</TD>
+      <TD> 1108.6</TD>
+      <TD>    239830</TD>
+      <TD>     18.5</TD>
+      <TD>     3.7</TD>
+      <TD>Johnson:J</TD>
+     </TR>
+     <TR>
+      <TD>160.9070000000</TD>
+      <TD>-30.8673300000</TD>
+      <TD>II/297/irc</TD>
+      <TD>objID=200197405</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     16302</TD>
+      <TD>     0.45</TD>
+      <TD>   0.016</TD>
+      <TD>AKARI:L18W</TD>
+     </TR>
+     <TR>
+      <TD>160.9069738400</TD>
+      <TD>-30.8674771800</TD>
+      <TD>II/311/wise</TD>
+      <TD>WISE===J104337.67-305202.9&amp;-c=160.906974 -30.867477,eq=J2000&amp;-c.</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     13571</TD>
+      <TD>    0.302</TD>
+      <TD>   0.005</TD>
+      <TD>WISE:W4</TD>
+     </TR>
+     <TR>
+      <TD>160.9069738400</TD>
+      <TD>-30.8674771800</TD>
+      <TD>II/311/wise</TD>
+      <TD>WISE===J104337.67-305202.9&amp;-c=160.906974 -30.867477,eq=J2000&amp;-c.</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     25934</TD>
+      <TD>    0.976</TD>
+      <TD>   0.014</TD>
+      <TD>WISE:W3</TD>
+     </TR>
+     <TR>
+      <TD>160.9069738400</TD>
+      <TD>-30.8674771800</TD>
+      <TD>II/311/wise</TD>
+      <TD>WISE===J104337.67-305202.9&amp;-c=160.906974 -30.867477,eq=J2000&amp;-c.</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     65172</TD>
+      <TD>     9.26</TD>
+      <TD>    0.63</TD>
+      <TD>WISE:W2</TD>
+     </TR>
+     <TR>
+      <TD>160.9069738400</TD>
+      <TD>-30.8674771800</TD>
+      <TD>II/311/wise</TD>
+      <TD>WISE===J104337.67-305202.9&amp;-c=160.906974 -30.867477,eq=J2000&amp;-c.</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     89490</TD>
+      <TD>       11</TD>
+      <TD>     1.2</TD>
+      <TD>WISE:W1</TD>
+     </TR>
+     <TR>
+      <TD>160.9069738400</TD>
+      <TD>-30.8674771800</TD>
+      <TD>II/311/wise</TD>
+      <TD>WISE===J104337.67-305202.9&amp;-c=160.906974 -30.867477,eq=J2000&amp;-c.</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    138550</TD>
+      <TD>     20.3</TD>
+      <TD>     0.7</TD>
+      <TD>2MASS:Ks</TD>
+     </TR>
+     <TR>
+      <TD>160.9069738400</TD>
+      <TD>-30.8674771800</TD>
+      <TD>II/311/wise</TD>
+      <TD>WISE===J104337.67-305202.9&amp;-c=160.906974 -30.867477,eq=J2000&amp;-c.</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    181750</TD>
+      <TD>     28.7</TD>
+      <TD>     6.2</TD>
+      <TD>2MASS:H</TD>
+     </TR>
+     <TR>
+      <TD>160.9069738400</TD>
+      <TD>-30.8674771800</TD>
+      <TD>II/311/wise</TD>
+      <TD>WISE===J104337.67-305202.9&amp;-c=160.906974 -30.867477,eq=J2000&amp;-c.</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    241960</TD>
+      <TD>     18.1</TD>
+      <TD>     3.6</TD>
+      <TD>2MASS:J</TD>
+     </TR>
+     <TR>
+      <TD>160.9070472700</TD>
+      <TD>-30.8675001900</TD>
+      <TD>II/312/ais</TD>
+      <TD>recno=51937079</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>1.2967e+06</TD>
+      <TD>  0.00034</TD>
+      <TD> 1.2e-05</TD>
+      <TD>GALEX:NUV</TD>
+     </TR>
+     <TR>
+      <TD>160.9070472700</TD>
+      <TD>-30.8675001900</TD>
+      <TD>II/312/ais</TD>
+      <TD>recno=51937079</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>1.9607e+06</TD>
+      <TD> 9.55e-06</TD>
+      <TD> 3.5e-06</TD>
+      <TD>GALEX:FUV</TD>
+     </TR>
+     <TR>
+      <TD>160.9069468980</TD>
+      <TD>-30.8673738840</TD>
+      <TD>II/328/allwise</TD>
+      <TD>AllWISE===J104337.66-305202.5&amp;-c=160.9069469 -30.8673739,eq=J200</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     13571</TD>
+      <TD>    0.301</TD>
+      <TD>   0.006</TD>
+      <TD>WISE:W4</TD>
+     </TR>
+     <TR>
+      <TD>160.9069468980</TD>
+      <TD>-30.8673738840</TD>
+      <TD>II/328/allwise</TD>
+      <TD>AllWISE===J104337.66-305202.5&amp;-c=160.9069469 -30.8673739,eq=J200</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     25934</TD>
+      <TD>     0.95</TD>
+      <TD>   0.015</TD>
+      <TD>WISE:W3</TD>
+     </TR>
+     <TR>
+      <TD>160.9069468980</TD>
+      <TD>-30.8673738840</TD>
+      <TD>II/328/allwise</TD>
+      <TD>AllWISE===J104337.66-305202.5&amp;-c=160.9069469 -30.8673739,eq=J200</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     65172</TD>
+      <TD>      6.6</TD>
+      <TD>     1.7</TD>
+      <TD>WISE:W2</TD>
+     </TR>
+     <TR>
+      <TD>160.9069468980</TD>
+      <TD>-30.8673738840</TD>
+      <TD>II/328/allwise</TD>
+      <TD>AllWISE===J104337.66-305202.5&amp;-c=160.9069469 -30.8673739,eq=J200</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     89490</TD>
+      <TD>     10.2</TD>
+      <TD>     4.7</TD>
+      <TD>WISE:W1</TD>
+     </TR>
+     <TR>
+      <TD>160.9069468980</TD>
+      <TD>-30.8673738840</TD>
+      <TD>II/328/allwise</TD>
+      <TD>AllWISE===J104337.66-305202.5&amp;-c=160.9069469 -30.8673739,eq=J200</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    138550</TD>
+      <TD>     20.3</TD>
+      <TD>     0.7</TD>
+      <TD>2MASS:Ks</TD>
+     </TR>
+     <TR>
+      <TD>160.9069468980</TD>
+      <TD>-30.8673738840</TD>
+      <TD>II/328/allwise</TD>
+      <TD>AllWISE===J104337.66-305202.5&amp;-c=160.9069469 -30.8673739,eq=J200</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    181750</TD>
+      <TD>     28.7</TD>
+      <TD>     6.2</TD>
+      <TD>2MASS:H</TD>
+     </TR>
+     <TR>
+      <TD>160.9069468980</TD>
+      <TD>-30.8673738840</TD>
+      <TD>II/328/allwise</TD>
+      <TD>AllWISE===J104337.66-305202.5&amp;-c=160.9069469 -30.8673739,eq=J200</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    241960</TD>
+      <TD>     18.1</TD>
+      <TD>     3.6</TD>
+      <TD>2MASS:J</TD>
+     </TR>
+     <TR>
+      <TD>160.9069528400</TD>
+      <TD>-30.8674570700</TD>
+      <TD>II/335/galex_ais</TD>
+      <TD>-c=160.906953 -30.867457,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>1.2967e+06</TD>
+      <TD> 0.000315</TD>
+      <TD>   8e-06</TD>
+      <TD>GALEX:NUV</TD>
+     </TR>
+     <TR>
+      <TD>160.9068300700</TD>
+      <TD>-30.8675229500</TD>
+      <TD>II/336/apass9</TD>
+      <TD>recno=42626174</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    392660</TD>
+      <TD>     11.1</TD>
+      <TD>     0.9</TD>
+      <TD>SDSS:i'</TD>
+     </TR>
+     <TR>
+      <TD>160.9068300700</TD>
+      <TD>-30.8675229500</TD>
+      <TD>II/336/apass9</TD>
+      <TD>recno=42626174</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    479900</TD>
+      <TD>     3.98</TD>
+      <TD>     0.7</TD>
+      <TD>SDSS:r'</TD>
+     </TR>
+     <TR>
+      <TD>160.9068300700</TD>
+      <TD>-30.8675229500</TD>
+      <TD>II/336/apass9</TD>
+      <TD>recno=42626174</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    541430</TD>
+      <TD>     3.19</TD>
+      <TD>    0.54</TD>
+      <TD>Johnson:V</TD>
+     </TR>
+     <TR>
+      <TD>160.9068300700</TD>
+      <TD>-30.8675229500</TD>
+      <TD>II/336/apass9</TD>
+      <TD>recno=42626174</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    621980</TD>
+      <TD>     1.32</TD>
+      <TD>    0.27</TD>
+      <TD>SDSS:g'</TD>
+     </TR>
+     <TR>
+      <TD>160.9068300700</TD>
+      <TD>-30.8675229500</TD>
+      <TD>II/336/apass9</TD>
+      <TD>recno=42626174</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    674900</TD>
+      <TD>     1.32</TD>
+      <TD>    0.04</TD>
+      <TD>Johnson:B</TD>
+     </TR>
+     <TR>
+      <TD>160.9068999300</TD>
+      <TD>-30.8675299900</TD>
+      <TD>II/336/apass9</TD>
+      <TD>recno=42626175</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    392660</TD>
+      <TD>     10.5</TD>
+      <TD>     0.7</TD>
+      <TD>SDSS:i'</TD>
+     </TR>
+     <TR>
+      <TD>160.9068999300</TD>
+      <TD>-30.8675299900</TD>
+      <TD>II/336/apass9</TD>
+      <TD>recno=42626175</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    479900</TD>
+      <TD>      4.1</TD>
+      <TD>    0.53</TD>
+      <TD>SDSS:r'</TD>
+     </TR>
+     <TR>
+      <TD>160.9068999300</TD>
+      <TD>-30.8675299900</TD>
+      <TD>II/336/apass9</TD>
+      <TD>recno=42626175</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    541430</TD>
+      <TD>     3.29</TD>
+      <TD>    0.44</TD>
+      <TD>Johnson:V</TD>
+     </TR>
+     <TR>
+      <TD>160.9068999300</TD>
+      <TD>-30.8675299900</TD>
+      <TD>II/336/apass9</TD>
+      <TD>recno=42626175</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    621980</TD>
+      <TD>      1.3</TD>
+      <TD>    0.05</TD>
+      <TD>SDSS:g'</TD>
+     </TR>
+     <TR>
+      <TD>160.9068999300</TD>
+      <TD>-30.8675299900</TD>
+      <TD>II/336/apass9</TD>
+      <TD>recno=42626175</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    674900</TD>
+      <TD>     1.31</TD>
+      <TD>    0.04</TD>
+      <TD>Johnson:B</TD>
+     </TR>
+     <TR>
+      <TD>160.9069738900</TD>
+      <TD>-30.8674769400</TD>
+      <TD>II/338/catalog</TD>
+      <TD>recno=106503</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    2940.6</TD>
+      <TD>    0.649</TD>
+      <TD/>
+      <TD>IRAS:100</TD>
+     </TR>
+     <TR>
+      <TD>160.9069738900</TD>
+      <TD>-30.8674769400</TD>
+      <TD>II/338/catalog</TD>
+      <TD>recno=106503</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    4847.1</TD>
+      <TD>    0.184</TD>
+      <TD/>
+      <TD>IRAS:60</TD>
+     </TR>
+     <TR>
+      <TD>160.9069738900</TD>
+      <TD>-30.8674769400</TD>
+      <TD>II/338/catalog</TD>
+      <TD>recno=106503</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     12554</TD>
+      <TD>     0.34</TD>
+      <TD/>
+      <TD>IRAS:25</TD>
+     </TR>
+     <TR>
+      <TD>160.9069738900</TD>
+      <TD>-30.8674769400</TD>
+      <TD>II/338/catalog</TD>
+      <TD>recno=106503</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     12554</TD>
+      <TD>    0.322</TD>
+      <TD/>
+      <TD>IRAS:25</TD>
+     </TR>
+     <TR>
+      <TD>160.9069738900</TD>
+      <TD>-30.8674769400</TD>
+      <TD>II/338/catalog</TD>
+      <TD>recno=106503</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     13571</TD>
+      <TD>    0.304</TD>
+      <TD/>
+      <TD>WISE:W4</TD>
+     </TR>
+     <TR>
+      <TD>160.9069738900</TD>
+      <TD>-30.8674769400</TD>
+      <TD>II/338/catalog</TD>
+      <TD>recno=106503</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     13571</TD>
+      <TD>    0.302</TD>
+      <TD>   0.005</TD>
+      <TD>WISE:W4</TD>
+     </TR>
+     <TR>
+      <TD>160.9069738900</TD>
+      <TD>-30.8674769400</TD>
+      <TD>II/338/catalog</TD>
+      <TD>recno=106503</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     16302</TD>
+      <TD>     0.45</TD>
+      <TD>   0.016</TD>
+      <TD>AKARI:L18W</TD>
+     </TR>
+     <TR>
+      <TD>160.9069738900</TD>
+      <TD>-30.8674769400</TD>
+      <TD>II/338/catalog</TD>
+      <TD>recno=106503</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     25866</TD>
+      <TD>     1.43</TD>
+      <TD/>
+      <TD>IRAS:12</TD>
+     </TR>
+     <TR>
+      <TD>160.9069738900</TD>
+      <TD>-30.8674769400</TD>
+      <TD>II/338/catalog</TD>
+      <TD>recno=106503</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     25866</TD>
+      <TD>     1.42</TD>
+      <TD/>
+      <TD>IRAS:12</TD>
+     </TR>
+     <TR>
+      <TD>160.9069738900</TD>
+      <TD>-30.8674769400</TD>
+      <TD>II/338/catalog</TD>
+      <TD>recno=106503</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     25934</TD>
+      <TD>     1.07</TD>
+      <TD/>
+      <TD>WISE:W3</TD>
+     </TR>
+     <TR>
+      <TD>160.9069738900</TD>
+      <TD>-30.8674769400</TD>
+      <TD>II/338/catalog</TD>
+      <TD>recno=106503</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     25934</TD>
+      <TD>    0.975</TD>
+      <TD>   0.014</TD>
+      <TD>WISE:W3</TD>
+     </TR>
+     <TR>
+      <TD>160.9069738900</TD>
+      <TD>-30.8674769400</TD>
+      <TD>II/338/catalog</TD>
+      <TD>recno=106503</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     65172</TD>
+      <TD>     9.33</TD>
+      <TD/>
+      <TD>WISE:W2</TD>
+     </TR>
+     <TR>
+      <TD>160.9069738900</TD>
+      <TD>-30.8674769400</TD>
+      <TD>II/338/catalog</TD>
+      <TD>recno=106503</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     65172</TD>
+      <TD>     9.26</TD>
+      <TD>    0.63</TD>
+      <TD>WISE:W2</TD>
+     </TR>
+     <TR>
+      <TD>160.9069738900</TD>
+      <TD>-30.8674769400</TD>
+      <TD>II/338/catalog</TD>
+      <TD>recno=106503</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     89490</TD>
+      <TD>       11</TD>
+      <TD/>
+      <TD>WISE:W1</TD>
+     </TR>
+     <TR>
+      <TD>160.9069738900</TD>
+      <TD>-30.8674769400</TD>
+      <TD>II/338/catalog</TD>
+      <TD>recno=106503</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     89490</TD>
+      <TD>       11</TD>
+      <TD>     1.2</TD>
+      <TD>WISE:W1</TD>
+     </TR>
+     <TR>
+      <TD>160.9069738900</TD>
+      <TD>-30.8674769400</TD>
+      <TD>II/338/catalog</TD>
+      <TD>recno=106503</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    138550</TD>
+      <TD>     20.1</TD>
+      <TD/>
+      <TD>2MASS:Ks</TD>
+     </TR>
+     <TR>
+      <TD>160.9069738900</TD>
+      <TD>-30.8674769400</TD>
+      <TD>II/338/catalog</TD>
+      <TD>recno=106503</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    138550</TD>
+      <TD>     20.3</TD>
+      <TD>     0.7</TD>
+      <TD>2MASS:Ks</TD>
+     </TR>
+     <TR>
+      <TD>160.9069738900</TD>
+      <TD>-30.8674769400</TD>
+      <TD>II/338/catalog</TD>
+      <TD>recno=106503</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    181750</TD>
+      <TD>       28</TD>
+      <TD/>
+      <TD>2MASS:H</TD>
+     </TR>
+     <TR>
+      <TD>160.9069738900</TD>
+      <TD>-30.8674769400</TD>
+      <TD>II/338/catalog</TD>
+      <TD>recno=106503</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    181750</TD>
+      <TD>     28.7</TD>
+      <TD>     6.2</TD>
+      <TD>2MASS:H</TD>
+     </TR>
+     <TR>
+      <TD>160.9069738900</TD>
+      <TD>-30.8674769400</TD>
+      <TD>II/338/catalog</TD>
+      <TD>recno=106503</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    241960</TD>
+      <TD>     18.3</TD>
+      <TD/>
+      <TD>2MASS:J</TD>
+     </TR>
+     <TR>
+      <TD>160.9069738900</TD>
+      <TD>-30.8674769400</TD>
+      <TD>II/338/catalog</TD>
+      <TD>recno=106503</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    241960</TD>
+      <TD>     18.1</TD>
+      <TD>     3.6</TD>
+      <TD>2MASS:J</TD>
+     </TR>
+     <TR>
+      <TD>160.9069825000</TD>
+      <TD>-30.8674327778</TD>
+      <TD>II/346/jsdc_v2</TD>
+      <TD>recno=196400</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     59601</TD>
+      <TD>     6.11</TD>
+      <TD>     1.6</TD>
+      <TD>Johnson:M</TD>
+     </TR>
+     <TR>
+      <TD>160.9069825000</TD>
+      <TD>-30.8674327778</TD>
+      <TD>II/346/jsdc_v2</TD>
+      <TD>recno=196400</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     88174</TD>
+      <TD>     9.62</TD>
+      <TD>     4.4</TD>
+      <TD>Johnson:L</TD>
+     </TR>
+     <TR>
+      <TD>160.9069825000</TD>
+      <TD>-30.8674327778</TD>
+      <TD>II/346/jsdc_v2</TD>
+      <TD>recno=196400</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    136890</TD>
+      <TD>     19.6</TD>
+      <TD>     0.7</TD>
+      <TD>Johnson:K</TD>
+     </TR>
+     <TR>
+      <TD>160.9069825000</TD>
+      <TD>-30.8674327778</TD>
+      <TD>II/346/jsdc_v2</TD>
+      <TD>recno=196400</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    183920</TD>
+      <TD>     28.5</TD>
+      <TD>     6.1</TD>
+      <TD>Johnson:H</TD>
+     </TR>
+     <TR>
+      <TD>160.9069825000</TD>
+      <TD>-30.8674327778</TD>
+      <TD>II/346/jsdc_v2</TD>
+      <TD>recno=196400</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    239830</TD>
+      <TD>     18.5</TD>
+      <TD>     3.7</TD>
+      <TD>Johnson:J</TD>
+     </TR>
+     <TR>
+      <TD>160.9069825000</TD>
+      <TD>-30.8674327778</TD>
+      <TD>II/346/jsdc_v2</TD>
+      <TD>recno=196400</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    563630</TD>
+      <TD>     4.58</TD>
+      <TD>    0.03</TD>
+      <TD>HIP:VT</TD>
+     </TR>
+     <TR>
+      <TD>160.9069825000</TD>
+      <TD>-30.8674327778</TD>
+      <TD>II/346/jsdc_v2</TD>
+      <TD>recno=196400</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    713280</TD>
+      <TD>     1.14</TD>
+      <TD>    0.01</TD>
+      <TD>HIP:BT</TD>
+     </TR>
+     <TR>
+      <TD>160.9069813890</TD>
+      <TD>-30.8674363890</TD>
+      <TD>II/361/mdfc-v10</TD>
+      <TD>recno=18383</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    138550</TD>
+      <TD>     20.3</TD>
+      <TD/>
+      <TD>2MASS:Ks</TD>
+     </TR>
+     <TR>
+      <TD>160.9069813890</TD>
+      <TD>-30.8674363890</TD>
+      <TD>II/361/mdfc-v10</TD>
+      <TD>recno=18383</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    181750</TD>
+      <TD>     28.7</TD>
+      <TD/>
+      <TD>2MASS:H</TD>
+     </TR>
+     <TR>
+      <TD>160.9069813890</TD>
+      <TD>-30.8674363890</TD>
+      <TD>II/361/mdfc-v10</TD>
+      <TD>recno=18383</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    241960</TD>
+      <TD>     18.1</TD>
+      <TD/>
+      <TD>2MASS:J</TD>
+     </TR>
+     <TR>
+      <TD>160.9067508420</TD>
+      <TD>-30.8674750170</TD>
+      <TD>II/363/unwise</TD>
+      <TD>-c=160.9067508 -30.8674750,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     65172</TD>
+      <TD>     6.87</TD>
+      <TD>       0</TD>
+      <TD>WISE:W2</TD>
+     </TR>
+     <TR>
+      <TD>160.9067508420</TD>
+      <TD>-30.8674750170</TD>
+      <TD>II/363/unwise</TD>
+      <TD>-c=160.9067508 -30.8674750,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     89490</TD>
+      <TD>     9.57</TD>
+      <TD>       0</TD>
+      <TD>WISE:W1</TD>
+     </TR>
+     <TR>
+      <TD>160.9067841620</TD>
+      <TD>-30.8674747320</TD>
+      <TD>II/363/unwise</TD>
+      <TD>-c=160.9067842 -30.8674747,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     65172</TD>
+      <TD>     6.95</TD>
+      <TD>       0</TD>
+      <TD>WISE:W2</TD>
+     </TR>
+     <TR>
+      <TD>160.9067841620</TD>
+      <TD>-30.8674747320</TD>
+      <TD>II/363/unwise</TD>
+      <TD>-c=160.9067842 -30.8674747,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     89490</TD>
+      <TD>     9.03</TD>
+      <TD>       0</TD>
+      <TD>WISE:W1</TD>
+     </TR>
+     <TR>
+      <TD>160.9067630800</TD>
+      <TD>-30.8675129400</TD>
+      <TD>II/379/smssdr4</TD>
+      <TD>-c=160.906763 -30.867513,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    329800</TD>
+      <TD>     6.65</TD>
+      <TD/>
+      <TD>SkyMapper/SkyMapper:z</TD>
+     </TR>
+     <TR>
+      <TD>160.9067630800</TD>
+      <TD>-30.8675129400</TD>
+      <TD>II/379/smssdr4</TD>
+      <TD>-c=160.906763 -30.867513,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    329800</TD>
+      <TD>     13.4</TD>
+      <TD/>
+      <TD>SkyMapper/SkyMapper:z</TD>
+     </TR>
+     <TR>
+      <TD>160.9067630800</TD>
+      <TD>-30.8675129400</TD>
+      <TD>II/379/smssdr4</TD>
+      <TD>-c=160.906763 -30.867513,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    388700</TD>
+      <TD>     6.19</TD>
+      <TD/>
+      <TD>SkyMapper/SkyMapper:i</TD>
+     </TR>
+     <TR>
+      <TD>160.9067630800</TD>
+      <TD>-30.8675129400</TD>
+      <TD>II/379/smssdr4</TD>
+      <TD>-c=160.906763 -30.867513,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    388700</TD>
+      <TD>       14</TD>
+      <TD/>
+      <TD>SkyMapper/SkyMapper:i</TD>
+     </TR>
+     <TR>
+      <TD>160.9067630800</TD>
+      <TD>-30.8675129400</TD>
+      <TD>II/379/smssdr4</TD>
+      <TD>-c=160.906763 -30.867513,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    496300</TD>
+      <TD>     4.77</TD>
+      <TD/>
+      <TD>SkyMapper/SkyMapper:r</TD>
+     </TR>
+     <TR>
+      <TD>160.9067630800</TD>
+      <TD>-30.8675129400</TD>
+      <TD>II/379/smssdr4</TD>
+      <TD>-c=160.906763 -30.867513,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    496300</TD>
+      <TD>     18.8</TD>
+      <TD/>
+      <TD>SkyMapper/SkyMapper:r</TD>
+     </TR>
+     <TR>
+      <TD>160.9067630800</TD>
+      <TD>-30.8675129400</TD>
+      <TD>II/379/smssdr4</TD>
+      <TD>-c=160.906763 -30.867513,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    603400</TD>
+      <TD>     2.59</TD>
+      <TD/>
+      <TD>SkyMapper/SkyMapper:g</TD>
+     </TR>
+     <TR>
+      <TD>160.9067630800</TD>
+      <TD>-30.8675129400</TD>
+      <TD>II/379/smssdr4</TD>
+      <TD>-c=160.906763 -30.867513,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    603400</TD>
+      <TD>     6.69</TD>
+      <TD/>
+      <TD>SkyMapper/SkyMapper:g</TD>
+     </TR>
+     <TR>
+      <TD>160.9067630800</TD>
+      <TD>-30.8675129400</TD>
+      <TD>II/379/smssdr4</TD>
+      <TD>-c=160.906763 -30.867513,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    774500</TD>
+      <TD>    0.142</TD>
+      <TD>   0.002</TD>
+      <TD>SkyMapper/SkyMapper:v</TD>
+     </TR>
+     <TR>
+      <TD>160.9067630800</TD>
+      <TD>-30.8675129400</TD>
+      <TD>II/379/smssdr4</TD>
+      <TD>-c=160.906763 -30.867513,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    774500</TD>
+      <TD>    0.142</TD>
+      <TD>   0.002</TD>
+      <TD>SkyMapper/SkyMapper:v</TD>
+     </TR>
+     <TR>
+      <TD>160.9067630800</TD>
+      <TD>-30.8675129400</TD>
+      <TD>II/379/smssdr4</TD>
+      <TD>-c=160.906763 -30.867513,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    857000</TD>
+      <TD>    0.045</TD>
+      <TD>  0.0004</TD>
+      <TD>SkyMapper/SkyMapper:u</TD>
+     </TR>
+     <TR>
+      <TD>160.9067630800</TD>
+      <TD>-30.8675129400</TD>
+      <TD>II/379/smssdr4</TD>
+      <TD>-c=160.906763 -30.867513,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    857000</TD>
+      <TD>   0.0456</TD>
+      <TD>  0.0005</TD>
+      <TD>SkyMapper/SkyMapper:u</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816750</TD>
+      <TD>-30.8674361936</TD>
+      <TD>IV/38/tic</TD>
+      <TD>-c=160.90698167503 -30.86743619360,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     13571</TD>
+      <TD>    0.301</TD>
+      <TD>   0.006</TD>
+      <TD>WISE:W4</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816750</TD>
+      <TD>-30.8674361936</TD>
+      <TD>IV/38/tic</TD>
+      <TD>-c=160.90698167503 -30.86743619360,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     25934</TD>
+      <TD>     0.95</TD>
+      <TD>   0.015</TD>
+      <TD>WISE:W3</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816750</TD>
+      <TD>-30.8674361936</TD>
+      <TD>IV/38/tic</TD>
+      <TD>-c=160.90698167503 -30.86743619360,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     65172</TD>
+      <TD>      6.6</TD>
+      <TD>     1.7</TD>
+      <TD>WISE:W2</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816750</TD>
+      <TD>-30.8674361936</TD>
+      <TD>IV/38/tic</TD>
+      <TD>-c=160.90698167503 -30.86743619360,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     89490</TD>
+      <TD>     10.2</TD>
+      <TD>     4.7</TD>
+      <TD>WISE:W1</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816750</TD>
+      <TD>-30.8674361936</TD>
+      <TD>IV/38/tic</TD>
+      <TD>-c=160.90698167503 -30.86743619360,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    138550</TD>
+      <TD>     20.3</TD>
+      <TD>     0.7</TD>
+      <TD>2MASS:Ks</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816750</TD>
+      <TD>-30.8674361936</TD>
+      <TD>IV/38/tic</TD>
+      <TD>-c=160.90698167503 -30.86743619360,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    183920</TD>
+      <TD>     28.5</TD>
+      <TD>     6.1</TD>
+      <TD>Johnson:H</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816750</TD>
+      <TD>-30.8674361936</TD>
+      <TD>IV/38/tic</TD>
+      <TD>-c=160.90698167503 -30.86743619360,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    239830</TD>
+      <TD>     18.5</TD>
+      <TD>     3.7</TD>
+      <TD>Johnson:J</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816750</TD>
+      <TD>-30.8674361936</TD>
+      <TD>IV/38/tic</TD>
+      <TD>-c=160.90698167503 -30.86743619360,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    445460</TD>
+      <TD>     6.17</TD>
+      <TD>       0</TD>
+      <TD>Gaia:G</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816750</TD>
+      <TD>-30.8674361936</TD>
+      <TD>IV/38/tic</TD>
+      <TD>-c=160.90698167503 -30.86743619360,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    541430</TD>
+      <TD>     4.48</TD>
+      <TD>    0.01</TD>
+      <TD>Johnson:V</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816750</TD>
+      <TD>-30.8674361936</TD>
+      <TD>IV/38/tic</TD>
+      <TD>-c=160.90698167503 -30.86743619360,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    674900</TD>
+      <TD>     1.29</TD>
+      <TD>    0.02</TD>
+      <TD>Johnson:B</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816750</TD>
+      <TD>-30.8674361936</TD>
+      <TD>IV/39/tic82</TD>
+      <TD>-c=160.90698167503 -30.86743619360,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     13571</TD>
+      <TD>    0.301</TD>
+      <TD>   0.006</TD>
+      <TD>WISE:W4</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816750</TD>
+      <TD>-30.8674361936</TD>
+      <TD>IV/39/tic82</TD>
+      <TD>-c=160.90698167503 -30.86743619360,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     25934</TD>
+      <TD>     0.95</TD>
+      <TD>   0.015</TD>
+      <TD>WISE:W3</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816750</TD>
+      <TD>-30.8674361936</TD>
+      <TD>IV/39/tic82</TD>
+      <TD>-c=160.90698167503 -30.86743619360,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     65172</TD>
+      <TD>      6.6</TD>
+      <TD>     1.7</TD>
+      <TD>WISE:W2</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816750</TD>
+      <TD>-30.8674361936</TD>
+      <TD>IV/39/tic82</TD>
+      <TD>-c=160.90698167503 -30.86743619360,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     89490</TD>
+      <TD>     10.2</TD>
+      <TD>     4.7</TD>
+      <TD>WISE:W1</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816750</TD>
+      <TD>-30.8674361936</TD>
+      <TD>IV/39/tic82</TD>
+      <TD>-c=160.90698167503 -30.86743619360,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    138550</TD>
+      <TD>     20.3</TD>
+      <TD>     0.7</TD>
+      <TD>2MASS:Ks</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816750</TD>
+      <TD>-30.8674361936</TD>
+      <TD>IV/39/tic82</TD>
+      <TD>-c=160.90698167503 -30.86743619360,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    183920</TD>
+      <TD>     28.5</TD>
+      <TD>     6.1</TD>
+      <TD>Johnson:H</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816750</TD>
+      <TD>-30.8674361936</TD>
+      <TD>IV/39/tic82</TD>
+      <TD>-c=160.90698167503 -30.86743619360,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    239830</TD>
+      <TD>     18.5</TD>
+      <TD>     3.7</TD>
+      <TD>Johnson:J</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816750</TD>
+      <TD>-30.8674361936</TD>
+      <TD>IV/39/tic82</TD>
+      <TD>-c=160.90698167503 -30.86743619360,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    445460</TD>
+      <TD>     6.17</TD>
+      <TD>       0</TD>
+      <TD>Gaia:G</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816750</TD>
+      <TD>-30.8674361936</TD>
+      <TD>IV/39/tic82</TD>
+      <TD>-c=160.90698167503 -30.86743619360,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    541430</TD>
+      <TD>     4.48</TD>
+      <TD>    0.01</TD>
+      <TD>Johnson:V</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816750</TD>
+      <TD>-30.8674361936</TD>
+      <TD>IV/39/tic82</TD>
+      <TD>-c=160.90698167503 -30.86743619360,eq=J2000&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    674900</TD>
+      <TD>     1.29</TD>
+      <TD>    0.02</TD>
+      <TD>Johnson:B</TD>
+     </TR>
+     <TR>
+      <TD>160.9071583300</TD>
+      <TD>-30.8672777800</TD>
+      <TD>V/98/msx</TD>
+      <TD>recno=78890</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    2940.6</TD>
+      <TD>    0.649</TD>
+      <TD/>
+      <TD>IRAS:100</TD>
+     </TR>
+     <TR>
+      <TD>160.9071583300</TD>
+      <TD>-30.8672777800</TD>
+      <TD>V/98/msx</TD>
+      <TD>recno=78890</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    4847.1</TD>
+      <TD>    0.184</TD>
+      <TD/>
+      <TD>IRAS:60</TD>
+     </TR>
+     <TR>
+      <TD>160.9071583300</TD>
+      <TD>-30.8672777800</TD>
+      <TD>V/98/msx</TD>
+      <TD>recno=78890</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     12554</TD>
+      <TD>     0.34</TD>
+      <TD/>
+      <TD>IRAS:25</TD>
+     </TR>
+     <TR>
+      <TD>160.9071583300</TD>
+      <TD>-30.8672777800</TD>
+      <TD>V/98/msx</TD>
+      <TD>recno=78890</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     25866</TD>
+      <TD>     1.42</TD>
+      <TD/>
+      <TD>IRAS:12</TD>
+     </TR>
+     <TR>
+      <TD>160.9071583300</TD>
+      <TD>-30.8672777800</TD>
+      <TD>V/98/msx</TD>
+      <TD>recno=78890</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     25866</TD>
+      <TD>     1.42</TD>
+      <TD/>
+      <TD>IRAS:12</TD>
+     </TR>
+     <TR>
+      <TD>160.9069819400</TD>
+      <TD>-30.8674369400</TD>
+      <TD>V/136/tycall</TD>
+      <TD>recno=1732909</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    563630</TD>
+      <TD>     3.92</TD>
+      <TD>    0.04</TD>
+      <TD>HIP:VT</TD>
+     </TR>
+     <TR>
+      <TD>160.9069819400</TD>
+      <TD>-30.8674369400</TD>
+      <TD>V/136/tycall</TD>
+      <TD>recno=1732909</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    713280</TD>
+      <TD>    0.765</TD>
+      <TD>   0.013</TD>
+      <TD>HIP:BT</TD>
+     </TR>
+     <TR>
+      <TD>160.9069905560</TD>
+      <TD>-30.8674355560</TD>
+      <TD>V/145/sky2kv5</TD>
+      <TD>recno=134270</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    674900</TD>
+      <TD>     1.29</TD>
+      <TD>    0.02</TD>
+      <TD>Johnson:B</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816477</TD>
+      <TD>-30.8674362295</TD>
+      <TD>J/ApJ/867/105/refcat2</TD>
+      <TD>-c=160.90676977 -30.86751627,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    181750</TD>
+      <TD>     28.7</TD>
+      <TD>     6.2</TD>
+      <TD>2MASS:H</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816477</TD>
+      <TD>-30.8674362295</TD>
+      <TD>J/ApJ/867/105/refcat2</TD>
+      <TD>-c=160.90676977 -30.86751627,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    241960</TD>
+      <TD>     18.1</TD>
+      <TD>     3.6</TD>
+      <TD>2MASS:J</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816477</TD>
+      <TD>-30.8674362295</TD>
+      <TD>J/ApJ/867/105/refcat2</TD>
+      <TD>-c=160.90676977 -30.86751627,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    445460</TD>
+      <TD>     13.7</TD>
+      <TD>       0</TD>
+      <TD>Gaia:G</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816477</TD>
+      <TD>-30.8674362295</TD>
+      <TD>J/ApJ/867/105/refcat2</TD>
+      <TD>-c=160.90676977 -30.86751627,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    445460</TD>
+      <TD>     2.83</TD>
+      <TD>       0</TD>
+      <TD>Gaia:G</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816477</TD>
+      <TD>-30.8674362295</TD>
+      <TD>J/ApJ/867/105/refcat2</TD>
+      <TD>-c=160.90676977 -30.86751627,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    445460</TD>
+      <TD>     6.17</TD>
+      <TD>    0.01</TD>
+      <TD>Gaia:G</TD>
+     </TR>
+     <TR>
+      <TD>160.9067629260</TD>
+      <TD>-30.8675188065</TD>
+      <TD>J/A+A/677/A137/catalog</TD>
+      <TD>-c=160.90676292601 -30.86751880649,eq=ICRS&amp;-c.rs=0.004</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    445460</TD>
+      <TD>     6.11</TD>
+      <TD/>
+      <TD>Gaia:G</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816735</TD>
+      <TD>-30.8674361936</TD>
+      <TD>J/AJ/161/234/table2</TD>
+      <TD>recno=2169286</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    138550</TD>
+      <TD>     20.3</TD>
+      <TD>     0.7</TD>
+      <TD>2MASS:Ks</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816735</TD>
+      <TD>-30.8674361936</TD>
+      <TD>J/AJ/161/234/table2</TD>
+      <TD>recno=2169286</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    181750</TD>
+      <TD>     28.7</TD>
+      <TD>     6.2</TD>
+      <TD>2MASS:H</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816735</TD>
+      <TD>-30.8674361936</TD>
+      <TD>J/AJ/161/234/table2</TD>
+      <TD>recno=2169286</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    241960</TD>
+      <TD>     18.1</TD>
+      <TD>     3.6</TD>
+      <TD>2MASS:J</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816735</TD>
+      <TD>-30.8674361936</TD>
+      <TD>J/AJ/161/234/table2</TD>
+      <TD>recno=2169286</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    445460</TD>
+      <TD>     6.17</TD>
+      <TD/>
+      <TD>Gaia:G</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816735</TD>
+      <TD>-30.8674361936</TD>
+      <TD>J/AJ/161/234/table2</TD>
+      <TD>recno=2169286</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>1.2967e+06</TD>
+      <TD>  0.00034</TD>
+      <TD> 1.2e-05</TD>
+      <TD>GALEX:NUV</TD>
+     </TR>
+     <TR>
+      <TD>160.9069816735</TD>
+      <TD>-30.8674361936</TD>
+      <TD>J/AJ/161/234/table2</TD>
+      <TD>recno=2169286</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>1.9607e+06</TD>
+      <TD> 9.55e-06</TD>
+      <TD> 3.5e-06</TD>
+      <TD>GALEX:FUV</TD>
+     </TR>
+     <TR>
+      <TD>160.9067697657</TD>
+      <TD>-30.8675162728</TD>
+      <TD>J/AJ/161/234/table3</TD>
+      <TD>recno=2640069</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    138550</TD>
+      <TD>     20.3</TD>
+      <TD>     0.7</TD>
+      <TD>2MASS:Ks</TD>
+     </TR>
+     <TR>
+      <TD>160.9067697657</TD>
+      <TD>-30.8675162728</TD>
+      <TD>J/AJ/161/234/table3</TD>
+      <TD>recno=2640069</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    181750</TD>
+      <TD>     28.7</TD>
+      <TD>     6.2</TD>
+      <TD>2MASS:H</TD>
+     </TR>
+     <TR>
+      <TD>160.9067697657</TD>
+      <TD>-30.8675162728</TD>
+      <TD>J/AJ/161/234/table3</TD>
+      <TD>recno=2640069</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    241960</TD>
+      <TD>     18.1</TD>
+      <TD>     3.6</TD>
+      <TD>2MASS:J</TD>
+     </TR>
+     <TR>
+      <TD>160.9067697657</TD>
+      <TD>-30.8675162728</TD>
+      <TD>J/AJ/161/234/table3</TD>
+      <TD>recno=2640069</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    445460</TD>
+      <TD>     6.17</TD>
+      <TD/>
+      <TD>Gaia:G</TD>
+     </TR>
+     <TR>
+      <TD>160.9067697657</TD>
+      <TD>-30.8675162728</TD>
+      <TD>J/AJ/161/234/table4</TD>
+      <TD>recno=2893170</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    445460</TD>
+      <TD>     6.17</TD>
+      <TD/>
+      <TD>Gaia:G</TD>
+     </TR>
+     <TR>
+      <TD>160.9067697657</TD>
+      <TD>-30.8675162728</TD>
+      <TD>J/AJ/161/234/table5</TD>
+      <TD>recno=358774</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    445460</TD>
+      <TD>     6.17</TD>
+      <TD/>
+      <TD>Gaia:G</TD>
+     </TR>
+     <TR>
+      <TD>160.9067697657</TD>
+      <TD>-30.8675162728</TD>
+      <TD>J/AJ/161/234/table5</TD>
+      <TD>recno=358774</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>1.2967e+06</TD>
+      <TD>  0.00034</TD>
+      <TD> 1.2e-05</TD>
+      <TD>GALEX:NUV</TD>
+     </TR>
+     <TR>
+      <TD>160.9067697657</TD>
+      <TD>-30.8675162728</TD>
+      <TD>J/AJ/161/234/table5</TD>
+      <TD>recno=358774</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>1.9607e+06</TD>
+      <TD> 9.55e-06</TD>
+      <TD> 3.5e-06</TD>
+      <TD>GALEX:FUV</TD>
+     </TR>
+     <TR>
+      <TD>160.9069842000</TD>
+      <TD>-30.8674369000</TD>
+      <TD>J/PASP/120/1128/catalog</TD>
+      <TD>recno=1163183</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    136890</TD>
+      <TD>     19.7</TD>
+      <TD>     0.5</TD>
+      <TD>Johnson:K</TD>
+     </TR>
+     <TR>
+      <TD>160.9069842000</TD>
+      <TD>-30.8674369000</TD>
+      <TD>J/PASP/120/1128/catalog</TD>
+      <TD>recno=1163183</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    183920</TD>
+      <TD>     28.4</TD>
+      <TD>     6.1</TD>
+      <TD>Johnson:H</TD>
+     </TR>
+     <TR>
+      <TD>160.9069842000</TD>
+      <TD>-30.8674369000</TD>
+      <TD>J/PASP/120/1128/catalog</TD>
+      <TD>recno=1163183</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    239830</TD>
+      <TD>     18.5</TD>
+      <TD>     3.6</TD>
+      <TD>Johnson:J</TD>
+     </TR>
+     <TR>
+      <TD>160.9069842000</TD>
+      <TD>-30.8674369000</TD>
+      <TD>J/PASP/120/1128/catalog</TD>
+      <TD>recno=1163183</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    563630</TD>
+      <TD>      3.9</TD>
+      <TD>    0.04</TD>
+      <TD>HIP:VT</TD>
+     </TR>
+     <TR>
+      <TD>160.9069842000</TD>
+      <TD>-30.8674369000</TD>
+      <TD>J/PASP/120/1128/catalog</TD>
+      <TD>recno=1163183</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    713280</TD>
+      <TD>    0.765</TD>
+      <TD>   0.014</TD>
+      <TD>HIP:BT</TD>
+     </TR>
+     <TR>
+      <TD>160.9070956000</TD>
+      <TD>-30.8673933000</TD>
+      <TD>J/MNRAS/463/4210/ucac4rpm</TD>
+      <TD>recno=100158</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    541430</TD>
+      <TD>     4.41</TD>
+      <TD/>
+      <TD>Johnson:V</TD>
+     </TR>
+     <TR>
+      <TD>160.9070956000</TD>
+      <TD>-30.8673933000</TD>
+      <TD>J/MNRAS/463/4210/ucac4rpm</TD>
+      <TD>recno=100158</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    674900</TD>
+      <TD>     1.09</TD>
+      <TD/>
+      <TD>Johnson:B</TD>
+     </TR>
+     <TR>
+      <TD>160.9069838900</TD>
+      <TD>-30.8674369400</TD>
+      <TD>J/MNRAS/471/770/table1</TD>
+      <TD>recno=998934</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     13571</TD>
+      <TD>    0.303</TD>
+      <TD/>
+      <TD>WISE:W4</TD>
+     </TR>
+     <TR>
+      <TD>160.9069838900</TD>
+      <TD>-30.8674369400</TD>
+      <TD>J/MNRAS/471/770/table1</TD>
+      <TD>recno=998934</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     16302</TD>
+      <TD>     0.45</TD>
+      <TD/>
+      <TD>AKARI:L18W</TD>
+     </TR>
+     <TR>
+      <TD>160.9069838900</TD>
+      <TD>-30.8674369400</TD>
+      <TD>J/MNRAS/471/770/table1</TD>
+      <TD>recno=998934</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     25866</TD>
+      <TD>    0.966</TD>
+      <TD/>
+      <TD>IRAS:12</TD>
+     </TR>
+     <TR>
+      <TD>160.9069838900</TD>
+      <TD>-30.8674369400</TD>
+      <TD>J/MNRAS/471/770/table1</TD>
+      <TD>recno=998934</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     25934</TD>
+      <TD>     1.04</TD>
+      <TD/>
+      <TD>WISE:W3</TD>
+     </TR>
+     <TR>
+      <TD>160.9069838900</TD>
+      <TD>-30.8674369400</TD>
+      <TD>J/MNRAS/471/770/table1</TD>
+      <TD>recno=998934</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>     89490</TD>
+      <TD>     10.3</TD>
+      <TD/>
+      <TD>WISE:W1</TD>
+     </TR>
+     <TR>
+      <TD>160.9069838900</TD>
+      <TD>-30.8674369400</TD>
+      <TD>J/MNRAS/471/770/table1</TD>
+      <TD>recno=998934</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    499420</TD>
+      <TD>     3.92</TD>
+      <TD/>
+      <TD>Subaru/Suprime:IA598</TD>
+     </TR>
+     <TR>
+      <TD>160.9069838900</TD>
+      <TD>-30.8674369400</TD>
+      <TD>J/MNRAS/471/770/table1</TD>
+      <TD>recno=998934</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    541430</TD>
+      <TD>     3.19</TD>
+      <TD/>
+      <TD>Johnson:V</TD>
+     </TR>
+     <TR>
+      <TD>160.9069838900</TD>
+      <TD>-30.8674369400</TD>
+      <TD>J/MNRAS/471/770/table1</TD>
+      <TD>recno=998934</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    674900</TD>
+      <TD>     1.26</TD>
+      <TD/>
+      <TD>Johnson:B</TD>
+     </TR>
+     <TR>
+      <TD>160.9070000000</TD>
+      <TD>-30.8674000000</TD>
+      <TD>J/PAZh/37/769/table</TD>
+      <TD>recno=16368</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    563630</TD>
+      <TD>     3.92</TD>
+      <TD>    0.04</TD>
+      <TD>HIP:VT</TD>
+     </TR>
+     <TR>
+      <TD>160.9070000000</TD>
+      <TD>-30.8674000000</TD>
+      <TD>J/PAZh/37/769/table</TD>
+      <TD>recno=16368</TD>
+      <TD/>
+      <TD>    0.0</TD>
+      <TD>    713280</TD>
+      <TD>    0.765</TD>
+      <TD>   0.013</TD>
+      <TD>HIP:BT</TD>
+     </TR>
+    </TABLEDATA>
+   </DATA>
+  </TABLE>
+ </RESOURCE>
+</VOTABLE>
