@@ -4,12 +4,8 @@ authors:
   - family-names: "Leisenring"
     given-names: "Jarron"
     orcid: "https://orcid.org/0000-0002-0834-6140"
-  - family-names: "Schlawin"
-    given-names: "Everett" 
-  - family-names: "Fraine"
-    given-names: "Jonathan" 
 title: "pyNRC: Python ETC and Simulator for JWST NIRCam"
-version: v1.0.4
-doi: 10.5281/zenodo.5829553
-date-released: 2022-01-07
+version: v1.2.0
+doi: 10.5281/zenodo.5829552
+date-released: 2024-05-14
 url: "https://github.com/JarronL/pynrc"
