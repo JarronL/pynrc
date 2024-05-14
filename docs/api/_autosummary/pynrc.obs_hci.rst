@@ -23,8 +23,10 @@
       ~obs_hci.bg_zodi_image
       ~obs_hci.calc_contrast
       ~obs_hci.calc_datacube
+      ~obs_hci.calc_datacube_fast
       ~obs_hci.calc_psf
       ~obs_hci.calc_psf_from_coeff
+      ~obs_hci.calc_psf_offset_from_center
       ~obs_hci.calc_psfs_grid
       ~obs_hci.calc_psfs_sgd
       ~obs_hci.delete_planets
@@ -34,6 +36,7 @@
       ~obs_hci.gen_disk_image
       ~obs_hci.gen_disk_psfs
       ~obs_hci.gen_mask_image
+      ~obs_hci.gen_mask_transmission_map
       ~obs_hci.gen_offset_psf
       ~obs_hci.gen_planets_image
       ~obs_hci.gen_pointing_offsets
@@ -60,6 +63,7 @@
       ~obs_hci.plot_bandpass
       ~obs_hci.psf_grid
       ~obs_hci.ramp_optimize
+      ~obs_hci.recenter_psf
       ~obs_hci.sat_limits
       ~obs_hci.saturation_levels
       ~obs_hci.sensitivity
@@ -127,6 +131,7 @@
       ~obs_hci.siaf_ap_names
       ~obs_hci.slowaxis
       ~obs_hci.telescope
+      ~obs_hci.use_fov_pix_plus1
       ~obs_hci.wave_fit
       ~obs_hci.well_level
       ~obs_hci.wfe_ref_drift

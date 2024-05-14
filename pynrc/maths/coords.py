@@ -113,7 +113,7 @@ def siafap_sci_coords(inst, coord_vals=None, coord_frame='tel'):
     # Get a reference point if coord_vals not set
     if coord_vals is None:
         try:
-            coord_vals = self.siaf_ap.reference_point(coord_frame)
+            ap = self.siaf_ap
         except:
             _log.warning("`self.siaf_ap` may not be set")
             apname = self.get_siaf_apname()
@@ -123,7 +123,15 @@ def siafap_sci_coords(inst, coord_vals=None, coord_frame='tel'):
             else:
                 _log.warning('`self.siaf_ap` not defined; assuming {}'.format(apname))
                 ap = self.siaf[apname]
-                coord_vals = ap.reference_point(coord_frame)
+                
+        if coord_frame=='tel':
+            coord_vals = (ap.V2Ref, ap.V3Ref)
+        elif coord_frame=='sci':
+            coord_vals = (ap.XSciRef, ap.YSciRef)
+        elif coord_frame=='det':
+            coord_vals = (ap.XDetRef, ap.YDetRef)
+        elif coord_frame=='idl':
+            coord_vals = (0.0, 0.0)
 
     # Determine V2/V3 coordinates
     detector = detector_position = apname = None

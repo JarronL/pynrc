@@ -90,7 +90,6 @@ class nrc_hci(NIRCam):
             self.gen_wfedrift_coeff()
             # Enable mask-dependent
             self.gen_wfemask_coeff(large_grid=large_grid)
-            self.calc_psf_offset_from_center()
 
         log_prev = conf.logging_level
         setup_logging('WARN', verbose=False)
@@ -164,7 +163,7 @@ class nrc_hci(NIRCam):
 
         Keyword Args
         ------------
-        sp : None, :mod:`pysynphot.spectrum`
+        sp : None, :mod:`webbpsf_ext.synphot_ext.Spectrum`
             If not specified, the default is flat in phot lam
             (equal number of photons per spectral bin).
         return_oversample : bool
@@ -204,10 +203,10 @@ class nrc_hci(NIRCam):
             sampling = self.oversample if return_oversample else 1
             psf = self.recenter_psf(psf, sampling=sampling)
 
-        # Being coronagraphic mask attenuation
         if not self.is_coron:
             return psf
 
+        # Begin coronagraphic mask attenuation
 
         # Determine if any throughput loss due to coronagraphic mask
         # artifacts, such as the mask holder or ND squares.
@@ -244,7 +243,7 @@ class nrc_hci(NIRCam):
                 trans = np.mean(cmask_sub)
                 # COM substrate already accounted for in filter throughput curve,
                 # so it will be double-counted here. Need to divide it out.
-                w_um = self.bandpass.avgwave() / 1e4
+                w_um = self.bandpass.avgwave().to_value('um')
                 com_th = nircam_com_th(wave_out=w_um)
                 trans /= com_th
         else:
@@ -268,7 +267,7 @@ class nrc_hci(NIRCam):
         elif self.is_coron:
             full = True if 'FULL' in wind_mode else False
             if full:
-                xcen, ycen = self.siaf_ap.reference_point('det')
+                xcen, ycen = (self.siaf_ap.XDetRef, self.siaf_ap.YDetRef)
             else:
                 cdict = coron_ap_locs(self.module, self.channel, self.image_mask, full=full)
                 xcen, ycen = cdict['cen']
@@ -395,11 +394,11 @@ class obs_hci(nrc_hci):
 
         Parameters
         ----------
-        sp_sci : :mod:`pysynphot.spectrum`
-            A pysynphot spectrum of science target (e.g., central star).
+        sp_sci : :class:`webbpsf_ext.synphot_ext.Spectrum`
+            A synphot spectrum of science target (e.g., central star).
             Should already be normalized to the apparent flux.
-        sp_ref : :mod:`pysynphot.spectrum` or None
-            A pysynphot spectrum of reference target.
+        sp_ref : :class:`webbpsf_ext.synphot_ext.Spectrum` or None
+            A synphot spectrum of reference target.
             Should already be normalized to the apparent flux.
         distance : float
             Distance in parsecs to the science target. This is used for
@@ -737,7 +736,7 @@ class obs_hci(nrc_hci):
         # Recenter PSFs
         if self.psf_list is not None:
             for hdu in self.psf_list:
-                if recenter:
+                if recenter and hdu.header.get('RECENTER',False)==False:
                     hdu.data = self.recenter_psf(hdu.data, sampling=self.oversample)
                     hdu.header['RECENTER'] = (True, 'PSF was recentered')
                 else:
@@ -775,7 +774,7 @@ class obs_hci(nrc_hci):
         """Exoplanet spectrum
 
         Return the planet spectrum from Spiegel & Burrows (2012) normalized
-        to distance of current target. Output is a :mod:`pysynphot.spectrum`.
+        to distance of current target. Output is a :class:`webbpsf_ext.synphot_ext.Spectrum`.
 
         See `spectra.companion_spec()` function for more details.
         """
@@ -824,7 +823,7 @@ class obs_hci(nrc_hci):
         sptype : str
             Instead of using a exoplanet spectrum, specify a stellar type.
         renorm_args : dict
-            Pysynphot renormalization arguments in case you want
+            Renormalization arguments in case you want
             very specific luminosity in some bandpass.
             Includes (value, units, bandpass).
 
@@ -1235,9 +1234,10 @@ class obs_hci(nrc_hci):
         PA : float
             Position angle of roll position (counter-clockwise, from West to East).
             Scence will rotate in opposite direction.
-        xyoff_asec : 
+        xyoff_asec : None or tuple
             Positional offset of scene from reference location in 'idl' coords.
-            Shift occurs after PA rotation.
+            Shift occurs after PA rotation. Default is (0,0), but set to None to 
+            get the default dither position from self.pointing_info.
         do_ref : bool
             Slope image for reference star observation using `self.wfe_ref_drift`.
         do_roll2 : bool
@@ -1414,10 +1414,16 @@ class obs_hci(nrc_hci):
         ##################################
 
         if do_ref:
-            no_disk = no_planets = True
+            no_disk = True
+            no_planets = True
         else:
             no_disk    = exclude_disk    and exclude_noise
             no_planets = exclude_planets and exclude_noise
+
+        if self.disk_hdulist is None:
+            no_disk = True
+        if len(self.planets)==0:
+            no_planets = True
 
         # Make sure to include planets and disks for Poisson noise calculations
         # Telescope PA is counter-clockwise, therefore image rotation is opposite direction
@@ -1489,17 +1495,19 @@ class obs_hci(nrc_hci):
     def star_flux(self, fluxunit='counts', do_ref=False, sp=None):
         """ Stellar flux
 
-        Return the stellar flux in pysynphot-supported units, such as
+        Return the stellar flux in synphot-supported units, such as
         vegamag, counts, or Jy.
 
         Parameters
         ----------
         fluxunits : str
             Desired output units, such as counts, vegamag, Jy, etc.
-            Must be a Pysynphot supported unit string.
-        sp : :mod:`pysynphot.spectrum`
-            Normalized Pysynphot spectrum.
+            Must be a synphot supported unit string.
+        sp : :class:`webbpsf_ext.synphot_ext.Spectrum`
+            Normalized synphot spectrum.
         """
+
+        from webbpsf_ext.synphot_ext import Observation
 
         if sp is None:
             sp = self.sp_ref if do_ref else self.sp_sci
@@ -1507,9 +1515,9 @@ class obs_hci(nrc_hci):
         if sp is None:
             raise ValueError('Stellar spectrum is undefined.')
 
-        # Create pysynphot observation
+        # Create synphot observation
         bp = self.bandpass
-        obs = S.Observation(sp, bp, binset=bp.wave)
+        obs = Observation(sp, bp, binset=bp.wave)
 
         return obs.effstim(fluxunit)
 
@@ -2631,7 +2639,7 @@ def attenuate_with_coron_mask(self, image_oversampled, cmask):
     if cmask is None:
         return image_oversampled
 
-    w_um = self.bandpass.avgwave() / 1e4
+    w_um = self.bandpass.avgwave().to_value('um')
     com_th = nircam_com_th(wave_out=w_um)
     pixscale_over = self.pixelscale / self.oversample
 

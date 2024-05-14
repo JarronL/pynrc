@@ -21,13 +21,16 @@
       ~nrc_hci.bg_zodi
       ~nrc_hci.bg_zodi_image
       ~nrc_hci.calc_datacube
+      ~nrc_hci.calc_datacube_fast
       ~nrc_hci.calc_psf
       ~nrc_hci.calc_psf_from_coeff
+      ~nrc_hci.calc_psf_offset_from_center
       ~nrc_hci.calc_psfs_grid
       ~nrc_hci.calc_psfs_sgd
       ~nrc_hci.display
       ~nrc_hci.drift_opd
       ~nrc_hci.gen_mask_image
+      ~nrc_hci.gen_mask_transmission_map
       ~nrc_hci.gen_offset_psf
       ~nrc_hci.gen_pointing_offsets
       ~nrc_hci.gen_psf_coeff
@@ -49,6 +52,7 @@
       ~nrc_hci.plot_bandpass
       ~nrc_hci.psf_grid
       ~nrc_hci.ramp_optimize
+      ~nrc_hci.recenter_psf
       ~nrc_hci.sat_limits
       ~nrc_hci.saturation_levels
       ~nrc_hci.sensitivity
@@ -112,6 +116,7 @@
       ~nrc_hci.siaf_ap_names
       ~nrc_hci.slowaxis
       ~nrc_hci.telescope
+      ~nrc_hci.use_fov_pix_plus1
       ~nrc_hci.wave_fit
       ~nrc_hci.well_level
       ~nrc_hci.include_ote_field_dependence

@@ -33,6 +33,7 @@
       plot_images
       plot_images_swlw
       plot_planet_patches
+      plot_spectrum
       update_yscale
    
    

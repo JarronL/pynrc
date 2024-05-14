@@ -34,6 +34,7 @@ from tqdm.auto import trange, tqdm
 from astropy.io import fits, ascii
 from astropy.table import Table
 from astropy.time import Time
+import astropy.units as u
 # from astropy import units
 
 #from scipy.optimize import least_squares#, leastsq
@@ -75,14 +76,6 @@ import webbpsf, poppy
 from poppy import (radial_profile, measure_radial, measure_fwhm, measure_ee)
 from poppy import (measure_sharpness, measure_centroid) #, measure_strehl)
 
-import pysynphot as S
-# Extend default wavelength range to 5.6 um
-S.refs.set_default_waveset(minwave=500, maxwave=56000, num=10000.0, delta=None, log=False)
-# JWST 25m^2 collecting area
-# Flux loss from masks and occulters are taken into account in WebbPSF
-# S.refs.setref(area = 25.4e4) # cm^2
-S.refs.setref(area = 25.78e4) # cm^2 according to jwst_pupil_RevW_npix1024.fits.gz
-
 # The following won't work on readthedocs compilation
 if not on_rtd:
     # Grab WebbPSF assumed pixel scales
@@ -123,7 +116,7 @@ __epsilon = np.finfo(float).eps
 
 ###########################################################################
 #
-#    Pysynphot Bandpasses
+#    Bandpasses
 #
 ###########################################################################
 
@@ -152,11 +145,11 @@ def channel_select(bp):
 
     Parameters
     ----------
-    bp : :mod:`pysynphot.obsbandpass`
+    bp : :class:`webbpsf_ext.synphot_ext.Bandpass`
         NIRCam filter bandpass.
     """
 
-    if bp.avgwave()/1e4 < 2.3:
+    if bp.avgwave().to_value('um') < 2.3:
         pix_scale = pixscale_SW # pixel scale (arcsec/pixel)
         idark = 0.003      # dark current (e/sec)
         pex = (1.0,5.0)
@@ -320,7 +313,7 @@ def pix_noise(ngroup=2, nf=1, nd2=0, tf=10.73677, rn=15.0, ktc=29.0, p_excess=(0
 
 ###########################################################################
 #
-#    Pysynphot Spectrum Wrappers
+#    Spectrum Wrappers
 #
 ###########################################################################
 
@@ -328,62 +321,6 @@ from webbpsf_ext.spectra import BOSZ_spectrum, stellar_spectrum, source_spectrum
 from webbpsf_ext.spectra import planets_sb12, sp_accr, jupiter_spec, companion_spec
 from webbpsf_ext.spectra import linder_table, linder_filter, cond_table, cond_filter
 from webbpsf_ext.spectra import bin_spectrum, mag_to_counts
-
-def bin_spectrum(sp, wave, waveunits='um'):
-    """Rebin spectrum
-
-    Rebin a :mod:`pysynphot.spectrum` to a different wavelength grid.
-    This function first converts the input spectrum to units
-    of counts then combines the photon flux onto the
-    specified wavelength grid.
-
-    Output spectrum units are the same as the input spectrum.
-
-    Parameters
-    -----------
-    sp : :mod:`pysynphot.spectrum`
-        Spectrum to rebin.
-    wave : array_like
-        Wavelength grid to rebin onto.
-    waveunits : str
-        Units of wave input. Must be recognizeable by Pysynphot.
-
-    Returns
-    -------
-    :mod:`pysynphot.spectrum`
-        Rebinned spectrum in same units as input spectrum.
-    """
-
-    waveunits0 = sp.waveunits
-    fluxunits0 = sp.fluxunits
-
-    # Convert wavelength of input spectrum to desired output units
-    sp.convert(waveunits)
-    # We also want input to be in terms of counts to conserve flux
-    sp.convert('flam')
-
-    # Make sure wavelengths are sorted monotonically
-    wave = np.sort(wave)
-
-    edges = S.binning.calculate_bin_edges(wave)
-    ind = (sp.wave >= edges[0]) & (sp.wave <= edges[-1])
-    binflux = binned_statistic(sp.wave[ind], sp.flux[ind], np.mean, bins=edges)
-
-    # Interpolate over NaNs
-    ind_nan = np.isnan(binflux)
-    finterp = interp1d(wave[~ind_nan], binflux[~ind_nan], kind='cubic')
-    binflux[ind_nan] = finterp(wave[ind_nan])
-
-    sp2 = S.ArraySpectrum(wave, binflux, waveunits=waveunits, fluxunits='flam')
-    sp2.convert(waveunits0)
-    sp2.convert(fluxunits0)
-
-    # Put back units of original input spectrum
-    sp.convert(waveunits0)
-    sp.convert(fluxunits0)
-
-    return sp2
-
 
 def zodi_spec(zfact=None, ra=None, dec=None, thisday=None, **kwargs):
     """Zodiacal light spectrum.
@@ -429,9 +366,9 @@ def zodi_spec(zfact=None, ra=None, dec=None, thisday=None, **kwargs):
 
     Returns
     -------
-    :mod:`pysynphot.spectrum`
-        Output is a Pysynphot spectrum with default units of flam (erg/s/cm^2/A/sr).
-        Note: Pysynphot doesn't recognize that it's per steradian, but we must keep
+    :mod:`webbpsf_ext.synphot_ext..Spectrum`
+        Output is a synphot spectrum with default units of flam (erg/s/cm^2/A/sr).
+        Note: synphot doesn't recognize that it's per steradian, but we must keep
         that in mind when integrating the flux per pixel.
 
     Notes
@@ -454,6 +391,7 @@ def zodi_spec(zfact=None, ra=None, dec=None, thisday=None, **kwargs):
 
     """
 
+    from webbpsf_ext.synphot_ext import ArraySpectrum, BlackBody, convert_flux
     
     if (ra is not None) and (dec is not None):
         if _jbt_exists == False:
@@ -484,7 +422,7 @@ def zodi_spec(zfact=None, ra=None, dec=None, thisday=None, **kwargs):
                         ind = np.argmin(diff)
                         ftot = farr[ind]
 
-                sp = S.ArraySpectrum(wave=wvals*1e4, flux=ftot*1e6, fluxunits='Jy')
+                sp = ArraySpectrum(wave=wvals*1e4, flux=ftot*1e6, fluxunits='Jy')
                 sp.convert('flam')
                 sp.name = 'Total Background'
 
@@ -500,14 +438,13 @@ def zodi_spec(zfact=None, ra=None, dec=None, thisday=None, **kwargs):
     else:
         f1 = f2 = zfact
     # These values have been scaled to match JWST-CALC-003894 values
-    # in order to work with Pysynphot's blackbody function.
-    # Pysynphot's BB function is normalized to 1Rsun at 1kpc by default.
+    # in order to work with synphot's blackbody function.
+    # synphot's BB function is normalized to 1Rsun at 1kpc by default.
     f1 *= 4.0e7
     f2 *= 2.0e13
 
-    bb1 = f1 * S.BlackBody(5300.0)
-    bb2 = f2 * S.BlackBody(282.0)
-
+    bb1 = f1 * BlackBody(5300.0)
+    bb2 = f2 * BlackBody(282.0)
 
     # Query Euclid Background Model
     locstr = kwargs.get('locstr')
@@ -519,12 +456,10 @@ def zodi_spec(zfact=None, ra=None, dec=None, thisday=None, **kwargs):
         waves = np.array([1.0,5.5])
         vals = zodi_euclid(locstr, year, day, waves, **kwargs)
 
-        bb1.convert('Jy')
-        bb2.convert('Jy')
-
         # MJy at wavelength locations
-        f_bb1 = bb1.sample(waves*1e4) / 1e6
-        f_bb2 = bb2.sample(waves*1e4) / 1e6
+        uwaves = waves * u.um
+        f_bb1 = convert_flux(uwaves, bb1(uwaves), 'MJy').value
+        f_bb2 = convert_flux(uwaves, bb2(uwaves), 'MJy').value
 
         bb1 *= (vals[0]-f_bb2[0])/f_bb1[0]
         bb2 *= (vals[1]-f_bb1[1])/f_bb2[1]
@@ -646,7 +581,7 @@ def zodi_euclid(locstr, year, day, wavelengths=[1,5.5], ido_viewin=0, **kwargs):
 # 	Default is 2
 # 	"""
 #
-# 	bb1 = S.BlackBody(5800.); bb2 = S.BlackBody(300.)
+# 	bb1 = BlackBody(5800.); bb2 = BlackBody(300.)
 # 	sp_zodi = (1.7e7*bb1 + 2.3e13*bb2) * 3.73
 # 	sp_zodi.convert('flam')
 #
@@ -717,7 +652,7 @@ def grism_background(filter, pupil='GRISM0', module='A', sp_bg=None,
         Either 'GRISM0' ('GRISMR') or 'GRISM90' ('GRISMC').
     module : str
         NIRCam 'A' or 'B' module.
-    sp_bg : :mod:`pysynphot.spectrum`
+    sp_bg : :mod:`webbpsf_ext.synphot_ext.Spectrum`
         Spectrum of Zodiacal background emission, which gets
         multiplied by bandpass throughput to determine final
         wavelength-dependent flux that is then dispersed.
@@ -747,6 +682,8 @@ def grism_background(filter, pupil='GRISM0', module='A', sp_bg=None,
         Calendar day to use for background calculation.  If not given, will 
         use the average of visible calendar days.
     """
+
+    from webbpsf_ext.synphot_ext import Observation
     
     # Option for GRISMR/GRISMC
     if 'GRISMR' in pupil:
@@ -781,15 +718,14 @@ def grism_background(filter, pupil='GRISM0', module='A', sp_bg=None,
         res, dw = grism_res(pupil, module, grism_order) # Resolution and dispersion
         
         # Observation spectrum converted to count rate
-        obs_bg = S.Observation(sp_bg, bp, bp.wave)
-        obs_bg.convert('counts')
+        obs_bg = Observation(sp_bg, bp, bp.wave)
 
         # Total background flux per pixel (not dispersed)
         area_scale = (pix_scale/206265.0)**2
         fbg_tot = obs_bg.countrate() * area_scale
         # Total counts/sec within each wavelength bin
-        binwave = obs_bg.binwave/1e4
-        binflux = obs_bg.binflux*area_scale
+        binwave = obs_bg.binset.to_value('um')
+        binflux = area_scale * obs_bg.sample_binned(flux_unit='count').value
             
         # Interpolation function
         fint = interp1d(binwave, binflux, kind='cubic')
@@ -798,16 +734,6 @@ def grism_background(filter, pupil='GRISM0', module='A', sp_bg=None,
         # Get flux values and preserve total flux
         flux_vals = fint(wave_vals)
         flux_vals = fbg_tot * flux_vals / flux_vals.sum()
-        
-        # # Wavelengths at each pixel to interpolate
-        # wave_vals = np.arange(bp.wave.min()/1e4, bp.wave.max()/1e4, dw)
-    
-        # # Rebin onto desired wavelength grid
-        # sp_new = bin_spectrum(sp_bg, wave_vals, waveunits='um')
-        # obs_bg = S.Observation(sp_new, bp, binset=sp_new.wave)
-        # # Get flux values per pixel
-        # obs_bg.convert('counts')
-        # flux_vals = obs_bg.binflux * (pix_scale/206265.0)**2
     
         # Index of reference wavelength
         iref = int((wref - wave_vals[0]) / (wave_vals[1] - wave_vals[0]))
@@ -838,6 +764,7 @@ def grism_background(filter, pupil='GRISM0', module='A', sp_bg=None,
 def grism_background_com(filter, pupil='GRISM90', module='A', sp_bg=None, 
                          wref=None, **kwargs):
     
+    from webbpsf_ext.synphot_ext import Observation
     
     # Option for GRISMR/GRISMC
     if 'GRISMR' in pupil:
@@ -878,15 +805,14 @@ def grism_background_com(filter, pupil='GRISM90', module='A', sp_bg=None,
     ny_com, nx_com = im_com.shape
 
     # Observation spectrum converted to count rate
-    obs_bg = S.Observation(sp_bg, bp, bp.wave)
-    obs_bg.convert('counts')
+    obs_bg = Observation(sp_bg, bp, bp.wave)
 
     # Total background flux per pixel (not dispersed)
     area_scale = (pix_scale/206265.0)**2
     fbg_tot = obs_bg.countrate() * area_scale
     # Total counts/sec within each wavelength bin
-    binwave = obs_bg.binwave/1e4
-    binflux = obs_bg.binflux*area_scale
+    binwave = obs_bg.binset.to_value('um')
+    binflux = area_scale * obs_bg.sample_binned(flux_unit='count').value
 
     # Interpolation function
     fint = interp1d(binwave, binflux, kind='cubic')
@@ -1040,8 +966,8 @@ def place_grism_spec(nrc, sp, xpix, ypix, wref=None, return_oversample=False,
     ==========
     nrc : :class:`~pynrc.NIRCam`
         pynrc.NIRCam class
-    sp : :mod:`pysynphot.spectrum`
-        A pysynphot spectrum of target.
+    sp : :mod:`webbpsf_ext.synphot_ext.Spectrum`
+        A synphot spectrum of target.
         Should already be normalized to the apparent flux.
     xpix : float
         Pixel position along x-axis to place reference wavelength.
@@ -1563,7 +1489,7 @@ def offset_bar(filt, mask):
     if (mask is not None) and ('WB' in mask):
         # What is the effective wavelength of the filter?
         #bp = pynrc.read_filter(filter)
-        #w0 = bp.avgwave() / 1e4
+        #w0 = bp.avgwave().to_value('um')
         w0 = float(filt[1:-1])/100
 
         # Choose wavelength from dictionary

@@ -21,10 +21,12 @@
       cond_filter
       cond_table
       download_BOSZ_spectrum
+      download_votable
       jupiter_spec
       linder_filter
       linder_table
       mag_to_counts
+      mass_sensitivity_table
       sp_accr
       stellar_spectrum
    

@@ -27,13 +27,13 @@
       nircam_grism_si_ar
       nircam_grism_th
       nircam_grism_wref
+      nircam_lyot_th
       niriss_grism_res
       niriss_grism_wref
       qe_nircam
       qe_nircam_flight
       qe_nircam_preflight
       qe_nirspec
-      read_filter
    
    
 

@@ -20,13 +20,16 @@
       ~NIRCam.bg_zodi
       ~NIRCam.bg_zodi_image
       ~NIRCam.calc_datacube
+      ~NIRCam.calc_datacube_fast
       ~NIRCam.calc_psf
       ~NIRCam.calc_psf_from_coeff
+      ~NIRCam.calc_psf_offset_from_center
       ~NIRCam.calc_psfs_grid
       ~NIRCam.calc_psfs_sgd
       ~NIRCam.display
       ~NIRCam.drift_opd
       ~NIRCam.gen_mask_image
+      ~NIRCam.gen_mask_transmission_map
       ~NIRCam.gen_psf_coeff
       ~NIRCam.gen_psfs_over_fov
       ~NIRCam.gen_save_name
@@ -46,6 +49,7 @@
       ~NIRCam.plot_bandpass
       ~NIRCam.psf_grid
       ~NIRCam.ramp_optimize
+      ~NIRCam.recenter_psf
       ~NIRCam.sat_limits
       ~NIRCam.saturation_levels
       ~NIRCam.sensitivity
@@ -108,6 +112,7 @@
       ~NIRCam.siaf_ap_names
       ~NIRCam.slowaxis
       ~NIRCam.telescope
+      ~NIRCam.use_fov_pix_plus1
       ~NIRCam.wave_fit
       ~NIRCam.well_level
       ~NIRCam.include_ote_field_dependence

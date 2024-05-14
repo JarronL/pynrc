@@ -15,8 +15,6 @@
       :toctree:
    
       Tel2Sci_info
-      det_to_sci
-      sci_to_det
       siafap_sci_coords
    
    

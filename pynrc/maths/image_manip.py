@@ -5,15 +5,16 @@ _log = logging.getLogger('pynrc')
 from poppy.utils import krebin
 
 from .coords import dist_image
-from scipy.ndimage import fourier_shift
-from scipy.ndimage.interpolation import rotate
+from scipy.ndimage import fourier_shift, rotate
 from astropy.io import fits
 
-from webbpsf_ext.image_manip import pad_or_cut_to_size, fshift, fourier_imshift, frebin
+from webbpsf_ext.image_manip import pad_or_cut_to_size, crop_image, crop_observation
+from webbpsf_ext.image_manip import fshift, fourier_imshift, frebin
 from webbpsf_ext.image_manip import rotate_offset, rotate_shift_image
 from webbpsf_ext.image_manip import image_rescale, model_to_hdulist
 from webbpsf_ext.image_manip import convolve_image, crop_zero_rows_cols
 from webbpsf_ext.image_manip import get_im_cen
+from webbpsf_ext.image_manip import add_ipc, add_ppc, apply_pixel_diffusion
 from webbpsf_ext.maths import hist_indices, binned_statistic, fit_bootstrap
 
 from webbpsf_ext.imreg_tools import crop_observation as _crop_observation
@@ -213,7 +214,6 @@ def subtract_psf(image, psf, weights=None, osamp=1,
     kipc : ndarray
         2D kernel to apply for IPC. Default is None.
     """
-    from ..simul.ngNRC import add_ipc
 
     # Shift oversampled PSF and rebin to detector sampled
     xsh_over, ysh_over = np.array(xyshift) * osamp
