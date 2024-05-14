@@ -57,13 +57,13 @@ From PyPi:
     $ pip install stsynphot
 
 Data files for Synphot are distributed through the
-`Calibration Reference Data System <http://www.stsci.edu/hst/observatory/crds/throughput.html>`_. 
+`Calibration Reference Data System <https://www.stsci.edu/hst/instrumentation/reference-data-for-calibration-and-tools>`_. 
 They are expected to follow a certain directory structure under the root
 directory, identified by the ``PYSYN_CDBS`` environment variable that *must* be
 set prior to using this package.
 
-1. Download the following file: 
-   `cdbs.tar.gz <http://mips.as.arizona.edu/~jleisenring/pynrc/cdbs.tar.gz>`_  [approx. 760 MB]
+1. Download 
+   `cdbs.tar.gz <https://arizona.box.com/shared/static/cbkxlwvokml7n1gref8nw3neg98kzcwn.gz>`_ [approx. 900 MB] to obtain the full set of Synphot data files. Or download a minimum subset of files `here <https://arizona.box.com/shared/static/wgq7ymqsp8e7jfno8yk6o2igbnqlad8z.zip>`_ [approx 50 MB].
 2. Untar into a directory of your choosing.
 3. Set the environment variable ``PYSYN_CDBS`` to point to that directory. 
    For example, in .bashrc shell file, add:
