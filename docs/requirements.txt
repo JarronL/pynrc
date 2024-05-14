@@ -3,14 +3,16 @@ sphinx==4.2.0
 sphinx_rtd_theme==0.4.3
 nbsphinx==0.8.7
 docutils==0.18
-numpy>=1.21.2
+numpy>=1.24.3
 matplotlib==3.7.0
 Cython
 astropy>=5.2
-astroquery==0.4.3
+astroquery==0.4.6
 # astropy-helpers>=3.1
 synphot>=1.2.0
+stynphot>=1.2.0
 poppy>=1.1.0
-webbpsf>=1.1.0
+webbpsf>=1.2.0
 jwst
-webbpsf_ext
+pysiaf
+webbpsf_ext>=1.2.0
