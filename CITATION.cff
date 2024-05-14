@@ -9,7 +9,7 @@ authors:
   - family-names: "Fraine"
     given-names: "Jonathan" 
 title: "pyNRC: Python ETC and Simulator for JWST NIRCam"
-version: v1.0.4
+version: v1.2.0
 doi: 10.5281/zenodo.5829553
-date-released: 2022-01-07
+date-released: 2024-05-13
 url: "https://github.com/JarronL/pynrc"
