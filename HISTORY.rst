@@ -1,6 +1,13 @@
 Revision History
 ================
 
+v1.2.0 (May 13, 2024)
+---------------------
+
+ - Bring up to date with WebbPSF v1.2.0 and webbpsf_ext v1.2.0
+ - Add analysis tools for PCA and NMF PSF subtraction
+ - Add a number of simulation features to match flight performance
+
 v1.0.4 (Dec 28, 2021)
 ---------------------
 
