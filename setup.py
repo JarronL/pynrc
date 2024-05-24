@@ -92,7 +92,7 @@ with open('HISTORY.rst') as history_file:
 
 install_requires = [
     'tqdm>4',
-    'poppy>=1.2.0',
+    'poppy>=1.1.0',
     'webbpsf>=1.2.0',
     'webbpsf_ext>=1.2.1',
     'astroquery>=0.4.6',
