@@ -10,7 +10,7 @@ astropy>=5.3
 astroquery==0.4.6
 # astropy-helpers>=3.1
 synphot>=1.2.0
-stynphot>=1.2.0
+stsynphot>=1.2.0
 poppy>=1.1.0
 webbpsf>=1.2.0
 jwst
