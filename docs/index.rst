@@ -26,25 +26,6 @@ Developed by Jarron Leisenring and contributors at University of Arizona (2015 -
    installation.rst
    install_clean.rst
 
-.. toctree::
-   :caption: User Guides
-   :maxdepth: 1
-
-   tutorials/Basic_Usage.ipynb
-   tutorials/Ramp_Optimization_Examples.ipynb
-   tutorials/Coronagraph_Basics.ipynb
-   tutorials/Coronagraph_Wedges.ipynb
-   tutorials/HR8799_DMS_Level1b.ipynb
-
-.. toctree::
-   :caption: Reference Info
-   :maxdepth: 1
-   
-   api.rst
-   change_log.rst
-   license.rst
-   contributing.rst
-
 
 License & Attribution
 ---------------------
