@@ -54,8 +54,10 @@ see :ref:`LICENSE <license>`.
 
 .. admonition:: Citing pyNRC
 
-   If you make use of pyNRC in your work, please cite the following paper: 
-   *Leisenring et al., "pyNRC: A NIRCam ETC and Simulation Toolset"* (in prep).
+   If you make use of pyNRC in your work, please cite the following paper:
+
+    * Leisenring, J. (2024). pyNRC: Python ETC and Simulator for JWST NIRCam (Version v1.2.0) [Computer software]. https://doi.org/10.5281/zenodo.5829552
+    * BibTeX entry: ``@software{Leisenring_pyNRC_Python_ETC_2024, author = {Leisenring, Jarron}, doi = {10.5281/zenodo.5829552}, month = may, title = {{pyNRC: Python ETC and Simulator for JWST NIRCam}}, url = {https://github.com/JarronL/pynrc}, version = {v1.2.0}, year = {2024} }``
 
 
 Indices and Tables

@@ -66,7 +66,7 @@ coverage: ## check code coverage quickly with the default Python
 
 docs: ## generate Sphinx HTML documentation, including API docs
 	$(MAKE) -C docs clean
-	$(MAKE) -C docs html
+	$(MAKE) -C docs html latexpdf
 	$(BROWSER) docs/_build/html/index.html
 
 #servedocs: docs ## compile the docs watching for changes
