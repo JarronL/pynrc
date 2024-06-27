@@ -20,11 +20,18 @@ Developed by Jarron Leisenring and contributors at University of Arizona (2015 -
    readme.rst
 
 .. toctree::
-   :caption: Install Instructions
    :maxdepth: 1
 
    installation.rst
    install_clean.rst
+
+.. toctree::
+   :caption: Reference Info
+   :maxdepth: 1
+   
+   change_log.rst
+   license.rst
+   contributing.rst
 
 
 License & Attribution
