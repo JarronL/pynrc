@@ -11,8 +11,8 @@ build:
     python: "3.11"
 
 # Set up conda environment
-conda:
-  environment: .rtd-environment.yaml
+#conda:
+#  environment: .rtd-environment.yaml
 
 # Build documentation in the docs/ directory with Sphinx
 sphinx:
