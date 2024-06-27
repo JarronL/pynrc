@@ -29,6 +29,7 @@ Developed by Jarron Leisenring and contributors at University of Arizona (2015 -
    :caption: Reference Info
    :maxdepth: 1
    
+   api.rst
    change_log.rst
    license.rst
    contributing.rst
