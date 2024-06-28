@@ -26,6 +26,12 @@ Developed by Jarron Leisenring and contributors at University of Arizona (2015 -
    install_clean.rst
 
 .. toctree::
+   :caption: User Guides
+   :maxdepth: 1
+
+   tutorials/Basic_Usage.ipynb
+
+.. toctree::
    :caption: Reference Info
    :maxdepth: 1
    
@@ -55,4 +61,3 @@ Indices and Tables
 * :ref:`genindex`
 * :ref:`modindex`
 * :ref:`search`
-
