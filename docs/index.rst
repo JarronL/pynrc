@@ -15,19 +15,19 @@ Developed by Jarron Leisenring and contributors at University of Arizona (2015 -
 
 .. toctree::
    :caption: Getting Started
-   :maxdepth: 1
+   :maxdepth: 2
    
    readme.rst
 
 .. toctree::
-   :maxdepth: 1
+   :maxdepth: 2
 
    installation.rst
    install_clean.rst
 
 .. toctree::
    :caption: User Guides
-   :maxdepth: 1
+   :maxdepth: 2
 
    tutorials/Basic_Usage.ipynb
    tutorials/Ramp_Optimization_Examples.ipynb
@@ -37,7 +37,7 @@ Developed by Jarron Leisenring and contributors at University of Arizona (2015 -
    
 .. toctree::
    :caption: Reference Info
-   :maxdepth: 1
+   :maxdepth: 2
    
    api.rst
    change_log.rst
