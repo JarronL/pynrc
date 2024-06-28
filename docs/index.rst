@@ -30,7 +30,11 @@ Developed by Jarron Leisenring and contributors at University of Arizona (2015 -
    :maxdepth: 1
 
    tutorials/Basic_Usage.ipynb
-
+   tutorials/Ramp_Optimization_Examples.ipynb
+   tutorials/Coronagraph_Basics.ipynb
+   tutorials/Coronagraph_Wedges.ipynb
+   tutorials/HR8799_DMS_Level1b.ipynb
+   
 .. toctree::
    :caption: Reference Info
    :maxdepth: 1
