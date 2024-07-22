@@ -505,7 +505,7 @@ def get_sub_regions(im, fwhm_pix, IWA_nfwhm=1, OWA_nfwhm=None,
         # print(r1,r2,r2-r1)
         th_bounds = th_bounds_all[jj]
         for th1, th2 in th_bounds:
-            ind = (rho_im>r1) & (rho_im<=r2) & (th_im>th1) & (th_im<=th2)
+            ind = (rho_im>=r1) & (rho_im<=r2) & (th_im>=th1) & (th_im<=th2)
             region_mask[ind] = ii
             ii += 1
 
@@ -859,7 +859,7 @@ def pca_subtraction(imarr, psfarr, fwhm_pix, do_loci=True,
     # Create subtraction and optimization region masks
     sub_masks, opt_masks = create_region_masks(imarr[0].shape, fwhm_pix, kw_sub=kw_sub, kw_opt=kw_opt)
     if do_klip:
-        otp_masks = None
+        opt_masks = None
     # Number of sub region masks
     nmasks = len(np.unique(sub_masks[sub_masks>0]))
 
