@@ -994,11 +994,11 @@ def smooth_fft(data, delt, first_deriv=False, second_deriv=False):
         ndiff = 1
 
     for diff in range(ndiff):
-        #Fltr_Spectrum = np.zeros(N,dtype=np.complex)
-        Fltr_Spectrum = np.zeros_like(Dat_P,dtype=np.complex)
+        #Fltr_Spectrum = np.zeros(N,dtype='complex')
+        Fltr_Spectrum = np.zeros_like(Dat_P,dtype='complex')
         # make the filter complex
         i1 = 1; n2 = int((N-1)/2)+1; i2 = i1+n2 
-        FltrCoef = LOPT[i1:].astype(np.complex)
+        FltrCoef = LOPT[i1:].astype('complex')
         # differentitation in frequency domain
         iW = ((np.arange(n2)+i1)*OMEGA*1j)**diff
         # multiply spectrum with filter coefficient
