@@ -47,9 +47,15 @@ def subtract_psf(image, psf, osamp=1, bpmask=None, rin=None, rout=None,
     image: ndarray
         Observed science image.
     psf: ndarray
-        Oversampled PSF.
+        Oversampled PSF (shifted and scaled to match).
     osamp: int
         Oversampling factor of PSF.
+    bpmask: bool array
+        Bad pixel mask indicating pixels in input image to ignore.
+    rin: float
+        Inner radius of annulus for subtraction. Default is None.
+    rout: float
+        Outer radius of annulus for subtraction. Default is None.
     xyshift: tuple
         Shift values in (x,y) directions. Units of pixels.
     psf_scale: float
@@ -57,11 +63,6 @@ def subtract_psf(image, psf, osamp=1, bpmask=None, rin=None, rout=None,
         find the best scaling factor.
     psf_offset: float
         Offset to apply to PSF.
-    method : str
-        Method to use for shifting. Options are:
-        - 'fourier' : Shift in Fourier space
-        - 'fshift' : Shift using interpolation
-        - 'opencv' : Shift using OpenCV warpAffine
     kipc: ndarray
         3x3 array of IPC kernel values. If None, then no IPC is applied.
     kppc: ndarray
@@ -76,12 +77,16 @@ def subtract_psf(image, psf, osamp=1, bpmask=None, rin=None, rout=None,
         set them to zero). Default is None (no weights).
         Should be same size as image.
         Recommended is inverse variance map.
-    return_sum2 : bool
-        Return the sum of the squared difference between the image
-        and PSF. Default is False.
-
-    Keyword Args
-    ------------
+    method : str
+        Method to use for shifting. Options are:
+        - 'fourier' : Shift in Fourier space
+        - 'fshift' : Shift using interpolation
+        - 'opencv' : Shift using OpenCV warpAffine
+    interp : str
+        Interpolation method to use for shifting using 'fshift' or 'opencv. 
+        Default is 'cubic'.
+        For 'opencv', valid options are 'linear', 'cubic', and 'lanczos'.
+        for 'fshift', valid options are 'linear', 'cubic', and 'quintic'.
     pad : bool
         Should we pad the array before shifting, then truncate?
         Otherwise, the image is wrapped.
@@ -90,15 +95,26 @@ def subtract_psf(image, psf, osamp=1, bpmask=None, rin=None, rout=None,
         ((before_1, after_1), ... (before_N, after_N)) unique pad constants for each axis.
         ((before, after),) yields same before and after constants for each axis.
         (constant,) or int is a shortcut for before = after = constant for all axes.
-    interp : str
-        Interpolation method to use for shifting using 'fshift' or 'opencv. 
-        Default is 'cubic'.
-        For 'opencv', valid options are 'linear', 'cubic', and 'lanczos'.
-        for 'fshift', valid options are 'linear', 'cubic', and 'quintic'.
+    return_sum2 : bool
+        Return the sum of the squared difference between the image
+        and PSF. Default is False.
+
+    Keyword Args
+    ------------
+    gstd_pix : float
+        Standard deviation of Gaussian kernel to blur PSF during shift.
+    oversample : int
+        Oversampling factor for fractional shift. Default is 1.
+    order : int
+        Interpolation order for oversampling during shifting. Default is 1.
+    rescale_pix : bool
+        Explicitly rescale the pixel values during resampling to ensure that
+        the flux within a superpixel is preserved. 
+        Default is False (zoom default behavior).
     """
     
     from webbpsf_ext.image_manip import frebin, crop_image
-    from webbpsf_ext.image_manip import fractional_image_shift
+    from webbpsf_ext.image_manip import fractional_image_shift, image_shift_with_nans
     from webbpsf_ext.image_manip import apply_pixel_diffusion, add_ipc, add_ppc
     from webbpsf_ext.coords import dist_image
 
@@ -111,10 +127,16 @@ def subtract_psf(image, psf, osamp=1, bpmask=None, rin=None, rout=None,
         if method in ['fshift', 'opencv']:
             kwargs_shift['interp'] = interp
         # Scale Gaussian std dev by oversampling factor
-        gstd_pix = kwargs.get('gstd_pix')
+        gstd_pix = kwargs.pop('gstd_pix', None)
         if gstd_pix is not None:
             kwargs_shift['gstd_pix'] = gstd_pix * osamp
-        psf_over = fractional_image_shift(psf, xsh_over, ysh_over, method=method, **kwargs_shift)
+        # psf_over = fractional_image_shift(psf, xsh_over, ysh_over, method=method, **kwargs_shift)
+
+        # Perform oversampling during shifting process?
+        kwargs_shift['oversample'] = kwargs.pop('oversample', 1)
+        kwargs_shift['order'] = kwargs.pop('order', 1)
+        kwargs_shift['rescale_pix'] = kwargs.pop('rescale_pix', False)
+        psf_over = image_shift_with_nans(psf, xsh_over, ysh_over, shift_method=method, **kwargs_shift)
 
     # Charge diffusion
     if diffusion_sigma is not None:
@@ -169,6 +191,580 @@ def subtract_psf(image, psf, osamp=1, bpmask=None, rin=None, rout=None,
         return np.sum(diff**2)
     else:
         return diff
+
+def subtraction_metrics(im1, im2, bp1, bp2, xyshift, 
+                        method='fourier', interp='lanczos',
+                        mask=None, weights=None, **kwargs):
+    """Perform subtraction and return goodness of fit metrics (std, ssr)
+    
+
+    Keyword Args
+    ------------
+    method : str
+        Method to use for shifting. Options are:
+        - 'fourier' : Shift in Fourier space
+        - 'fshift' : Shift using interpolation
+        - 'opencv' : Shift using OpenCV warpAffine
+    interp : str
+        Interpolation method to use for shifting using 'fshift' or 'opencv. 
+        Default is 'cubic'.
+        For 'opencv', valid options are 'linear', 'cubic', and 'lanczos'.
+        for 'fshift', valid options are 'linear', 'cubic', and 'quintic'.
+    mask : bool array
+        Mask of good pixels to consider. Default is None.
+    weights: ndarray
+        Array of weights to use during the fitting process.
+        Useful if you have bad pixels to mask out (ie.,
+        set them to zero). Default is None (no weights).
+        Should be same size as image.
+        Recommended is inverse variance map.
+    """
+
+    from webbpsf_ext.image_manip import fshift
+
+    # Shift bp2 by (dx,dy)
+    bp2 = bp2.astype('float')
+    bp2 = fshift(bp2, xyshift[0], xyshift[1], interp='linear', pad=True, cval=1)
+    bp2 = bp2 > 0
+    bpmask = bp1 | bp2
+    good_mask = (im1 != im2) & ~bpmask
+    if mask is not None:
+        good_mask &= mask
+
+    # NOTE: This can only be done after shifting im2
+    # # Get optimal scale factor between images
+    # im1_good = im1[good_mask]
+    # im2_good = im2[good_mask]
+    # try:
+    #     cf = np.linalg.lstsq(im2_good.reshape([1,-1]).T, im1_good, rcond=None)[0]
+    # except:
+    #     print(xyshift)
+    #     print(np.sum(np.isnan(im1_good)))
+    #     print(np.sum(np.isnan(im2_good)))
+    #     cf = 1.0
+    # scale = cf[0]
+
+    # Find indices within which good data exists
+    xgood = np.where(np.sum(good_mask, axis=0) > 0)[0]
+    x1, x2 = (xgood[0], xgood[-1])
+    ygood = np.where(np.sum(good_mask, axis=1) > 0)[0]
+    y1, y2 = (ygood[0], ygood[-1])
+
+    # Crop down for faster processing
+    im1_crop = im1[y1:y2+1, x1:x2+1]
+    im2_crop = im2[y1:y2+1, x1:x2+1]
+    good_mask_crop = good_mask[y1:y2+1, x1:x2+1]
+    weights_crop = np.ones_like(im1_crop) if weights is None else weights[y1:y2+1, x1:x2+1]
+    bp_crop = ~good_mask_crop
+
+    # Subtract images after performing fractional shift
+    diff = subtract_psf(im1_crop, im2_crop, xyshift=xyshift, psf_scale=None, 
+                        bpmask=bp_crop, method=method, interp=interp, **kwargs)
+
+    std = np.std(diff[good_mask_crop] * weights_crop[good_mask_crop])
+    ssr = np.sum((diff[good_mask_crop] * weights_crop[good_mask_crop])**2)
+
+    return std, ssr
+
+def build_subtraction_maps(im1, im2, bp1, bp2, dx_arr, dy_arr,
+               method='fourier', interp='lanczos',
+               mask=None, weights=None, verbose=False, **kwargs):
+    """Build map of LSQ subtraction metrics
+    
+    Returns a (nxy x nxy) array of std and square-summed residuals.
+
+    Keyword Args
+    ------------
+    method : str
+        Method to use for shifting. Options are:
+        - 'fourier' : Shift in Fourier space
+        - 'fshift' : Shift using interpolation
+        - 'opencv' : Shift using OpenCV warpAffine
+    interp : str
+        Interpolation method to use for shifting using 'fshift' or 'opencv. 
+        Default is 'cubic'.
+        For 'opencv', valid options are 'linear', 'cubic', and 'lanczos'.
+        for 'fshift', valid options are 'linear', 'cubic', and 'quintic'.
+    mask : bool array
+        Mask of good pixels to consider. Default is None.
+    weights: ndarray
+        Array of weights to use during the fitting process.
+        Useful if you have bad pixels to mask out (ie.,
+        set them to zero). Default is None (no weights).
+        Should be same size as image.
+        Recommended is inverse variance map.
+    """
+    std_arr = []
+    ssr_arr = []
+
+    dy_iter = tqdm(dy_arr, desc='dy', leave=False) if verbose else dy_arr
+    for dy in dy_iter:
+        for dx in dx_arr:
+            std, ssr = subtraction_metrics(im1, im2, bp1, bp2, (dx, dy), 
+                                           mask=mask, weights=weights,
+                                           method=method, interp=interp, **kwargs)
+            # Standard deviation of the difference
+            std_arr.append(std)
+            # Sum of squared residuals
+            ssr_arr.append(ssr)
+
+    nxy = len(dx_arr)
+    std_arr = np.array(std_arr).reshape(nxy, nxy)
+    ssr_arr = np.array(ssr_arr).reshape(nxy, nxy)
+
+    return std_arr, ssr_arr
+
+def find_best_offset(im1, im2, bp1, bp2, dxy_coarse_arr, dxy_fine_arr0,
+                     mask=None, weights=None, method='fourier', interp='lanczos',
+                     use_ssr=True, use_std=True, verbose=False, **kwargs):
+    """Best offset to move im2 to align with im1
+    
+    Keyword Args
+    ------------
+    method : str
+        Method to use for shifting. Options are:
+        - 'fourier' : Shift in Fourier space
+        - 'fshift' : Shift using interpolation
+        - 'opencv' : Shift using OpenCV warpAffine
+    interp : str
+        Interpolation method to use for shifting using 'fshift' or 'opencv. 
+        Default is 'cubic'.
+        For 'opencv', valid options are 'linear', 'cubic', and 'lanczos'.
+        for 'fshift', valid options are 'linear', 'cubic', and 'quintic'.
+    mask : bool array
+        Mask of good pixels to consider. Default is None.
+    weights: ndarray
+        Array of weights to use during the fitting process. Useful if you 
+        have bad pixels to mask out (ie., set them to zero). 
+        Default is None (no weights). Should be same size as image.
+        Recommended is inverse variance map.
+    use_ssr : bool
+        Use sum of squared residuals as a metric for alignment. Default is True.
+        If combined with use_std=True, then the best fit is the average of the two.
+    use_std : bool
+        Use standard deviation of the difference as a metric for alignment. Default is True.
+        If combined with use_ssr=True, then the best fit is the average of the two.
+    """
+    # Perform coarse grid search
+    std_arr, ssr_arr = build_subtraction_maps(im1, im2, bp1, bp2, dxy_coarse_arr, dxy_coarse_arr,
+                                              mask=mask, weights=weights, method=method, interp=interp, 
+                                              verbose=verbose, **kwargs)
+    # Find the minimum positions for std and ssr
+    dy_idx, dx_idx = np.unravel_index(np.nanargmin(std_arr), std_arr.shape)
+    xbest1, ybest1 = (dxy_coarse_arr[dx_idx], dxy_coarse_arr[dy_idx])
+    dy_idx, dx_idx = np.unravel_index(np.nanargmin(ssr_arr), ssr_arr.shape)
+    xbest2, ybest2 = (dxy_coarse_arr[dx_idx], dxy_coarse_arr[dy_idx])
+    if use_std and not use_ssr:
+        xbest, ybest = xbest1, ybest1
+    elif use_ssr and not use_std:
+        xbest, ybest = xbest2, ybest2
+    elif use_ssr and use_std:
+        xbest = (xbest1 + xbest2) / 2
+        ybest = (ybest1 + ybest2) / 2
+    else:
+        raise ValueError("Must use at least one of use_std=True or use_ssr=True.")
+
+    # Perfom fine grid search
+    dx_fine_arr = xbest + dxy_fine_arr0
+    dy_fine_arr = ybest + dxy_fine_arr0
+    std_arr, ssr_arr = build_subtraction_maps(im1, im2, bp1, bp2, dx_fine_arr, dy_fine_arr,
+                                              mask=mask, weights=weights, method=method, interp=interp,
+                                              verbose=verbose, **kwargs)
+
+    # Find the minimum positions for std and ssr
+    dy_idx, dx_idx = np.unravel_index(np.nanargmin(std_arr), std_arr.shape)
+    xsh_fine1, ysh_fine1 = (dx_fine_arr[dx_idx], dy_fine_arr[dy_idx])
+    dy_idx, dx_idx = np.unravel_index(np.nanargmin(ssr_arr), ssr_arr.shape)
+    xsh_fine2, ysh_fine2 = (dx_fine_arr[dx_idx], dy_fine_arr[dy_idx])
+
+    # NOTE: This actually doesn't work well. Positional offsets changes the final answer. Just report min location.
+    # The best fit is then the weighted average of the inverse of the std and ssr maps
+    # Take the weight average of the 5x5 grid around the minimum
+    # xv_grid, yv_grid = np.meshgrid(dx_fine_arr[dx_idx-2:dx_idx+3], dy_fine_arr[dy_idx-2:dy_idx+3])
+    # inv_std_arr = 1 / std_arr[dy_idx-2:dy_idx+3, dx_idx-2:dx_idx+3]
+    # xsh_fine1 = np.average(xv_grid, weights=inv_std_arr**2)
+    # ysh_fine1 = np.average(yv_grid, weights=inv_std_arr**2)
+    # inv_ssr_arr = 1 / ssr_arr[dy_idx-2:dy_idx+3, dx_idx-2:dx_idx+3]
+    # xsh_fine2 = np.average(xv_grid, weights=inv_ssr_arr**2)
+    # ysh_fine2 = np.average(yv_grid, weights=inv_ssr_arr**2)
+
+    if use_std and not use_ssr:
+        xsh_fine, ysh_fine = xsh_fine1, ysh_fine1
+    elif use_ssr and not use_std:
+        xsh_fine, ysh_fine = xsh_fine2, ysh_fine2
+    elif use_ssr and use_std:
+        xsh_fine = (xsh_fine1 + xsh_fine2) / 2
+        ysh_fine = (ysh_fine1 + ysh_fine2) / 2
+    else:
+        raise ValueError("Must use at least one of use_std=True or use_ssr=True.")
+
+    return np.array([xsh_fine, ysh_fine])
+
+def find_best_offset_wrapper(im1, im2, bp1, bp2, pixel_binning=1,
+                             coarse_limits=(-1.5,1.5),fine_limits=(-0.2,0.2),
+                             dxy_coarse=0.2, dxy_fine=0.01, rin=None, rout=None, 
+                             method='fourier', interp='lanczos',
+                             verbose=False, **kwargs):
+    """Simple wrapper for find_best_offset function
+    
+    Returns the best shift values for im2 to align with im1 in units of *pixels*. 
+    The pixel_binning keyword defines the pixel oversampling of im1 and im2 images.
+    The coarse_limits and fine_limits define the search space for the coarse and 
+    fine grid searches in units of *pixels*. 
+    """
+    
+    from webbpsf_ext.coords import dist_image
+
+    # Set up coarse grid search
+    xy1, xy2 = np.array(coarse_limits) * pixel_binning
+    dxy_coarse = 0.2 * pixel_binning
+    dxy_coarse_arr = np.arange(xy1, xy2+dxy_coarse, dxy_coarse)
+
+    # Define a finer grid offsets
+    # Make sure fine grid limits are at least 2x the coarse grid steps
+    dxy_fine = 0.01 * pixel_binning
+    if 2 * dxy_coarse > fine_limits[1] - fine_limits[0]:
+        fine_limits = (-dxy_coarse, dxy_coarse)
+    xy1, xy2 = np.array(fine_limits) * pixel_binning
+    dxy_fine_arr0 = np.arange(xy1, xy2+dxy_fine, dxy_fine)
+
+    rho_pix = dist_image(im1) / pixel_binning
+    rin = 0 if rin is None else rin
+    if rout is not None:
+        mask = (rho_pix >= rin) & (rho_pix <= rout)
+    else:
+        mask = rho_pix >= rin
+
+    res = find_best_offset(im1, im2, bp1, bp2, dxy_coarse_arr, dxy_fine_arr0,
+                           mask=mask, method=method, interp=interp, 
+                           verbose=verbose, **kwargs)
+    
+    return res / pixel_binning
+
+def flag_outliers_in_diff(diff, nsig=10, rout=15):
+    """Find pixel outliers in difference image
+    
+    Input images are assumed to have NaNs where known bad pixels are located.
+    The 2nd image is shifted by xyshift, then subtracted from the 1st image.
+    Outlier pixels in the differenced image are flagged and returned. Only
+    new bad pixels are flagged. Pixels within a certain radius of the center
+    (`rout`) are ignored.
+    """
+
+    from webbpsf_ext.coords import dist_image
+    from webbpsf_ext import robust
+
+    # Flag bad pixels
+    bpmask = np.isnan(diff)
+
+    # Mask off pixels within rin of the center
+    rho = dist_image(diff)
+    rmask = rho>rout
+
+    # Pixels to get statistics
+    good_mask = ~bpmask & rmask
+    med = np.nanmedian(diff[good_mask])
+    std = robust.medabsdev(diff[good_mask])
+
+    # Create new (additional) bad pixel mask
+    bp_new = np.zeros_like(diff).astype('bool')
+    ind = diff > med + nsig*std
+    bp_new[ind] = True
+    bp_new[bpmask] = False
+    bp_new[~rmask] = False
+
+    return bp_new
+
+def flag_outliers(im1_nans, im2_nans, xyshift, nsig=10, rout=15,
+                  shift_method='fshift', interp='linear', 
+                  oversample=4, order=1, return_diff=False, **kwargs):
+    """Find pixel outliers in difference image
+    
+    Input images are assumed to have NaNs where known bad pixels are located.
+    The 2nd image is shifted by xyshift, then subtracted from the 1st image.
+    Outlier pixels in the differenced image are flagged and returned. Only
+    new bad pixels are flagged. Pixels within a certain radius of the center
+    (`rout`) are ignored.
+    """
+
+    from webbpsf_ext.image_manip import image_shift_with_nans
+
+    im1_sh = image_shift_with_nans(im1_nans, 0, 0, oversample=oversample, order=order, 
+                                   shift_method=shift_method, interp=interp,
+                                   return_oversample=False, preserve_nans=True,
+                                   **kwargs)
+
+    # Shift im2 by xyshift and interpolate NaNs
+    xsh, ysh = xyshift
+    im2_sh = image_shift_with_nans(im2_nans, xsh, ysh, oversample=oversample, order=order, 
+                                   shift_method=shift_method, interp=interp,
+                                   return_oversample=False, preserve_nans=False,
+                                   **kwargs)
+
+    # Flag new additional bad pixels (not already NaNs in diff images)
+    diff = im1_sh - im2_sh
+    bp_new = flag_outliers_in_diff(diff, nsig=nsig, rout=rout)
+
+    if return_diff:
+        return bp_new, diff
+    else:
+        return bp_new
+
+
+def fit_gauss_image(array, bpmask=None, cropsize=15, cen=None, 
+                    fwhm=4, theta=0, 
+                    threshold=False, sigfactor=5,
+                    full_output=False, debug=False):
+    """ Fitting a 2D Gaussian to the 2D distribution of the data.
+
+    Parameters
+    ----------
+    array : numpy ndarray
+        Input frame with a single PSF.
+    cen : tuple of int, optional
+        X,Y integer position of source in the array for extracting the subimage.
+        If None the center of the frame is used for cropping the subframe (the
+        PSF is assumed to be ~ at the center of the frame).
+    cropsize : int, optional
+        Size of the subimage.
+    fwhmx, fwhmy : float, optional
+        Initial values for the standard deviation of the fitted Gaussian, in px.
+    theta : float, optional
+        Angle of inclination of the 2d Gaussian counting from the positive X
+        axis.
+    threshold : bool, optional
+        If True the background pixels (estimated using sigma clipped statistics)
+        will be replaced by small random Gaussian noise.
+    sigfactor : int, optional
+        The background pixels will be thresholded before fitting a 2d Gaussian
+        to the data using sigma clipped statistics. All values smaller than
+        (MEDIAN + sigfactor*STDDEV) will be replaced by small random Gaussian
+        noise.
+    bpm : 2D numpy ndarray, optional
+        Mask of bad pixels to not consider for the fit.
+    full_output : bool, optional
+        If False it returns just the centroid, if True also returns the
+        FWHM in X and Y (in pixels), the amplitude and the rotation angle,
+        and the uncertainties on each parameter.
+    debug : bool, optional
+        If True, the function prints out parameters of the fit and plots the
+        data, model and residuals.
+
+    Returns
+    -------
+    mean_x : float
+        Source centroid y position on input array from fitting.
+    mean_y : float
+        Source centroid x position on input array from fitting.
+
+    If ``full_output`` is True it returns a Pandas dataframe containing the
+    following columns:
+        'centroid_y': Y coordinate of the centroid.
+        'centroid_x': X coordinate of the centroid.
+        'fwhm_y': Float value. FWHM in X [px].
+        'fwhm_x': Float value. FWHM in Y [px].
+        'amplitude': Amplitude of the Gaussian.
+        'theta': Float value. Rotation angle.
+        # and fit uncertainties on the above values:
+        'centroid_y_err'
+        'centroid_x_err'
+        'fwhm_y_err'
+        'fwhm_x_err'
+        'amplitude_err'
+        'theta_err'
+
+    """
+
+    from webbpsf_ext.image_manip import get_im_cen, crop_image
+    from astropy.stats import (gaussian_sigma_to_fwhm, gaussian_fwhm_to_sigma, sigma_clipped_stats)
+    from photutils.centroids import centroid_com
+    from astropy.modeling import models, fitting
+
+    if bpmask is None:
+        bpmask = np.zeros_like(array).astype('bool')
+
+    if cropsize is not None:
+        if cen is None:
+            cenx, ceny = get_im_cen(array)
+        else:
+            cenx, ceny = cen
+
+        imside = array.shape[0]
+        psf_subimage, xyvals = crop_image(array, min(cropsize, imside),
+                                          xyloc=(cenx, ceny), return_xy=True)
+        subx = xyvals[0]
+        suby = xyvals[2]
+        bpm_subimage = crop_image(bpmask, min(cropsize, imside),  xyloc=(cenx, ceny))
+    else:
+        psf_subimage = array.copy()
+        bpm_subimage = bpmask.copy()
+
+    # Include any NaNs in the bad pixel mask
+    bpm_subimage |= np.isnan(psf_subimage)
+
+    if threshold:
+        _, clipmed, clipstd = sigma_clipped_stats(psf_subimage, sigma=2)
+        indi = np.where(psf_subimage <= clipmed + sigfactor * clipstd)
+        subimnoise = np.random.randn(psf_subimage.shape[0],
+                                     psf_subimage.shape[1]) * clipstd
+        psf_subimage[indi] = subimnoise[indi]
+
+    # Get initial values for the fit
+    try:
+        fwhm_x0, fwhm_y0 = fwhm
+    except:
+        fwhm_x0 = fwhm_y0 = fwhm
+    x_stddev = fwhm_x0 * gaussian_fwhm_to_sigma
+    y_stddev = fwhm_y0 * gaussian_fwhm_to_sigma
+
+    # Creating the 2D Gaussian model
+    init_amplitude = np.ptp(psf_subimage[~bpm_subimage])
+    xcom, ycom = centroid_com(psf_subimage)
+    gauss = models.Gaussian2D(amplitude=init_amplitude, theta=theta,
+                              x_mean=xcom, y_mean=ycom,
+                              x_stddev=x_stddev, y_stddev=y_stddev)
+    # Levenberg-Marquardt algorithm
+    fitter = fitting.LevMarLSQFitter()
+    y, x = np.indices(psf_subimage.shape)
+    fit = fitter(gauss, x[~bpm_subimage], y[~bpm_subimage],
+                 psf_subimage[~bpm_subimage])
+
+    if cropsize is not None:
+        mean_x = fit.x_mean.value + subx
+        mean_y = fit.y_mean.value + suby
+    else:
+        mean_x = fit.x_mean.value
+        mean_y = fit.y_mean.value
+    fwhm_x = fit.x_stddev.value * gaussian_sigma_to_fwhm
+    fwhm_y = fit.y_stddev.value * gaussian_sigma_to_fwhm
+    amplitude = fit.amplitude.value
+    theta = np.rad2deg(fit.theta.value)
+
+    # compute uncertainties
+    if fitter.fit_info['param_cov'] is not None:
+        with np.errstate(invalid='raise'):
+            try:
+                perr = np.sqrt(np.diag(fitter.fit_info['param_cov']))
+                amplitude_e, mean_x_e, mean_y_e, fwhm_x_e, fwhm_y_e, theta_e = perr
+                fwhm_x_e *= gaussian_sigma_to_fwhm
+                fwhm_y_e *= gaussian_sigma_to_fwhm
+            except:
+                # this means the fit failed
+                mean_y, mean_x = np.nan, np.nan
+                fwhm_y, fwhm_x = np.nan, np.nan
+                amplitude, theta = np.nan, np.nan
+                mean_y_e, mean_x_e = np.nan, np.nan
+                fwhm_y_e, fwhm_x_e = np.nan, np.nan
+                amplitude_e, theta_e = np.nan, np.nan
+    else:
+        amplitude_e, theta_e, mean_x_e = np.nan, np.nan, np.nan
+        mean_y_e, fwhm_x_e, fwhm_y_e = np.nan, np.nan, np.nan
+        # the following also means the fit failed
+        if fwhm_y == fwhm_y0 and fwhm_x == fwhm_x0 and amplitude == init_amplitude:
+            mean_y, mean_x = np.nan, np.nan
+            fwhm_y, fwhm_x = np.nan, np.nan
+            amplitude, theta = np.nan, np.nan
+
+    if debug:
+        from hciplot import plot_frames
+
+        if threshold:
+            label = ('Subimage thresholded', 'Model', 'Residuals')
+        else:
+            label = ('Subimage', 'Model', 'Residuals')
+        plot_frames((psf_subimage, fit(x, y), psf_subimage-fit(x, y)),
+                    grid=True, grid_spacing=1, label=label)
+        print('FWHM_x =', fwhm_x)
+        print('FWHM_y =', fwhm_y, '\n')
+        print('centroid x =', mean_x)
+        print('centroid y =', mean_y)
+        print('centroid x subim =', fit.x_mean.value)
+        print('centroid y subim =', fit.y_mean.value, '\n')
+        print('amplitude =', amplitude)
+        print('theta =', theta)
+
+    if full_output:
+        import pandas as pd
+        return pd.DataFrame({'centroid_s': mean_x, 'centroid_y': mean_y,
+                             'fwhm_x': fwhm_x, 'fwhm_y': fwhm_y,
+                             'amplitude': amplitude, 'theta': theta,
+                             'centroid_y_err': mean_y_e,
+                             'centroid_x_err': mean_x_e,
+                             'fwhm_y_err': fwhm_y_e, 'fwhm_x_err': fwhm_x_e,
+                             'amplitude_err': amplitude_e,
+                             'theta_err': theta_e}, index=[0],
+                            dtype=np.float64)
+    else:
+        return mean_x, mean_y
+
+
+
+def lsq_subtraction(imarr, imarr_ref, rin=0, rout=None, th_range=None, verbose=False):
+
+    from webbpsf_ext.coords import dist_image
+
+    # Reshape arrays to 3D if necessary
+    sh_sci = imarr.shape
+    ndim_sci = len(sh_sci)
+    ndim_ref = len(imarr_ref.shape)
+
+    if ndim_sci==2:
+        imarr = imarr.reshape((1, imarr.shape[0], imarr.shape[1]))
+    if ndim_ref==2:
+        imarr_ref = imarr_ref.reshape((1, imarr_ref.shape[0], imarr_ref.shape[1]))
+
+    nz_sci = imarr.shape[0]
+    nz_ref = imarr_ref.shape[0]
+
+    # Pixel regions to perform optimizationif ndim_sci == 3:
+    rho, th = dist_image(imarr[0], return_theta=True)
+
+    mask_good = np.ones_like(rho, dtype=bool)
+    # Ignore bad pixels from science image
+    bpmask_sci = np.logical_or.reduce(np.isnan(imarr), axis=0)
+    mask_good[bpmask_sci] = False
+    # Ignore bad pixels from reference image(s)
+    bpmask_ref = np.logical_or.reduce(np.isnan(imarr_ref), axis=0)
+    mask_good[bpmask_ref] = False
+    # Mask out the central region
+    mask_good[rho < rin] = False
+    # Mask out outer regions
+    if rout is not None:
+        mask_good[rho > rout] = False
+
+    # Mask out regions with specific theta values
+    if th_range is not None:
+        if th_range[0] < th_range[1]:
+            th_mask = (th >= th_range[0]) & (th <= th_range[1])
+        else:
+            th_mask = (th >= th_range[0]) | (th <= th_range[1])
+        mask_good &= th_mask
+
+    # Optimization regions
+    sci_opt = imarr[:,mask_good]
+    bg_opt = imarr_ref[:, mask_good]
+
+    # Subtract regions
+    sci_sub = imarr.reshape((nz_sci, -1))
+    bg_sub = imarr_ref.reshape((nz_ref, -1))
+
+    a, b = bg_opt, sci_opt
+
+    # Perform least squares optimization
+    q, r = np.linalg.qr(a.T, 'reduced')
+    qTb = np.matmul(q.T, b.T)
+    coeff_all = np.linalg.lstsq(r, qTb, rcond=None)[0]
+
+    if verbose:
+        print(coeff_all.squeeze())
+
+    # Subtract reference images
+    imdiff = sci_sub - np.dot(bg_sub.T, coeff_all).T
+    imdiff = imdiff.reshape(sh_sci)
+
+    return imdiff
+
+
 
 # NOTE (2/13/2024): A lot of issues with this function finding the best solution. Best to just use
 # a coarse grid search, then zoom in with a finer grid search. 
@@ -820,6 +1416,17 @@ class nrc_analyze():
         return self.siaf[self.apname]
     
     @property
+    def is_coron(self):
+        """Is this a coronagraphic observation?"""
+        try:
+            hdr0 = self.obs_dict[self.obsids[0]][0]['hdr0']
+        except:
+            fpath = self.obs_dict[self.obsids[0]][0]['file']
+            hdr0 = fits.getheader(fpath)
+        is_coron = ('CORONMSK' in hdr0)
+        return is_coron
+    
+    @property
     def is_sgd(self):
         """Is this a SGD reference observation?"""
         try:
@@ -839,6 +1446,18 @@ class nrc_analyze():
             hdr0 = fits.getheader(fpath)
         sgd_pattern = hdr0.get('SMGRDPAT', None)
         return sgd_pattern
+
+    @property
+    def has_sb_units(self):
+        """Check if flux values are in surface brightness units"""
+        try:
+            header = self.obs_dict[self.obsids[0]][0]['hdr1']
+        except:
+            fpath = self.obs_dict[self.obsids[0]][0]['file']
+            header = fits.getheader(fpath, ext=1)
+
+        is_sb = '/sr' in header.get('BUNIT', 'none').lower()
+        return is_sb
 
     @property
     def rvals(self):
@@ -1312,7 +1931,7 @@ class nrc_analyze():
         save_dir = os.path.dirname(obs_dict[self.obsids[0]][0]['file'])
 
         # Coronagraphic observations?
-        is_coron = self.nrc.is_coron
+        is_coron = self.is_coron
 
         if is_coron:
              # No need to do multiple PSFs if coronagraphic observations
@@ -1633,7 +2252,7 @@ class nrc_analyze():
         sci_ref = np.array([siaf_ap.XSciRef, siaf_ap.YSciRef])
         # Convert location to sci coords by adding 1
         # Subtract the filter offset
-        if self.nrc.is_coron:
+        if self.is_coron:
             self.xy_mask_offset = (self.xy_loc_ind + 1) - sci_ref - filt_offset
         else:
             self.xy_mask_offset = np.zeros_like(self.xy_loc_ind)
@@ -1775,6 +2394,7 @@ class nrc_analyze():
         errarr_shift = []
         dqarr_shift = []
         bparr_shift = []
+        xy0_list = []
         for i in range(ndith):
             # Case of single image per dither
             if nimg_per_dither==1:
@@ -1823,6 +2443,8 @@ class nrc_analyze():
                     xy_loc_shift[i,0] -= xy[0]
                     xy_loc_shift[i,1] -= xy[2]
 
+            xy0_list.append(np.array([-1*xy[0], -1*xy[2]]))
+
         imarr_shift = np.asarray(imarr_shift)
         errarr_shift = np.asarray(errarr_shift)
         dqarr_shift = np.asarray(dqarr_shift)
@@ -1854,6 +2476,7 @@ class nrc_analyze():
                 odict[k]['dq']    = dqarr_shift[ii]
                 odict[k]['bp']    = bparr_shift[ii]
                 odict[k]['xyloc'] = xy_loc_shift[ii]
+                odict[k]['sci00'] = xy0_list[ii] # Index of (0,0) in science frame
                 ii += 1
 
         # Update class attributes
@@ -1865,23 +2488,36 @@ class nrc_analyze():
             for ref_obj in self.ref_objs:
                 ref_obj.shift_to_center_int(med_dithers=med_dithers, return_results=False)
 
-    def _get_dither_data(self, subsize=None, outer_rad=32, rebin=1, gstd_pix=None):
+    def _get_dither_data(self, obsids=None, subsize=None, outer_rad=32, gstd_pix=None, 
+                         bpfix=False, rebin=1, order=1, data_key='data', **kwargs):
 
-        from webbpsf_ext.image_manip import crop_image, frebin, bp_fix
+        from webbpsf_ext.image_manip import crop_image, frebin, bp_fix, zrebin
+
+        # Check flux units in header
+        # If in surface brightness units, then set total=False
+        total = False if self.has_sb_units else True
+
+        dq_key = data_key.replace('data', 'dq')
+        bp_key = data_key.replace('data', 'bp')
+
+        if obsids is None:
+            obsids = self.obsids
+        else:
+            obsids = np.array([obsids]).flatten()
 
         imarr = []
         dqarr = []
         bparr = []
-        for oid in self.obsids:
+        for oid in obsids:
             odict = self.obs_dict[oid]
             for k in odict.keys():
                 # Images reduced to 2D
-                im = odict[k]['data']
+                im = odict[k][data_key]
                 if len(im.shape)==3:
                     im = np.nanmedian(im, axis=0)
                 imarr.append(im)
                 # DQ arrays
-                dq = odict[k]['dq']
+                dq = odict[k][dq_key]
                 if len(dq.shape)==3:
                     dq = np.bitwise_and.reduce(dq, axis=0)
                 dqarr.append(dq)
@@ -1889,7 +2525,7 @@ class nrc_analyze():
                 bp = get_dqmask(dq, ['DO_NOT_USE']) > 0
                 bp |= np.isnan(im)
                 if 'bp' in odict[k].keys():
-                    bp_temp = odict[k]['bp']
+                    bp_temp = odict[k][bp_key]
                     if len(bp_temp.shape)==3:
                         bp |= np.bitwise_and.reduce(bp_temp, axis=0)
                 bparr.append(bp)
@@ -1909,17 +2545,18 @@ class nrc_analyze():
             bparr = crop_image(bparr, subsize)
 
         # Perform bad pixel fixing on all images
-        ndither = imarr.shape[0]
-        for i in range(ndither):
-            bp = bparr[i]
-            im = bp_fix(imarr[i], bpmask=bp, in_place=True, niter=10)
-            border = get_dqmask(dqarr[i], ['FLUX_ESTIMATED', 'REFERENCE_PIXEL']) > 0
-            im[border] = 0
-            imarr[i] = im
+        if bpfix:
+            ndither = imarr.shape[0]
+            for i in range(ndither):
+                bp = bparr[i]
+                im = bp_fix(imarr[i], bpmask=bp, in_place=True, niter=10)
+                border = get_dqmask(dqarr[i], ['FLUX_ESTIMATED', 'REFERENCE_PIXEL']) > 0
+                im[border] = 0
+                imarr[i] = im
 
         rebin = 1 if rebin is None else rebin
         if (rebin != 1):
-            imarr = frebin(imarr, scale=rebin)
+            imarr = zrebin(imarr, oversample=rebin, total=total, order=order, **kwargs)
             dqarr = frebin(dqarr, scale=rebin, total=False).astype('uint32')
             bparr = frebin(bparr, scale=rebin, total=False).astype('bool')
 
@@ -1935,11 +2572,11 @@ class nrc_analyze():
         return imarr, bparr
     
 
-    def get_dither_offsets(self, method='opencv', interp='lanczos', subsize=None, 
-                           rebin=1, gstd_pix=None, inner_rad=10, outer_rad=32, weights=None,
+    def get_dither_offsets(self, method='fshift', interp='linear', subsize=None, 
+                           rebin=1, gstd_pix=None, inner_rad=None, outer_rad=32, weights=None,
                            coarse_limits=(-1.5,1.5), fine_limits=(-0.2,0.2), 
                            return_results=False, save=True, force=False, 
-                           ideal_sgd=False, **kwargs):
+                           ideal_sgd=False, verbose=False, **kwargs):
         """Find the position offsets between dithered images via LSQ minimization
 
         Compares all dithered and roll images relative to each other, and stores the
@@ -1952,119 +2589,15 @@ class nrc_analyze():
         for PSF subtraction.
 
         """
-        from webbpsf_ext.image_manip import crop_image, frebin, fshift, bp_fix, get_im_cen
-        from webbpsf_ext.maths import dist_image
+        from webbpsf_ext.image_manip import crop_image, get_im_cen
+        from webbpsf_ext.maths import round_int
         from skimage.filters import window as sk_window
         
-        def subtraction_metrics(im1, im2, bp1, bp2, xyshift):
-            """Perform subtraction and return goodness of fit metrics (std, ssr)"""
-
-            # Shift bp2 by (dx,dy)
-            bp2 = bp2.astype('float')
-            bp2 = fshift(bp2, xyshift[0], xyshift[1], interp='linear', pad=True, cval=1)
-            bp2 = bp2 > 0
-            bpmask = bp1 | bp2
-            good_mask = mask & (im1 != im2) & ~bpmask
-
-            # Get optimal scale factor between images
-            im1_good = im1[good_mask]
-            im2_good = im2[good_mask]
-            cf = np.linalg.lstsq(im2_good.reshape([1,-1]).T, im1_good, rcond=None)[0]
-            scale = cf[0]
-
-            # Find indices within which good data exists
-            xgood = np.where(np.sum(good_mask, axis=0) > 0)[0]
-            x1, x2 = (xgood[0], xgood[-1])
-            ygood = np.where(np.sum(good_mask, axis=1) > 0)[0]
-            y1, y2 = (ygood[0], ygood[-1])
-
-            # Crop down for faster processing
-            im1_crop = im1[y1:y2+1, x1:x2+1]
-            im2_crop = im2[y1:y2+1, x1:x2+1]
-            good_mask_crop = good_mask[y1:y2+1, x1:x2+1]
-            weights_crop = weights[y1:y2+1, x1:x2+1]
-
-            # Subtract images after performing fractional shift
-            diff = subtract_psf(im1_crop, im2_crop, xyshift=xyshift, psf_scale=scale, 
-                                method=method, interp=interp)
-
-            std = np.std(diff[good_mask_crop] * weights_crop[good_mask_crop])
-            ssr = np.sum((diff[good_mask_crop] * weights_crop[good_mask_crop])**2)
-
-            return std, ssr
-        
-        def build_maps(im1, im2, bp1, bp2, dx_arr, dy_arr):
-            """Build map of LSQ subtraction metrics
-            
-            Returns a (nxy x nxy) array of std and square-summed residuals.
-            """
-            std_arr = []
-            ssr_arr = []
-            for dy in dy_arr:
-                for dx in dx_arr:
-                    std, ssr = subtraction_metrics(im1, im2, bp1, bp2, (dx, dy))
-                    # Standard deviation of the difference
-                    std_arr.append(std)
-                    # Sum of squared residuals
-                    ssr_arr.append(ssr)
-
-            nxy = len(dx_arr)
-            std_arr = np.array(std_arr).reshape(nxy, nxy)
-            ssr_arr = np.array(ssr_arr).reshape(nxy, nxy)
-
-            return std_arr, ssr_arr
-        
-        def find_best_offset(im1, im2, bp1, bp2, dxy_coarse_arr, dxy_fine_arr0,
-                             use_ssr=True, use_std=True):
-            """Best offset to move im2 to align with im1"""
-            # Perform coarse grid search
-            std_arr, ssr_arr = build_maps(im1, im2, bp1, bp2, dxy_coarse_arr, dxy_coarse_arr)
-            # Find the minimum positions for std and ssr
-            dy_idx, dx_idx = np.unravel_index(np.nanargmin(std_arr), std_arr.shape)
-            xbest1, ybest1 = (dxy_coarse_arr[dx_idx], dxy_coarse_arr[dy_idx])
-            dy_idx, dx_idx = np.unravel_index(np.nanargmin(ssr_arr), ssr_arr.shape)
-            xbest2, ybest2 = (dxy_coarse_arr[dx_idx], dxy_coarse_arr[dy_idx])
-            if use_std and not use_ssr:
-                xbest, ybest = xbest1, ybest1
-            elif use_ssr and not use_std:
-                xbest, ybest = xbest2, ybest2
-            elif use_ssr and use_std:
-                xbest = (xbest1 + xbest2) / 2
-                ybest = (ybest1 + ybest2) / 2
-            else:
-                raise ValueError("Must use at least one of use_std=True or use_ssr=True.")
-
-            # Perfom fine grid search
-            dx_fine_arr = xbest + dxy_fine_arr0
-            dy_fine_arr = ybest + dxy_fine_arr0
-            std_arr, ssr_arr = build_maps(im1, im2, bp1, bp2, dx_fine_arr, dy_fine_arr)
-
-            # The best fit is then the weighted average of the inverse of the std and ssr maps
-            xv_grid, yv_grid = np.meshgrid(dx_fine_arr, dy_fine_arr)
-            inv_std_arr = 1 / std_arr
-            xsh_fine1 = np.average(xv_grid, weights=inv_std_arr**2)
-            ysh_fine1 = np.average(yv_grid, weights=inv_std_arr**2)
-            inv_ssr_arr = 1 / ssr_arr
-            xsh_fine2 = np.average(xv_grid, weights=inv_ssr_arr**2)
-            ysh_fine2 = np.average(yv_grid, weights=inv_ssr_arr**2)
-
-            if use_std and not use_ssr:
-                xsh_fine, ysh_fine = xsh_fine1, ysh_fine1
-            elif use_ssr and not use_std:
-                xsh_fine, ysh_fine = xsh_fine2, ysh_fine2
-            elif use_ssr and use_std:
-                xsh_fine = (xsh_fine1 + xsh_fine2) / 2
-                ysh_fine = (ysh_fine1 + ysh_fine2) / 2
-            else:
-                raise ValueError("Must use at least one of use_std=True or use_ssr=True.")
-
-            return np.array([xsh_fine, ysh_fine])
-
         def get_ref_offset(ref_obj):
             """Determine offset of SGD reference data relative to science data"""
 
-            imarr_sci, bparr_sci = self._get_dither_data(subsize=subsize, outer_rad=outer_rad, rebin=rebin, gstd_pix=gstd_pix)
-            imarr_ref, bparr_ref = ref_obj._get_dither_data(subsize=subsize, outer_rad=outer_rad, rebin=rebin, gstd_pix=gstd_pix)
+            imarr_sci, bparr_sci = self._get_dither_data(subsize=subsize, outer_rad=orad, rebin=rebin, gstd_pix=gstd_pix)
+            imarr_ref, bparr_ref = ref_obj._get_dither_data(subsize=subsize, outer_rad=orad, rebin=rebin, gstd_pix=gstd_pix)
 
             ndither_sci = imarr_sci.shape[0]
             ndither_ref = imarr_ref.shape[0]
@@ -2073,18 +2606,35 @@ class nrc_analyze():
             for i in trange(ndither_sci, desc='Relative Offsets', leave=False):
                 for j in range(ndither_ref):
                     # Get best offset within 0.01 pixels
-                    im1, bp1 = imarr_sci[i], bparr_sci[i]
-                    im2, bp2 = imarr_ref[j], bparr_ref[j]
-                    xysh_best = find_best_offset(im1, im2, bp1, bp2, dxy_coarse_arr, dxy_fine_arr0)
-                    shift_matrix[i,j] = xysh_best / rebin
+                    im1, im2 = (imarr_sci[i].copy(), imarr_ref[j].copy())
+                    bp1, bp2 = (bparr_sci[i], bparr_ref[j])
+                    im1[bp1] = np.nan
+                    im2[bp2] = np.nan
+                    oversample=4 if rebin==1 else 1
+                    xysh_best = find_best_offset_wrapper(im1, im2, bp1, bp2, pixel_binning=rebin,
+                                                         coarse_limits=coarse_limits,fine_limits=fine_limits,
+                                                         rin=inner_rad, rout=outer_rad, method=method, interp=interp,
+                                                         oversample=oversample, order=1,
+                                                         weights=weights, verbose=verbose, **kwargs)
+                    shift_matrix[i,j] = xysh_best
 
             return shift_matrix
 
         obs_dict = self.obs_dict
 
+        # Check if coronagrpahic observations
+        if inner_rad is None:
+            inner_rad=10 if self.is_coron else 0
+
+        # Ensure there is enough data to perform the shifts
+        if outer_rad is not None:
+            orad = round_int(outer_rad + np.max(np.abs(coarse_limits)) + 0.5)
+        else:
+            orad = None
+
         # Crop images to subsize
         if subsize is None and (outer_rad is not None):
-            subsize = outer_rad * 2 + 1
+            subsize = orad * 2 + 1
         if subsize is not None:
             # Ensure subsize is odd
             subsize = subsize + 1 if subsize % 2 == 0 else subsize
@@ -2097,7 +2647,7 @@ class nrc_analyze():
         save_file = f'star_positions_{self.filter}{save_str0}{save_str}.json'
         save_path = os.path.join(save_dir, save_file)
         if os.path.exists(save_path) and (force==False):
-            _log.info(f"Loading star positions from {save_path}")
+            _log.info(f"Loading dither positions from {save_path}")
             with open(save_path, 'r') as f:
                 data = json.load(f)
 
@@ -2109,21 +2659,8 @@ class nrc_analyze():
             self.shift_matrix = np.array(data['shift_matrix'])
         else:
 
-            imarr, bparr = self._get_dither_data(subsize=subsize, outer_rad=outer_rad, rebin=rebin, gstd_pix=gstd_pix)
+            imarr, bparr = self._get_dither_data(subsize=subsize, outer_rad=orad, rebin=rebin, gstd_pix=gstd_pix)
             ndither = imarr.shape[0]
-
-            # Set up coarse grid search
-            xy1, xy2 = np.array(coarse_limits) * rebin
-            dxy_coarse = 0.2 * rebin
-            dxy_coarse_arr = np.arange(xy1, xy2+dxy_coarse, dxy_coarse)
-
-            # Define a finer grid offsets
-            # Make sure fine grid limits are at least 2x the coarse grid steps
-            dxy_fine = 0.01 * rebin
-            if 2 * dxy_coarse > fine_limits[1] - fine_limits[0]:
-                fine_limits = (-dxy_coarse, dxy_coarse)
-            xy1, xy2 = np.array(fine_limits) * rebin
-            dxy_fine_arr0 = np.arange(xy1, xy2+dxy_fine, dxy_fine)
 
             # Weight via an inverse Gaussian window
             # weights = 1 - sk_window(('gaussian', 10*rebin), imarr.shape[-2:])
@@ -2131,24 +2668,22 @@ class nrc_analyze():
                 weights = np.ones(imarr.shape[-2:])
             else:
                 weights = crop_image(weights, imarr.shape[-2:], fill_val=0)
-            
-            inner_rad = 0 if inner_rad is None else inner_rad
-            rho = dist_image(imarr[0])
-            if outer_rad is not None:
-                mask = (rho >= (inner_rad*rebin)) & (rho <= (outer_rad*rebin))
-            else:
-                mask = rho >= (inner_rad*rebin)
 
-            shift_matrix = np.zeros((ndither, ndither, 2))
+            shift_matrix = np.zeros((ndither, ndither, 2), dtype='float')
             for i in trange(ndither, desc='Relative Offsets', leave=False):
+                im1, bp1 = (imarr[i].copy(), bparr[i])
+                im1[bp1] = np.nan
                 for j in range(ndither):
                     if i==j:
                         continue
                     # Offset needed to move im2 to align with im1
-                    im1, bp1 = imarr[i], bparr[i]
-                    im2, bp2 = imarr[j], bparr[j]
-                    xysh_best = find_best_offset(im1, im2, bp1, bp2, dxy_coarse_arr, dxy_fine_arr0)
-                    shift_matrix[i,j] = xysh_best / rebin
+                    im2, bp2 = (imarr[j].copy(), bparr[j])
+                    im2[bp2] = np.nan
+                    xysh_best = find_best_offset_wrapper(im1, im2, bp1, bp2, pixel_binning=rebin,
+                                                         coarse_limits=coarse_limits, fine_limits=fine_limits,
+                                                         rin=inner_rad, rout=outer_rad, method=method, interp=interp,
+                                                         weights=weights, verbose=verbose, **kwargs)
+                    shift_matrix[i,j] = xysh_best
 
             del imarr, bparr#, dqarr
 
@@ -2160,8 +2695,6 @@ class nrc_analyze():
 
             # Update xyshift values to be consistent with shift_matrix offsets
             # Determine if SGD data to preserve relative offsets
-            # hdr0 = obs_dict[self.obsids[0]][0]['hdr0']
-            # is_sgd = hdr0.get('SUBPXPAT') == 'SMALL-GRID-DITHER'
             is_sgd = self.is_sgd
 
             # Don't update xyshift if SGD data
@@ -2190,7 +2723,7 @@ class nrc_analyze():
 
             # Save xy_loc_ind and xyshift to file
             if save:
-                _log.info(f"Saving star positions to {save_path}")
+                _log.info(f"Saving dither positions to {save_path}")
                 save_data = {'xy_loc_ind': self.xy_loc_ind, 'xyshift': self.xyshift,
                             'shift_matrix': self.shift_matrix}
                 with open(save_path, 'w') as f:
@@ -2207,15 +2740,271 @@ class nrc_analyze():
                 
                 # Align reference observations to science observations
                 return get_ref_offset(ref_obj)
+            
+    def _get_shift_vals(self, oid1, oid2, dith_pos1, dith_pos2, shift_matrix=None):
+        """Get shift values between two dither positions"""
 
-    def align_images(self, rebin=1, gstd_pix=None, #ref_obs=None, 
+        if shift_matrix is None:
+            shift_matrix = self.shift_matrix
+
+        cnt=0
+        for i, oid in enumerate(self.obsids):
+            dith_keys = self.obs_dict[oid].keys()
+            for j, dith_key in enumerate(dith_keys):
+                if oid==oid1 and dith_key==dith_pos1:
+                    ii = cnt
+                cnt += 1
+
+        cnt=0
+        for i, oid in enumerate(self.obsids):
+            dith_keys = self.obs_dict[oid].keys()
+            for j, dith_key in enumerate(dith_keys):
+                if oid==oid2 and dith_key==dith_pos2:
+                    jj = cnt
+                cnt += 1
+
+        xysh = shift_matrix[ii,jj]
+
+        return xysh
+    
+    def pixelscale(self, return_all=False):
+
+        xscale = self.nrc.siaf_ap.XSciScale
+        yscale = self.nrc.siaf_ap.YSciScale
+        pixscale = 0.5 * (xscale + yscale)
+
+        if return_all:
+            return pixscale, xscale, yscale
+        else:
+            return pixscale
+
+    def psf_fwhm(self, return_sigma=False):
+        """Determine the FWHM of the PSF
+        
+        Calculate the FWHM of the PSF based on the bandpass and telescope diameter.
+        Accounts for effectively smaller diameter for coronagraphic observations.
+        Optionally return the Gaussian sigma value instead of FWHM.
+        Returned values are in detector pixels.
+        """
+        from astropy.stats import gaussian_fwhm_to_sigma
+
+        # Smaller effective diameter for coronagraphic observations
+        diam = 5.2 if self.is_coron else 6.5
+
+        # Averge pixel scale
+        pixscale = 0.5 * (self.nrc.siaf_ap.XSciScale + self.nrc.siaf_ap.YSciScale)
+
+        # Get telescope resolution in arcsec
+        res_asec = 206265 * self.nrc.bandpass.pivot().to_value('m') / diam
+
+        # Convert to detector pixels
+        res_pix = res_asec / pixscale
+
+        # FWHM of Gaussian PSF
+        fwhm_pix = 1.025 * res_pix
+        if return_sigma:
+            return fwhm_pix * gaussian_fwhm_to_sigma
+        else:
+            return fwhm_pix
+        
+    def flag_custom_bppix(self, bp_indices, obsids=None):
+        """Flag custom bad pixel mask
+
+        Parameters
+        ----------
+        bp_indices : list
+            List of indices to flag as bad pixels
+        obsids : list
+            List of observation IDs to apply mask to
+        data_key : str
+            Key in obs_dict to apply mask to
+        """
+
+        if obsids is None:
+            obsids = self.obsids
+
+        for oid in obsids:
+            odict = self.obs_dict[oid]
+            for k in odict.keys():
+                for ix, iy in bp_indices:
+                    odict[k]['bp'][iy, ix] = True
+            
+    def flag_outlier_pix_diff(self, nsig=10, rout=15, gauss_fit=True, 
+                              oversample=4, shift_method='fshift', interp='linear', 
+                              **kwargs):
+        """Flag outlier pixels in difference images
+
+        Parameters
+        ----------
+        nsig : float
+            Number of standard deviations to flag pixels
+        """
+
+        from webbpsf_ext.image_manip import fshift, image_shift_with_nans
+
+        diff_all = []
+        bp_all = []
+
+        # PSF FWHM
+        fwhm_pix = self.psf_fwhm()
+
+        obs_dict = self.obs_dict
+        obsids = self.obsids
+        for oid1 in obsids:
+            imarr1, bparr1 = self._get_dither_data(obsids=oid1, subsize=None, outer_rad=None)
+
+            imarr2, oids2 = self._get_roll_ref(oid1, dith_pos=None, bin_ints=1, med_dithers=True, 
+                                                data_key='data', return_refoids=True)
+
+            # Get centers of all images
+            if not self.is_coron and gauss_fit:
+                im1_cen_arr = np.array([fit_gauss_image(im, fwhm=fwhm_pix) for im in imarr1])
+                im2_cen_arr = np.array([fit_gauss_image(im, fwhm=fwhm_pix) for im in imarr2])
+
+            for i, im1 in enumerate(imarr1):
+                # Ensure bad pixels are set to NaNs
+                bp1 = bparr1[i]
+                im1_nans = im1.copy()
+                im1_nans[bp1] = np.nan
+
+                # Get relative offsets of reference images relative to science images
+                if not self.is_coron and gauss_fit:
+                    xysh_arr2 = im1_cen_arr[i] - im2_cen_arr
+                else:
+                    nim2 = len(imarr2)
+                    xysh_arr2 = np.array([self._get_shift_vals(oid1, oids2[j], i, j) for j in range(nim2)])
+
+                # Shift reference images to align with science image
+                im1_sh = image_shift_with_nans(im1_nans, 0, 0, oversample=oversample,
+                                               shift_method=shift_method, interp=interp,
+                                               return_oversample=False, preserve_nans=True, 
+                                               order=1, **kwargs)
+
+                # Shift im2 by xyshift and interpolate NaNs
+                im2_sh_arr = []
+                for j, im2 in enumerate(imarr2):
+                    xsh, ysh = xysh_arr2[j]
+                    im2_sh = image_shift_with_nans(im2, xsh, ysh, oversample=oversample,
+                                                   shift_method=shift_method, interp=interp,
+                                                   return_oversample=False, preserve_nans=False,  
+                                                   order=1, **kwargs)
+                    im2_sh_arr.append(im2_sh)
+                im2_sh_arr = np.array(im2_sh_arr)
+
+                # Flag pixels that are outliers in diff image
+                diff = lsq_subtraction(im1_sh, im2_sh_arr, rout=rout)
+                bp_new = flag_outliers_in_diff(diff, nsig=nsig, rout=rout)
+
+                diff_all.append(diff)
+                bp_all.append(bp_new)
+
+                # Assume these new bad pixels are always bad in all unshifted images
+                # x0, y0 = self.obs_dict[oid1][i]['sci00']
+                # for oid in obsids:
+                #     for j in range(len(obs_dict[oid])):
+                #         x0j, y0j = obs_dict[oid][j]['sci00']
+                #         shift_ij = np.array([x0j-x0, y0j-y0])
+                #         bp_new_j = fshift(bp_new, shift_ij[0], shift_ij[1], cval=False, pad=True)
+                #         obs_dict[oid][j]['bp'] |= bp_new_j
+
+                # Update bp mask in data
+                obs_dict[oid1][i]['bp'] |= bp_new
+
+        # diff_all = np.array(diff_all)
+        # bp_all = np.array(bp_all)
+        # diff_all[bp_all] = np.nan
+
+        # return diff_all, bp_all
+
+    def _shift_and_subtract_refs(self, imsci_nans, imrefs_nans, ref_shifts, rebin=1, return_oversample=True,
+                                 method='opencv', interp='lanczos', preserve_nans=True, order=3, gstd_pix=None,
+                                 do_pca=False, do_loci=True, rin=0, rout=10, **kwargs):
+        """Align reference images to science image and subtract"""
+
+        from . import pca
+        from webbpsf_ext.image_manip import image_shift_with_nans
+        from webbpsf_ext.coords import dist_image
+
+        def pca_subtraction(imarr, imarr_ref, **kwargs):
+            # Build pca params dictionary for PSF subtraction
+            # If corongraphic imaging using diameter of 5.2m rather than 6.5m
+            diam = 5.2 if self.is_coron else 6.5
+            res_asec = 206265 * self.nrc.bandpass.pivot().to_value('m') / diam
+            res_pix = res_asec / self.nrc.pixelscale
+            fwhm_pix = 1.025 * res_pix
+
+            fwhm_pix_bin = fwhm_pix * rebin #odict[k]['bin_aligned']
+            pca_params = pca.build_pca_dict(fwhm_pix_bin, **kwargs)
+            imdiff = pca.run_pca_subtraction(imarr, imarr_ref, pca_params)
+
+            return imdiff, pca_params
+        
+
+        # Check flux units in header
+        # If in surface brightness units, then set total=False
+        total = False if self.has_sb_units else True
+
+        # Align reference images to science image using ref_shifts
+        ref_shape = imrefs_nans.shape
+        ndim_shape = len(ref_shape)
+        if ndim_shape==2:
+            # Reshepae to 3D array
+            # imrefs_nans = np.expanad_dims(imrefs_nans, axis=0)
+            imrefs_nans = imrefs_nans.reshape([-1,ref_shape[0],ref_shape[1]])
+        elif ndim_shape==3:
+            pass
+        else:
+            raise ValueError(f"Unexpected shape of im_refs: {imrefs_nans.shape}")
+        
+        nz, ny, nx = imrefs_nans.shape
+
+        if nz<3 and do_pca:
+            _log.warning(f"Very few reference images ({nz}) to perform PCA.")
+            do_pca=False
+
+        im_refs_shift = []
+        for i, im_ref in enumerate(imrefs_nans):
+            xsh, ysh = ref_shifts[i]
+            im_sh = image_shift_with_nans(im_ref, xsh, ysh, oversample=rebin, return_oversample=True, 
+                                          shift_method=method, interp=interp, order=order, total=total,
+                                          preserve_nans=preserve_nans, gstd_pix=gstd_pix, **kwargs)
+            im_refs_shift.append(im_sh)
+        im_refs_shift = np.asarray(im_refs_shift)
+
+        # Subtract reference images from science image
+        if rebin==1:
+            im_sci_over = imsci_nans
+        else:
+            im_sci_over = image_shift_with_nans(imsci_nans, 0, 0, oversample=rebin, return_oversample=True, 
+                                                shift_method=method, interp=interp, order=order, total=total,
+                                                preserve_nans=preserve_nans, gstd_pix=gstd_pix, **kwargs)
+            
+        bpmask_sci = np.isnan(im_sci_over)
+        bpmask_ref = np.logical_or.reduce(np.isnan(im_refs_shift))
+        bpmask_over = bpmask_sci | bpmask_ref
+
+        if do_pca:
+            imdiff, pca_params = pca_subtraction(im_sci_over, im_refs_shift, loci=do_loci, **kwargs)
+        else:
+            imdiff = lsq_subtraction(im_sci_over, im_refs_shift)
+
+        return imdiff
+
+    # def align_diff_images(self, rebin=1, return_oversample=True, gstd_pix=None, #ref_obs=None, 
+    #                  med_dithers=False, method='opencv', interp='lanczos', 
+    #                  preserve_nans=True, order=3, new_shape=None,
+    #                  obs_sub=None, med_dithers=False, data_key='data_aligned',
+    #                     bin_ints_sci=1, bin_ints_ref=1, all_pos=True, do_pca=True,
+    #                     do_rdi=True, **kwargs):):
+
+    def align_images(self, rebin=1, return_oversample=True, gstd_pix=None, #ref_obs=None, 
                      med_dithers=False, method='opencv', interp='lanczos', 
-                     new_shape=None, **kwargs):
+                     preserve_nans=True, order=3, new_shape=None, **kwargs):
         """Align all images to a common reference frame
         
-        Adds 'data_aligned', 'dq_aligned', 'bp_aligned' to each observation dictionary in self.obs_dict.
-        The data have had their bad pixels fixed. The dq arrays and bad pixel masks have been shifted to 
-        match the new image locations.
+        Adds 'data_aligned', 'err_aligned', 'dq_aligned', 'bp_aligned', 'xy_aligned', and 'bin_aligned' 
+        to each observation dictionary in self.obs_dict. The data have had their bad pixels fixed. 
+        The dq arrays and bad pixel masks have been shifted to match the new image locations.
 
         Parameters
         ----------
@@ -2231,16 +3020,15 @@ class nrc_analyze():
             are automatically expanded based on shift amounts.
         """
 
-        from webbpsf_ext.image_manip import fractional_image_shift, fshift, frebin, bp_fix, crop_image
+        from webbpsf_ext.image_manip import fractional_image_shift, fshift, frebin, crop_image
+        from webbpsf_ext.image_manip import image_shift_with_nans, zrebin
 
         if self.shift_matrix is None:
             _log.warning("shift_matrix attribute is None. Did you want to get_dither_offsets() first?")
             
         # Check flux units in header
         # If in surface brightness units, then set total=False
-        header = self.obs_dict[self.obsids[0]][0]['hdr1']
-        flux_units = header['BUNIT']
-        total = True if '/sr' in flux_units.lower() else False
+        total = False if self.has_sb_units else True
 
         ref_obs=None
         if ref_obs is None:
@@ -2286,7 +3074,8 @@ class nrc_analyze():
                     dq = np.bitwise_and.reduce(dq, axis=0)
                     
                 # Bad pixel masks
-                bp = get_dqmask(dq, ['DO_NOT_USE']) > 0
+                bp = odict[k]['bp']
+                bp |= (get_dqmask(dq, ['DO_NOT_USE']) > 0)
                 bp |= np.isnan(im)
                 if len(bp.shape)==3 and med_dithers:
                     bp = np.bitwise_and.reduce(bp, axis=0)
@@ -2301,29 +3090,43 @@ class nrc_analyze():
                     # im = bp_fix(im, bpmask=bp, in_place=False, niter=5)
                     im[bp] = np.nan
                 border = get_dqmask(dq, ['FLUX_ESTIMATED', 'REFERENCE_PIXEL']) > 0
-                im[border] = 0
+                # im[border] = 0
                 err[border] = np.nanmax(err)
                 err[np.isnan(err)] = np.nanmax(err)
 
                 xsh, ysh = self.xyshift[ii] - np.array([xsh0, ysh0])
-                im_shift = fractional_image_shift(im, xsh, ysh, method=method, interp=interp,
-                                                  oversample=rebin, gstd_pix=gstd_pix, 
-                                                  return_oversample=True, total=total)
+                # im_shift = fractional_image_shift(im, xsh, ysh, method=method, interp=interp,
+                #                                   oversample=rebin, gstd_pix=gstd_pix, 
+                #                                   return_oversample=True, total=total)
                 
+                # Get shifted image arrays
+                im_shift = image_shift_with_nans(im, xsh, ysh, oversample=rebin, order=order, 
+                                                 shift_method=method, interp=interp, gstd_pix=gstd_pix,
+                                                 return_oversample=return_oversample, 
+                                                 preserve_nans=preserve_nans,
+                                                 pad=True, total=total, **kwargs)
+
+                # Get shifted error arrays
                 var_shift = fractional_image_shift(err**2, xsh, ysh, method='fshift', interp='linear',
                                                    oversample=rebin, gstd_pix=gstd_pix, 
                                                    return_oversample=True, total=total)
                 err_shift = np.sqrt(var_shift)
                 
+                # Get shifted bad pixel mask
                 bp_shift = frebin(bp.astype('float'), scale=rebin, total=False)
                 bp_shift = fshift(bp_shift, xsh*rebin, ysh*rebin, interp='linear', pad=True, cval=1)
+                if not return_oversample:
+                    bp_shift = frebin(bp_shift, scale=1/rebin, total=False)
                 bp_shift = bp_shift > 0
 
+                # Get shifted DQ array
                 dq_shift = frebin(dq.astype('float'), scale=rebin, total=False)
                 xsh_dq = np.sign(xsh) * np.ceil(np.abs(xsh*rebin))
                 ysh_dq = np.sign(ysh) * np.ceil(np.abs(ysh*rebin))
                 fill_val = dqflags.pixel['FLUX_ESTIMATED'] | dqflags.pixel['DO_NOT_USE']
                 dq_shift = fshift(dq_shift, xsh_dq, ysh_dq, pad=True, cval=fill_val)
+                if not return_oversample:
+                    dq_shift = frebin(dq_shift, scale=1/rebin, total=False)
                 dq_shift = dq_shift.astype(dq.dtype)
 
                 # If new shape is requested, crop/expand images
@@ -2342,6 +3145,8 @@ class nrc_analyze():
                 odict[k]['dq_aligned'] = dq_shift
                 odict[k]['xy_aligned'] = xyloc
                 odict[k]['bin_aligned'] = rebin
+                odict[k]['method_aligned'] = method
+                odict[k]['interp_aligned'] = interp
 
                 ii += 1
 
@@ -2378,9 +3183,11 @@ class nrc_analyze():
 
         if 'data' in data_key:
             dq_key = data_key.replace('data', 'dq')
+            bp_key = data_key.replace('data', 'bp')
             is_err = False
         if 'err' in data_key:
             dq_key = data_key.replace('err', 'dq')
+            bp_key = data_key.replace('err', 'bp')
             is_err = True
 
         obsids_ref = self.obsids_ref
@@ -2406,8 +3213,9 @@ class nrc_analyze():
             for k in dith_keys:
                 imref = odict[k][data_key].copy()
                 dqref = odict[k][dq_key]
+                bpmask = odict[k][bp_key]
                 dqmask = get_dqmask(dqref, ['DO_NOT_USE']) > 0
-                imref[dqmask] = np.nan
+                imref[dqmask | bpmask] = np.nan
 
                 ny, nx = imref.shape[-2:]
 
@@ -2432,7 +3240,8 @@ class nrc_analyze():
         return ref_obs.squeeze()
 
     def _get_roll_ref(self, obsid, dith_pos=None, bin_ints=1, 
-                      med_dithers=False, data_key='data_aligned'):
+                      med_dithers=False, data_key='data_aligned',
+                      return_refoids=False):
         """Get reference observation data to use for roll subtraction
         
         Parameters
@@ -2453,14 +3262,17 @@ class nrc_analyze():
 
         if 'data' in data_key:
             dq_key = data_key.replace('data', 'dq')
+            bp_key = data_key.replace('data', 'bp')
             is_err = False
         if 'err' in data_key:
             dq_key = data_key.replace('err', 'dq')
+            bp_key = data_key.replace('err', 'bp')
             is_err = True
 
         ny, nx = self.obs_dict[self.obsids[0]][0][data_key].shape[-2:]
 
         ref_obs = []
+        ref_oids = []
         for oid2 in self.obsids:
             # Skip if same observation ID (e.g., same roll angle)
             if oid2==obsid:
@@ -2476,8 +3288,9 @@ class nrc_analyze():
             for k in dith_keys:
                 imref = odict2[k][data_key].copy()
                 dqref = odict2[k][dq_key]
+                bpmask = odict2[k][bp_key]
                 dqmask = get_dqmask(dqref, ['DO_NOT_USE']) > 0
-                imref[dqmask] = np.nan
+                imref[dqmask | bpmask] = np.nan
 
                 ny, nx = imref.shape[-2:]
 
@@ -2497,9 +3310,14 @@ class nrc_analyze():
                         imref = np.nanmean(imref.reshape(nbins,bin_ints,ny,nx), axis=1)
 
                 ref_obs.append(imref)
+                ref_oids.append(oid2)
 
         ref_obs = np.array(ref_obs).reshape([-1,ny,nx])
-        return ref_obs.squeeze()
+        ref_oids = np.array(ref_oids)
+        if return_refoids:
+            return ref_obs.squeeze(), ref_oids
+        else:
+            return ref_obs.squeeze()
 
 
     def psf_subtraction(self, obs_sub=None, med_dithers=False, data_key='data_aligned',
@@ -2539,8 +3357,7 @@ class nrc_analyze():
         def pca_subtraction(imarr, imarr_ref, bin_pix, **kwargs):
             # Build pca params dictionary for PSF subtraction
             # If corongraphic imaging using diameter of 5.2m rather than 6.5m
-            is_coron = ('CORONMSK' in self.obs_dict[self.obsids[0]][0]['hdr0'])
-            diam = 5.2 if is_coron else 6.5
+            diam = 5.2 if self.is_coron else 6.5
             res_asec = 206265 * self.nrc.bandpass.pivot().to_value('m') / diam
             res_pix = res_asec / self.nrc.pixelscale
             fwhm_pix = 1.025 * res_pix
