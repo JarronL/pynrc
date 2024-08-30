@@ -145,13 +145,14 @@ A reminder for the maintainers on how to deploy. First, make sure the following 
       $ make docs
 
 4. Push all updates to github and make sure readthedocs generates correctly before actually submitting the release.
-5. Package a distribution and test upload the release to TestPyPI:
+5. Update citation file if needed (TODO: update bump2version to do this automatically).
+6. Package a distribution and test upload the release to TestPyPI:
    
    .. code-block:: sh
 
       $ make release-test
 
-6. If everything works without a hitch, then upload the release to PyPI:
+7. If everything works without a hitch, then upload the release to PyPI:
 
    .. code-block:: sh
 
@@ -178,6 +179,6 @@ A reminder for the maintainers on how to deploy. First, make sure the following 
    
          Finally, issue a pull request to conda-forge.
        
-7. At end of all this, double-check the build environments at https://readthedocs.org/projects/pynrc/builds/. For whatever reason, it is common for there to be an OSError and the build to fail. Resetting the environment at https://readthedocs.org/projects/pynrc/versions/ tends to fix this issue. Build times take about 5 minutes.
+8. At end of all this, double-check the build environments at https://readthedocs.org/projects/pynrc/builds/. For whatever reason, it is common for there to be an OSError and the build to fail. Resetting the environment at https://readthedocs.org/projects/pynrc/versions/ tends to fix this issue. Build times take about 5 minutes.
        
 .. Travis will then deploy to PyPI if tests pass.
