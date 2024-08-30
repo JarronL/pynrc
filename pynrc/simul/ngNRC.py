@@ -36,7 +36,6 @@ import os
 from copy import deepcopy
 
 from astropy.io import fits
-from astropy.convolution import convolve
 
 from datetime import datetime
 

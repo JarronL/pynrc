@@ -4174,7 +4174,20 @@ def fit_func_var_ex(params, det, patterns, ng_all_list, en_dn_list,
 #######################################
 
 def deconv_single_image(im, kfft):
-    """Image deconvolution for a kernel"""
+    """Image deconvolution for a kernel
+    
+    Perform deconvolution of an image using a kernel. This function
+    calculates the FFT of the input image, divides by the kernel's
+    pre-calculated FFT, then performs an inverse FFT to obtain the
+    deconvolved image.
+
+    Parameters
+    ----------
+    im : ndarray
+        Input image to deconvolve.
+    kfft : Complex ndarray
+        FFT of the deconvolution kernel.
+    """
 
     # bias the image to avoid negative pixel values in image
     min_im = np.min(im)
