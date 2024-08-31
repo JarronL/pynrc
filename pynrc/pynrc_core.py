@@ -559,9 +559,10 @@ class NIRCam(NIRCam_ext):
         # Initialize PSF offset to center of image
         # Calculate PSF offset from center if _nrc_bg coefficients are available
         if self._nrc_bg.psf_coeff is not None:
-            self.calc_psf_offset_from_center()
+            self.calc_psf_offset_from_center(use_coeff=True)
         else:
-            self.psf_offset_to_center = np.array([0,0])
+            self.calc_psf_offset_from_center(use_coeff=False)
+            # self.psf_offset_to_center = np.array([0,0])
 
         # Check aperture info is consistent if not explicitly specified
         # TODO: This might fail because self.Detector has not yet been initialized??
@@ -1383,6 +1384,15 @@ class NIRCam(NIRCam_ext):
         kwargs['coord_vals'] = coord_vals
         kwargs['coord_frame'] = coord_frame
 
+        # # Print coordinates in 'sci' frame
+        # if (coord_vals is None) or (coord_frame is None):
+        #     print(f'sci coords: {(self.siaf_ap.XSciRef, self.siaf_ap.YSciRef)}')
+        # elif coord_frame=='sci':
+        #     print(f'sci coords: {coord_vals}')
+        # else:
+        #     cvals_sci = self.siaf_ap.convert(coord_vals[0], coord_vals[1], coord_frame, 'sci')
+        #     print(f'sci coords: {cvals_sci} (convert from {coord_frame})')
+
         _log.info("Calculating PSF from WebbPSF parent function")
         log_prev = conf.logging_level
         setup_logging('WARN', verbose=False)
@@ -1396,7 +1406,7 @@ class NIRCam(NIRCam_ext):
         return res
     
 
-    def calc_psf_offset_from_center(self, use_coeff=True):
+    def calc_psf_offset_from_center(self, use_coeff=True, halfwidth=None):
         """Calculate the offset necessary to shift PSF to array center
         
         Returns values in detector-sampled pixels.
@@ -1407,25 +1417,29 @@ class NIRCam(NIRCam_ext):
 
         from webbpsf_ext.imreg_tools import recenter_psf
 
+        _log.info("Calculating PSF offset to center of array...")
+
         calc_psf_func = self.calc_psf_from_coeff if use_coeff else self.calc_psf
-        psf_over = calc_psf_func(return_oversample=True, return_hdul=False, use_bg_psf=True)
+        psf_over = calc_psf_func(return_oversample=True, return_hdul=False, use_bg_psf=True,
+                                 coord_vals=(0,0), coord_frame='idl')
 
         oversample = self.oversample
 
         # Determine shift amount to place PSF in center of array
-        if self.is_lyot:
-            if oversample==1:
-                halfwidth=1
-            elif oversample<=3:
-                # Prevent special case COM algorithm from not converging
-                if ('LWB' in self.aperturename) and 'F4' in self.filter:
-                    halfwidth=5
-                else:
-                    halfwidth=3
-            elif oversample<=5:
-                halfwidth=7
-        else:
-            halfwidth = 15
+        if halfwidth is None:
+            if self.is_lyot:
+                if oversample==1:
+                    halfwidth=1
+                elif oversample<=3:
+                    # Prevent special case COM algorithm from not converging
+                    if ('LWB' in self.aperturename) and 'F4' in self.filter:
+                        halfwidth=5
+                    else:
+                        halfwidth=3
+                elif oversample<=5:
+                    halfwidth=7
+            else:
+                halfwidth = 15
         _, xyoff_psf_over = recenter_psf(psf_over, niter=3, halfwidth=halfwidth)
 
         # Convert to detector pixels
@@ -1440,6 +1454,9 @@ class NIRCam(NIRCam_ext):
 
         xsh_to_cen, ysh_to_cen = self.psf_offset_to_center * sampling
         kwargs['interp'] = interp
+
+        # print(f"Recentering PSF: ({xsh_to_cen/sampling:.3f}, {ysh_to_cen/sampling:.3f}) pixels")
+
         return shift_func(psf, xsh_to_cen, ysh_to_cen, **kwargs)
 
 
