@@ -5,7 +5,7 @@ authors:
     given-names: "Jarron"
     orcid: "https://orcid.org/0000-0002-0834-6140"
 title: "pyNRC: Python ETC and Simulator for JWST NIRCam"
-version: v1.2.1
+version: v1.2.2
 doi: 10.5281/zenodo.5829552
-date-released: 2024-05-14
+date-released: 2024-09-05
 url: "https://github.com/JarronL/pynrc"
