@@ -1398,6 +1398,39 @@ def disk_model_grater_2hg(r0, h0, ain, aout, pa, incl, g1, g2, wg1,
 
     return disk
 
+
+def make_grater_disk(nrc, npix=None, scale_flux=1, return_oversample=True, **kwargs):
+
+    if npix is None:
+        ny, nx = np.array([nrc.det_info['ypix'], nrc.det_info['xpix']]) // 2 + 1
+    else:
+        nx = ny = npix
+
+    osamp = nrc.oversample
+    pixscale = nrc.pixelscale
+
+    dstar = nrc.distance
+
+    nx_pix = nx*osamp if return_oversample else nx
+    ny_pix = ny*osamp if return_oversample else ny
+    pxscale = pixscale/osamp if return_oversample else pixscale
+
+    # Default parameters
+    kwargs_def = {
+        'r0': 75., 'h0': 5/75., 'ain': 12, 'aout': -12, 
+        'pa': 158.5, 'incl': 51.7, 'g1': 0.85, 'g2': 10, 'wg1': 0.7, 
+        'e': 0.0, 'omega': 0.0, 'gamma': 2.0, 'beta': 1.3, 'distance': dstar, 
+        'nx': nx_pix, 'ny': ny_pix, 'pxscale': pxscale, 
+        'cent': None, 'accuracy': None, 'rmax_accuracy': None, 
+        'halfNbSlices': 25, 'polar': False, 'flux_max': 1.
+    }
+
+    # Update default parameters with user input
+    kwargs = {**kwargs_def, **kwargs}
+
+    return scale_flux * disk_model_grater_2hg(**kwargs)
+
+
 class NumpyArrayEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, np.integer):
@@ -3176,7 +3209,7 @@ class nrc_analyze():
                     odict[k]['bp'][iy, ix] = True
             
     def flag_outlier_pix_diff(self, nsig=10, rin_flag=15, rin_fit=0, rout_fit=None, gauss_fit=True, 
-                              oversample=4, shift_method='fshift', interp='linear', 
+                              oversample=4, shift_method='fshift', interp='linear', grid_method='nearest',
                               verbose=False, **kwargs):
         """Flag outlier pixels in difference images
 
@@ -3222,7 +3255,7 @@ class nrc_analyze():
                 im1_sh = image_shift_with_nans(im1_nans, 0, 0, oversample=oversample,
                                                shift_method=shift_method, interp=interp,
                                                return_oversample=False, preserve_nans=True, 
-                                               order=1, **kwargs)
+                                               grid_method=grid_method, order=1, **kwargs)
 
                 # Shift im2 by xyshift and interpolate NaNs
                 im2_sh_arr = []
@@ -3231,7 +3264,7 @@ class nrc_analyze():
                     im2_sh = image_shift_with_nans(im2, xsh, ysh, oversample=oversample,
                                                    shift_method=shift_method, interp=interp,
                                                    return_oversample=False, preserve_nans=False,  
-                                                   order=1, **kwargs)
+                                                   grid_method=grid_method, order=1, **kwargs)
                     im2_sh_arr.append(im2_sh)
                 im2_sh_arr = np.array(im2_sh_arr)
 
@@ -5475,8 +5508,13 @@ class nrc_rdi():
 
         # Run RDI to get residual image
         if image_rdi is None:
-            rdi_res = self.run_rdi(collapse_rolls=False)
+            rdi_res = self.run_rdi(collapse_rolls=False, prop_err=True)
             image_rdi = rdi_res.im
+        else:
+            rdi_res = None
+
+        if (sig is None) and (rdi_res is not None):
+            sig = rdi_res.err
 
         # Foward model circumstellar disk model
         fmrdi_res = self.run_rdi(forward_model=True, collapse_rolls=False)
@@ -5661,7 +5699,7 @@ class nrc_rdi_results:
             else:
                 self.err_rolls_der = None
 
-    def create_roll_sub(self):
+    def create_roll_sub(self, gstd_pix=None):
         """
         Create a subtraction image from the two roll positions.
         """
@@ -5677,6 +5715,10 @@ class nrc_rdi_results:
 
         diff1 = im1 - im2
         diff2 = -1 * diff1
+
+        if (gstd_pix is not None) and (gstd_pix > 0):
+            diff1 = image_shift_with_nans(diff1, 0, 0, gstd_pix=gstd_pix, oversample=4, order=3, preserve_nans=True)
+            diff2 = image_shift_with_nans(diff2, 0, 0, gstd_pix=gstd_pix, oversample=4, order=3, preserve_nans=True)
         
         diff1_der = rotate_offset(diff1, -pa1, reshape=False, cval=np.nan)
         diff2_der = rotate_offset(diff2, -pa2, reshape=False, cval=np.nan)
@@ -5689,11 +5731,62 @@ class nrc_rdi_results:
         if self.prop_err:
             err1, err2 = self.err_rolls
             err_diff = np.sqrt(err1**2 + err2**2)
-            var_diff1_der = rotate_offset(err_diff**2, -pa1, reshape=False, cval=np.nan)
-            var_diff2_der = rotate_offset(err_diff**2, -pa2, reshape=False, cval=np.nan)
+            var_diff = err_diff**2
+            if (gstd_pix is not None) and (gstd_pix > 0):
+                var_diff = image_shift_with_nans(var_diff, 0, 0, gstd_pix=gstd_pix, oversample=4, order=1, preserve_nans=True)
+
+            var_diff1_der = rotate_offset(var_diff, -pa1, reshape=False, cval=np.nan)
+            var_diff2_der = rotate_offset(var_diff, -pa2, reshape=False, cval=np.nan)
             self.err_roll_sub = np.sqrt(np.nanmean([var_diff1_der, var_diff2_der], axis=0))
         else:
             self.err_roll_sub = None
+
+    def plot_overview(self, gstd_pix=None, vmin_list=None, vmax_list=None, 
+                      log=False, labels=None, pl_rth_asec=None, return_fig=False):
+
+        from webbpsf_ext.coords import rtheta_to_xy
+        from hciplot import plot_frames
+
+        im_der, diff_der_abs, diff_der = (self.im, self.roll_sub_abs, self.roll_sub)
+        if (gstd_pix is not None) and (gstd_pix > 0):
+            im_der = image_shift_with_nans(im_der, 0, 0, gstd_pix=gstd_pix, oversample=4, order=3, preserve_nans=True)
+            _log.warning(f'Updating self.roll_sub, self.roll_sub_abs, and self.err_roll_sub with gstd_pix={gstd_pix}')
+            self.create_roll_sub(gstd_pix=gstd_pix)
+            diff_der_abs, diff_der = (self.roll_sub_abs, self.roll_sub)
+            # diff_der_abs = image_shift_with_nans(diff_der_abs, 0, 0, gstd_pix=gstd_pix, oversample=4, order=3, preserve_nans=True)
+            # diff_der = image_shift_with_nans(diff_der, 0, 0, gstd_pix=gstd_pix, oversample=4, order=3, preserve_nans=True)
+
+        xcen, ycen = get_im_cen(im_der)
+        pixelscale = self.pixelscale
+
+        if pl_rth_asec is None:
+            pl_locs = None
+        else:
+            pl_locs = []
+            for r, th in pl_rth_asec:
+                x, y = np.array(rtheta_to_xy(r, th)) / pixelscale
+                x_fin, y_fin = np.array([x, y]) + np.array([xcen, ycen])
+                pl_locs.append((x_fin, y_fin))
+            pl_locs = tuple(pl_locs)
+
+        vmin_list = list([-50, -10, -10]) if vmin_list is None else list(vmin_list)
+        vmax_list = list([np.nanmax(im_der), np.nanmax(diff_der_abs)/3, 40]) if vmax_list is None else list(vmax_list)
+
+
+        labels = ('RDI Residuals', 'Roll Sub (Abs Diff)', 'Roll Sub (Diff)') if labels is None else tuple(labels)
+        fig, axes = plot_frames([im_der, diff_der_abs, diff_der], log=log,
+                                rows=1, cmap=('inferno', 'inferno', 'inferno'), 
+                                vmin=vmin_list, vmax=vmax_list, size_factor=4,
+                                show_center=True, cross_color='grey', cross_alpha=1,
+                                label=labels, label_color='C2', label_size=10,
+                                circle=pl_locs, circle_radius=1.7, circle_color='C2', circle_alpha=1,
+                                horsp=0.25, versp=0, ang_scale=True, ang_ticksep=8,
+                                pxscale=pixelscale, return_fig_ax=True)
+        
+        fig.tight_layout()
+
+        if return_fig:
+            return fig
 
 
 def model_rescale_factor(A, B, sig=None, mask=None):
