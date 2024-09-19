@@ -1492,9 +1492,11 @@ class obs_hci(nrc_hci):
             # print(r,th)
             im_star = self.gen_offset_psf(r, th, sp=sp, wfe_drift=wfe_drift, return_oversample=True, 
                                           diffusion_sigma=diffusion_sigma, psf_corr_over=psf_corr_over, **kwargs)
-            im_star = crop_image(im_star, (ypix_over, xpix_over))
         elif isinstance(im_star, (int,float)) and (im_star==0):
             im_star = np.zeros([ypix_over, xpix_over])
+
+        # Always crop to desired size in case passed image is larger
+        im_star = crop_image(im_star, (ypix_over, xpix_over))
 
         ##################################
         # Shift image
@@ -1903,7 +1905,6 @@ class obs_hci(nrc_hci):
         im_star = self.gen_offset_psf(r, th, sp=self.sp_sci, return_oversample=True, 
                                       wfe_drift=wfe_drift0, **kwargs)
         # Stellar cut-out for reference scaling
-        # im_star_sub = pad_or_cut_to_size(im_star, sub_shape)
         im_star_sub = crop_image(im_star, sub_shape)
 
         # Expand to full size 
@@ -1957,8 +1958,6 @@ class obs_hci(nrc_hci):
             # Shift image back to center and crop star+disk+planets image
             im_star_sub = crop_image(im_star, sub_shape, delx=-1*delx_over, dely=-1*dely_over,
                                      interp=interp, shift_func=fshift)
-            # im_star_sub = pad_or_cut_to_size(im_roll1, sub_shape, interp=interp,
-            #                                  offset_vals=(-1*dely_over,-1*delx_over))
 
         # Fix saturated pixels
         if fix_sat:
@@ -2003,8 +2002,6 @@ class obs_hci(nrc_hci):
             new_shape = tuple(np.max(np.array([diff_r1_rot.shape, diff_r2_rot.shape]), axis=0))
             diff_r1_rot = crop_image(diff_r1_rot, new_shape, fill_val=np.nan)
             diff_r2_rot = crop_image(diff_r2_rot, new_shape, fill_val=np.nan)
-            # diff_r1_rot = pad_or_cut_to_size(diff_r1_rot, new_shape, fill_val=np.nan)
-            # diff_r2_rot = pad_or_cut_to_size(diff_r2_rot, new_shape, fill_val=np.nan)
 
             # Replace NaNs with values from other differenced mask
             nan_mask = np.isnan(diff_r1_rot)
@@ -2075,7 +2072,6 @@ class obs_hci(nrc_hci):
         im_ref = self.gen_offset_psf(r, th, sp=self.sp_ref, return_oversample=True, 
                                      wfe_drift=wfe_drift_ref, **kwargs)
         # Stellar cut-out for reference scaling
-        # im_ref_sub = pad_or_cut_to_size(im_ref, sub_shape)
         im_ref_sub = crop_image(im_ref, sub_shape)
         # Expand to full size
         #   - Not needed because this is correctly handled in gen_slope_image
@@ -2135,8 +2131,6 @@ class obs_hci(nrc_hci):
                                                wfe_drift=wfe_drift2, **kwargs)
                 im_star2_sub = crop_image(im_star2, sub_shape)
                 im_star2     = crop_image(im_star2, (ypix_over, xpix_over))
-                # im_star2_sub = pad_or_cut_to_size(im_star2, sub_shape)
-                # im_star2     = pad_or_cut_to_size(im_star2, (ypix_over, xpix_over))
 
 
             # Create Roll2 slope image
@@ -2189,10 +2183,6 @@ class obs_hci(nrc_hci):
             diff2_r1_rot = crop_image(diff2_r1_rot, new_shape, fill_val=np.nan)
             diff1_r2_rot = crop_image(diff1_r2_rot, new_shape, fill_val=np.nan)
             diff2_r2_rot = crop_image(diff2_r2_rot, new_shape, fill_val=np.nan)
-            # diff1_r1_rot = pad_or_cut_to_size(diff1_r1_rot, new_shape, np.nan)
-            # diff2_r1_rot = pad_or_cut_to_size(diff2_r1_rot, new_shape, np.nan)
-            # diff1_r2_rot = pad_or_cut_to_size(diff1_r2_rot, new_shape, np.nan)
-            # diff2_r2_rot = pad_or_cut_to_size(diff2_r2_rot, new_shape, np.nan)
 
             # Replace NaNs with values from other differenced mask
             nan_mask = np.isnan(diff1_r1_rot)
