@@ -1,4 +1,4 @@
-webbpsf\_ext.opds.OTE\_WFE\_Drift\_Model
+﻿webbpsf\_ext.opds.OTE\_WFE\_Drift\_Model
 ========================================
 
 .. currentmodule:: webbpsf_ext.opds
@@ -42,7 +42,6 @@ webbpsf\_ext.opds.OTE\_WFE\_Drift\_Model
       ~OTE_WFE_Drift_Model.move_sm_local
       ~OTE_WFE_Drift_Model.move_sur
       ~OTE_WFE_Drift_Model.opds_as_hdul
-      ~OTE_WFE_Drift_Model.powerspectrum
       ~OTE_WFE_Drift_Model.print_state
       ~OTE_WFE_Drift_Model.ptv
       ~OTE_WFE_Drift_Model.reset
