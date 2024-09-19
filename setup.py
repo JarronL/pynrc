@@ -108,6 +108,7 @@ setup(
 
     description="JWST NIRCam ETC and Simulator",
     long_description=readme + '\n\n' + history,
+    long_description_content_type='text/x-rst',
 
     # The project's main homepage.
     #url='https://github.com/JarronL/pynrc',
