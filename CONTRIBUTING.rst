@@ -145,14 +145,13 @@ A reminder for the maintainers on how to deploy. First, make sure the following 
       $ make docs
 
 4. Push all updates to github and make sure readthedocs generates correctly before actually submitting the release.
-5. Update citation file if needed (TODO: update bump2version to do this automatically).
-6. Package a distribution and test upload the release to TestPyPI:
+5. Package a distribution and test upload the release to TestPyPI:
    
    .. code-block:: sh
 
       $ make release-test
 
-7. If everything works without a hitch, then upload the release to PyPI:
+6. If everything works without a hitch, then upload the release to PyPI:
 
    .. code-block:: sh
 
@@ -162,7 +161,7 @@ A reminder for the maintainers on how to deploy. First, make sure the following 
    
 .. todo::
 
-      6. Release code to ``conda-forge``. If you already have a conda-forge  feedstock forked to your own GitHub account, first edit ``recipe/meta.yaml`` to update the version, hash, etc. To calculate the sha256 hash, run:
+      7. Release code to ``conda-forge``. If you already have a conda-forge  feedstock forked to your own GitHub account, first edit ``recipe/meta.yaml`` to update the version, hash, etc. To calculate the sha256 hash, run:
    
          .. code-block:: sh
 

@@ -1,6 +1,11 @@
 Revision History
 ================
 
+v1.3.0 (Sept 19, 2024)
+---------------------
+
+ - Bump to version 1.3.0 to attempt to fix PyPI upload issue
+
 v1.2.2 (Sept 19, 2024)
 ---------------------
 
