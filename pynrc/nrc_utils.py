@@ -1710,6 +1710,10 @@ def do_charge_migration(image, satmax=1.5, niter=5, corners=True, **kwargs):
     sat_image = image.copy()
     for j in range(niter):
         ind_sat = (sat_image >= satmax) & (~ind_lock)
+        # Break if no saturated pixels
+        if np.sum(ind_sat)==0: 
+            break
+
         yxind = np.where(ind_sat)
         # for each saturated pixel, migrate charge to neighbors
         # starting with the brightest
