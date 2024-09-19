@@ -1,6 +1,17 @@
 Revision History
 ================
 
+v1.2.2 (Sept 19, 2024)
+---------------------
+
+ - Bug fix in charge migration to check to break out if no saturated pixels
+ - Correctly crop stellar PSF in ``obs_hci`` class while generating slope image
+
+v1.2.1 (May 24, 2024)
+---------------------
+
+ - Bug fix for poppy requirement version. (should have been >1.1.0 rather than >1.2.0)
+
 v1.2.0 (May 13, 2024)
 ---------------------
 
