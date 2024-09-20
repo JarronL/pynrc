@@ -15,6 +15,7 @@
       :toctree:
    
       Tel2Sci_info
+      oversampled_coords
       siafap_sci_coords
    
    
