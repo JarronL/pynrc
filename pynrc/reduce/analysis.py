@@ -4275,7 +4275,7 @@ def load_psf_correction(filter, apname, verbose=True, file=None):
         print(psf_scale_files)
 
     if len(psf_scale_files)==0:
-        _log.warn(f'No PSF correction files found for {filter} and {apname}')
+        _log.warning(f'No PSF correction files found for {filter} and {apname}')
         return {}
 
     psf_corr_dict = {}

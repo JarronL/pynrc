@@ -875,7 +875,7 @@ def pca_subtraction(imarr, psfarr, fwhm_pix, do_loci=True,
         # Filter out numbasis where greater than npsf_max
         ind_out_of_range = numbasis > npsf_max
         if np.any(ind_out_of_range):
-            _log.warn(f"numbasis values {numbasis[ind_out_of_range]} are greater than npsf_max={npsf_max}")
+            _log.warning(f"numbasis values {numbasis[ind_out_of_range]} are greater than npsf_max={npsf_max}")
         numbasis = numbasis[~ind_out_of_range]
         nbasis_sets = len(numbasis)
         if nbasis_sets == 0:

@@ -523,7 +523,7 @@ class NIRCam(NIRCam_ext):
 
             # Cannot be set to clear
             if pupil_mask=='CLEAR':
-                _log.warn('CLEAR is not a valid pupil mask element. Setting to None.')
+                _log.warning('CLEAR is not a valid pupil mask element. Setting to None.')
                 pupil_mask = None
 
         super().__init__(filter=filter, pupil_mask=pupil_mask, image_mask=image_mask, **kwargs)
@@ -1132,7 +1132,7 @@ class NIRCam(NIRCam_ext):
         # These apertures are not useful
         elif is_grism and (wind_mode=='FULL'):
             key = 'NRC{}_FULL_{}'.format(detid, pupil_mask)
-            _log.warn('WFSS SIAF apertures are currently unsupported')
+            _log.warning('WFSS SIAF apertures are currently unsupported')
         # Subarrays
         elif wind_mode=='WINDOW':
             key = 'NRC{}_SUB{}P'.format(detid,self.det_info['xpix'])
@@ -1216,12 +1216,12 @@ class NIRCam(NIRCam_ext):
         """Update detector properties based on SIAF aperture"""
 
         if apname is None:
-            _log.warn('update_from_SIAF: Input apname was None. Returning...')
+            _log.warning('update_from_SIAF: Input apname was None. Returning...')
             return
 
         if not (apname in self.siaf_ap_names):
             # raise ValueError(f'Cannot find {apname} in siaf.apernames list.')
-            _log.warn(f'update_from_SIAF: Cannot find {apname} in siaf.apernames list. Returning...')
+            _log.warning(f'update_from_SIAF: Cannot find {apname} in siaf.apernames list. Returning...')
             return
             
         if ('NRCALL' in apname) or ('NRCAS' in apname) or ('NRCBS' in apname):
@@ -1277,8 +1277,8 @@ class NIRCam(NIRCam_ext):
                 elif ('MASK430R' in apname):
                     image_mask  = 'MASK430R'
                 if 'TA' in apname:
-                    _log.warn('Full TA apertures are treated similar to coronagraphic observations.')
-                    _log.warn("To calculate SNR, self.update_psf_coeff(image_mask='CLEAR') and set self.ND_acq.")
+                    _log.warning('Full TA apertures are treated similar to coronagraphic observations.')
+                    _log.warning("To calculate SNR, self.update_psf_coeff(image_mask='CLEAR') and set self.ND_acq.")
             elif '_TAMASK' in apname:
                 # For small TA subarray, turn off mask and enable ND square
                 image_mask = None
@@ -1287,7 +1287,7 @@ class NIRCam(NIRCam_ext):
                 # Not really anything to do here
                 image_mask = None
             else:
-                _log.warn(f'No mask setting for {apname}')
+                _log.warning(f'No mask setting for {apname}')
 
         # Grism observations
         elif 'GRISM' in apname:
@@ -1302,7 +1302,7 @@ class NIRCam(NIRCam_ext):
             elif ('_GRISM' in apname): # Everything else is GRISMR
                 pupil_mask = 'GRISMR' if pupil_mask is None else pupil_mask
             else:
-                _log.warn(f'No grism setting for {apname}')
+                _log.warning(f'No grism setting for {apname}')
 
 
         # Look for filter specified in aperture name
@@ -1781,7 +1781,7 @@ class NIRCam(NIRCam_ext):
             zf_rec = fzodi_pix / fzodi_pix_temp
             str1 = 'Using ra,dec,thisday keywords can be relatively slow. \n'
             str2 = '\tFor your specified loc and date, we recommend using zfact={:.1f}'.format(zf_rec)
-            _log.warn(str1 + str2)
+            _log.warning(str1 + str2)
 
         # Don't forget about Lyot mask attenuation (not in bandpass throughput)
         if self.is_lyot:

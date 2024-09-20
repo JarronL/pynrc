@@ -4869,7 +4869,7 @@ def update_subarray_imaging(visit_dict):
 
     apt_template = visit_dict.get('APTTemplate')
     if (apt_template is not None) and ('nircamimaging' not in apt_template.lower()):
-        _log.warn(f'APT template {apt_template} is not NircamImaging. Returning...')
+        _log.warning(f'APT template {apt_template} is not NircamImaging. Returning...')
         return
 
     # Update names of apertures and detectors
@@ -4928,7 +4928,7 @@ def update_eng_detectors(visit_dict):
 
     apt_template = visit_dict.get('APTTemplate')
     if (apt_template is not None) and ('engineering' not in apt_template.lower()):
-        _log.warn(f'APT template {apt_template} is not Engineering. Returning...')
+        _log.warning(f'APT template {apt_template} is not Engineering. Returning...')
         return
     
     # Update detectors used
@@ -5006,7 +5006,7 @@ def update_eng_detectors(visit_dict):
             else:
                 aps = aps_amod + aps_bmod
         else:
-            _log.warn(f'{subname} not yet supported. Setting apertures to None')
+            _log.warning(f'{subname} not yet supported. Setting apertures to None')
             aps = 'NONE'
         
         apertures.append(aps)
@@ -5944,9 +5944,9 @@ def populate_obs_params(visit_dict, exp_id, detname, date_obs, time_obs='12:00:0
                 pa_v3 += 360
         # Otherwise, check if specified pa_v3 is outside of bounds
         elif pa_v3 < v3pa_min:
-            _log.warn(f'{pa_v3:.2f} is less than allowed {v3pa_min:.2f} for the given date!')
+            _log.warning(f'{pa_v3:.2f} is less than allowed {v3pa_min:.2f} for the given date!')
         elif pa_v3 > v3pa_max:
-            _log.warn(f'{pa_v3:.2f} is greater than allowed {v3pa_max:.2f} for the given date!')
+            _log.warning(f'{pa_v3:.2f} is greater than allowed {v3pa_max:.2f} for the given date!')
 
     if roll_info is not None:
         obs_num = visit_dict['obs_num']
@@ -6331,7 +6331,7 @@ def gen_pointing_info(*args, **kwargs):
     Create telescope pointing sequence for a given visit / exposure.
     """
 
-    _log.warn("Deprecated. Use `gen_jwst_pointing` function instead in the future.")
+    _log.warning("Deprecated. Use `gen_jwst_pointing` function instead in the future.")
     return gen_jwst_pointing(*args, **kwargs)
 
 def gen_jwst_pointing(visit_dict, obs_params, base_std=None, dith_std=None, 
@@ -6425,7 +6425,7 @@ def get_tel_angles(ra, dec, obs_date='2022-03-01', obs_time='12:00:00'):
     pitch = pitch_deg[0,0]
     mask = mask_obs[:,0] 
     if mask.sum()==0:
-        _log.warn(f"Source RA, Dec = ({ra:.1f}, {dec:.1f}) deg is not visible on {obs_date}!")
+        _log.warning(f"Source RA, Dec = ({ra:.1f}, {dec:.1f}) deg is not visible on {obs_date}!")
         v3pa_lims = np.array([v3pa_deg[0,0], v3pa_deg[-1,0]])
     else:
         v3pa_masked = v3pa_deg[mask,0]
