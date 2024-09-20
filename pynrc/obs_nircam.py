@@ -7,7 +7,7 @@ from webbpsf_ext.bandpasses import nircam_com_th
 # Import libraries
 from .pynrc_core import NIRCam, DetectorOps, merge_dicts
 from .nrc_utils import *
-from .maths.coords import gen_sgd_offsets
+from .maths.coords import gen_sgd_offsets, oversampled_coords
 from .maths.image_manip import add_ipc, add_ppc, apply_pixel_diffusion
 from .maths.image_manip import fractional_image_shift
 
@@ -29,7 +29,7 @@ class nrc_hci(NIRCam):
     """
 
     def __init__(self, wind_mode='WINDOW', xpix=320, ypix=320, large_grid=True, 
-                 bar_offset=None, use_ap_info=False, autogen_coeffs=True, 
+                 bar_offset=None, use_ap_info=True, autogen_coeffs=True, 
                  sgd_type=None, slew_std=0, fsm_std=0, **kwargs):
 
         """Init function for NIRCam HCI class.
@@ -1934,7 +1934,7 @@ class obs_hci(nrc_hci):
             delx_asec, dely_asec = np.array([delx_pix, dely_pix]) * self.pixelscale
 
         # Create cen_over parameter to pass to de-rotate function
-        xcen_over, ycen_over = np.array([xcen_baroff, ycen]) * oversample
+        xcen_over, ycen_over = oversampled_coords(np.array([xcen_baroff, ycen]), oversample)
         cen_over = (xcen_over, ycen_over)
 
         # Perform shift and create slope image
