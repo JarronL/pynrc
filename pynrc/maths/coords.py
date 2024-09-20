@@ -26,6 +26,28 @@ from webbpsf_ext.coords import gen_sgd_offsets, get_idl_offset, radec_offset
 from webbpsf_ext.coords import jwst_point
 from webbpsf_ext.coron_masks import det_to_sci, sci_to_det
 
+def oversampled_coords(coords, oversample):
+    """Transform image index to oversampled image index
+    
+    Assumes 0-based indexing where the center of a pixel
+    corresponds to the integer index. That is, the center
+    of the first pixel is at 0.0, and the center of the last
+    pixel is at N-1.0 where N is the number of pixels.
+
+    Parameters
+    ----------
+    coords : float or array-like
+        Image index or indices
+    oversample : int
+        Oversampling factor
+
+    Returns
+    -------
+    float or array-like
+        Oversampled image index or indices
+    """
+    return (coords + 0.5) * oversample - 0.5
+
 ###########################################################################
 #
 #    NIRCam Coordinate Systems
