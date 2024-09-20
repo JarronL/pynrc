@@ -1,6 +1,11 @@
 Revision History
 ================
 
+v1.3.1 (Sept 19, 2024)
+----------------------
+
+ - Fix index transformations between image and oversampled equivalent
+
 v1.3.0 (Sept 19, 2024)
 ----------------------
 
