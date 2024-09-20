@@ -22,6 +22,7 @@
       get_NRC_v2v3_limits
       get_idl_offset
       get_sgd_offsets
+      oversampled_coords
       plotAxes
       radec_offset
       radec_to_coord

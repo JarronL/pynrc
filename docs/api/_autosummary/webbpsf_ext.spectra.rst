@@ -14,12 +14,15 @@
    .. autosummary::
       :toctree:
    
+      BOSZ_2024_spectrum
       BOSZ_filename
+      BOSZ_filename_2024
       BOSZ_spectrum
       bin_spectrum
       companion_spec
       cond_filter
       cond_table
+      download_BOSZ_2024
       download_BOSZ_spectrum
       download_votable
       jupiter_spec

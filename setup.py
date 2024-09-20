@@ -92,8 +92,6 @@ with open('HISTORY.rst') as history_file:
 
 install_requires = [
     'tqdm>4',
-    'poppy>=1.1.0',
-    'webbpsf>=1.2.0',
     'webbpsf_ext>=1.2.1',
     'astroquery>=0.4.6',
     'jwst',
@@ -110,6 +108,7 @@ setup(
 
     description="JWST NIRCam ETC and Simulator",
     long_description=readme + '\n\n' + history,
+    long_description_content_type='text/x-rst',
 
     # The project's main homepage.
     #url='https://github.com/JarronL/pynrc',

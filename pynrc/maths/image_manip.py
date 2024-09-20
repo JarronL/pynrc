@@ -8,16 +8,20 @@ from .coords import dist_image
 from scipy.ndimage import fourier_shift, rotate
 from astropy.io import fits
 
-from webbpsf_ext.image_manip import pad_or_cut_to_size, crop_image, crop_observation
-from webbpsf_ext.image_manip import fshift, fourier_imshift, frebin
+from webbpsf_ext.image_manip import pad_or_cut_to_size
+from webbpsf_ext.image_manip import fshift, fourier_imshift, cv_shift
+from webbpsf_ext.image_manip import frebin, zrebin
+from webbpsf_ext.image_manip import fractional_image_shift, image_shift_with_nans, replace_nans
 from webbpsf_ext.image_manip import rotate_offset, rotate_shift_image
 from webbpsf_ext.image_manip import image_rescale, model_to_hdulist
 from webbpsf_ext.image_manip import convolve_image, crop_zero_rows_cols
 from webbpsf_ext.image_manip import get_im_cen
 from webbpsf_ext.image_manip import add_ipc, add_ppc, apply_pixel_diffusion
+from webbpsf_ext.image_manip import image_convolution
+from webbpsf_ext.imreg_tools import subtract_psf
 from webbpsf_ext.maths import hist_indices, binned_statistic, fit_bootstrap
 
-from webbpsf_ext.imreg_tools import crop_observation as _crop_observation
+from webbpsf_ext.image_manip import crop_observation as _crop_observation
 
 def crop_observation(im_full, ap, xysub, xyloc=None, delx=0, dely=0, 
                      shift_func=fourier_imshift, interp='cubic',
@@ -87,15 +91,15 @@ def crop_observation(im_full, ap, xysub, xyloc=None, delx=0, dely=0,
                               return_xy=return_xy, fill_val=fill_val, **kwargs)
 
 
-def crop_image(im, xysub, xyloc=None, **kwargs):
+def crop_image(imarr, xysub, xyloc=None, **kwargs):
     """Crop input image around center using integer offsets only
 
-    If size is exceeded, then the image is expanded and filled with NaNs.
+    If size is exceeded, then the image is expanded and filled with 0s by default.
 
     Parameters
     ----------
-    im : ndarray
-        Input image.
+    imarr : ndarray
+        Input image or image cube [nz,ny,nx].
     xysub : int, tuple, or list
         Size of subarray to extract. If a single integer is provided,
         then a square subarray is extracted. If a tuple or list is
@@ -123,13 +127,26 @@ def crop_image(im, xysub, xyloc=None, **kwargs):
         for `fshift`.
     return_xy : bool
         If True, then return the x and y indices used to crop the
-        image prior to any shifting from `delx` and `dely`. 
-        Default is False.
+        image prior to any shifting from `delx` and `dely`; 
+        (x1, x2, y1, y2). Default is False.
     fill_val : float
         Value to use for filling in the empty pixels after shifting.
         Default = 0.
     """
-    return crop_observation(im, None, xysub, xyloc=xyloc, **kwargs)
+
+    sh = imarr.shape
+    if len(sh) == 2:
+        return crop_observation(imarr, None, xysub, xyloc=xyloc, **kwargs)
+    elif len(sh) == 3:
+        return_xy = kwargs.pop('return_xy', False)
+        res = np.asarray([crop_observation(im, None, xysub, xyloc=xyloc, **kwargs) for im in imarr])
+        if return_xy:
+            _, xy = crop_observation(imarr[0], None, xysub, xyloc=xyloc, return_xy=True, **kwargs)
+            return (res, xy)
+        else:
+            return res 
+    else:
+        raise ValueError(f'Found {len(sh)} dimensions {sh}. Only 2 or 3 dimensions allowed.')
 
 
 def shift_subtract(params, reference, target, mask=None, pad=False, interp='cubic',
@@ -176,64 +193,6 @@ def shift_subtract(params, reference, target, mask=None, pad=False, interp='cubi
         return ( target - beta * offset ).ravel() #.flatten()
 
 
-def subtract_psf(image, psf, weights=None, osamp=1, 
-                 xyshift=(0,0), psf_scale=1, psf_offset=0,
-                 func_shift=fourier_imshift, interp='cubic', pad=False, 
-                 kipc=None, **kwargs):
-    """ Subtract a PSF from an image
-
-    Parameters
-    ----------
-    image : ndarray
-        Observed science image
-    psf_over : ndarray
-        Input oversampled PSF to fit and align
-
-    Keyword Args
-    ------------
-    weights : ndarray
-        Weights to apply to the image. Default is None.
-    osamp : int
-        Oversampling factor of the PSF. Default is 1.
-    xyshift : tuple
-        (x,y) pixel shift to apply to the PSF. Default is (0,0).
-    psf_scale : float
-        Scale factor to apply to the PSF. Default is 1.
-    psf_offset : float
-        Offset to apply to the PSF. Default is 0.
-    func_shift : func
-        Which function to use for sub-pixel shifting.
-        Options are fourier_imshift, fshift, or cv_shift.
-    interp : str
-        Interpolation for fshift or cv_shift functions. 
-        Options are 'linear', 'cubic', or 'quintic'.
-        Default is 'cubic'. 
-    pad : bool
-        Should we pad the array before shifting, then truncate?
-        Otherwise, the image is wrapped.
-    kipc : ndarray
-        2D kernel to apply for IPC. Default is None.
-    """
-
-    # Shift oversampled PSF and rebin to detector sampled
-    xsh_over, ysh_over = np.array(xyshift) * osamp
-    if func_shift is None:
-        psf_det = frebin(psf_over, scale=1/osamp) if osamp!=1 else psf_over
-    else:
-        psf_over = func_shift(psf, xsh_over, ysh_over, pad=pad, interp=interp)
-        psf_det = frebin(psf_over, scale=1/osamp) if osamp!=1 else psf_over
-        
-    # Add IPC to detector-sampled PSF
-    if kipc is not None:
-        psf_det = add_ipc(psf_det, kernel=kipc)
-    
-    # Apply weighting function
-    diff = image - (psf_det * psf_scale + psf_offset) 
-    if weights is not None:
-        diff = diff * weights
-        
-    return diff
-
 def align_leastsq(image, psf_over, osamp=1, bpmask=None, weights=None,
                   params0=[0.0,0.0,1.0,0.0], kipc=None,
                   func_shift=fourier_imshift, interp='cubic', pad=True, **kwargs):
@@ -260,7 +219,8 @@ def align_leastsq(image, psf_over, osamp=1, bpmask=None, weights=None,
     weights : ndarray, None
         Array of weights to use during the fitting process.
     params0 : list
-        Initial guess for (x, y, scale, offset) values.
+        Initial guess for (x, y, offset) values. Optimal scaling 
+        factor is calculated automatically in `subtract_psf`.
     func_shift : func
         Which function to use for sub-pixel shifting.
         Options are fourier_imshift, fshift, or cv_shift.
@@ -290,21 +250,14 @@ def align_leastsq(image, psf_over, osamp=1, bpmask=None, weights=None,
 
         if len(params)==1:
             kwargs['xyshift'] = (0,0)
-            psf_scale = 1.0
             psf_offset = 0.0
         elif len(params)==2:
-            psf_scale = 1.0
             psf_offset = 0.0
         elif len(params)==3:
-            psf_scale = params[-1]
-            psf_offset = 0.0
-        elif len(params)==4:
-            psf_scale = params[-2]
             psf_offset = params[-1]
         else:
             raise ValueError("params must be length 2, 3, or 4")
 
-        kwargs['psf_scale'] = psf_scale
         kwargs['psf_offset'] = psf_offset
 
         return subtract_psf(image, psf, **kwargs).ravel()

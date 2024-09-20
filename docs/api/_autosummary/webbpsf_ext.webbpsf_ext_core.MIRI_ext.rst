@@ -31,6 +31,7 @@
       ~MIRI_ext.gen_wfedrift_coeff
       ~MIRI_ext.gen_wfefield_coeff
       ~MIRI_ext.gen_wfemask_coeff
+      ~MIRI_ext.get_IFU_wavelengths
       ~MIRI_ext.get_opd_file_full_path
       ~MIRI_ext.get_opd_info
       ~MIRI_ext.get_optical_system
@@ -52,6 +53,7 @@
    .. autosummary::
    
       ~MIRI_ext.aperturename
+      ~MIRI_ext.band
       ~MIRI_ext.bandpass
       ~MIRI_ext.detector
       ~MIRI_ext.detector_list
@@ -63,6 +65,7 @@
       ~MIRI_ext.image_mask
       ~MIRI_ext.is_coron
       ~MIRI_ext.is_slitspec
+      ~MIRI_ext.mode
       ~MIRI_ext.name
       ~MIRI_ext.ndeg
       ~MIRI_ext.npsf

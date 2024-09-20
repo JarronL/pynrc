@@ -30,12 +30,17 @@
       frebin
       fshift
       get_im_cen
+      image_convolution
       image_rescale
+      image_shift_with_nans
       make_disk_image
       model_to_hdulist
       pad_or_cut_to_size
+      replace_nans
+      replace_nans_griddata
       rotate_offset
       rotate_shift_image
+      zrebin
    
    
 

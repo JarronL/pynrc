@@ -482,18 +482,18 @@ class det_timing(object):
         # Check some consistencies with frame sizes
         if wind_mode == 'FULL':
             if ypix != detpix:
-                _log.warn(f'In {wind_mode} mode, but ypix not {detpix}. Setting ypix={detpix}.')
+                _log.warning(f'In {wind_mode} mode, but ypix not {detpix}. Setting ypix={detpix}.')
                 ypix = detpix
             if y0 != 0:
-                _log.warn(f'In {wind_mode} mode, but x0 not 0. Setting y0=0.')
+                _log.warning(f'In {wind_mode} mode, but x0 not 0. Setting y0=0.')
                 y0 = 0
 
         if (wind_mode == 'STRIPE') or (wind_mode == 'FULL'):
             if xpix != detpix:
-                _log.warn(f'In {wind_mode} mode, but xpix not {detpix}. Setting xpix={detpix}.')
+                _log.warning(f'In {wind_mode} mode, but xpix not {detpix}. Setting xpix={detpix}.')
                 xpix = detpix
             if x0 != 0:
-                _log.warn(f'In {wind_mode} mode, but x0 not 0. Setting x0=0.')
+                _log.warning(f'In {wind_mode} mode, but x0 not 0. Setting x0=0.')
                 x0 = 0
     
         if (x0+xpix) > detpix:

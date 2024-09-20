@@ -479,10 +479,20 @@ def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True,
                   **kwargs):
 
     """Only for obs.hci classes
-    
-    return_more will return (sat_rad, sci_levels2_max, ref_levels2_max)
 
-    keywords of interest: charge_migration, satmax, niter, corners
+    Parameters
+    ------------
+    charge_migration : bool
+        Include charge migration effects?
+    satmax : float
+        Saturation value to limit charge migration. Default is 1.5.
+    niter : int
+        Number of iterations for charge migration. Default is 5.
+    corners : bool
+        Include corner pixels in charge migration? Default is True.
+    return_more : bool
+        Return additional information (sat_rad, sci_levels2_max, ref_levels2_max)? 
+        Default is False.
     """
 
     # Charge migration keywords
@@ -550,7 +560,7 @@ def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True,
     else:
         mask_temp = sci_mask1 if nsat1_sci>nsat1_ref else ref_mask1
         rho_asec = dist_image(mask_temp, pixscale=pixscale)
-        sat_rad_max = rho_asec[mask_temp].max()
+        sat_rad_max = rho_asec[mask_temp].max() + pixscale/2
         sat_rad = np.sqrt(nsat1_sci / np.pi) * pixscale
     
     if verbose:

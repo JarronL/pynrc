@@ -22,7 +22,6 @@
       optimal_difference
       scale_ref_image
       shift_subtract
-      subtract_psf
    
    
 

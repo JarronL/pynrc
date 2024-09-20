@@ -384,7 +384,7 @@ class nircam_dark(object):
         # TODO: Add DMS support for temperature
         if self.DMS:
             self._temperature_dict = None
-            _log.warn("DMS data not yet supported obtaining FPA temperatures")
+            _log.warning("DMS data not yet supported obtaining FPA temperatures")
             return
         
         savename = self.paths_dict['temperatures_file']
@@ -930,8 +930,8 @@ class nircam_dark(object):
         if temperature is not None:
             if (temperature<temp_arr.min()) or (temperature>temp_arr.max()):
                 tbounds = 'T=[{:.2f}, {:.2f}]K'.format(temp_arr.min(), temp_arr.max())
-                _log.warn('Requested temperature is outside of bounds: {}.'.format(tbounds))
-                _log.warn('Extrapolation may be inaccurate.')
+                _log.warning('Requested temperature is outside of bounds: {}.'.format(tbounds))
+                _log.warning('Extrapolation may be inaccurate.')
 
         # CDS dictionary arrays
         d_act = self.cds_act_dict
@@ -1309,7 +1309,7 @@ class nircam_dark(object):
 
             # Check if super bias exists
             if (self._super_bias is None) and (super_bias is None):
-                _log.warn('Super bias not loaded or specified. Proceeding without bias correction.')
+                _log.warning('Super bias not loaded or specified. Proceeding without bias correction.')
             elif super_bias is None:
                 super_bias = self.super_bias
 
@@ -3674,7 +3674,7 @@ def calc_cdsnoise(data, temporal=True, spatial=True, std_func=np.std):
     """ Calculate CDS noise from input image cube"""
 
     if (temporal==False) and (spatial==False):
-        _log.warn("Must select one or both of `temporal` or `spatial`")
+        _log.warning("Must select one or both of `temporal` or `spatial`")
         return
     
     # Make sure we select same number of even/odd frame
@@ -4174,7 +4174,20 @@ def fit_func_var_ex(params, det, patterns, ng_all_list, en_dn_list,
 #######################################
 
 def deconv_single_image(im, kfft):
-    """Image deconvolution for a kernel"""
+    """Image deconvolution for a kernel
+    
+    Perform deconvolution of an image using a kernel. This function
+    calculates the FFT of the input image, divides by the kernel's
+    pre-calculated FFT, then performs an inverse FFT to obtain the
+    deconvolved image.
+
+    Parameters
+    ----------
+    im : ndarray
+        Input image to deconvolve.
+    kfft : Complex ndarray
+        FFT of the deconvolution kernel.
+    """
 
     # bias the image to avoid negative pixel values in image
     min_im = np.min(im)
@@ -4394,7 +4407,7 @@ def get_ipc_kernel(imdark, tint=None, boxsize=5, nchans=4, bg_remove=True,
     nhot = len(indy)
     if nhot < 2:
         if not suppress_error_msg:
-            _log.warn("No hot pixels found!")
+            _log.warning("No hot pixels found!")
         return None
 
     # Only want isolated pixels
@@ -4408,7 +4421,7 @@ def get_ipc_kernel(imdark, tint=None, boxsize=5, nchans=4, bg_remove=True,
     nhot = len(indy)
     if nhot < 2:
         if not suppress_error_msg:
-            _log.warn("No hot pixels found!")
+            _log.warning("No hot pixels found!")
         return None
     else:
         _log.info(f'Number of hot pixels: {nhot}')

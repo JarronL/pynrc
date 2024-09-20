@@ -532,7 +532,7 @@ def level1b_data_model(obs_params, sci_data=None, zero_data=None):
     try:
         obs_id_dict = obs_params['obs_id_info']
     except KeyError:
-        _log.warn("'obs_id_info' is not a valid key in obs_params")
+        _log.warning("'obs_id_info' is not a valid key in obs_params")
     else:
         outModel.meta.observation.program_number     = obs_id_dict['program_number']
         outModel.meta.observation.observation_number = obs_id_dict['observation_number']

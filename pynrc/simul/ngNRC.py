@@ -36,7 +36,6 @@ import os
 from copy import deepcopy
 
 from astropy.io import fits
-from astropy.convolution import convolve
 
 from datetime import datetime
 
@@ -220,7 +219,7 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
 
         ind = (obs_detnames == detname)
         if ind.sum()==0:
-            _log.warn(f'Detector {detname} is not a valid detector for these observations.')
+            _log.warning(f'Detector {detname} is not a valid detector for these observations.')
             continue
 
         # Create calibration object
@@ -268,7 +267,7 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
             # Ensure this label matches one in the full list
             ind2 = (obs_labels == label)
             if ind2.sum()==0:
-                _log.warn(f'Skipping {aname} + {fname} + {tname} for {detname}...')
+                _log.warning(f'Skipping {aname} + {fname} + {tname} for {detname}...')
                 continue
 
             # Select visit ids that have current obs config
@@ -359,7 +358,7 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                     if planet_params is not None:
                         for kpl in planet_params:
                             if age_Myr is None:
-                                _log.warn('Target age is not set. Assuming 100 Myr.')
+                                _log.warning('Target age is not set. Assuming 100 Myr.')
                                 age = 100
                             else:
                                 age = age_Myr
@@ -436,8 +435,8 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
                     lup = obs_params['visit_level'].upper()
                     ddist = obs_params['ddist']
                     if tup not in type_vals:
-                        _log.warn(f'Exposure type {tup} not recognized.')
-                        _log.warn(f'  Visit {vid}, Exp {exp_num}, Grp {grp_id}, Seq {seq_id}, Act {act_id}')
+                        _log.warning(f'Exposure type {tup} not recognized.')
+                        _log.warning(f'  Visit {vid}, Exp {exp_num}, Grp {grp_id}, Seq {seq_id}, Act {act_id}')
                         continue
                     if tup=='T_ACQ':
                         # First target acq image involves small SAM (~3 pixels) from initial slew
@@ -807,7 +806,7 @@ def sources_to_slope(source_table, nircam_obj, obs_params, tel_pointing,
         osamp = hdul_psfs[0].header['OSAMP']
         if ('osamp' in kwargs.keys()) and (kwargs['osamp']!=osamp):
             osamp2 = kwargs['osamp']
-            _log.warn(f'Conflict between osamp in kwargs ({osamp2}) and osamp in PSF header ({osamp}). Using header.')
+            _log.warning(f'Conflict between osamp in kwargs ({osamp2}) and osamp in PSF header ({osamp}). Using header.')
         kwargs['osamp'] = osamp
     elif 'osamp' in kwargs.keys():
         osamp = kwargs['osamp']
@@ -1177,7 +1176,7 @@ def make_gaia_source_table(coords, remove_cen_star=True, radius=6*u.arcmin,
         # Convert to 2015.5 epoch of GAIA coordinates
         coord_query = coords.apply_space_motion(new_obstime=Time('J2015.5'))
     except:
-        _log.warn(f'Unable to convert to J2015.5 epoch. Continuing with {coords.obstime}...')
+        _log.warning(f'Unable to convert to J2015.5 epoch. Continuing with {coords.obstime}...')
         coord_query = coords
     gaia_tbl = Gaia.query_object_async(coord_query, radius=radius)
     
@@ -2408,7 +2407,7 @@ def sim_dark_ramp(det, slope_image, ramp_avg_ch=None, ramp_avg_tf=10.73677,
             if verbose:
                 msg = "Max ramp time {:.1f} is less than ramp_avg_tf. \
                     Not applying ramp_avg_ch.".format(tarr.max())
-                _log.warn(msg)
+                _log.warning(msg)
             ramp_avg_ch = None
         else:
             # Insert 0 DN at t=0
@@ -2960,7 +2959,7 @@ def simulate_detector_ramp(det, cal_obj, im_slope=None, cframe='sci', out_ADU=Fa
         data = gain * apply_nonlin(data, det, dco.nonlinear_dict, 
                                    randomize=random_nonlin, rand_seed=rseed)
     # elif out_ADU:
-    #     _log.warn("Assuming perfectly linear ramp, but convert to 16-bit UINT (out_ADU=True)")
+    #     _log.warning("Assuming perfectly linear ramp, but convert to 16-bit UINT (out_ADU=True)")
     if prog_bar: pbar.update(1)
 
     ####################

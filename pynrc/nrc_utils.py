@@ -1000,7 +1000,7 @@ def place_grism_spec(nrc, sp, xpix, ypix, wref=None, return_oversample=False,
 
     pupil_mask = nrc.pupil_mask
     if pupil_mask is None:
-        _log.warn('place_grism_spec: NIRCam pupil mask set to None. Should be GRISMR or GRISMC.')
+        _log.warning('place_grism_spec: NIRCam pupil mask set to None. Should be GRISMR or GRISMC.')
         pupil_mask = 'NONE'
 
     # Determine reference wavelength
@@ -1017,7 +1017,8 @@ def place_grism_spec(nrc, sp, xpix, ypix, wref=None, return_oversample=False,
     wspec, imspec = nrc.calc_psf_from_coeff(sp=sp, return_hdul=False, return_oversample=True)
 
     # Place undeviated wavelength at (xpix,ypix) location
-    xr, yr = (np.array([xpix, ypix]) - 0.5) * oversample
+    # xr, yr = (np.array([xpix, ypix]) - 0.5) * oversample
+    xr, yr = oversampled_coords(np.array([xpix, ypix]), oversample)
     yshift = yr - ny_over/2
 
     # Empirically determine shift value in dispersion direction
@@ -1047,7 +1048,7 @@ def place_grism_spec(nrc, sp, xpix, ypix, wref=None, return_oversample=False,
     # Clock spectrum
     if spec_ang!=0:
         cen_rot = np.asarray(cen_rot)
-        cen_rot_over = (cen_rot - 0.5) * oversample
+        cen_rot_over = oversampled_coords(cen_rot, oversample) #(cen_rot - 0.5) * oversample
         imspec = rotate_offset(imspec, spec_ang, cen=cen_rot_over, 
                                recenter=False, reshape=False)
         wspec = rotate_offset(wspec, spec_ang, cen=cen_rot_over, 
@@ -1710,6 +1711,10 @@ def do_charge_migration(image, satmax=1.5, niter=5, corners=True, **kwargs):
     sat_image = image.copy()
     for j in range(niter):
         ind_sat = (sat_image >= satmax) & (~ind_lock)
+        # Break if no saturated pixels
+        if np.sum(ind_sat)==0: 
+            break
+
         yxind = np.where(ind_sat)
         # for each saturated pixel, migrate charge to neighbors
         # starting with the brightest

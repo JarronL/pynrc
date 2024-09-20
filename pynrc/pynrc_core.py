@@ -523,7 +523,7 @@ class NIRCam(NIRCam_ext):
 
             # Cannot be set to clear
             if pupil_mask=='CLEAR':
-                _log.warn('CLEAR is not a valid pupil mask element. Setting to None.')
+                _log.warning('CLEAR is not a valid pupil mask element. Setting to None.')
                 pupil_mask = None
 
         super().__init__(filter=filter, pupil_mask=pupil_mask, image_mask=image_mask, **kwargs)
@@ -559,9 +559,10 @@ class NIRCam(NIRCam_ext):
         # Initialize PSF offset to center of image
         # Calculate PSF offset from center if _nrc_bg coefficients are available
         if self._nrc_bg.psf_coeff is not None:
-            self.calc_psf_offset_from_center()
+            self.calc_psf_offset_from_center(use_coeff=True)
         else:
-            self.psf_offset_to_center = np.array([0,0])
+            self.calc_psf_offset_from_center(use_coeff=False)
+            # self.psf_offset_to_center = np.array([0,0])
 
         # Check aperture info is consistent if not explicitly specified
         # TODO: This might fail because self.Detector has not yet been initialized??
@@ -1131,7 +1132,7 @@ class NIRCam(NIRCam_ext):
         # These apertures are not useful
         elif is_grism and (wind_mode=='FULL'):
             key = 'NRC{}_FULL_{}'.format(detid, pupil_mask)
-            _log.warn('WFSS SIAF apertures are currently unsupported')
+            _log.warning('WFSS SIAF apertures are currently unsupported')
         # Subarrays
         elif wind_mode=='WINDOW':
             key = 'NRC{}_SUB{}P'.format(detid,self.det_info['xpix'])
@@ -1215,12 +1216,12 @@ class NIRCam(NIRCam_ext):
         """Update detector properties based on SIAF aperture"""
 
         if apname is None:
-            _log.warn('update_from_SIAF: Input apname was None. Returning...')
+            _log.warning('update_from_SIAF: Input apname was None. Returning...')
             return
 
         if not (apname in self.siaf_ap_names):
             # raise ValueError(f'Cannot find {apname} in siaf.apernames list.')
-            _log.warn(f'update_from_SIAF: Cannot find {apname} in siaf.apernames list. Returning...')
+            _log.warning(f'update_from_SIAF: Cannot find {apname} in siaf.apernames list. Returning...')
             return
             
         if ('NRCALL' in apname) or ('NRCAS' in apname) or ('NRCBS' in apname):
@@ -1276,8 +1277,8 @@ class NIRCam(NIRCam_ext):
                 elif ('MASK430R' in apname):
                     image_mask  = 'MASK430R'
                 if 'TA' in apname:
-                    _log.warn('Full TA apertures are treated similar to coronagraphic observations.')
-                    _log.warn("To calculate SNR, self.update_psf_coeff(image_mask='CLEAR') and set self.ND_acq.")
+                    _log.warning('Full TA apertures are treated similar to coronagraphic observations.')
+                    _log.warning("To calculate SNR, self.update_psf_coeff(image_mask='CLEAR') and set self.ND_acq.")
             elif '_TAMASK' in apname:
                 # For small TA subarray, turn off mask and enable ND square
                 image_mask = None
@@ -1286,7 +1287,7 @@ class NIRCam(NIRCam_ext):
                 # Not really anything to do here
                 image_mask = None
             else:
-                _log.warn(f'No mask setting for {apname}')
+                _log.warning(f'No mask setting for {apname}')
 
         # Grism observations
         elif 'GRISM' in apname:
@@ -1301,7 +1302,7 @@ class NIRCam(NIRCam_ext):
             elif ('_GRISM' in apname): # Everything else is GRISMR
                 pupil_mask = 'GRISMR' if pupil_mask is None else pupil_mask
             else:
-                _log.warn(f'No grism setting for {apname}')
+                _log.warning(f'No grism setting for {apname}')
 
 
         # Look for filter specified in aperture name
@@ -1383,6 +1384,15 @@ class NIRCam(NIRCam_ext):
         kwargs['coord_vals'] = coord_vals
         kwargs['coord_frame'] = coord_frame
 
+        # # Print coordinates in 'sci' frame
+        # if (coord_vals is None) or (coord_frame is None):
+        #     print(f'sci coords: {(self.siaf_ap.XSciRef, self.siaf_ap.YSciRef)}')
+        # elif coord_frame=='sci':
+        #     print(f'sci coords: {coord_vals}')
+        # else:
+        #     cvals_sci = self.siaf_ap.convert(coord_vals[0], coord_vals[1], coord_frame, 'sci')
+        #     print(f'sci coords: {cvals_sci} (convert from {coord_frame})')
+
         _log.info("Calculating PSF from WebbPSF parent function")
         log_prev = conf.logging_level
         setup_logging('WARN', verbose=False)
@@ -1396,7 +1406,7 @@ class NIRCam(NIRCam_ext):
         return res
     
 
-    def calc_psf_offset_from_center(self, use_coeff=True):
+    def calc_psf_offset_from_center(self, use_coeff=True, halfwidth=None):
         """Calculate the offset necessary to shift PSF to array center
         
         Returns values in detector-sampled pixels.
@@ -1407,25 +1417,29 @@ class NIRCam(NIRCam_ext):
 
         from webbpsf_ext.imreg_tools import recenter_psf
 
+        _log.info("Calculating PSF offset to center of array...")
+
         calc_psf_func = self.calc_psf_from_coeff if use_coeff else self.calc_psf
-        psf_over = calc_psf_func(return_oversample=True, return_hdul=False, use_bg_psf=True)
+        psf_over = calc_psf_func(return_oversample=True, return_hdul=False, use_bg_psf=True,
+                                 coord_vals=(0,0), coord_frame='idl')
 
         oversample = self.oversample
 
         # Determine shift amount to place PSF in center of array
-        if self.is_lyot:
-            if oversample==1:
-                halfwidth=1
-            elif oversample<=3:
-                # Prevent special case COM algorithm from not converging
-                if ('LWB' in self.aperturename) and 'F4' in self.filter:
-                    halfwidth=5
-                else:
-                    halfwidth=3
-            elif oversample<=5:
-                halfwidth=7
-        else:
-            halfwidth = 15
+        if halfwidth is None:
+            if self.is_lyot:
+                if oversample==1:
+                    halfwidth=1
+                elif oversample<=3:
+                    # Prevent special case COM algorithm from not converging
+                    if ('LWB' in self.aperturename) and 'F4' in self.filter:
+                        halfwidth=5
+                    else:
+                        halfwidth=3
+                elif oversample<=5:
+                    halfwidth=7
+            else:
+                halfwidth = 15
         _, xyoff_psf_over = recenter_psf(psf_over, niter=3, halfwidth=halfwidth)
 
         # Convert to detector pixels
@@ -1440,6 +1454,9 @@ class NIRCam(NIRCam_ext):
 
         xsh_to_cen, ysh_to_cen = self.psf_offset_to_center * sampling
         kwargs['interp'] = interp
+
+        # print(f"Recentering PSF: ({xsh_to_cen/sampling:.3f}, {ysh_to_cen/sampling:.3f}) pixels")
+
         return shift_func(psf, xsh_to_cen, ysh_to_cen, **kwargs)
 
 
@@ -1764,7 +1781,7 @@ class NIRCam(NIRCam_ext):
             zf_rec = fzodi_pix / fzodi_pix_temp
             str1 = 'Using ra,dec,thisday keywords can be relatively slow. \n'
             str2 = '\tFor your specified loc and date, we recommend using zfact={:.1f}'.format(zf_rec)
-            _log.warn(str1 + str2)
+            _log.warning(str1 + str2)
 
         # Don't forget about Lyot mask attenuation (not in bandpass throughput)
         if self.is_lyot:
