@@ -200,50 +200,39 @@ def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None,
             args_disk_temp = model_info(name, filt, dist, model_dir=model_dir)
         else:
             args_disk_temp = args_disk
-                        
+        
+        # Define fov_pix size defaults
         fov_pix_orig = fov_pix
-        # Define the subarray readout size
-        if 'FULL' in wind_mode: # Full frame
-            subuse = 2048
-            
-            # Define PSF pixel size defaults
-            if mask is None: 
-                fov_pix = 400 if fov_pix is None else fov_pix
-            elif ('210R' in mask) or ('SWB' in mask): 
-                fov_pix = 640 if fov_pix is None else fov_pix
-            else:
-                fov_pix = 320 if fov_pix is None else fov_pix
-                
-        elif subsize is None: # Window Mode defaults
-            if mask is None: # Direct Imaging
-                subuse = 400
-            elif ('210R' in mask) or ('SWB' in mask): # SW Coronagraphy
-                subuse = 640
-            else: # LW Coronagraphy
-                subuse = 320
-        else: # No effect if full frame
-            subuse = subsize
-                
-        # Define PSF pixel size
-        fov_pix = subuse if fov_pix is None else fov_pix
-
+        if mask is None: 
+            fov_pix = 400 if fov_pix is None else fov_pix
+        elif ('210R' in mask) or ('SWB' in mask): 
+            fov_pix = 640 if fov_pix is None else fov_pix
+        else:
+            fov_pix = 320 if fov_pix is None else fov_pix
         # Make sure fov_pix is odd for direct imaging
         # if (mask is None) and (np.mod(fov_pix,2)==0):
         #     fov_pix += 1
         if np.mod(fov_pix,2)==0:
             fov_pix += 1
+
+        # Define the subarray readout size
+        if 'FULL' in wind_mode: # Full frame
+            xsubuse = ysubuse = 2048
+        elif subsize is None: # Window Mode defaults
+            if mask is None: # Direct Imaging
+                xsubuse = ysubuse = 400
+            elif ('210R' in mask) or ('SWB' in mask): # SW Coronagraphy
+                xsubuse = ysubuse = 640
+            elif ('LWB' in mask): # LW Bar
+                xsubuse, ysubuse = (400, 256)
+            else: # LW round masks
+                xsubuse = ysubuse = 320
+        else:
+            xsubuse = ysubuse = subsize
+                
         # Other coronagraph vs direct imaging settings
         module, oversample = ('B', 4) if mask is None else ('A', 2)
         
-        if mask is None:
-            bar_offset = None
-        elif narrow and ('SWB' in mask):
-            bar_offset = -8
-        elif narrow and ('LWB' in mask):
-            bar_offset = 8
-        else:
-            bar_offset = None
-
         # Select detector for imaging mode
         if module=='B':
             bp = read_filter(filt)
@@ -254,10 +243,16 @@ def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None,
         # Initialize and store the observation
         # A reference observation is stored inside each parent obs_hci class.
         obs = obs_hci(sp_sci, dist, sp_ref=sp_ref, filter=filt, image_mask=mask, pupil_mask=pupil, 
-                      detector=detector, wind_mode=wind_mode, xpix=subuse, ypix=subuse,
+                      detector=detector, wind_mode=wind_mode, xpix=xsubuse, ypix=ysubuse,
                       wfe_ref_drift=wfe_ref_drift, fov_pix=fov_pix, oversample=oversample, 
-                      disk_params=args_disk_temp, verbose=verbose, bar_offset=bar_offset,
+                      disk_params=args_disk_temp, verbose=verbose, # bar_offset=bar_offset,
                       autogen_coeffs=False, sgd_type=sgd_type, slew_std=slew_std, fsm_std=fsm_std, **kwargs)
+
+        apn = obs.siaf_ap.AperName
+        if narrow and (('LWB' in apn) or ('SWB' in apn)):
+            # Replace filter name with NARROW position
+            apn = apn.replace(filt, 'NARROW')
+            obs.update_from_SIAF(apname=apn)
 
         obs.gen_psf_coeff()
         # Enable WFE drift
