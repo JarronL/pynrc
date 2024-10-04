@@ -1102,8 +1102,14 @@ class NIRCam(NIRCam_ext):
                 key = key + '_{}'.format(self.filter)
             elif ('SWB' in self.image_mask) and (self.module=='A') and (self.filter in swb_filters):
                 key = key + '_{}'.format(self.filter)
+
+            # NRCA5_MASKLWB and NRCA4_MASKLWB have been replaced with 400x256 subarrays
+            if ('NRCA5_MASKLWB' in key) or ('NRCA4_MASKLWB' in key):
+                key = key.replace('_MASK', '_400X256_MASK')
+
             if wind_mode=='STRIPE':
                 key = None
+
         # Just Lyot stop without masks, assuming TA aperture
         elif is_lyot: #and self.ND_acq:
             tastr = 'TA' if self.ND_acq else 'FSTA'
