@@ -144,7 +144,7 @@ class nrc_hci(NIRCam):
     def gen_offset_psf(self, offset_r, offset_theta, sp=None, return_oversample=False, 
         wfe_drift=None, use_coeff=True, coron_rescale=True, use_cmask=False, 
         recenter=True, diffusion_sigma=None, psf_corr_over=None, **kwargs):
-        """Create a PSF offset from center FoV
+        """Create a PSF offset from center of mask
 
         NOTE: The resulting PSF is still in the center of the output image, but
         the PSF morphology matches that of the off-axis location.
@@ -154,7 +154,9 @@ class nrc_hci(NIRCam):
         This function is mainly for coronagraphic observations where the
         off-axis PSF varies w.r.t. position. The PSF is centered in the
         resulting image. The offset values are assumed to be in 'idl' coordinate
-        frame relative to the mask center.
+        frame relative to the mask center. 
+        
+        WARNING: Bar offsets are added in calc_psf functions, so don't double count.
 
         Parameters
         ----------
@@ -222,40 +224,49 @@ class nrc_hci(NIRCam):
         # artifacts, such as the mask holder or ND squares.
         # If ND_acq=True, then PSFs already included ND throughput in bandpass.
         if use_cmask and self.is_coron and (not self.ND_acq):
-            # First, anything in a rectangular region around the
-            # mask has already been correctly accounted for
             delx_asec, dely_asec = coords
-            if (( np.abs(delx_asec)<10 and np.abs(dely_asec)<4.5 ) and
-                ('TAMASK' not in apname)):
-                # Set transmission to 1 for coronagraphic observations
-                # within occulting mask region
+
+            cmask = self.mask_images['DETSAMP']
+            # 1. For the FULL TA masks, we want offsets relative to the mask reference point
+            # 2. For all others, we want reference points relative to the 20"x20" coronagraphic field 
+            if 'TAMASK' in apname:
+                siaf_ap_relative = self.siaf_ap 
+            else:
+                si_mask_apname = self._psf_coeff_mod.get('si_mask_apname')
+                siaf_ap_relative = self.siaf[si_mask_apname]
+
+            # If we're use_ap_info is True, then the cmask image is setup to be w.r.t.
+            # the SIAF aperture. But if False, then cmask image is centered at middle of mask.
+            if self._use_ap_info or ('FULL' in self.det_info['wind_mode']):
+                xy_sci = self.siaf_ap.convert(delx_asec, dely_asec, 'idl', 'sci')
+                xsci, ysci = np.array(xy_sci).astype('int')
+            else:
+                # Otherwise assumed mask is in center of subarray 
+                xcen, ycen = get_im_cen(cmask)
+                delx_pix, dely_pix = np.array([delx_asec + self.bar_offset, dely_asec]) / self.pixelscale
+                xsci, ysci = np.array([xcen+delx_pix, ycen+dely_pix]).astype('int')
+
+            # Extract a 3x3 region to average
+            cmask_sub = cmask[ysci-3:ysci+3,xsci-3:xsci+3]
+            trans = np.mean(cmask_sub)
+
+            # First, anything in a region around the circular mask should have trans=1
+            if ( (np.sqrt(delx_asec**2 + dely_asec**2) < 4.5) and 
+                 (('210R' in apname) or ('335R' in apname)  or ('430R' in apname)) and
+                 ('TAMASK' not in apname) and (trans>0)):
+                trans = 1
+            # Next, anything in the SWB/LWB regions should have transmission set to 1
+            elif ( (np.abs(dely_asec)<4.5) and 
+                   (('SWB' in apname) or ('LWB' in apname)) and
+                   ('TAMASK' not in apname) and (trans>0)):
                 trans = 1
             else:
-                cmask = self.mask_images['DETSAMP']
-                # 1. For the FULL TA masks, we want offsets relative
-                #    to the mask reference point
-                # 2. For all others, we want reference points relative to
-                #    the 20"x20" coronagraphic field 
-                if 'TAMASK' in apname:
-                    siaf_ap_relative = self.siaf_ap 
-                else:
-                    si_mask_apname = self._psf_coeff_mod.get('si_mask_apname')
-                    siaf_ap_relative = self.siaf[si_mask_apname]
-
-                # Convert offsets w.r.t. to mask center to xsci/ysci for current siaf_ap
-                # First get tel (V2/V3) coordinates, then 'sci' coords
-                xtel, ytel = siaf_ap_relative.convert(delx_asec, dely_asec, 'idl', 'tel')
-                xy_sci = self.siaf_ap.convert(xtel, ytel, 'tel', 'sci')
-                xsci, ysci = np.array(xy_sci).astype('int')
-                
-                # Extract a 3x3 region to average
-                cmask_sub = cmask[ysci-3:ysci+3,xsci-3:xsci+3]
-                trans = np.mean(cmask_sub)
                 # COM substrate already accounted for in filter throughput curve,
                 # so it will be double-counted here. Need to divide it out.
                 w_um = self.bandpass.avgwave().to_value('um')
                 com_th = nircam_com_th(wave_out=w_um)
                 trans /= com_th
+
         else:
             trans = 1
 
@@ -1050,8 +1061,8 @@ class obs_hci(nrc_hci):
 
             # print(f'Planet offset ({plx_asec:.4f}, {ply_asec:.4f}) asec')
 
-            # Add in bar offset for PSF generation
-            xoff_idl, yoff_idl = (plx_asec + offx_asec + bar_offset, ply_asec + offy_asec)
+            # bar offsets are added inside calc_psf_from_coeff
+            xoff_idl, yoff_idl = (plx_asec + offx_asec, ply_asec + offy_asec)
             r, th = xy_to_rtheta(xoff_idl, yoff_idl)
             psf_planet = self.gen_offset_psf(r, th, sp=sp, return_oversample=True, 
                                              use_coeff=use_coeff, wfe_drift=wfe_drift, 
@@ -1482,14 +1493,15 @@ class obs_hci(nrc_hci):
             kwargs['use_cmask'] = True
 
         # Get (r,th) in idl coordinates relative to mask center (arcsec) for PSF creation
-        xoff_idl, yoff_idl = (offx_asec + bar_offset, offy_asec)
+        # bar offsets are added inside gen_offset_psf during calc_psf_from_coeff
+        xoff_idl, yoff_idl = (offx_asec, offy_asec)
         r, th = xy_to_rtheta(xoff_idl, yoff_idl)
+        # print((r, th), (xoff_idl, yoff_idl))
 
         # Stellar PSF doesn't rotate
         # Generates an oversampled stellar PSF that is centered in the detector image
         if im_star is None:
             _log.info('  gen_slope_image: Creating stellar PSF...')
-            # print(r,th)
             im_star = self.gen_offset_psf(r, th, sp=sp, wfe_drift=wfe_drift, return_oversample=True, 
                                           diffusion_sigma=diffusion_sigma, psf_corr_over=psf_corr_over, **kwargs)
         elif isinstance(im_star, (int,float)) and (im_star==0):
@@ -1898,8 +1910,9 @@ class obs_hci(nrc_hci):
         ##################################
 
         # Add in offsets for PSF generation
+        # bar offsets are added inside gen_offset_psf during calc_psf_from_coeff
         offx_asec, offy_asec = xyoff_asec1
-        r, th = xy_to_rtheta(offx_asec + bar_offset, offy_asec)
+        r, th = xy_to_rtheta(offx_asec, offy_asec)
 
         # Create stellar PSF centered in image
         im_star = self.gen_offset_psf(r, th, sp=self.sp_sci, return_oversample=True, 
@@ -2065,8 +2078,9 @@ class obs_hci(nrc_hci):
         wfe_drift_ref = wfe_drift0 + wfe_ref_drift
 
         # Add in offsets for PSF generation
+        # bar offsets are added inside gen_offset_psf during calc_psf_from_coeff
         offx_asec, offy_asec = xyoff_asec_ref
-        r, th = xy_to_rtheta(offx_asec + bar_offset, offy_asec)
+        r, th = xy_to_rtheta(offx_asec, offy_asec)
 
         # Create stellar PSF centered in image
         im_ref = self.gen_offset_psf(r, th, sp=self.sp_ref, return_oversample=True, 
@@ -2123,8 +2137,9 @@ class obs_hci(nrc_hci):
                 # Generate Roll2 Image
 
                 # Add in offsets for PSF generation
+                # bar offsets are added inside gen_offset_psf during calc_psf_from_coeff
                 offx_asec, offy_asec = xyoff_asec2
-                r, th = xy_to_rtheta(offx_asec + bar_offset, offy_asec)
+                r, th = xy_to_rtheta(offx_asec, offy_asec)
 
                 # Create stellar PSF (Roll 2) centered in image
                 im_star2 = self.gen_offset_psf(r, th, sp=self.sp_sci, return_oversample=True, 
