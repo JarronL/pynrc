@@ -1447,7 +1447,8 @@ class nrc_analyze():
     siaf = nrc_siaf
     _mastdir = os.getenv('JWSTDOWNLOAD_OUTDIR')
 
-    def __init__(self, pid, obsids, filter, sca, obsids_ref=None, basedir=None):
+    def __init__(self, pid, obsids, filter, sca, obsids_ref=None, 
+                 basedir=None, cal_subdir=None):
         """ Initialize NIRCam analysis class 
         
         Parameters
@@ -1483,6 +1484,7 @@ class nrc_analyze():
         self._uncal_dir = None
         self._rate_dir = None
         self._cal_dir = None
+        self._cal_subdir = cal_subdir
 
         # Save locations
         self.figdir = 'figures_analyze/'
@@ -1540,7 +1542,13 @@ class nrc_analyze():
     @property
     def cal_dir(self):
         """Directory housing cal & calints data"""
-        out = os.path.join(self.basedir, f'{self.pid:05d}_proc/stage2/') if self._rate_dir is None else self._rate_dir
+        if self._cal_dir is not None:
+            out = self._cal_dir 
+        else:
+            subdir = 'stage2/' if self._cal_subdir is None else self._cal_subdir 
+            # Add backslash if not already present
+            subdir = subdir if subdir[-1]=='/' else subdir + '/'
+            out = os.path.join(self.basedir, f'{self.pid:05d}_proc/{subdir}')
         return out
     @cal_dir.setter
     def cal_dir(self, value):
@@ -2261,6 +2269,11 @@ class nrc_analyze():
             self.xy_loc_ind = np.array(data['xy_loc_ind'])
             self.xyshift = np.array(data['xyshift'])
 
+        # Don't use gaussian fitting for coronagraphic observations
+        if self.is_coron and gauss_fit:
+            _log.warning("Coronagraphic observations should not use Gaussian fitting. Setting gauss_fit=False.")
+            gauss_fit = False
+
         # Check if generate_obs_dict has been run
         if len(self.obs_dict)==0:
             raise ValueError("Run generate_obs_dict() first.")
@@ -2855,6 +2868,7 @@ class nrc_analyze():
             ndither_sci = imall_sci_over.shape[0]
             ndither_ref = imall_ref_over.shape[0]
 
+            xcorr = False if lsq_diff else True
             shift_matrix = np.zeros((ndither_sci, ndither_ref, 2))
             for i in trange(ndither_sci, desc='Relative Offsets', leave=False):
                 im1, bp1 = (frebin(imall_sci_over[i], scale=1/oversample), bparr_sci[i])
@@ -3362,7 +3376,7 @@ class nrc_analyze():
     #                     bin_ints_sci=1, bin_ints_ref=1, all_pos=True, do_pca=True,
     #                     do_rdi=True, **kwargs):):
 
-    def align_images(self, rebin=1, return_oversample=True, gstd_pix=None, #ref_obs=None, 
+    def align_images(self, rebin=1, return_oversample=False, gstd_pix=None, #ref_obs=None, 
                      med_dithers=False, method='opencv', interp='lanczos', 
                      preserve_nans=True, order=3, new_shape=None, **kwargs):
         """Align all images to a common reference frame
@@ -3533,8 +3547,10 @@ class nrc_analyze():
         if self.ref_objs is not None:
             for ref_obj in self.ref_objs:
                 sci_shape = self.obs_dict[self.obsids[0]][0]['data_aligned'].shape[-2:]
-                ref_obj.align_images(rebin=rebin, gstd_pix=gstd_pix, med_dithers=med_dithers, 
-                                     method=method, interp=interp, new_shape=sci_shape, **kwargs)
+                ref_obj.align_images(rebin=rebin, return_oversample=return_oversample, gstd_pix=gstd_pix,
+                                     med_dithers=med_dithers, method=method, interp=interp, 
+                                     preserve_nans=preserve_nans, order=order, new_shape=sci_shape, **kwargs)
+
 
     def find_best_diffusion(self, subsize=15, data_key='data_aligned', force_psf=False,
                             imall=None, bpall=None, use_mean=True, psf_corr_over=None,
