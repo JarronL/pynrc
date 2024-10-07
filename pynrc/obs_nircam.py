@@ -883,7 +883,7 @@ class obs_hci(nrc_hci):
 
         sptype : str
             Instead of using a exoplanet spectrum, specify a stellar type.
-        renorm_args : dict
+        renorm_args : tuple
             Renormalization arguments in case you want
             very specific luminosity in some bandpass.
             Includes (value, units, bandpass).
@@ -1059,7 +1059,7 @@ class obs_hci(nrc_hci):
             if PA_offset!=0:
                 plx_asec, ply_asec = xy_rot(plx_asec, ply_asec, PA_offset)
 
-            # print(f'Planet offset ({plx_asec:.4f}, {ply_asec:.4f}) asec')
+            print(f'Planet offset ({plx_asec:.4f}, {ply_asec:.4f}) asec')
 
             # bar offsets are added inside calc_psf_from_coeff
             xoff_idl, yoff_idl = (plx_asec + offx_asec, ply_asec + offy_asec)
