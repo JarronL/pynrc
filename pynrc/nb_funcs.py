@@ -501,7 +501,8 @@ def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True,
     kw_gen_psf = {'return_oversample': False,'return_hdul': False}
     
     # Well level of each pixel for science source
-    image = obs.calc_psf_from_coeff(sp=obs.sp_sci, **kw_gen_psf)
+    # image = obs.calc_psf_from_coeff(sp=obs.sp_sci, **kw_gen_psf)
+    image = obs.gen_slope_image(exclude_noise=True, **kwargs)
     sci_levels1 = obs.saturation_levels(ngroup=ng_min, image=image, **kwargs)
     sci_levels2 = obs.saturation_levels(ngroup=ng_max_sci, image=image, **kwargs)
     if charge_migration:
@@ -517,7 +518,8 @@ def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True,
         sci_levels2_max = sci_levels2.max()
 
     # Well level of each pixel for reference source
-    image = obs.calc_psf_from_coeff(sp=obs.sp_ref, **kw_gen_psf)
+    # image = obs.calc_psf_from_coeff(sp=obs.sp_ref, **kw_gen_psf)
+    image = obs.gen_slope_image(do_ref=True, exclude_noise=True, **kwargs)
     ref_levels1 = obs.saturation_levels(ngroup=ng_min, image=image, do_ref=True, **kwargs)
     ref_levels2 = obs.saturation_levels(ngroup=ng_max_ref, image=image, do_ref=True, **kwargs)
     if charge_migration:
@@ -593,22 +595,17 @@ def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True,
         bar_offpix = obs.bar_offset / obs.pixelscale
         # Determine final shift amounts to location along bar
         # Shift to position relative to center of image
+        xcen_det, ycen_det = get_im_cen(np.zeros([ypix,xpix]))
         if (('FULL' in obs.det_info['wind_mode']) and (obs.image_mask is not None)) or obs._use_ap_info:
-            xcen, ycen = (obs.siaf_ap.XSciRef - 1, obs.siaf_ap.YSciRef - 1)
-            # Offset relative to center of image
-            delx_pix = (xcen - (xpix/2 - 0.5))  # 'sci' pixel shifts
-            dely_pix = (ycen - (ypix/2 - 0.5))  # 'sci' pixel shifts
+            xref, yref = (obs.siaf_ap.XSciRef - 1, obs.siaf_ap.YSciRef - 1)
+            # SIAF Offset relative to center of image
+            delx_pix = xref - xcen_det  # 'sci' orientation shifts
+            dely_pix = yref - ycen_det  # 'sci' orientation shifts
         else:
             # Otherwise assumed mask is in center of subarray for simplicity
-            # For odd dimensions, this is in a pixel center.
-            # For even dimensions, this is at the pixel boundary.
-            xcen, ycen = (xpix/2. - 0.5, ypix/2. - 0.5)
-            # Add bar offset
-            xcen += bar_offpix  # Add bar offset
             delx_pix, dely_pix = (bar_offpix, 0)
 
-        delx, dely = (xcen - xpix/2, ycen - ypix/2)
-        extent_pix = np.array([-xpix/2-delx,xpix/2-delx,-ypix/2-dely,ypix/2-dely])
+        extent_pix = np.array([-xpix/2-delx_pix,xpix/2-delx_pix,-ypix/2-dely_pix,ypix/2-dely_pix])
         extent = extent_pix * obs.pixelscale
 
         axes = axes_all[0]
