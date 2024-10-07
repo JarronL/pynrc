@@ -1,6 +1,11 @@
 Revision History
 ================
 
+v1.3.2 (Oct 7, 2024)
+----------------------
+
+ - Improved handling of LWBAR in ``nrc_hci`` ``obs_hci`` classes. Specifically fixed double counting of PSF offsets along the bar.
+
 v1.3.1 (Sept 19, 2024)
 ----------------------
 
