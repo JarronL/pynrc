@@ -1728,12 +1728,16 @@ def do_charge_migration(image, satmax=1.5, niter=5, corners=True, **kwargs):
             xind_corn = np.array([x-1, x+1, x-1, x+1])
             yind_corn = np.array([y-1, y-1, y+1, y+1])
 
-            # Remove neighbors outside of array or locked
-            ind_good = (xind>=0) & (xind<nx) & (yind>=0) & (yind<ny) & \
-                        (ind_lock[yind,xind]==False)
+            # Exclude everything outside of index bounds
+            ind_good = (xind>=0) & (xind<nx) & (yind>=0) & (yind<ny)
             xind, yind = (xind[ind_good], yind[ind_good])
-            ind_good = (xind_corn>=0) & (xind_corn<nx) & (yind_corn>=0) & (yind_corn<ny) & \
-                        (ind_lock[yind_corn,xind_corn]==False)
+            ind_good = (xind_corn>=0) & (xind_corn<nx) & (yind_corn>=0) & (yind_corn<ny)
+            xind_corn, yind_corn = (xind_corn[ind_good], yind_corn[ind_good])
+
+            # Exclude locked
+            ind_good = ind_lock[yind,xind]==False
+            xind, yind = (xind[ind_good], yind[ind_good])
+            ind_good = ind_lock[yind_corn,xind_corn]==False
             xind_corn, yind_corn = (xind_corn[ind_good], yind_corn[ind_good])
 
             # Total charge to distribute
