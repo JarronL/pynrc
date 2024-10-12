@@ -1116,8 +1116,14 @@ class obs_hci(nrc_hci):
             if interp is None:
                 interp = 'linear' if ('FULL' in self.det_info['wind_mode']) else 'cubic'
             psf_planet = crop_image(psf_planet, (ypix_over, xpix_over))
-            psf_planet = fractional_image_shift(psf_planet, delx_over, dely_over, 
-                                                method=shift_method, interp=interp, **kwargs)
+            try:
+                # Sometimes fourier shift fails if the source is too close to the edge
+                psf_planet = fractional_image_shift(psf_planet, delx_over, dely_over, 
+                                                    method=shift_method, interp=interp, **kwargs)
+            except ValueError:
+                psf_planet = fractional_image_shift(psf_planet, delx_over, dely_over, 
+                                                    method='fshift', interp='linear', **kwargs)
+
 
             # Add to image
             image_over += psf_planet
@@ -1751,10 +1757,10 @@ class obs_hci(nrc_hci):
         return image
 
     def gen_roll_image(self, PA1=-5, PA2=+5, return_oversample=False,
-        no_ref=False, opt_diff=False, fix_sat=False, ref_scale_all=False, 
+        no_ref=False, opt_diff=False, ref_scale_all=False, 
         wfe_drift0=0, wfe_ref_drift=None, wfe_roll_drift=None, 
         xyoff_roll1=None, xyoff_roll2=None, xyoff_ref=None, 
-        interp=None, **kwargs):
+        interp=None, do_sat=False, sat_val=0.95, **kwargs):
         """Make roll-subtracted image.
 
         Create a final roll-subtracted slope image based on current observation
@@ -1786,8 +1792,6 @@ class obs_hci(nrc_hci):
             Exclude reference observation. Subtraction is then Roll1-Roll2.
         opt_diff : bool
             Optimal reference differencing (scaling only on the inner regions)
-        fix_sat : bool
-            Calculate saturated regions and fix with median of nearby data.
         ref_scale_all : bool
             Normally we just use the science and reference PSFs to calculate
             scaling. However, if there is an unresolved companion or disk
@@ -1810,6 +1814,10 @@ class obs_hci(nrc_hci):
             Explicitly set pointing offset for Roll 2 (arcsec)
         xyoff_ref : tuple or None
             Explicitly set pointing offset for Reference (arcsec)
+        do_sat : bool
+            Determine saturated regions and NaN them.
+        sat_val : float
+            Fraction of full well to consider as saturated within two groups.
 
         Keyword Args
         ------------
@@ -1972,10 +1980,6 @@ class obs_hci(nrc_hci):
             im_star_sub = crop_image(im_star, sub_shape, delx=-1*delx_over, dely=-1*dely_over,
                                      interp=interp, shift_func=fshift)
 
-        # Fix saturated pixels
-        if fix_sat:
-            im_roll1 = self._fix_sat_im(im_roll1, oversample=oversample, **kwargs)
-
         ##################################################
         # Pure roll subtraction (no reference PSF)
         ##################################################
@@ -1989,10 +1993,6 @@ class obs_hci(nrc_hci):
                                                 wfe_drift0=wfe_drift0, wfe_roll_drift=wfe_roll_drift, 
                                                 return_oversample=True, interp=interp, **kwargs)
 
-            # Fix saturated pixels
-            if fix_sat:
-                im_roll2 = self._fix_sat_im(im_roll2, oversample=oversample, **kwargs)
-
             # if oversample>1:
             #     kernel = Gaussian2DKernel(0.5*oversample)
             #     im_roll1 = convolve_fft(im_roll1, kernel, allow_huge=True)
@@ -2003,6 +2003,21 @@ class obs_hci(nrc_hci):
             im_roll1_sh = fshift(im_roll1, delx=dx, dely=dy, interp=interp)
             dx, dy = -1 * xyoff_asec2 / pixscale_over
             im_roll2_sh = fshift(im_roll2, delx=dx, dely=dy, interp=interp)
+
+            # Flag saturated pixels in each roll image
+            # Only consider saturation from stellar signal
+            if do_sat:
+                # Images are oversampled, so need to rebin to detector pixels
+                imstar_rebin = frebin(im_star, scale=1/oversample)
+                sat_rebin = self.saturation_levels(image=imstar_rebin, **kwargs)
+                # Rebin back to oversampled size
+                sat_over = frebin(sat_rebin, scale=oversample, total=False)
+                sat_over = crop_image(sat_over, im_roll1_sh.shape, fill_val=0)
+                # Flag saturated pixels
+                im_roll1_sh[sat_over > sat_val] = np.nan
+                im_roll2_sh[sat_over > sat_val] = np.nan
+                del imstar_rebin, sat_rebin, sat_over
+
             # Difference the two rolls
             diff_r1 = im_roll1_sh - im_roll2_sh
             diff_r2 = -1 * diff_r1
@@ -2017,18 +2032,13 @@ class obs_hci(nrc_hci):
             diff_r2_rot = crop_image(diff_r2_rot, new_shape, fill_val=np.nan)
 
             # Replace NaNs with values from other differenced mask
-            nan_mask = np.isnan(diff_r1_rot)
-            diff_r1_rot[nan_mask] = diff_r2_rot[nan_mask]
-            nan_mask = np.isnan(diff_r2_rot)
-            diff_r2_rot[nan_mask] = diff_r1_rot[nan_mask]
-
-            final = (diff_r1_rot + diff_r2_rot) / 2
+            final = np.nanmean([diff_r1_rot, diff_r2_rot], axis=0)
 
             # Rebin if requesting detector sampled images 
             if not return_oversample:
                 final = frebin(final, scale=1/oversample)
-                im_roll1 = frebin(im_roll1, scale=1/oversample)
-                im_roll2 = frebin(im_roll2, scale=1/oversample)
+                im_roll1_sh = frebin(im_roll1_sh, scale=1/oversample)
+                im_roll2_sh = frebin(im_roll2_sh, scale=1/oversample)
 
             hdu = fits.PrimaryHDU(final)
             hdu.header['EXTNAME'] = ('ROLL_SUB')
@@ -2048,7 +2058,7 @@ class obs_hci(nrc_hci):
 
             roll_names = ['ROLL1', 'ROLL2']
             pa_vals = [PA1, PA2]
-            for ii, im in enumerate([im_roll1, im_roll2]):
+            for ii, im in enumerate([im_roll1_sh, im_roll2_sh]):
                 hdu = fits.ImageHDU(im)
                 hdu.header['EXTNAME'] = (roll_names[ii])
                 hdu.header['OVERSAMP'] = (osamp_out, 'Oversample compared to detector pixels')
@@ -2083,10 +2093,10 @@ class obs_hci(nrc_hci):
         r, th = xy_to_rtheta(offx_asec, offy_asec)
 
         # Create stellar PSF centered in image
-        im_ref = self.gen_offset_psf(r, th, sp=self.sp_ref, return_oversample=True, 
-                                     wfe_drift=wfe_drift_ref, **kwargs)
+        im_star_ref = self.gen_offset_psf(r, th, sp=self.sp_ref, return_oversample=True, 
+                                          wfe_drift=wfe_drift_ref, **kwargs)
         # Stellar cut-out for reference scaling
-        im_ref_sub = crop_image(im_ref, sub_shape)
+        im_ref_sub = crop_image(im_star_ref, sub_shape)
         # Expand to full size
         #   - Not needed because this is correctly handled in gen_slope_image
         #   - Run into undesired cropping effects if PSF is larger than FoV and significantly shifted 
@@ -2094,12 +2104,8 @@ class obs_hci(nrc_hci):
 
         # Create Reference slope image
         # Essentially just adds image shifts and noise
-        im_ref = self.gen_slope_image(PA=0, xyoff_asec=xyoff_asec_ref, im_star=im_ref, 
+        im_ref = self.gen_slope_image(PA=0, xyoff_asec=xyoff_asec_ref, im_star=im_star_ref, 
                                       do_ref=True, return_oversample=True, interp=interp, **kwargs)
-
-        # Fix saturated pixels
-        if fix_sat:
-            im_ref = self._fix_sat_im(im_ref, do_ref=True, oversample=oversample, **kwargs)
 
         # Determine reference star scale factor
         scale1 = scale_ref_image(im_star_sub, im_ref_sub)
@@ -2116,6 +2122,29 @@ class obs_hci(nrc_hci):
         dx, dy = -1 * xyoff_asec_ref / pixscale_over
         im_ref_sh = fshift(im_ref, delx=dx, dely=dy, interp=interp)
                     
+        # Flag saturated pixels in each roll image
+        # Only consider saturation from stellar signal
+        if do_sat:
+            # Images are oversampled, so need to rebin to detector pixels
+            imstar_rebin = frebin(im_star, scale=1/oversample)
+            sat_rebin = self.saturation_levels(image=imstar_rebin, **kwargs)
+            # Rebin back to oversampled size
+            sat_over = frebin(sat_rebin, scale=oversample, total=False)
+            sat_over = crop_image(sat_over, im_roll1_sh.shape, fill_val=0)
+            # Flag saturated pixels
+            im_roll1_sh[sat_over > sat_val] = np.nan
+            del imstar_rebin, sat_rebin, sat_over
+
+            # Images are oversampled, so need to rebin to detector pixels
+            imstar_rebin = frebin(im_star_ref, scale=1/oversample)
+            sat_rebin = self.saturation_levels(image=imstar_rebin, do_ref=True, **kwargs)
+            # Rebin back to oversampled size
+            sat_over = frebin(sat_rebin, scale=oversample, total=False)
+            sat_over = crop_image(sat_over, im_ref_sh.shape, fill_val=0)
+            # Flag saturated pixels
+            im_ref_sh[sat_over > sat_val] = np.nan
+            del imstar_rebin, sat_rebin, sat_over
+
         # Telescope Roll 2 with reference subtraction
         if (abs(roll_angle) > eps):
             # Subtraction with and without scaling
@@ -2162,12 +2191,6 @@ class obs_hci(nrc_hci):
                 # Shift and crop star+disk+planets image
                 im_star2_sub = crop_image(im_roll2, sub_shape, delx=-1*delx_over, dely=-1*dely_over,
                                           interp=interp, shift_func=fshift)
-                # im_star2_sub = pad_or_cut_to_size(im_roll2, sub_shape, interp=interp,
-                #                                   offset_vals=(-1*dely_over,-1*delx_over))
-
-            # Fix saturated pixels
-            if fix_sat:
-                im_roll2 = self._fix_sat_im(im_roll2, oversample=oversample, **kwargs)
 
             # Subtract reference star from Roll 2
             scale2 = scale_ref_image(im_star2_sub, im_ref_sub)
@@ -2180,11 +2203,23 @@ class obs_hci(nrc_hci):
             # Shift roll images by pointing offsets
             dx, dy = -1 * xyoff_asec2 / pixscale_over
             im_roll2_sh = fshift(im_roll2, delx=dx, dely=dy, interp=interp)
-                
+            
+            # Flag saturated pixels in each roll image
+            # Only consider saturation from stellar signal
+            if do_sat:
+                # Images are oversampled, so need to rebin to detector pixels
+                imstar_rebin = frebin(im_star, scale=1/oversample)
+                sat_rebin = self.saturation_levels(image=imstar_rebin, **kwargs)
+                # Rebin back to oversampled size
+                sat_over = frebin(sat_rebin, scale=oversample, total=False)
+                sat_over = crop_image(sat_over, im_roll2_sh.shape, fill_val=0)
+                # Flag saturated pixels
+                im_roll2_sh[sat_over > sat_val] = np.nan
+                del imstar_rebin, sat_rebin, sat_over
+
             # Subtraction with and without scaling
             im_diff1_r2 = im_roll2_sh - im_ref_sh
             im_diff2_r2 = im_roll2_sh - im_ref_sh * scale2
-            #im_diff_r2 = optimal_difference(im_roll2, im_ref, scale2)
 
             # De-rotate each image
             diff1_r1_rot = rotate_offset(im_diff1_r1, -PA1, cen=cen_over, reshape=True, cval=np.nan)
@@ -2200,17 +2235,10 @@ class obs_hci(nrc_hci):
             diff2_r2_rot = crop_image(diff2_r2_rot, new_shape, fill_val=np.nan)
 
             # Replace NaNs with values from other differenced mask
-            nan_mask = np.isnan(diff1_r1_rot)
-            diff1_r1_rot[nan_mask] = diff1_r2_rot[nan_mask]
-            diff2_r1_rot[nan_mask] = diff2_r2_rot[nan_mask]
-            nan_mask = np.isnan(diff1_r2_rot)
-            diff1_r2_rot[nan_mask] = diff1_r1_rot[nan_mask]
-            diff2_r2_rot[nan_mask] = diff2_r1_rot[nan_mask]
-
             # final1 has better noise in outer regions (background)
             # final2 has better noise in inner regions (PSF removal)
-            final1 = (diff1_r1_rot + diff1_r2_rot) / 2
-            final2 = (diff2_r1_rot + diff2_r2_rot) / 2
+            final1 = np.nanmean([diff1_r1_rot, diff1_r2_rot], axis=0)
+            final2 = np.nanmean([diff2_r1_rot, diff2_r2_rot], axis=0)
 
             if opt_diff:
                 rho = dist_image(final1)
@@ -2590,7 +2618,7 @@ class obs_hci(nrc_hci):
             separately. This is the equivalent to ngroup=1 for RAPID
             and BRIGHT1 observations.
         do_ref : bool
-            Get saturation levels for reference soure instead of science
+            Get saturation levels for reference source instead of science
         image : ndarray
             Rather than generating an image on the fly, pass a pre-computed
             slope image.
