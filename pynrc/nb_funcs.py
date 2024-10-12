@@ -231,7 +231,15 @@ def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None,
             xsubuse = ysubuse = subsize
                 
         # Other coronagraph vs direct imaging settings
-        module, oversample = ('B', 4) if mask is None else ('A', 2)
+        if mask is not None:
+            module, oversample = ('A', 2)
+        elif 'FULL' in wind_mode:
+            module, oversample = ('B', 4)
+        else:
+            module, oversample = ('B', 4)
+
+        if fov_pix>520:
+            oversample = 2
         
         # Select detector for imaging mode
         if module=='B':
@@ -249,16 +257,20 @@ def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None,
                       autogen_coeffs=False, sgd_type=sgd_type, slew_std=slew_std, fsm_std=fsm_std, **kwargs)
 
         apn = obs.siaf_ap.AperName
+        # TODO: This might not be necessary anymore
         if narrow and (('LWB' in apn) or ('SWB' in apn)):
             # Replace filter name with NARROW position
             apn = apn.replace(filt, 'NARROW')
             obs.update_from_SIAF(apname=apn)
 
-        obs.gen_psf_coeff()
+        nproc = kwargs.get('nproc', None)
+        if nproc==None and fov_pix*oversample > 2100:
+            nproc = 1
+        obs.gen_psf_coeff(nproc=nproc)
         # Enable WFE drift
-        obs.gen_wfedrift_coeff()
+        obs.gen_wfedrift_coeff(nproc=nproc)
         # Enable mask-dependent
-        obs.gen_wfemask_coeff(large_grid=large_grid)
+        obs.gen_wfemask_coeff(large_grid=large_grid, nproc=nproc)
         # Calculate PSF offset to center
         obs.calc_psf_offset_from_center()
 
@@ -837,7 +849,7 @@ def plot_contrasts_mjup(curves, nsig, wfe_list, obs=None, sat_rad=None, age=100,
 
 
 def plot_contrasts(curves, nsig, wfe_list, obs=None, sat_rad=None, ax=None,
-    colors=None, xr=[0,10], yr=[25,5], return_axes=False):
+    colors=None, xr=[0,10], yr=[25,5], units=None, set_ylog=None, return_axes=False):
     """Plot contrast curves
 
     Plot a series of contrast curves for corresponding WFE drifts.
@@ -863,6 +875,11 @@ def plot_contrasts(curves, nsig, wfe_list, obs=None, sat_rad=None, ax=None,
     sat_rad : float
         Saturation radius in arcsec. If >0, then that part of the contrast
         curve is excluded from the plot
+    units : str
+        Units for sensitivity limits. Default is 'vegamag'.
+    set_ylog : bool
+        Set y-axis to log scale? Default is False for magnitudes
+        and True for all others.
     ax : matplotlib.axes
         Axes on which to plot curves.
     colors : None, array-like
@@ -880,29 +897,62 @@ def plot_contrasts(curves, nsig, wfe_list, obs=None, sat_rad=None, ax=None,
     if colors is None:
         lin_vals = np.linspace(0.3,0.8,len(wfe_list))
         colors = plt.cm.Blues_r(lin_vals)
+
+    # Flip curves so that largest WFE drift is plotted first
+    curves = curves[::-1]
+    wfe_list = wfe_list[::-1]
         
     delta_str = '$\Delta$'
     for j in range(len(wfe_list)): #for j, wfe_ref_drift in enumerate(wfe_list):
         rr, contrast, mag_sens = curves[j]
         xvals = rr[rr>sat_rad]
-        yvals = mag_sens[rr>sat_rad]
+        mag_vals = mag_sens[rr>sat_rad]
+
+        # Convert to sensitivity to different units?
+        if units is None: units = 'vegamag'
+        if units=='vegamag':
+            set_ylog = False
+            yvals = mag_vals
+        elif obs is None:
+            print(f"Requested units='{units}' conversion requires `obs` keyword.")
+            set_ylog = False
+            yvals = mag_vals
+        else:
+            from webbpsf_ext import synphot_ext as S
+            bp = obs.bandpass
+            sp = S.Vega.renorm(0, 'vegamag', bp)
+            zeromag_flux = S.Observation(sp, bp, binset=bp.wave).effstim(units)
+            # Convert magnitudes to flux units
+            if 'mag' in units:
+                yvals = mag_vals + zeromag_flux
+                set_ylog = False if set_ylog is None else set_ylog
+            else:
+                yvals = zeromag_flux * 10**(-mag_vals/2.5)
+                set_ylog = True if set_ylog is None else set_ylog
+
         label= f"{delta_str}WFE = {wfe_list[j]} nm"
         ax.plot(xvals, yvals, label=label, color=colors[j], zorder=1, lw=2)
+        if set_ylog:
+            ax.set_yscale('log')
 
     if xr is not None: ax.set_xlim(xr)
     if yr is not None: ax.set_ylim(yr)
 
 
     ax.xaxis.get_major_locator().set_params(nbins=10, steps=[1, 2, 5, 10])
-    ax.yaxis.get_major_locator().set_params(nbins=10, steps=[1, 2, 5, 10])
+    if not set_ylog:
+        ax.yaxis.get_major_locator().set_params(nbins=10, steps=[1, 2, 5, 10])
 
-    ax.set_ylabel('{:.0f}-$\sigma$ Sensitivities (mag)'.format(nsig))
+    ax.set_ylabel(f'{nsig:.0f}-$\sigma$ Sensitivities ({units})')
     ax.set_xlabel('Separation (arcsec)')
 
     # Plot opposing axes in alternate units
     if obs is not None:
         yr1 = np.array(ax.get_ylim())
-        yr2 = 10**((obs.star_flux('vegamag') - yr1) / 2.5)
+        if units=='vegamag':
+            yr2 = 10**((obs.star_flux('vegamag') - yr1) / 2.5)
+        else:
+            yr2 = yr1 / obs.star_flux(units)
         ax2 = ax.twinx()
         ax2.set_yscale('log')
         ax2.set_ylim(yr2)
