@@ -1126,6 +1126,7 @@ class obs_hci(nrc_hci):
 
 
             # Add to image
+            psf_planet[np.isnan(psf_planet)] = 0
             image_over += psf_planet
 
         # Remove any negative numbers
@@ -1986,12 +1987,12 @@ class obs_hci(nrc_hci):
         if no_ref:
             # Create Roll2 image
             if (np.abs(wfe_roll_drift) < eps) and np.allclose(xyoff_asec1, xyoff_asec2):
-                im_roll2 = self.gen_slope_image(PA=PA2, im_star=im_star, do_roll2=True, 
-                                                return_oversample=True, interp=interp, **kwargs)
+                im_star2 = im_star
             else:
-                im_roll2 = self.gen_slope_image(PA=PA2, xyoff_asec=xyoff_asec2, do_roll2=True, 
-                                                wfe_drift0=wfe_drift0, wfe_roll_drift=wfe_roll_drift, 
-                                                return_oversample=True, interp=interp, **kwargs)
+                im_star2 = None
+            im_roll2 = self.gen_slope_image(PA=PA2, xyoff_asec=xyoff_asec2, im_star=im_star2, do_roll2=True, 
+                                            wfe_drift0=wfe_drift0, wfe_roll_drift=wfe_roll_drift, 
+                                            return_oversample=True, interp=interp, **kwargs)
 
             # if oversample>1:
             #     kernel = Gaussian2DKernel(0.5*oversample)
@@ -2053,6 +2054,7 @@ class obs_hci(nrc_hci):
             hdu.header['TEXP_SCI'] = (2*self.multiaccum_times['t_exp'], 'Total science exposure time (sec)')
             hdu.header['TEXP_REF'] = (0, 'Total reference exposure time (sec)')
             hdu.header['ROLL_ANG'] = (roll_angle, 'Delta roll angle (deg)')
+            hdu.header['WFE_ROLL']  = (wfe_roll_drift, 'WFE drift between Roll1 and Roll2 (nm RMS)')
 
             hdulist = fits.HDUList([hdu])
 
@@ -2306,6 +2308,10 @@ class obs_hci(nrc_hci):
         hdu.header['TEXP_SCI'] = (texp_sci, 'Total science exposure time (sec)')
         hdu.header['TEXP_REF'] = (self.Detector_ref.time_exp, 'Total reference exposure time (sec)')
         hdu.header['ROLL_ANG'] = (roll_angle, 'Delta roll angle (deg)')
+        if roll_angle != 0:
+            hdu.header['WFE_ROLL']  = (wfe_roll_drift, 'WFE drift between Roll1 and Roll2 (nm RMS)')
+        if not no_ref:
+            hdu.header['WFE_REF']   = (wfe_ref_drift, 'WFE drift between Roll1 and Reference (nm RMS)')
 
         hdulist = fits.HDUList([hdu])
 
