@@ -1120,7 +1120,8 @@ def plot_hdulist(hdulist, ext=0, xr=None, yr=None, ax=None, return_ax=False,
         oversamp = hdulist[ext].header['OSAMP']
         shft = 0.5*oversamp
         hdul = deepcopy(hdulist)
-        hdul[0].data = fourier_imshift(hdul[0].data, shft, shft)
+        ind_nan = np.isnan(hdul[0].data)
+        hdul[0].data = fshift(hdul[0].data, shft, shft, pad=True, cval=np.nan)
     else:
         hdul = hdulist
 
