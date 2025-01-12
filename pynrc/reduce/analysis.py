@@ -1,15 +1,18 @@
 import numpy as np
 import os
+import matplotlib.pyplot as plt
 
 import json
 
 from tqdm import trange, tqdm
 
 from astropy.io import ascii, fits
+from astropy.time import Time
+from astropy.table import Table, vstack
 
 from webbpsf_ext import robust
 from webbpsf_ext.analysis_tools import ipc_info, ppc_info
-from webbpsf_ext.imreg_tools import read_sgd_files, get_coron_apname
+from webbpsf_ext.imreg_tools import read_sgd_files, get_files, get_coron_apname
 
 from ..nrc_utils import get_one_siaf, get_detname
 
@@ -1134,6 +1137,7 @@ def stellar_arguments(name, votdir='../votables/', fname=None, **kwargs):
 
     # Define bandpasses and source information
     bp_k = bp_2mass('k')
+    bp_v = ObsBandpass('johnson_v')
 
     # Remove spaces, dashes, and underscores
     name_key = name.replace(' ','').replace('-','').replace('_','')
@@ -1202,6 +1206,10 @@ def stellar_arguments(name, votdir='../votables/', fname=None, **kwargs):
             'name': 'AS 209', 'fname': 'AS209.vot',
             'dist': 121.2, 'age': 2, 'sptype': 'K4V', 
             'Av': 0.0, 'mag_val': 6.96, 'bp': bp_k, 
+        },
+        'HD163296' : {
+            'name': 'HD 163296', 'fname': 'HD163296.vot',
+            'sptype': 'A3V', 'Av': 0.0, 'mag_val': 6.85, 'bp': bp_v, 
         },
     }
 
@@ -1381,7 +1389,7 @@ def disk_model_grater_2hg(r0, h0, ain, aout, pa, incl, g1, g2, wg1,
     disk[c_vip[1], c_vip[0]-1:c_vip[0]+2] = np.nan
     disk = convolution.interpolate_replace_nans(disk, np.ones((3,3)))
 
-    # VIP also defines the center differencely that we do, 
+    # VIP also defines the center differently that we do, 
     # depending on odd or even, so perform an offset to correct if needed 
     dx, dy = cent[0]-c_vip[0], cent[1]-c_vip[1]
     # print('Shape:', disk.shape)
@@ -1394,17 +1402,19 @@ def disk_model_grater_2hg(r0, h0, ain, aout, pa, incl, g1, g2, wg1,
         zero_mask_sh = fshift(zero_mask.astype('float'), dx, dy, pad=True) > 0
         disk[zero_mask_sh] = 0
 
+    # Ensure no negative values
     disk[disk<0] = 0
 
     return disk
 
 
-def make_grater_disk(nrc, npix=None, scale_flux=1, return_oversample=True, **kwargs):
+# def make_grater_disk(nrc, npix=None, scale_flux=1, return_oversample=True, **kwargs):
 
-    if npix is None:
-        ny, nx = np.array([nrc.det_info['ypix'], nrc.det_info['xpix']]) // 2 + 1
-    else:
-        nx = ny = npix
+    # if npix is None:
+    #     ny, nx = np.array([nrc.det_info['ypix'], nrc.det_info['xpix']]) // 2 + 1
+    # else:
+    #     nx = ny = npix
+def make_grater_disk(nrc, nx, ny, scale_flux=1, return_oversample=True, **kwargs):
 
     osamp = nrc.oversample
     pixscale = nrc.pixelscale
@@ -1485,6 +1495,7 @@ class nrc_analyze():
         self._rate_dir = None
         self._cal_dir = None
         self._cal_subdir = cal_subdir
+        self._file_type = None
 
         # Save locations
         self.figdir = 'figures_analyze/'
@@ -1512,7 +1523,11 @@ class nrc_analyze():
         self.xy_loc_ind = None
         self.xyshift = None
         self.xy_mask_offset = None
+        self.c_coron = None
         self.shift_matrix = None
+
+        # Track total cumulative shifts performed
+        self._xy_shifts_total = None
 
         # Create objects for each reference observation
         if obsids_ref is not None:
@@ -1677,13 +1692,17 @@ class nrc_analyze():
         self.psf_corr_dict = load_psf_correction(self.filter, self.apname, verbose=verbose)
         self.psf_corr_over = self.psf_corr_dict.get('psf_scale_data', None)
 
-    def generate_obs_dict(self, file_type='calints.fits', combine_same_dithers=True):
+    def generate_obs_dict(self, indir=None, file_type='calints.fits', combine_same_dithers=True):
         """Generate dictionary of observations"""
-        if 'cal' in file_type or 'i2d' in file_type:
-            indir = self.cal_dir
-        else:
-            indir = self.rate_dir
+        if indir is None:
+            if 'cal' in file_type or 'i2d' in file_type:
+                indir = self.cal_dir
+            else:
+                indir = self.rate_dir
 
+        self._file_type = file_type
+
+        # Delete and generate new obs_dict
         if len(self.obs_dict)>0:
             obs_dict = self.obs_dict
             self.obs_dict = {}
@@ -1701,7 +1720,8 @@ class nrc_analyze():
         # Call this same function in the reference objects
         if self.ref_objs is not None:
             for ref_obj in self.ref_objs:
-                ref_obj.generate_obs_dict(file_type=file_type)
+                ref_obj.generate_obs_dict(indir=indir, file_type=file_type, 
+                                          combine_same_dithers=combine_same_dithers)
 
     def _flag_bad_pixels(self, imarr, dqarr, nsig_spatial=10, nsig_temporal=10, ntemporal_limit=10, niter=3):
         """Flag bad pixels in a single image or stack of images
@@ -2218,7 +2238,7 @@ class nrc_analyze():
         return psfs_over, xyoff_psfs_over
 
     def get_star_positions(self, xysub=65, rin=None, bgsub=False, use_com=True, gauss_fit=False,
-                           med_dithers=True, ideal_sgd=True, save=True, force=False, **kwargs):
+                           med_dithers=True, ideal_sgd=False, gs_sgd=True, save=True, force=False, **kwargs):
         """Find the offset between the expected and actual position
         
         Updates self.xy_loc_ind, self.xyshift, and self.xy_mask_offset
@@ -2240,6 +2260,10 @@ class nrc_analyze():
             Otherwise, perform cross correlation with PSF.
         med_dithers : bool
             If True, then median combine the dithered images before fitting.
+        ideal_sgd : bool
+            Use the ideal SGD offsets when determining star positions.
+        gs_sgd : bool
+            Use the FGS guidestar info for SGD data. Mutually exclusive with `ideal_sgd`.
         save : bool
             Save the star positions to a file
         force : bool
@@ -2249,14 +2273,20 @@ class nrc_analyze():
         from webbpsf_ext.imreg_tools import get_com, get_expected_loc, get_sgd_offsets
         from webbpsf_ext.image_manip import bp_fix
 
-        def saved_path_name(save_dir):
+        if ideal_sgd and gs_sgd:
+            raise ValueError("Cannot set both `ideal_sgd` and `gs_sgd` to True.")
+
+        def saved_path_name(save_dir): 
             # Saved file
             save_str0 = '_obs' + '.'.join([str(obs) for obs in self.obsids])
             save_str1 = '_com' if use_com else '_exp'
             save_str2 = '_med' if med_dithers else ''
             save_str3 = '_gfit' if gauss_fit else ''
-            save_str4 = '_sim' if self.is_sim else ''
-            save_file = f'star_positions_{self.filter}{save_str0}{save_str1}{save_str2}{save_str3}{save_str4}.json'
+            if self.is_sgd and ideal_sgd: save_str4 = '_idealsgd'
+            elif self.is_sgd and gs_sgd:  save_str4 = '_gssgd'
+            else:  save_str4 = ''
+            save_str5 = '_sim' if self.is_sim else ''
+            save_file = f'star_positions_{self.filter}{save_str0}{save_str1}{save_str2}{save_str3}{save_str4}{save_str5}_{self._file_type}.json'
             save_path = os.path.join(save_dir, save_file)
             return save_path
 
@@ -2456,23 +2486,37 @@ class nrc_analyze():
             # Index positions of star in reduced data
             self.xy_loc_ind = xy_loc_all
 
-            # Get shift values necessary to center the star in reduce image array
+            # Get shift values necessary to center the star in image array
             im = obs_dict[self.obsids[0]][0]['data']
             if len(im.shape)==3:
                 im = im[0]
             self.xyshift = get_im_cen(im) - self.xy_loc_ind
 
-            # Special case for SGD, assume ideal offsets
-            # hdr0 = obs_dict[self.obsids[0]][0]['hdr0']
-            # if (hdr0.get('SUBPXPAT') == 'SMALL-GRID-DITHER') and ideal_sgd:
-            if self.is_sgd and ideal_sgd:
-                sgd_patt = self.sgd_pattern #hdr0.get('SMGRDPAT', None)
-                xoff_asec, yoff_asec = get_sgd_offsets(sgd_patt)
-                xoff_pix = xoff_asec / nrc.pixelscale
-                yoff_pix = yoff_asec / nrc.pixelscale
+            # Special case for SGD for assuming ideal or FGS-derived SGD offsets
+            if self.is_sgd and (ideal_sgd or gs_sgd):
+                if gs_sgd:
+                    xoff_pix, yoff_pix = fgs_to_nrc_sgd_offset(self.pid, self.obsids[0], self.filter, pix_offset=True)
+                elif ideal_sgd:
+                    xoff_asec, yoff_asec = get_sgd_offsets(self.sgd_pattern)
+                    xoff_pix = xoff_asec / nrc.pixelscale
+                    yoff_pix = yoff_asec / nrc.pixelscale
 
                 # Update xyshift and xy_loc_ind
-                self.xyshift = np.mean(self.xyshift, axis=0) - np.array([xoff_pix, yoff_pix]).T
+                # Need to account for possibility of multiple obsids
+                nobs = len(self.obsids)
+                if nobs>1:
+                    nsgd = len(xoff_pix)
+                    xysh_new = []
+                    for i in range(nobs):
+                        i1 = i*nsgd
+                        i2 = (i+1)*nsgd
+                        if gs_sgd:
+                            xoff_pix, yoff_pix = fgs_to_nrc_sgd_offset(self.pid, self.obsids[i], self.filter, pix_offset=True)
+                        xysh = np.mean(self.xyshift[i1:i2], axis=0) - np.array([xoff_pix, yoff_pix]).T
+                        xysh_new.append(xysh)
+                    self.xyshift = np.concatenate(xysh_new)
+                else:
+                    self.xyshift = np.mean(self.xyshift, axis=0) - np.array([xoff_pix, yoff_pix]).T
                 self.xy_loc_ind = get_im_cen(im) - self.xyshift
 
             # Save xy_loc_ind and xyshift to file
@@ -2484,6 +2528,8 @@ class nrc_analyze():
 
             del imsub_arr, dqsub_arr, bp_masks
 
+        # Offset of star relative to mask
+        # Adds self.xy_mask_offset and self.c_coron
         self._update_mask_offsets()
 
         # print(self.xy_loc_ind)
@@ -2493,21 +2539,49 @@ class nrc_analyze():
         if self.ref_objs is not None:
             for ref_obj in self.ref_objs:
                 ref_obj.get_star_positions(xysub=xysub, bgsub=bgsub, use_com=use_com,
-                                           med_dithers=med_dithers, save=save, force=force)
+                                           med_dithers=med_dithers, ideal_sgd=ideal_sgd, gs_sgd=gs_sgd, 
+                                           save=save, force=force)
 
-    def _update_mask_offsets(self):
-        """Determine mask offsets and update self.xy_mask_offset and nrc.pointing_info"""
+    def _update_mask_offsets(self, do_c_coron=True, do_xy_mask_offset=True):
+        """Determine offset of star relative to mask 
+        
+        Updates self.xy_mask_offset, self.c_coron, and nrc.pointing_info.
 
-        # Get the offsets from nominal mask position for coronagraphic observations
-        filt_offset = self.get_filter_offset(arcsec=False)
-        siaf_ap = self.siaf_ap
-        sci_ref = np.array([siaf_ap.XSciRef, siaf_ap.YSciRef])
-        # Convert location to sci coords by adding 1
-        # Subtract the filter offset
+        Parameters
+        ----------
+        do_c_coron : bool
+            Update self.c_coron. If first time, always updated.
+        do_xy_mask_offset : bool
+            Update self.xy_mask_offset. If first time, always updated.
+        
+        """
+        
         if self.is_coron:
-            self.xy_mask_offset = (self.xy_loc_ind + 1) - sci_ref - filt_offset
+            if self.xy_mask_offset is None:
+                # Get the offsets from nominal mask position for coronagraphic observations
+                siaf_ap = self.siaf_ap
+                sci_ref = np.array([siaf_ap.XSciRef, siaf_ap.YSciRef])
+                # Subtract the filter offset
+                filt_offset = self.get_filter_offset(arcsec=False)
+                # Convert location to sci coords by adding 1
+                self.xy_mask_offset = (self.xy_loc_ind + 1) - sci_ref - filt_offset
+                self.c_coron = self.xy_loc_ind - self.xy_mask_offset
+            elif do_xy_mask_offset:
+                self.xy_mask_offset = self.xy_loc_ind - self.c_coron
+            elif do_c_coron:
+                self.c_coron = self.xy_loc_ind - self.xy_mask_offset
+
+            # Update c_coron and xy_mask_offset in obs_dict
+            ii = 0
+            for i, oid in enumerate(self.obsids):
+                odict = self.obs_dict[oid]
+                for k in odict.keys():
+                    odict[k]['xy_mask_offset'] = self.xy_mask_offset[ii]
+                    odict[k]['c_coron'] = self.c_coron[ii]
+                    ii += 1
         else:
             self.xy_mask_offset = np.zeros_like(self.xy_loc_ind)
+            self.c_coron = None
 
         # Update nrc.pointing_info
         if self.nrc is not None:
@@ -2535,7 +2609,7 @@ class nrc_analyze():
                 ref_obj._replace_data_with_sim(**kwargs)
 
     def shift_to_center_int(self, med_dithers=False, return_results=False, 
-                            odd_shape=True, xysub=None):
+                            odd_shape=True, xysub=None, xyloc0=None):
         """Expand and shift images to place star roughly in center of array
         
         Does not perform any fractional shifts. Only integer shifts are applied.
@@ -2549,19 +2623,15 @@ class nrc_analyze():
             If True, return results in a dictionary and do not overwrite self.obs_dict.
         odd_shape : bool
             If True, then pad to odd dimensions. Otherwise, pad to even dimensions.
+        xysub : int
+            Size of subarray to use for PSF fitting
+        xyloc0 : tuple
+            Use this as the center crop location for all images. 
+            If None, then determined automatically based on nearest pixel.
         """
 
         from webbpsf_ext.maths import round_int
         from jwst.datamodels import dqflags
-
-        # Determine if SGD data
-        # hdr0 = self.obs_dict[self.obsids[0]][0]['hdr0']
-        is_sgd = self.is_sgd # hdr0.get('SUBPXPAT') == 'SMALL-GRID-DITHER'
-
-        # Enforce med_dithers=True for SGD data
-        # if is_sgd and not med_dithers:
-        #     _log.warning("Forcing med_dithers=True for SGD data.")
-        #     med_dithers = True
 
         imarr = []
         dqarr = []
@@ -2653,7 +2723,10 @@ class nrc_analyze():
             # Case of single image per dither
             if nimg_per_dither==1:
                 # Use first (nominal) dither position to shift all images if SGD data
-                xy_loc = xy_loc_all[0] if is_sgd else xy_loc_all[i]
+                if xyloc0 is None:
+                    xy_loc = xy_loc_all[0] if self.is_sgd else xy_loc_all[i]
+                else:
+                    xy_loc = xyloc0
                 im, xy = crop_image(imarr[i], nxy_pad, xyloc=xy_loc, return_xy=True)
                 err = crop_image(errarr[i], nxy_pad, xyloc=xy_loc, fill_val=np.nanmax(errarr))
                 fill_val = dqflags.pixel['FLUX_ESTIMATED'] | dqflags.pixel['DO_NOT_USE']
@@ -2671,12 +2744,15 @@ class nrc_analyze():
                 dqlist = []
                 bplist = []
                 for j in range(nimg_per_dither):
-                    if is_sgd:
-                        # Use first (nominal) dither position to shift all images
-                        xy_loc = xy_loc_all[0] if nsh_per_dither==1 else robust.mean(xy_loc_all[0,:], axis=1)
-                        # raise RuntimeError("SGD should have med_dithers=True, so not sure how we got here!")
+                    if xyloc0 is None:
+                        if self.is_sgd:
+                            # Use first (nominal) dither position to shift all images
+                            xy_loc = xy_loc_all[0] if nsh_per_dither==1 else robust.mean(xy_loc_all[0,:], axis=1)
+                            # raise RuntimeError("SGD should have med_dithers=True, so not sure how we got here!")
+                        else:
+                            xy_loc = xy_loc_all[i] if nsh_per_dither==1 else xy_loc_all[i,j]
                     else:
-                        xy_loc = xy_loc_all[i] if nsh_per_dither==1 else xy_loc_all[i,j]
+                        xy_loc = xyloc0
                     im, xy = crop_image(imarr[i,j], nxy_pad, xyloc=xy_loc, return_xy=True)
                     err = crop_image(errarr[i,j], nxy_pad, xyloc=xy_loc, fill_val=np.nanmax(errarr))
                     fill_val = dqflags.pixel['FLUX_ESTIMATED'] | dqflags.pixel['DO_NOT_USE']
@@ -2707,7 +2783,8 @@ class nrc_analyze():
         # Update xyshift values
         ny_fin, nx_fin = imarr_shift.shape[-2:]
         im_temp = imarr_shift.reshape([-1,ny_fin,nx_fin])[0]
-        xyshift_new = get_im_cen(im_temp) - xy_loc_shift
+        xycen_new = get_im_cen(im_temp)
+        xyshift_new = xycen_new - xy_loc_shift
 
         if return_results:
             out = {
@@ -2734,14 +2811,27 @@ class nrc_analyze():
                 odict[k]['sci00'] = xy0_list[ii] # Index of (0,0) in science frame
                 ii += 1
 
+        # Get the total effective shift
+        # xyshift values are the shifts necessary to place the star 
+        # in the center of the image. So, the difference between the
+        # original xyshift and the new xyshift is the total shift performed.
+        xysh = self.xyshift - xyshift_new
+        if self._xy_shifts_total is None:
+            self._xy_shifts_total = xysh
+        else:
+            self._xy_shifts_total += xysh
+
         # Update class attributes
         self.xy_loc_ind = xy_loc_shift
         self.xyshift = xyshift_new
+        # Only update c_coron position
+        self._update_mask_offsets(do_c_coron=True, do_xy_mask_offset=False)
 
         # Call this same function in the reference objects
         if self.ref_objs is not None:
             for ref_obj in self.ref_objs:
-                ref_obj.shift_to_center_int(med_dithers=med_dithers, return_results=False)
+                ref_obj.shift_to_center_int(med_dithers=med_dithers, return_results=False,
+                                            odd_shape=odd_shape, xysub=nxy_pad, xyloc0=xyloc0)
 
     def _get_dither_data(self, obsids=None, subsize=None, outer_rad=32, gstd_pix=None, 
                          bpfix=False, rebin=1, order=1, data_key='data', **kwargs):
@@ -2825,9 +2915,9 @@ class nrc_analyze():
     def get_dither_offsets(self, method='fourier', interp='lanczos', 
                            oversample=4, order=3, rescale_pix=True, gstd_pix=None, 
                            subsize=None, inner_rad=None, outer_rad=32, 
-                           xylim_pix=(-1,1), dxy_coarse=0.1, dxy_fine=0.01,
+                           xylim_pix=(-2,2), dxy_coarse=0.1, dxy_fine=0.005,
                            lsq_diff=True, return_results=False, save=True, force=False, 
-                           ideal_sgd=False, verbose=False, **kwargs):
+                           ideal_sgd=True, verbose=False, **kwargs):
         """Find the position offsets between dithered images via LSQ minimization
 
         Compares all dithered and roll images relative to each other, and stores the
@@ -2847,21 +2937,11 @@ class nrc_analyze():
         def get_ref_offset(ref_obj):
             """Determine offset of SGD reference data relative to science data"""
 
-            # imarr_sci, bparr_sci = self._get_dither_data(subsize=subsize, outer_rad=orad, rebin=1, gstd_pix=0)
-            # imarr_ref, bparr_ref = ref_obj._get_dither_data(subsize=subsize, outer_rad=orad, rebin=1, gstd_pix=0)
-
-            # imall_sci_over = image_shift_with_nans(imarr_sci, 0, 0, oversample=oversample, return_oversample=True, 
-            #                                        order=order, rescale_pix=rescale_pix, gstd_pix=gstd_pix,
-            #                                        preserve_nans=False, mean_func=None)
-
-            # imall_ref_over = image_shift_with_nans(imarr_ref, 0, 0, oversample=oversample, return_oversample=True, 
-            #                                        order=order, rescale_pix=rescale_pix, gstd_pix=gstd_pix,
-            #                                        preserve_nans=False, mean_func=None)
-
+            # Get oversampled data
             imall_sci_over, bparr_over_sci = self._get_dither_data(subsize=subsize, outer_rad=orad, rebin=oversample, 
                                                                    order=order, rescale_pix=rescale_pix, gstd_pix=gstd_pix)
-            imall_ref_over, bparr_over_ref = self._get_dither_data(subsize=subsize, outer_rad=orad, rebin=oversample, 
-                                                                   order=order, rescale_pix=rescale_pix, gstd_pix=gstd_pix)
+            imall_ref_over, bparr_over_ref = ref_obj._get_dither_data(subsize=subsize, outer_rad=orad, rebin=oversample, 
+                                                                      order=order, rescale_pix=rescale_pix, gstd_pix=gstd_pix)
             bparr_sci = frebin(bparr_over_sci, scale=1/oversample, total=False)
             bparr_ref = frebin(bparr_over_ref, scale=1/oversample, total=False)
 
@@ -2870,7 +2950,7 @@ class nrc_analyze():
 
             xcorr = False if lsq_diff else True
             shift_matrix = np.zeros((ndither_sci, ndither_ref, 2))
-            for i in trange(ndither_sci, desc='Relative Offsets', leave=False):
+            for i in trange(ndither_sci, desc='Ref to Sci Offsets', leave=False):
                 im1, bp1 = (frebin(imall_sci_over[i], scale=1/oversample), bparr_sci[i])
                 im1[bp1] = np.nan
                 for j in range(ndither_ref):
@@ -2879,15 +2959,13 @@ class nrc_analyze():
                     xysh_best = find_pix_offsets(im1, im2_over, psf_osamp=oversample, bpmask_arr=bpmask, 
                                                  crop=subsize, rin=inner_rad, xcorr=xcorr, lsq_diff=lsq_diff,
                                                  xylim_pix=xylim_pix, dxy_coarse=dxy_coarse, dxy_fine=dxy_fine)
-
-                    # xysh_best = find_best_offset_wrapper(im1, im2, bp1=bp1, bp2=bp2, pixel_binning=rebin,
-                    #                                      coarse_limits=coarse_limits,fine_limits=fine_limits,
-                    #                                      rin=inner_rad, rout=outer_rad, method=method, interp=interp,
-                    #                                      oversample=oversample, order=1,
-                    #                                      weights=weights, verbose=verbose, **kwargs)
                     shift_matrix[i,j] = xysh_best
 
-            return shift_matrix
+            # TODO: Align the reference data to science data by updating
+            # self.shift_matrix, self.xyshift, and self.xy_loc_ind
+
+            # TODO: Return is only for testing / dev purposes
+            # return shift_matrix
 
 
         obs_dict = self.obs_dict
@@ -2912,9 +2990,11 @@ class nrc_analyze():
         # Saved file
         save_dir = os.path.dirname(obs_dict[self.obsids[0]][0]['file'])
         save_str0 = '_obs' + '.'.join([str(obs) for obs in self.obsids])
-        save_str1 = '_sim' if self.is_sim else ''
-        save_str = f'_{method}_{interp}_sub{subsize}_osamp{oversample}_gstd{gstd_pix}_irad{inner_rad}_orad{outer_rad}{save_str1}'
-        save_file = f'star_positions_{self.filter}{save_str0}{save_str}.json'
+        save_str1 = '_lsqdiff' if lsq_diff else ''
+        save_str2 = '_sim' if self.is_sim else ''
+        save_str3 = '_idealsgd' if ideal_sgd and self.is_sgd else ''
+        save_str = f'_{method}_{interp}_sub{subsize}_osamp{oversample}_gstd{gstd_pix}_irad{inner_rad}_orad{outer_rad}{save_str1}{save_str2}{save_str3}'
+        save_file = f'star_positions_{self.filter}{save_str0}{save_str}_{self._file_type}.json'
         save_path = os.path.join(save_dir, save_file)
         if os.path.exists(save_path) and (force==False):
             _log.info(f"Loading dither positions from {save_path}")
@@ -2994,14 +3074,15 @@ class nrc_analyze():
                     xysh_arr.append([xsh_i, ysh_i])
                 xysh_arr = np.array(xysh_arr)
                 xysh_mean =  np.mean(xysh_arr, axis=0).T
+            else:
+                xysh_mean = self.xyshift
 
             # New shifts necessary to center the star in their existing image arrays
             self.xyshift = xysh_mean
 
             # Update best-guess locations of star in existing image arrays
             data = self.obs_dict[self.obsids[0]][0]['data']
-            im = data[0] if len(data.shape)==3 else data
-            xy_cen = get_im_cen(im)
+            xy_cen = get_im_cen(data)
             self.xy_loc_ind = xy_cen - self.xyshift
 
             # Save xy_loc_ind and xyshift to file
@@ -3011,6 +3092,17 @@ class nrc_analyze():
                             'shift_matrix': self.shift_matrix}
                 with open(save_path, 'w') as f:
                     json.dump(save_data, f, cls=NumpyArrayEncoder)
+
+        # Update 'xyloc' in obs_dict
+        ii = 0
+        for i, oid in enumerate(self.obsids):
+            odict = self.obs_dict[oid]
+            for k in odict.keys():
+                odict[k]['xyloc'] = self.xy_loc_ind[ii]
+                ii += 1
+
+        # Update stellar offsets assuming mask position stays the same
+        self._update_mask_offsets(do_c_coron=False, do_xy_mask_offset=True)
 
         # Call this same function in the reference objects
         if self.ref_objs is not None:
@@ -3024,16 +3116,12 @@ class nrc_analyze():
             }
             
             for ref_obj in self.ref_objs:
-                # ref_obj.get_dither_offsets(method=method, interp=interp, subsize=subsize, 
-                #                            rebin=rebin, gstd_pix=gstd_pix, inner_rad=inner_rad, 
-                #                            outer_rad=outer_rad, coarse_limits=coarse_limits, 
-                #                            fine_limits=fine_limits, return_results=False, 
-                #                            save=save, force=force, ideal_sgd=ideal_sgd, **kwargs)
                 ref_obj.get_dither_offsets(**kwargs_ref, **kwargs)
 
-            # Align reference observations to science observations
-            # Only does the first reference object...
-            return get_ref_offset(self.ref_objs[0])
+            # TODO: Re-align  reference observations to science observations
+            # Minor complications for observations on either side of half-pixel boundaries
+            # Testing only on first ref obj for now...
+            # return get_ref_offset(self.ref_objs[0])
             
     def _get_shift_vals(self, oid1, oid2, dith_pos1, dith_pos2, shift_matrix=None):
         """Get shift values between two dither positions"""
@@ -3246,6 +3334,8 @@ class nrc_analyze():
 
             imarr2, oids2 = self._get_roll_ref(oid1, dith_pos=None, bin_ints=1, med_dithers=True, 
                                                 data_key='data', return_refoids=True)
+            ny, nx = imarr2.shape[-2:]
+            imarr2 = imarr2.reshape([-1,ny,nx])
 
             # Get centers of all images
             if not self.is_coron and gauss_fit:
@@ -3449,6 +3539,7 @@ class nrc_analyze():
         #     xsh0, ysh0 = obj.xyshift[ii_ref]
 
         ii = 0
+        xyshift_aligned = np.zeros_like(self.xyshift)
         for oid in self.obsids:
             odict = self.obs_dict[oid]
             for k in tqdm(odict.keys(), desc=f'Centering Obs {oid}', leave=False):
@@ -3487,7 +3578,11 @@ class nrc_analyze():
                 err[border] = np.nanmax(err)
                 err[np.isnan(err)] = np.nanmax(err)
 
-                xsh, ysh = self.xyshift[ii] - np.array([xsh0, ysh0])
+                xyshift_aligned[ii] = self.xyshift[ii] - np.array([xsh0, ysh0])
+                xyshift_total_aligned = self._xy_shifts_total[ii] + xyshift_aligned[ii]
+
+                # Perform sub-pixel shifts to center of image array
+                xsh, ysh = xyshift_aligned[ii]
                 # im_shift = fractional_image_shift(im, xsh, ysh, method=method, interp=interp,
                 #                                   oversample=rebin, gstd_pix=gstd_pix, 
                 #                                   return_oversample=True, total=total)
@@ -3521,6 +3616,8 @@ class nrc_analyze():
                 if not return_oversample:
                     dq_shift = frebin(dq_shift, scale=1/rebin, total=False)
                 dq_shift = dq_shift.astype(dq.dtype)
+                # Just in case, explicitly flag bp pixels in DQ array
+                dq_shift[bp_shift] |= fill_val
 
                 # If new shape is requested, crop/expand images
                 xyloc = self.xy_loc_ind[ii] + np.array([xsh, ysh])
@@ -3532,14 +3629,22 @@ class nrc_analyze():
                     # Update xyloc to reflect new image size
                     xyloc = xyloc - np.array([xyarr[0], xyarr[2]])
 
+                # TODO: Make aligned HDUList
                 odict[k]['data_aligned'] = im_shift
                 odict[k]['err_aligned'] = err_shift
                 odict[k]['bp_aligned'] = bp_shift
                 odict[k]['dq_aligned'] = dq_shift
                 odict[k]['xy_aligned'] = xyloc
+                odict[k]['xy_shift_total_aligned'] = xyshift_total_aligned
                 odict[k]['bin_aligned'] = rebin
                 odict[k]['method_aligned'] = method
                 odict[k]['interp_aligned'] = interp
+                if self.is_coron:
+                    odict[k]['c_coron_aligned'] = odict[k]['c_coron'] + (odict[k]['xy_aligned'] - odict[k]['xyloc'])
+                    odict[k]['xy_mask_off_aligned'] = odict[k]['xy_aligned'] - odict[k]['c_coron_aligned']
+
+                odict[k]['hdul_aligned'] = self._gen_aligned_hdul(oid, k, rebin=rebin, order=order, gstd_pix=gstd_pix, 
+                                                                  return_oversample=return_oversample)
 
                 ii += 1
 
@@ -3551,6 +3656,147 @@ class nrc_analyze():
                                      med_dithers=med_dithers, method=method, interp=interp, 
                                      preserve_nans=preserve_nans, order=order, new_shape=sci_shape, **kwargs)
 
+    def _gen_aligned_hdul(self, obsid, dith_pos, **kwargs):
+        """Generate HDUList for aligned image"""
+
+        from copy import deepcopy
+
+        # Check flux units in header
+        # If in surface brightness units, then set total=False
+        total = False if self.has_sb_units else True
+
+        odict = self.obs_dict[obsid][dith_pos]
+
+        infile = odict['file']
+        hdul = deepcopy(fits.open(infile))
+
+        # Get original shape of data cube
+        sh_orig = hdul['SCI'].data.shape
+        ny_orig, nx_orig = sh_orig[-2:]
+        nz_orig = 1 if len(sh_orig)==2 else sh_orig[0]
+        # Get new shape of data cube
+        sh_aligned = odict['data_aligned'].shape
+        ny, nx = sh_aligned[-2:]
+        nz = 1 if len(sh_aligned)==2 else sh_aligned[0]
+
+        # Shift and collapse VAR_POISSON, VAR_RNOISE, and VAR_FLAT extensions
+        for extname in ['VAR_POISSON', 'VAR_RNOISE', 'VAR_FLAT']:
+            if extname not in hdul:
+                continue
+
+            var_data = hdul[extname].data
+
+            # Collapse data
+            if sh_orig[0]>1 and sh_orig[0]!=nz:
+                dq = hdul['DQ'].data
+                bp = (get_dqmask(dq, ['DO_NOT_USE']) > 0)
+                bp |= np.isnan(hdul['SCI'].data)
+                var_data[bp] = np.nan
+                # New variance is sum of variances divided by number of frames squared
+                nz_good = np.sum(~np.isnan(var_data), axis=0)
+                var_data = np.nansum(var_data, axis=0) / nz_good**2
+
+            # Expand and shift data
+            var_data = crop_image(var_data, (ny,nx), fill_val=np.nan)
+            xsh, ysh = odict['xy_shift_total_aligned']
+            rebin = kwargs.get('rebin', 1)
+            order = kwargs.get('order', 3)
+            gstd_pix = kwargs.get('gstd_pix', None)
+            return_oversample = kwargs.get('return_oversample', False)
+            var_data = image_shift_with_nans(var_data, xsh, ysh, oversample=rebin, order=order, 
+                                             shift_method='fshift', interp='linear', gstd_pix=gstd_pix,
+                                             return_oversample=return_oversample, 
+                                             preserve_nans=True, pad=True, total=total)
+
+            hdul[extname].data = var_data
+
+        # Expand and shift AREA extension
+        if 'AREA' in hdul:
+            area_data = crop_image(hdul['AREA'].data, (ny,nx), fill_val=np.nan)
+            xsh, ysh = odict['xy_shift_total_aligned']
+            rebin = kwargs.get('rebin', 1)
+            order = kwargs.get('order', 3)
+            gstd_pix = kwargs.get('gstd_pix', None)
+            return_oversample = kwargs.get('return_oversample', False)
+            area_data = image_shift_with_nans(area_data, xsh, ysh, oversample=rebin, order=order, 
+                                              shift_method='fourier', gstd_pix=gstd_pix,
+                                              return_oversample=return_oversample, 
+                                              preserve_nans=True, pad=True, total=False)
+            
+            hdul['AREA'].data = area_data
+
+        # Update SCI, ERR, and DQ extensions
+        hdul['SCI'].data = odict['data_aligned'].reshape(-1,ny,nx)
+        hdul['ERR'].data = odict['err_aligned'].reshape(-1,ny,nx)
+        hdul['DQ'].data = odict['dq_aligned'].reshape(-1,ny,nx)
+
+        # Header information
+        hdr0 = hdul['PRIMARY'].header
+        hdr1 = hdul['SCI'].header
+        # Ensure apname and PPS are updated
+        hdr0['APERNAME'] = odict['apname']
+        hdr0['PPS_APER'] = odict['apname_pps']
+
+        hdr1['CRPIX1'] = odict['xy_aligned'][0] + 1
+        hdr1['CRPIX2'] = odict['xy_aligned'][1] + 1
+
+
+        # Add IMSHIFTS exension
+        imshifts = odict['xy_shift_total_aligned'] #np.array([odict['xy_shift_total_aligned']])
+        imshifts = np.tile(imshifts, (nz,1))
+        try:
+            hdul['IMSHIFTS'].data = imshifts
+        except KeyError:
+            hdu = fits.ImageHDU(imshifts, name='IMSHIFTS')
+            hdul.append(hdu)
+
+        # Add MASKOFFS extension
+        if self.is_coron:
+            maskoffs = odict['xy_mask_off_aligned']
+            maskoffs = np.tile(maskoffs, (nz,1))
+            try:
+                hdul['MASKOFFS'].data = maskoffs
+            except KeyError:
+                hdu = fits.ImageHDU(maskoffs, name='MASKOFFS')
+                hdul.append(hdu)
+
+        return hdul
+
+    def save_aligned_images(self, outdir=None, overwrite=True, verbose=True):
+        """Save aligned images to FITS files"""
+
+        from copy import deepcopy
+
+        for oid in self.obsids:
+            odict = self.obs_dict[oid]
+            for k in odict.keys():
+                infile = odict[k]['file']
+                filename = os.path.basename(infile)
+
+                # Output directory
+                if outdir is None:
+                    indir = os.path.dirname(infile)
+                    outdir = os.path.join(os.path.split(indir)[0], 'aligned/')
+
+                # Create output directory if it doesn't exist
+                if not os.path.exists(outdir):
+                    os.makedirs(outdir)
+
+                # Check if 
+                hdul = odict[k]['hdul_aligned']
+
+                if verbose:
+                    print(f"Saving aligned image for ObsID {oid} Dither {k}")
+
+                outfile = os.path.join(outdir, filename)
+
+                hdul.writeto(outfile, output_verify='fix', overwrite=overwrite)
+                hdul.close()
+
+        # Save reference objects
+        if self.ref_objs is not None:
+            for ref_obj in self.ref_objs:
+                ref_obj.save_aligned_images(outdir=outdir, overwrite=overwrite, verbose=verbose)
 
     def find_best_diffusion(self, subsize=15, data_key='data_aligned', force_psf=False,
                             imall=None, bpall=None, use_mean=True, psf_corr_over=None,
@@ -4365,6 +4611,7 @@ class nrc_rdi():
     @property
     def _im_shape_orig(self):
         if self._imcube_sci is None:
+            _log.warning("No science data defined. Defaulting to data_key='data_aligned'.")
             oid1 = self.nrc_obs.obsids[0]
             im = self.nrc_obs.get_data_arr(oid1, data_key='data_aligned', dither=0)
             return im.shape[-2:]
@@ -4528,7 +4775,7 @@ class nrc_rdi():
             self._crop_indices = None
             self.cropped_shape = None
 
-    def gen_sci_images(self, data_key='data', oid_ref=None, remove_med_bg=False,
+    def gen_sci_images(self, data_key='data', oid_ref=None, remove_med_bg=False, bg_rad=5,
                        correct_nans=True, gstd_pix=None, verbose=False):
 
         from astropy.convolution import Gaussian2DKernel
@@ -4541,17 +4788,21 @@ class nrc_rdi():
         ny, nx = nrc_obs.get_data_arr(obsid=oids[0], data_key=data_key).shape[-2:]
         imall = nrc_obs.get_data_arr(data_key=data_key).reshape(-1,ny,nx)
         if oid_ref is not None:
-            imarr_ref = nrc_obs.get_data_arr(oid_ref, data_key=data_key)
+            imarr_ref = nrc_obs.get_data_arr(oid_ref, data_key=data_key).reshape(-1,ny,nx)
+            # Ensure reference data is same shape as science data
+            imarr_ref = crop_image(imarr_ref, (ny,nx))
 
         data_key = data_key.replace('data', 'err')
         errall = nrc_obs.get_data_arr(data_key=data_key).reshape(-1,ny,nx)
         if oid_ref is not None:
-            imerr_ref = nrc_obs.get_data_arr(oid_ref, data_key=data_key)
+            imerr_ref = nrc_obs.get_data_arr(oid_ref, data_key=data_key).reshape(-1,ny,nx)
+            imerr_ref = crop_image(imerr_ref, (ny,nx))
 
         data_key = data_key.replace('err', 'bp')
         bpall = nrc_obs.get_data_arr(data_key=data_key).reshape(-1,ny,nx)
         if oid_ref is not None:
-            bparr_ref = nrc_obs.get_data_arr(oid_ref, data_key=data_key)
+            bparr_ref = nrc_obs.get_data_arr(oid_ref, data_key=data_key).reshape(-1,ny,nx)
+            bparr_ref = crop_image(bparr_ref, (ny,nx))
 
         imall[bpall] = np.nan
 
@@ -4566,68 +4817,66 @@ class nrc_rdi():
             hdr = nrc_obs.get_header(oid, ext=1)
             pa = hdr['ROLL_REF'] + hdr['V3I_YANG']
 
-            nim = len(nrc_obs.obs_dict[oid])
+            # nim = len(nrc_obs.obs_dict[oid])
+            nim = len(nrc_obs.get_data_arr(obsid=oid, data_key=data_key).reshape(-1,ny,nx))
             pa_arr = np.ones([nim]) * pa
             angles.append(pa_arr)
         angles = np.concatenate(angles)
 
-        # Subtraction local background
+        # Subtract local background
         if remove_med_bg:
             imall = imall.copy()
             rho = dist_image(imall[0])
             for i, im in enumerate(imall):
-                std = robust.medabsdev(im[rho>5])
-                ind = (im>-20*std) & (im<20*std) & (rho>5)
+                std = robust.medabsdev(im[rho>bg_rad])
+                ind = (im>-20*std) & (im<20*std) & (rho>bg_rad)
                 imall[i] -= np.nanmedian(im[ind])
 
-            if oid_ref is not None:
-                imarr_ref = imarr_ref.copy()
-                rho = dist_image(imarr_ref[0])
-                for i, im in enumerate(imarr_ref):
-                    std = robust.medabsdev(im[rho>5])
-                    ind = (im>-20*std) & (im<20*std) & (rho>5)
-                    imarr_ref[i] -= np.nanmedian(im[ind])
+            # if oid_ref is not None:
+            #     imarr_ref = imarr_ref.copy()
+            #     rho = dist_image(imarr_ref[0])
+            #     for i, im in enumerate(imarr_ref):
+            #         std = robust.medabsdev(im[rho>5])
+            #         ind = (im>-20*std) & (im<20*std) & (rho>5)
+            #         imarr_ref[i] -= np.nanmedian(im[ind])
 
         # Correct NaNs using interpolation
         if correct_nans:
             # Replace NaN with interpolated / extrapolated values
             # Even if not aligned, better to correct NaNs from stack than from neighbors
             imall = replace_nans(imall)
-            # if 'aligned' in data_key:
-            #     imall = replace_nans(imall)
-            # else:
-            #     imall = np.array([replace_nans(im) for im in imall])
 
         # Apply Gaussian smoothing
         if (gstd_pix is not None) and (gstd_pix>0):
             kernel = Gaussian2DKernel(x_stddev=gstd_pix)
-            if len(imall.shape)==3:
-                imall = np.array([image_convolution(im, kernel) for im in imall])
-            else:
-                imall = image_convolution(imall, kernel)
+            imall = image_convolution(imall, kernel)
 
         self._imcube_sci  = imall
         self._bpcube_sci  = bpall
         self._errcube_sci = errall
         self._posangs_sci = angles
 
+        # Do the same for reference images
         if oid_ref is not None:
+            # Subtract local background
+            if remove_med_bg:
+                imarr_ref = imarr_ref.copy()
+                rho = dist_image(imarr_ref[0])
+                for i, im in enumerate(imarr_ref):
+                    std = robust.medabsdev(im[rho>bg_rad])
+                    ind = (im>-20*std) & (im<20*std) & (rho>bg_rad)
+                    imarr_ref[i] -= np.nanmedian(im[ind])
+
+            # Correct NaNs using interpolation
             if correct_nans:
                 # Replace NaN with interpolated / extrapolated values
                 # Even if not aligned, better to correct NaNs from stack than from neighbors
                 imarr_ref = replace_nans(imarr_ref)
-                # if 'aligned' in data_key:
-                #     self._imcube_ref = replace_nans(imarr_ref)
-                # else:
-                #     self._imcube_ref = np.array([replace_nans(im) for im in imarr_ref])
 
             # Apply Gaussian smoothing
             if (gstd_pix is not None) and (gstd_pix>0):
                 kernel = Gaussian2DKernel(x_stddev=gstd_pix)
-                if len(imarr_ref.shape)==3:
-                    imarr_ref = np.array([image_convolution(im, kernel) for im in imarr_ref])
-                else:
-                    imarr_ref = image_convolution(imarr_ref, kernel)
+                imarr_ref = image_convolution(imarr_ref, kernel)
 
             self._imcube_ref = imarr_ref
             self._bpcube_ref = bparr_ref
@@ -4635,7 +4884,7 @@ class nrc_rdi():
 
 
     def gen_roll_ref(self, align_ref=True, gstd_pix=0):
-        """Set off roll position as references"""
+        """Set off-roll position as references"""
 
         if 'aligned' not in self._data_key_sci:
             _log.warning("Images are not aligned and may not produce optimal subtraction results. Will try our best!")
@@ -5847,3 +6096,741 @@ def model_rescale_factor(A, B, sig=None, mask=None):
             Smsk = sig
         c = np.nansum(Amsk * Bmsk / (Smsk ** 2)) / np.nansum((Bmsk ** 2) / (Smsk ** 2))
     return c
+
+
+def fgs_to_nrc_sgd_offset(pid, obsid, filt, pix_offset=False):
+    """Retrieve NIRCam SGD offsets from FGS guide star data
+    
+    Returns either IDL or SCI coords. 
+
+    NOTE: idl coord frame is inverted along x-axis 
+    compared to sci pixel frame.
+    """
+
+    # Create FGS guidestar object
+    gs = guidestars(pid, obsid, filter=filt)
+
+    # Get V2/V3 offsets
+    sgd_off_dict = gs.sgd_offsets(frame='tel')[filt]
+    v2off = sgd_off_dict['xmean'] - sgd_off_dict['xmean'][0]
+    v3off = sgd_off_dict['ymean'] - sgd_off_dict['ymean'][0]
+
+    # Calculate NIRCam SGD offsets
+    apname_nrc = gs.sgd_dict[filt]['apname']
+    ap_nrc = nrc_siaf[apname_nrc]
+    v2_nrc = ap_nrc.V2Ref + v2off
+    v3_nrc = ap_nrc.V3Ref + v3off
+
+    if pix_offset:
+        xoff, yoff = ap_nrc.convert(v2_nrc, v3_nrc, 'tel', 'sci')
+    else:
+        xoff, yoff = ap_nrc.convert(v2_nrc, v3_nrc, 'tel', 'idl')
+    xoff -= xoff[0]
+    yoff -= yoff[0]
+
+    return xoff, yoff
+
+class guidestars():
+    """Analyze Guide Star Data"""
+
+    _mastdir = os.getenv('JWSTDOWNLOAD_OUTDIR')
+
+    def __init__(self, pid, obsid, filter=None, auto_run=False, overwrite=False,
+                 plot_only=False, basedir=None, **kwargs):
+        """Init Function
+        
+        Arguments
+        =========
+        pid : int
+            Program ID
+        obsid : int
+            Observation number
+        filter : str
+            Filter to use
+        
+        Keyword Args
+        ============
+        auto_run : bool
+            Perform all TA and SGD positional analysis
+        overwrite : bool
+            For auto run, skip if output table already exists.
+        basedir: str
+            Location of PID data directories (e.g., basedir/PID/).
+        """
+
+        self._pid = pid
+        self._obsid = obsid
+        self._filter = filter
+
+        # Default to MAST directory if not specified
+        self.basedir = self._mastdir if basedir is None else basedir
+        self._uncal_dir = None
+        self._gs_dir = None
+
+        # Save locations
+        self.figdir = 'figures_gs/'
+        self.tbldir = 'output_gs/'
+
+        # Create directories if they don't exist
+        for d in [self.figdir, self.tbldir]:
+            os.makedirs(d, exist_ok=True)
+
+        # Initialize list of science and guide star files
+        self.sci_files = None
+        self.gs_files = None
+
+        # Science file dictionary of relevant information
+        self.sci_dict = {}
+
+        # Pointing and centroid tables from guide star files
+        self.pointing_table = None
+        self.centroid_table = None
+
+        # Jitter information
+        self.jitter_dict = {}
+        self.sgd_dict = {}
+
+        # Output table name
+        self._output_table_name = None
+        self.output_table = None
+
+        if auto_run:
+            self.runall(overwrite=overwrite, plot_only=plot_only, **kwargs)
+
+    @property
+    def pid(self):
+        return self._pid
+    @property
+    def obsid(self):
+        return self._obsid
+    @property
+    def filter(self):
+        return self._filter
+    
+    @property
+    def uncal_dir(self):
+        """Directory housing uncal.fits data"""
+        out = os.path.join(self.basedir, f'{self.pid:05d}/') if self._uncal_dir is None else self._uncal_dir
+        return out
+    @uncal_dir.setter
+    def uncal_dir(self, value):
+        self._uncal_dir = value
+
+    @property
+    def gs_dir(self):
+        """Directory housing guidestar data"""
+        out = os.path.join(self.uncal_dir, 'fgs') if self._gs_dir is None else self._gs_dir
+        return out
+    @gs_dir.setter
+    def gs_dir(self, value):
+        self._gs_dir = value
+
+    @property
+    def output_table_name(self):
+        """File name of offset table to save to"""
+        if self._output_table_name is None:
+            pid = self.pid
+            obsid = self.obsid
+            if self.filter is not None:
+                fname = f'positions_PID{pid:05d}_Obs{obsid:03d}_{self.filter}.txt'
+            else:
+                fname = f'positions_PID{pid:05d}_Obs{obsid:03d}.txt'
+            return fname
+        else:
+            return self._offset_table_name
+    @output_table_name.setter
+    def output_table_name(self, value):
+        self._output_table_name = value
+
+    def runall(self, overwrite=False, plot_only=False, **kwargs):
+        """Perform all positional analysis"""
+
+        fpath = os.path.join(self.tbldir, self.output_table_name)
+        if os.path.isfile(fpath) and overwrite==False and plot_only==False:
+            if self.filter is None:
+                log_str = f'Already ran PID {self.pid} Obs {self.obsid}. Skipping...'
+            else:
+                log_str = f'Already ran PID {self.pid} Obs {self.obsid} for {self.filter}. Skipping...'
+            _log.warning(log_str)
+            return
+
+        # Get science files
+        self.get_sci_files(**kwargs)
+
+        # Get guide star files
+        self.get_gs_files(**kwargs)
+
+        # Create pointing table
+        self.create_pointing_table()
+
+        # Create centroid table
+        self.create_centroid_table()
+
+        # Get jitter balls
+        self.get_jitterballs()
+
+        # Create SGD dictionary
+        self.create_sgd_dict()
+
+        # Create output table
+        if plot_only==False:
+            self.create_output_table(save=True)
+
+        # Plot guiding
+        self.plot_all_guiding(save=True)
+
+        # Plot SGD jitter
+        self.plot_sgd_jitter(save=True)
+
+    def get_sci_files(self, sca=None, **kwargs):
+        """Get list of science files"""
+
+        from webbpsf_ext.imreg_tools import get_coron_apname
+
+        # if sca is None, then default to PPS apname detector
+        if sca is None:
+            all_files = get_files(self.uncal_dir, self.pid, self.obsid, 
+                                  filt=self.filter, sca=sca, **kwargs)
+            fpath = os.path.join(self.uncal_dir, all_files[0])
+            apname_pps = fits.getheader(fpath, ext=0)['PPS_APER']
+            sca = apname_pps[0:5]
+
+        all_files = get_files(self.uncal_dir, self.pid, self.obsid, 
+                              filt=self.filter, sca=sca, **kwargs)
+        
+        # For multiple files with same name and different SCA, only keep one
+        _, file_ind = np.unique([f[0:25] for f in all_files], return_index=True)
+
+        # Save files names
+        self.sci_files = all_files[file_ind]
+
+        if len(self.sci_files)==0:
+            raise ValueError("No science files found.")
+
+        # Create dictionary of files with relevant information
+        for i, f in enumerate(self.sci_files):
+            fpath = os.path.join(self.uncal_dir, f)
+            d = {'file': fpath}
+            with fits.open(fpath) as hdul:
+                hdr0 = hdul[0].header
+                d['date_beg'] = hdr0['DATE-BEG']
+                d['date_end'] = hdr0['DATE-END']
+                d['filter'] = hdr0['FILTER']
+                d['apname'] = get_coron_apname(hdr0)
+                d['apname_pps'] = hdr0['PPS_APER']
+                d['exp_type'] = hdr0['EXP_TYPE']
+                d['sgd_patt'] = hdr0.get('SMGRDPAT', None)
+                # Determine if this is a TA file
+                d['is_ta'] = 'TAMASK' in d['apname_pps']
+
+            # fpath_fgs = self.gs_files[i][0]
+            # with fits.open(fpath_fgs) as hdul:
+            #     d['apname_fgs'] = hdul[0].header['APERNAME']
+
+            self.sci_dict[f] = d
+
+        # For each filter, make sure we don't have more files than SGDs
+        # Otherwise, use LW SCA
+
+    def get_gs_files(self, **kwargs):
+        """Get list of guide star files"""
+
+        from webbpsf_ext.imreg_tools import find_relevant_guiding_file
+
+        # Science files
+        if self.sci_files is None:
+            self.get_sci_files(**kwargs)
+        sci_files = [os.path.join(self.uncal_dir, f) for f in self.sci_files]
+        
+        # Output directory to save guide star files
+        outdir = self.gs_dir
+        # Create directory if it doesn't exist
+        os.makedirs(outdir, exist_ok=True)
+
+        # Get corresponding list of guide star files
+        gs_files = []
+        for f in sci_files:
+            gsfarr = find_relevant_guiding_file(f, outdir=outdir, **kwargs)
+            gs_files.append(gsfarr)
+
+            # Add to science dictionary
+            fpath_fgs = gsfarr[0]
+            with fits.open(fpath_fgs) as hdul:
+                self.sci_dict[os.path.basename(f)]['apname_fgs'] = hdul[0].header['APERNAME']
+
+        # Each element is saved as a list in case stored across multiple segments
+        self.gs_files = gs_files
+
+        if len(self.gs_files)==0:
+            raise ValueError("No guidestar files found.")
+        
+    def create_pointing_table(self, **kwargs):
+        """Create pointing table"""
+
+        if self.gs_files is None:
+            self.get_gs_files(**kwargs)
+
+        # Get unique guide star files
+        gs_files = []
+        for gs_list in self.gs_files:
+            for gs in gs_list:
+                gs_files.append(gs)
+        gs_files = np.unique(np.sort(gs_files))
+
+        for i, gsf in enumerate(gs_files):
+            if i==0:
+                pointing_table = Table.read(gsf, hdu=4)
+            else: 
+                pointing_table = vstack([pointing_table, Table.read(gsf, hdu=4)],
+                                        metadata_conflicts='silent')
+
+        self.pointing_table = pointing_table
+
+    def create_centroid_table(self, **kwargs):
+        """Create centroid table"""
+
+        if self.gs_files is None:
+            self.get_gs_files(**kwargs)
+
+        # Get unique guide star files
+        gs_files = []
+        for gs_list in self.gs_files:
+            for gs in gs_list:
+                gs_files.append(gs)
+        gs_files = np.unique(np.sort(gs_files))
+
+        for i, gsf in enumerate(gs_files):
+            if i==0:
+                centroid_table = Table.read(gsf, hdu=5)
+            else: 
+                centroid_table = vstack([centroid_table, Table.read(gsf, hdu=5)], 
+                                        metadata_conflicts='silent')
+
+        self.centroid_table = centroid_table
+
+    def get_jitterballs(self, **kwargs):
+        """Get jitter ball information"""
+
+        if self.centroid_table is None:
+            self.create_centroid_table(**kwargs)
+
+        # Get jitter ball information
+        files_sci = self.sci_files
+
+        centroid_table = self.centroid_table
+        ctimes = Time(centroid_table['observatory_time'])
+        mask_good = centroid_table['bad_centroid_dq_flag'] == 'GOOD'
+
+        xidl_all = []
+        yidl_all = []
+        for f in files_sci:
+            # Begin and end times of each exposure
+            d = self.sci_dict[f]
+            t_beg = Time(d['date_beg'])
+            t_end = Time(d['date_end'])
+
+            # Find the subset of centroid data during exposure
+            mask_during_exposure = (t_beg < ctimes ) & (ctimes < t_end) & mask_good
+            xpos = centroid_table[mask_during_exposure]['guide_star_position_x']
+            ypos = centroid_table[mask_during_exposure]['guide_star_position_y']
+
+            # Add to science dictionary
+            d['xidl'] = xpos.data
+            d['yidl'] = ypos.data
+
+            xidl_all.append(xpos.data)
+            yidl_all.append(ypos.data)
+        
+        xmean_all = np.array([np.mean(x) for x in xidl_all])
+        ymean_all = np.array([np.mean(y) for y in yidl_all])
+
+        xsig_all = np.array([np.std(x) for x in xidl_all])
+        ysig_all = np.array([np.std(y) for y in yidl_all])
+
+        # Save data for each exposure to dictionary
+        self.jitter_dict['xidl_all'] = xidl_all
+        self.jitter_dict['yidl_all'] = yidl_all
+
+        self.jitter_dict['xmean'] = xmean_all
+        self.jitter_dict['ymean'] = ymean_all
+        self.jitter_dict['xsig'] = xsig_all
+        self.jitter_dict['ysig'] = ysig_all
+
+    def create_sgd_dict(self, **kwargs):
+        """Create dictionary of SGD information for each filter"""
+
+        if len(self.jitter_dict) == 0:
+            self.get_jitterballs(**kwargs)
+
+        sci_dict = self.sci_dict
+
+        # Find filters with SGD
+        filts_sgd = []
+        for k in sci_dict.keys():
+            if sci_dict[k]['sgd_patt'] is not None:
+                filts_sgd.append(sci_dict[k]['filter'])
+        filts_sgd = np.unique(filts_sgd)
+        nfilt = len(filts_sgd)
+
+        sgd_dict = {}
+        for filt in filts_sgd:
+            sci_keys = list(sci_dict.keys())
+            files = [k for k in sci_keys if sci_dict[k]['filter']==filt and sci_dict[k]['sgd_patt'] is not None]
+            sgd_dict[filt] = {'files': files}
+            sgd_dict[filt]['xidl_all'] = [sci_dict[f]['xidl'] for f in files]
+            sgd_dict[filt]['yidl_all'] = [sci_dict[f]['yidl'] for f in files]
+
+            sgd_dict[filt]['sgd_patt'] = sci_dict[files[0]]['sgd_patt']
+            sgd_dict[filt]['apname'] = sci_dict[files[0]]['apname']
+            sgd_dict[filt]['apname_fgs'] = sci_dict[files[0]]['apname_fgs']
+
+        self.sgd_dict = sgd_dict
+
+    def sgd_offsets(self, frame='idl'):
+        """Calculate SGD offset for each filter"""
+
+        if frame!='idl':
+            siaf_fgs = get_one_siaf(instrument='FGS')
+
+        if len(self.sgd_dict) == 0:
+            self.create_sgd_dict()
+
+        sgd_dict = self.sgd_dict
+
+        sgd_offsets = {}
+        for filt in sgd_dict.keys():
+            xidl_all = sgd_dict[filt]['xidl_all']
+            yidl_all = sgd_dict[filt]['yidl_all']
+
+            xmean_all = np.array([np.mean(x) for x in xidl_all])
+            ymean_all = np.array([np.mean(y) for y in yidl_all])
+
+            if frame!='idl':
+                apname = sgd_dict[filt]['apname_fgs']
+                # Actually want to use the FULL_OSS apname for this idl offsets
+                # TODO: Update tables and dictionarie to house _FULL idl values instead of _FULL_OSS
+                if ('_FULL' in apname) and ('_OSS' not in apname):
+                    apname = apname.replace('_FULL', '_FULL_OSS')
+
+                siaf_ap = siaf_fgs[apname]
+                xmean_all, ymean_all = siaf_ap.convert(xmean_all, ymean_all, 'idl', frame)
+
+            sgd_offsets[filt] = {'xmean': xmean_all, 'ymean': ymean_all}
+
+        return sgd_offsets
+
+    def plot_all_guiding(self, save=False, verbose=False, **kwargs):
+        """Plot all guidestar jitter during observation sequence"""
+
+        from webbpsf_ext import robust
+
+        if self.gs_files is None:
+            self.get_gs_files(**kwargs)
+
+        if len(self.jitter_dict) == 0:
+            self.get_jitterballs(**kwargs)
+
+        # Determine start and end times of each science exposure
+        sci_files = self.sci_files
+        tstart = Time([self.sci_dict[f]['date_beg'] for f in sci_files])
+        tstop  = Time([self.sci_dict[f]['date_end'] for f in sci_files])
+
+        # Get start and end times for TA files
+        tstart_ta = Time([self.sci_dict[f]['date_beg'] for f in sci_files if self.sci_dict[f]['is_ta']])
+        tstop_ta  = Time([self.sci_dict[f]['date_end'] for f in sci_files if self.sci_dict[f]['is_ta']])
+        # Get start and end times for files on occulting mask
+        tstart_coron = Time([self.sci_dict[f]['date_beg'] for f in sci_files if not self.sci_dict[f]['is_ta']])
+        tstop_coron  = Time([self.sci_dict[f]['date_end'] for f in sci_files if not self.sci_dict[f]['is_ta']])
+
+        # Begin and end times of observation
+        t_beg = tstart.min()
+        t_end = tstop.max()
+
+        if self.pointing_table is None:
+            self.create_pointing_table()
+        if self.centroid_table is None:
+            self.create_centroid_table()
+        pointing_table = self.pointing_table
+        centroid_table = self.centroid_table
+
+        mask = centroid_table['bad_centroid_dq_flag'] == 'GOOD'
+        ctimes = Time(centroid_table['observatory_time'])
+        ptimes = Time(pointing_table['time'], format='mjd')
+
+        # Compute the mean X and Y positions
+        xidl = centroid_table['guide_star_position_x'][mask]
+        yidl = centroid_table['guide_star_position_y'][mask]
+
+        # Create a figure with three rows and the center row split into two columns
+        mosaic = """
+        000
+        000
+        122
+        133
+        444
+        444
+        """
+        fig = plt.figure(constrained_layout=True, figsize=(16,12))
+        axes = fig.subplot_mosaic(mosaic)
+
+        # Create Plots
+        # fig, axes = plt.subplots(figsize=(16,12), nrows=3)
+
+        xsig_mas = self.jitter_dict['xsig'] * 1000
+        ysig_mas = self.jitter_dict['ysig'] * 1000
+        jitter_med = np.median(np.sqrt(xsig_mas**2 + ysig_mas**2))
+        # jitter_sig = robust.medabsdev(np.sqrt(xsig_mas**2 + ysig_mas**2))
+
+        # Plot jitter values
+        ax = axes['0']
+        ax.semilogy(ptimes.plot_date, pointing_table['jitter'], color='C0')
+        ax.set_ylim(1e-2, 1e3)
+        ax.set_ylabel("Jitter [mas]")
+        # axes[0].text(0.01, 0.95, display_gs_fn, fontsize=16, transform=axes[0].transAxes, verticalalignment='top')
+        ax.text(t_beg.plot_date, 20, f"median jitter: {jitter_med:.2f} mas", color='green')
+
+        # Plot observations
+        for tb, te in zip(tstart.plot_date, tstop.plot_date):
+            ax.axvspan(tb, te, color='green', alpha=0.15)
+        ax.text(t_beg.plot_date, 50, " Exposure", color='green')
+        ax.text(ptimes.plot_date.min(), 100, "Observation Start", color='C0')
+        ax.text(ptimes.plot_date.max(), 100, "Observation End ", color='C0', ha='right')
+
+        # Plot X and Y centroids
+        ctimes_good = ctimes[mask]
+        date_vals = ctimes_good.plot_date
+        # Time offset of 60 seconds
+        from astropy.time import TimeDelta
+        # Plot TA files
+        ax = axes['1']
+        t1 = tstart_ta[0] - TimeDelta(30, format='sec')
+        t2 = tstart_ta[-1] + TimeDelta(120, format='sec')
+        ind_ta = (ctimes_good >= t1) & (ctimes_good <= t2)
+        ln1 = ax.plot(date_vals[ind_ta], xidl[ind_ta], label='X Centroids', color='C1', lw=1)
+        ax2 = ax.twinx()
+        ln2 = ax2.plot(date_vals[ind_ta], yidl[ind_ta], label='Y Centroids', color='C4', lw=1)
+        for tb, te in zip(tstart_ta.plot_date, tstop_ta.plot_date):
+            ax.axvspan(tb, te, color='green', alpha=0.15)
+        ax.set_ylabel("GS XIDL Centroid [arcsec]")
+        ax2.set_ylabel("GS YIDL Centroid [arcsec]")
+        ax.set_xlim(ctimes_good[ind_ta].plot_date.min(), ctimes_good[ind_ta].plot_date.max())
+        ax.set_title(f"Guiding during TA Mask Observations")
+        # Combine legends from two axes
+        lns = ln1+ln2
+        labs = [l.get_label() for l in lns]
+        ax.legend(lns, labs, loc='upper left')
+
+        # Plot Coron files
+        t1 = tstart_coron[0] - TimeDelta(140, format='sec')
+        t2 = tstop_coron[-1] + TimeDelta(120, format='sec')
+        ind_coron = (ctimes_good >= t1) & (ctimes_good <= t2)
+
+
+        # XIDL
+        ax = axes['2']
+        ax.plot(date_vals[ind_coron], xidl[ind_coron], label='X Centroids', color='C1', lw=1)
+        ax.set_title(f"Guiding during Coron Mask Observations")
+        ax.set_ylabel("GS XIDL Centroid [arcsec]")
+        ax.set_xlim(ctimes_good[ind_coron].plot_date.min(), ctimes_good[ind_coron].plot_date.max())
+        for tb, te in zip(tstart_coron.plot_date, tstop_coron.plot_date):
+            ax.axvspan(tb, te, color='green', alpha=0.15)
+
+        # YIDL
+        ax = axes['3']
+        ax.plot(date_vals[ind_coron], yidl[ind_coron], label='Y Centroids', color='C4', lw=1)
+        ax.set_ylabel("GS YIDL Centroid [arcsec]")
+        ax.set_xlim(ctimes_good[ind_coron].plot_date.min(), ctimes_good[ind_coron].plot_date.max())
+        for tb, te in zip(tstart_coron.plot_date, tstop_coron.plot_date):
+            ax.axvspan(tb, te, color='green', alpha=0.15)
+
+
+
+
+        # Set y-axis limits
+        xmed = np.median(xidl[ind_coron])
+        ymed = np.median(yidl[ind_coron])
+        x1 = x2 = xmed
+        y1 = y2 = ymed
+        for tb, te in zip(tstart_coron.plot_date, tstop_coron.plot_date):
+            ind = (date_vals >= tb) & (date_vals <= te)
+            x1 = np.min([x1, np.min(xidl[ind])])
+            x2 = np.max([x2, np.max(xidl[ind])])
+            y1 = np.min([y1, np.min(yidl[ind])])
+            y2 = np.max([y2, np.max(yidl[ind])])
+
+        dx = x2 - x1
+        dy = y2 - y1
+        dxy = 1.05 * np.max([dx, dy])
+
+        # xmed = np.median(xidl[ind_coron])
+        # ymed = np.median(yidl[ind_coron])
+        # xsig = robust.medabsdev(xidl[ind_coron])
+        # ysig = robust.medabsdev(yidl[ind_coron])
+        # # Use same scale for both axes
+        # xysig = 5 * np.max([xsig, ysig])
+        # x1, x2 = axes['2'].get_ylim()
+        # dx = x2 - x1
+        # x1_new, x2_new = (xmed-xysig, xmed+xysig)
+        # dx_new = x2_new - x1_new
+        # print(dx_new, dx)
+        # if np.abs(dx_new) > np.abs(dx):
+        #     dx_new = dx
+        # y1, y2 = axes['3'].get_ylim()
+        # dy = y2 - y1
+        # y1_new, y2_new = (ymed-xysig, ymed+xysig)
+        # dy_new = y2_new - y1_new
+        # if np.abs(dy_new) > np.abs(dy):
+        #     dy_new = dy
+        # dxy = np.max([dx_new, dy_new])
+
+        axes['2'].set_ylim(xmed-dxy/2, xmed+dxy/2)
+        axes['3'].set_ylim(ymed-dxy/2, ymed+dxy/2)
+
+        # axes[1].axhline(0, ls=":", color='gray')
+
+        # Plot centroid quality flag
+        ax = axes['4']
+        ax.plot(ctimes.plot_date, mask, label='GOOD Centroids', color='C1')
+        for tb, te in zip(tstart.plot_date, tstop.plot_date):
+            ax.axvspan(tb, te, color='green', alpha=0.15)
+        ax.set_ylabel("Centroid Quality Flag")
+        ax.set_yticks((0,1))
+        ax.set_ylim(-0.5, 1.5)
+        # ax.set_yticklabels(['BAD', 'GOOD'])
+
+        # Set x-axis limits
+        min_time = np.min([ptimes.plot_date.min(), ctimes.plot_date.min()])
+        max_time = np.max([ptimes.plot_date.max(), ctimes.plot_date.max()])
+        dtime = max_time - min_time
+        for i in axes.keys():
+            axes[i].xaxis.axis_date()
+        for i in ['0', '4']:
+            axes[i].set_xlim(min_time-0.01*dtime, max_time+0.01*dtime)
+
+        title = f"Guiding during PID={self.pid} ObsID={self.obsid}"
+        if self.filter is not None:
+            title += f" ({self.filter})"
+        axes['0'].set_title(title, fontsize=16)
+
+        fig.tight_layout()
+
+        if save:
+            outdir = self.figdir
+            outname = f'guiding_PID{self.pid:05}_Obs{self.obsid:03}.pdf'
+            fpath = os.path.join(outdir, outname)
+            try:
+                _log.info(f'Saving: {fpath}')
+                fig.savefig(fpath, bbox_inches='tight')
+            except FileNotFoundError:
+                _log.warning(f'Could not save {fpath}')
+
+    def plot_sgd_jitter(self, filt=None, save=False, **kwargs):
+        """Plot SGD jitter for a given filter"""
+
+        from webbpsf_ext.imreg_tools import plot_jitter_balls, get_sgd_offsets
+
+        if len(self.sgd_dict) == 0:
+            self.create_sgd_dict(**kwargs)
+
+        sgd_dict = self.sgd_dict
+
+        if filt is None:
+            filts_all = list(sgd_dict.keys())
+        else:
+            filts_all = [filt]
+
+        for filt in filts_all:
+
+            xidl_all = sgd_dict[filt]['xidl_all']
+            yidl_all = sgd_dict[filt]['yidl_all']
+
+            # Subtract nominal position
+            xmean0 = np.mean(xidl_all[0])
+            ymean0 = np.mean(yidl_all[0])
+            xoff_all = [(x - xmean0) for x in xidl_all]
+            yoff_all = [(y - ymean0) for y in yidl_all]
+
+            res = plot_jitter_balls(xoff_all, yoff_all, sci_filename=sgd_dict[filt]['files'][0], 
+                                    save=False, return_fixaxes=True)
+            fig, (ax, ax_histx, ax_histy) = res
+
+            # Add nominal SGD locations
+            xoff_nom, yoff_nom = get_sgd_offsets(sgd_dict[filt]['sgd_patt'])
+            xoff_nom_mas = xoff_nom * 1000 
+            yoff_nom_mas = yoff_nom * 1000
+
+            ax.scatter(xoff_nom_mas, yoff_nom_mas, marker='+', color='k', s=80, label='Nominal SGD')
+            ax.legend()
+
+            title = f"Guiding during PID={self.pid} ObsID={self.obsid} ({filt})"
+            fig.suptitle(title, fontsize=14)
+
+            if save:
+                outdir = self.figdir
+                outname = f'jitterballs_PID{self.pid:05}_Obs{self.obsid:03}_{filt}.pdf'
+                fpath = os.path.join(outdir, outname)
+
+                try:
+                    _log.info(f'Saving: {fpath}')
+                    fig.savefig(fpath, bbox_inches='tight')
+                except FileNotFoundError:
+                    _log.warning(f'Could not save {fpath}')
+
+    def create_output_table(self, save=False, **kwargs):
+        """Generate table of positions and offsets for each exposure
+        
+        Filename, filter, exptype, apname, apname_pps, apname_fgs, sgd_patt, xidl, yidl
+        """
+
+        from astropy.table import Table
+
+        if len(self.sci_dict) == 0:
+            self.get_sci_files(**kwargs)
+        if len(self.jitter_dict) == 0:
+            self.get_jitterballs(**kwargs)
+
+        rows_all = []
+        for i, f in enumerate(self.sci_files):
+            d = self.sci_dict[f]
+            filter   = d['filter']
+            exptype  = d['exp_type']
+            apname     = d['apname']     # Science observation aperture
+            apname_pps = d['apname_pps'] # Pointing control aperture
+            apname_fgs = d['apname_fgs'] # Guide star aperture
+            sgd_patt = 'NONE' if d['sgd_patt'] is None else d['sgd_patt']
+
+            xidl = self.jitter_dict['xmean'][i]
+            yidl = self.jitter_dict['ymean'][i]
+            xidl_sig = self.jitter_dict['xsig'][i]
+            yidl_sig = self.jitter_dict['ysig'][i]
+
+            row = [f, filter, exptype, apname, apname_pps, apname_fgs, sgd_patt, xidl, yidl, xidl_sig, yidl_sig]
+            rows_all.append(row)
+
+        rows_all = np.array(rows_all)
+
+        # Create astropy table
+        names = ('file', 'filter', 'exptype', 'apname', 'apname_pps', 'apname_fgs', 'sgd_patt', 
+                 'xidl', 'yidl', 'xidl_sig', 'yidl_sig')
+        dtype = (str, str, str, str, str, str, str, float, float, float, float)
+        tbl = Table(data=rows_all, names=names, dtype=dtype)
+        tbl['xidl'].info.format = '.5f'
+        tbl['yidl'].info.format = '.5f'
+        tbl['xidl_sig'].info.format = '.5f'
+        tbl['yidl_sig'].info.format = '.5f'
+
+        # Save table
+        self.output_table = tbl
+
+        if save:
+            outdir = self.tbldir
+            outname = self.output_table_name
+            fpath = os.path.join(outdir, outname)
+
+            try:
+                _log.info(f'Saving: {fpath}')
+                tbl.write(fpath, overwrite=True, format='ascii.fixed_width', 
+                          bookend=False, delimiter=None, delimiter_pad='  ')
+            except FileNotFoundError:
+                _log.warning(f'Could not save {fpath}')
+
