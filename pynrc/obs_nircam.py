@@ -1709,6 +1709,22 @@ class obs_hci(nrc_hci):
         obs = Observation(sp, bp, binset=bp.wave)
 
         return obs.effstim(fluxunit)
+    
+    def planet_flux(self, fluxunit='counts'):
+        """ Return planet fluxes """
+
+        if len(self.planets)==0:
+            _log.info("No planet info at self.planets")
+            return 0.0        
+
+        flux_vals = []
+        for pl in self.planets :
+            # Create spectrum
+            sp = self.planet_spec(**pl)
+            flux = self.star_flux(fluxunit=fluxunit, sp=sp)
+            flux_vals.append(flux)
+
+        return flux_vals
 
     def _fix_sat_im(self, image, sat_val=0.9, oversample=1, **kwargs):
         """Fix saturated region of an image
