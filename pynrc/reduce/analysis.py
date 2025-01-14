@@ -2259,7 +2259,8 @@ class nrc_analyze():
             Fit a 2D Gaussian to the cropped image to find the star position.
             Otherwise, perform cross correlation with PSF.
         med_dithers : bool
-            If True, then median combine the dithered images before fitting.
+            If True, then median combine images in the same dither position before fitting.
+            This includes multiple SGD dithers of the same filter.
         ideal_sgd : bool
             Use the ideal SGD offsets when determining star positions.
         gs_sgd : bool
@@ -2495,7 +2496,8 @@ class nrc_analyze():
             # Special case for SGD for assuming ideal or FGS-derived SGD offsets
             if self.is_sgd and (ideal_sgd or gs_sgd):
                 if gs_sgd:
-                    xoff_pix, yoff_pix = fgs_to_nrc_sgd_offset(self.pid, self.obsids[0], self.filter, pix_offset=True)
+                    xoff_pix, yoff_pix = fgs_to_nrc_sgd_offset(self.pid, self.obsids[0], self.filter, 
+                                                               pix_offset=True, med_dithers=med_dithers)
                 elif ideal_sgd:
                     xoff_asec, yoff_asec = get_sgd_offsets(self.sgd_pattern)
                     xoff_pix = xoff_asec / nrc.pixelscale
@@ -2511,7 +2513,8 @@ class nrc_analyze():
                         i1 = i*nsgd
                         i2 = (i+1)*nsgd
                         if gs_sgd:
-                            xoff_pix, yoff_pix = fgs_to_nrc_sgd_offset(self.pid, self.obsids[i], self.filter, pix_offset=True)
+                            xoff_pix, yoff_pix = fgs_to_nrc_sgd_offset(self.pid, self.obsids[i], self.filter, 
+                                                                       pix_offset=True, med_dithers=med_dithers)
                         xysh = np.mean(self.xyshift[i1:i2], axis=0) - np.array([xoff_pix, yoff_pix]).T
                         xysh_new.append(xysh)
                     self.xyshift = np.concatenate(xysh_new)
@@ -2631,7 +2634,6 @@ class nrc_analyze():
         """
 
         from webbpsf_ext.maths import round_int
-        from jwst.datamodels import dqflags
 
         imarr = []
         dqarr = []
@@ -2934,7 +2936,7 @@ class nrc_analyze():
         from skimage.filters import window as sk_window
         from webbpsf_ext.imreg_tools import find_pix_offsets
         
-        def get_ref_offset(ref_obj):
+        def get_ref_offset(ref_obj, return_shift_matrix=False):
             """Determine offset of SGD reference data relative to science data"""
 
             # Get oversampled data
@@ -2961,11 +2963,21 @@ class nrc_analyze():
                                                  xylim_pix=xylim_pix, dxy_coarse=dxy_coarse, dxy_fine=dxy_fine)
                     shift_matrix[i,j] = xysh_best
 
-            # TODO: Align the reference data to science data by updating
-            # self.shift_matrix, self.xyshift, and self.xy_loc_ind
+            # Assume reference has better absolute positioning than science data
+            # Assume science data offsets are correct relative to each other
+            # Generate a single offset that shifts science data relative to reference data
+            shift_matrix_old = ref_obj.xyshift.reshape([1,-1,2]) - self.xyshift.reshape([-1,1,2])
+            xy_off_add = np.mean(shift_matrix_old - shift_matrix, axis=(0,1))
+            self.xyshift += xy_off_add
 
-            # TODO: Return is only for testing / dev purposes
-            # return shift_matrix
+            # Update best-guess locations of star in existing image arrays
+            data = self.obs_dict[self.obsids[0]][0]['data']
+            xy_cen = get_im_cen(data)
+            self.xy_loc_ind = xy_cen - self.xyshift
+
+            # Return is only for testing / dev purposes
+            if return_shift_matrix:
+                return shift_matrix
 
 
         obs_dict = self.obs_dict
@@ -3073,7 +3085,7 @@ class nrc_analyze():
                     ysh_i -= np.mean(ysh_i) - ysh0_mean
                     xysh_arr.append([xsh_i, ysh_i])
                 xysh_arr = np.array(xysh_arr)
-                xysh_mean =  np.mean(xysh_arr, axis=0).T
+                xysh_mean = np.mean(xysh_arr, axis=0).T
             else:
                 xysh_mean = self.xyshift
 
@@ -3101,9 +3113,6 @@ class nrc_analyze():
                 odict[k]['xyloc'] = self.xy_loc_ind[ii]
                 ii += 1
 
-        # Update stellar offsets assuming mask position stays the same
-        self._update_mask_offsets(do_c_coron=False, do_xy_mask_offset=True)
-
         # Call this same function in the reference objects
         if self.ref_objs is not None:
             kwargs_ref = {
@@ -3118,11 +3127,31 @@ class nrc_analyze():
             for ref_obj in self.ref_objs:
                 ref_obj.get_dither_offsets(**kwargs_ref, **kwargs)
 
-            # TODO: Re-align  reference observations to science observations
-            # Minor complications for observations on either side of half-pixel boundaries
-            # Testing only on first ref obj for now...
-            # return get_ref_offset(self.ref_objs[0])
-            
+            # Re-align  reference observations to science observations
+            # Minor complications for observations on either side of half-pixel boundaries (maybe?)
+            # Only on first ref obj for now...
+            ref_obj = self.ref_objs[0]
+            save_str0_new = f'{save_str0}.ref{ref_obj.obsids[0]}'
+            save_path = save_path.replace(save_str0, save_str0_new)
+            if os.path.exists(save_path) and (force==False):
+                _log.info(f"Loading updated dither positions from {save_path}")
+                with open(save_path, 'r') as f:
+                    data = json.load(f)
+                self.xy_loc_ind = np.array(data['xy_loc_ind'])
+                self.xyshift = np.array(data['xyshift'])
+            else:
+                get_ref_offset(ref_obj)
+                # Save xy_loc_ind and xyshift to file
+                if save:
+                    _log.info(f"Saving dither positions to {save_path}")
+                    save_data = {'xy_loc_ind': self.xy_loc_ind, 'xyshift': self.xyshift}
+                    with open(save_path, 'w') as f:
+                        json.dump(save_data, f, cls=NumpyArrayEncoder)
+
+        # Update stellar offsets from mask assuming mask position stays the same
+        self._update_mask_offsets(do_c_coron=False, do_xy_mask_offset=True)
+
+
     def _get_shift_vals(self, oid1, oid2, dith_pos1, dith_pos2, shift_matrix=None):
         """Get shift values between two dither positions"""
 
@@ -3791,7 +3820,6 @@ class nrc_analyze():
                 outfile = os.path.join(outdir, filename)
 
                 hdul.writeto(outfile, output_verify='fix', overwrite=overwrite)
-                hdul.close()
 
         # Save reference objects
         if self.ref_objs is not None:
@@ -6098,7 +6126,7 @@ def model_rescale_factor(A, B, sig=None, mask=None):
     return c
 
 
-def fgs_to_nrc_sgd_offset(pid, obsid, filt, pix_offset=False):
+def fgs_to_nrc_sgd_offset(pid, obsid, filt, pix_offset=False, med_dithers=False):
     """Retrieve NIRCam SGD offsets from FGS guide star data
     
     Returns either IDL or SCI coords. 
@@ -6106,6 +6134,8 @@ def fgs_to_nrc_sgd_offset(pid, obsid, filt, pix_offset=False):
     NOTE: idl coord frame is inverted along x-axis 
     compared to sci pixel frame.
     """
+
+    from webbpsf_ext.imreg_tools import get_sgd_offsets
 
     # Create FGS guidestar object
     gs = guidestars(pid, obsid, filter=filt)
@@ -6127,6 +6157,21 @@ def fgs_to_nrc_sgd_offset(pid, obsid, filt, pix_offset=False):
         xoff, yoff = ap_nrc.convert(v2_nrc, v3_nrc, 'tel', 'idl')
     xoff -= xoff[0]
     yoff -= yoff[0]
+
+    # We want to ensure consistency between the expected SGD pattern and returned offsets.
+    # The issue being that if combined dithers are requested, we should return the average.
+    sgd_patt = gs.sgd_dict[filt]['sgd_patt']
+    xoff_sgd, yoff_sgd = get_sgd_offsets(sgd_patt)
+    ndith_sgd = len(xoff_sgd)
+    if med_dithers and (len(xoff) > ndith_sgd):
+        try:
+            temp = xoff.reshape(2,5).T
+            xoff = np.mean(temp - temp[0], axis=1)
+            temp = yoff.reshape(2,5).T
+            yoff = np.mean(temp - temp[0], axis=1)
+        except:
+            xoff = xoff[:ndith_sgd]
+            yoff = yoff[:ndith_sgd]
 
     return xoff, yoff
 
@@ -6287,13 +6332,13 @@ class guidestars():
 
         from webbpsf_ext.imreg_tools import get_coron_apname
 
-        # if sca is None, then default to PPS apname detector
+        # if sca is None, then default to apername's detector
         if sca is None:
             all_files = get_files(self.uncal_dir, self.pid, self.obsid, 
                                   filt=self.filter, sca=sca, **kwargs)
             fpath = os.path.join(self.uncal_dir, all_files[0])
-            apname_pps = fits.getheader(fpath, ext=0)['PPS_APER']
-            sca = apname_pps[0:5]
+            apname = fits.getheader(fpath, ext=0)['APERNAME']
+            sca = apname[0:5]
 
         all_files = get_files(self.uncal_dir, self.pid, self.obsid, 
                               filt=self.filter, sca=sca, **kwargs)
