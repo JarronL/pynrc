@@ -14,6 +14,8 @@ from webbpsf_ext import robust
 from webbpsf_ext.analysis_tools import ipc_info, ppc_info
 from webbpsf_ext.imreg_tools import read_sgd_files, get_files, get_coron_apname
 
+from webbpsf.utils import get_webbpsf_data_path
+
 from ..nrc_utils import get_one_siaf, get_detname
 
 from ..maths.image_manip import fractional_image_shift, image_shift_with_nans, replace_nans
@@ -808,8 +810,46 @@ def align_leastsq(image, psf_over, osamp=1, bpmask=None, psf_bpmask=None, weight
 
     # return out
 
+def get_cached_opd_file(date, choice='before'):
+    """Grab cached OPD file based on date"""
+    from astropy.time import Time
+
+    opd_dir = os.path.join(get_webbpsf_data_path(), 'MAST_JWST_WSS_OPDs')
+    opd_files = np.array([f for f in os.listdir(opd_dir) if '.fits' in f])
+    dates = []
+    for f in opd_files:
+        hdr = fits.getheader(os.path.join(opd_dir, f))
+        dobs = hdr['DATE-OBS']
+        tobs = hdr['TIME-OBS']
+        dates.append(f"{dobs}T{tobs}")
+    dates = Time(dates, format='isot')
+    tdelt = dates - Time(date, format='isot')
+
+    if choice=='before':
+        ind_mask = tdelt<=0
+    elif choice=='after':
+        ind_mask = tdelt>=0
+    elif choice=='closest':
+        tdelt = np.abs(tdelt)
+        ind_mask = tdelt>=0
+    else:
+        raise ValueError("choice must be before, after, or closest")
+
+    ind_files = opd_files[ind_mask]
+    ind_tdelt = np.abs(tdelt[ind_mask])
+    imin = np.argmin(ind_tdelt)
+    tdelt_days = ind_tdelt[imin].value
+    if np.abs(tdelt_days) > 2:
+        _log.warning(f"WSS OPD file is {tdelt_days} days away with choice='{choice}'")
+    fname = ind_files[imin]
+
+    print(fname)
+
+    return fname
+
+
 def _gen_nrc_class(filt, apname, date, fov_pix, oversample, autogen_coeffs=False,
-                   quick_grid=False, obs_hci=False, **kwargs):
+                   quick_grid=False, obs_hci=False, opd_choice='before', **kwargs):
 
     import pynrc, time
 
@@ -830,16 +870,23 @@ def _gen_nrc_class(filt, apname, date, fov_pix, oversample, autogen_coeffs=False
         retry_limit = 5
         while retries < retry_limit:
             try:
-                nrc.load_wss_opd_by_date(date=date, choice='before', plot=False, verbose=False)
+                print(date)
+                nrc.load_wss_opd_by_date(date=date, choice=opd_choice, plot=False, verbose=False)
                 break
-            except Exception as e:
-                # Wait 5 seconds before retrying
-                time.sleep(5)
-                # log the error
-                retries += 1
-                if retries == retry_limit:
-                    _log.error(f'Failed to load OPD map after {retry_limit} retries')
-                    raise e
+            except:
+                opd_dir = os.path.join(get_webbpsf_data_path(), 'MAST_JWST_WSS_OPDs')
+                fname = get_cached_opd_file(date, choice=opd_choice)
+                fpath = os.path.join(opd_dir, fname)
+                nrc.load_wss_opd(fpath, plot=False, verbose=False)
+                break
+            # except Exception as e:
+            #     # Wait 5 seconds before retrying
+            #     time.sleep(5)
+            #     # log the error
+            #     retries += 1
+            #     if retries == retry_limit:
+            #         _log.error(f'Failed to load OPD map after {retry_limit} retries')
+            #         raise e
 
     # Set fov_pix and oversample
     ap = nrc_siaf[apname]
@@ -1029,7 +1076,7 @@ def gen_diffusion_psf(nrc, diffusion_sigma, return_oversample=False, xyoffpix=(0
 
     Keyword Args
     ============
-    sp : pysynphot.Spectrum
+    sp : synphot.Spectrum
         Source spectrum to use for PSF generation.
     """
 
@@ -1211,6 +1258,17 @@ def stellar_arguments(name, votdir='../votables/', fname=None, **kwargs):
             'name': 'HD 163296', 'fname': 'HD163296.vot',
             'sptype': 'A3V', 'Av': 0.0, 'mag_val': 6.85, 'bp': bp_v, 
         },
+        'EPSERI' : {
+            'name': 'eps Eri', 'fname': 'epsEri.vot',
+            'dist': 3.2, 'age': 1000, 'sptype': 'K2V', 
+            'Teff': 5085, 'metallicity': -0.13, 'log_g': 4.3,
+            'Av': 0.0, 'mag_val': 1.67, 'bp': bp_k,
+        },
+        'EPSERIPSFALL' : {
+            'name': 'del Eri', 'fname': 'delEri.vot',
+            'sptype': 'K0IV', 'Teff': 4986, 'metallicity': +0.15, 'log_g': 3.8,
+            'Av': 0.0, 'mag_val': 1.43, 'bp': bp_k,
+        },
     }
 
     try:
@@ -1230,7 +1288,7 @@ def disk_model_grater_2hg(r0, h0, ain, aout, pa, incl, g1, g2, wg1,
                            e=0., omega=0., gamma=2., beta=1.,
                            distance=10., nx=320, ny=320, pxscale=0.063, cent=None,
                            accuracy=None, rmax_accuracy=None,
-                           halfNbSlices=25, polar=False, flux_max=None):
+                           halfNbSlices=25, polar=False, flux_max=None, **kwargs):
     """
     A simple ring-like disk morphology based on Augereau et al. (1999) and 
     assuming a linear combo of two H-G SPFs as the scattering phase function.
@@ -1418,7 +1476,6 @@ def make_grater_disk(nrc, nx, ny, scale_flux=1, return_oversample=True, **kwargs
 
     osamp = nrc.oversample
     pixscale = nrc.pixelscale
-
     dstar = nrc.distance
 
     nx_pix = nx*osamp if return_oversample else nx
@@ -1437,9 +1494,207 @@ def make_grater_disk(nrc, nx, ny, scale_flux=1, return_oversample=True, **kwargs
 
     # Update default parameters with user input
     kwargs = {**kwargs_def, **kwargs}
-
     return scale_flux * disk_model_grater_2hg(**kwargs)
 
+
+def make_grater_disk_nring(nrc, nx, ny, return_oversample=True, **disk_params):
+    """Create a multi-ring disk model using the GRATER function
+    
+
+    # Default disk parameters
+    kwargs_def = {
+        'r0': 75., 'h0': 5/75., 'ain': 12, 'aout': -12, 
+        'pa': 158.5, 'incl': 51.7, 'g1': 0.85, 'g2': 10, 'wg1': 0.7, 
+        'e': 0.0, 'omega': 0.0, 'gamma': 2.0, 'beta': 1.3, 'distance': dstar, 
+        'nx': nx_pix, 'ny': ny_pix, 'pxscale': pxscale, 
+        'cent': None, 'accuracy': None, 'rmax_accuracy': None, 
+        'halfNbSlices': 25, 'polar': False, 'flux_max': 1.
+    }
+    
+    Disk parameters
+    ===============
+    r0 : float
+        fiducial radius in au
+    h0 : float
+        technically h0/r0 — the ratio of scale height to 
+        fiducial radius at the fiducial radius.
+    ain : float
+        radial density power law exponent interior to r0
+    aout : float
+        radial density power law exponent exterior to r0
+    pa : float
+        disk position angle in degrees
+    incl : float
+        disk inclination wrt the line of sight in degrees 
+        (0 means pole-on, 90 means edge-on)
+    g1 : float
+        1st Henyey-Greenstein asymmetry parameter.
+        Slope of the power-low distribution in the inner disk.
+    g2 : float
+        2nd Henyey-Greenstein asymmetry parameter.
+        Slope of the power-low distribution in the outer disk.
+    wg1 : float
+        Weight for the SPF term with asymmetry parameter g1 
+        (value in range 0-1); wg2 is 1-wg1
+    e : float
+        eccentricity
+    omega : float
+        argument of pericenter in degrees
+    gamma : float 
+        vertical density exponent (gamma = 2 for gaussian)
+    beta : float
+        disk radial flaring exponent (beta = 1 for linear)
+    distance : float
+        distance to the target in parsecs
+    cent : ndarray or None
+        The (x,y) pixel position for the center of the disk. 
+        Generally the location of the star in the data.
+        Set to None to place at the center of the image.
+    pxscale : float or astropy.units.quantity.Quantity
+        The pixel scale for the data; either a float (must be arcsec/pixel)
+        or astropy units (any units that can be cast to arcsec/pixel)
+    accuracy : float
+        the numerical accuracy for the model; 
+        pixels with density below this value will be set to zero
+    rmax_accuracy : float
+        if accuracy is None, the model's accuracy is set such that
+        non-zero values are achieved to this separation (in au)
+    halfNbSlices : int
+        the number of planar slices to compute above and below the disk midplane.
+        Default is 25.
+    polar : bool
+        if True, a simple bell-shaped polarization curve is used to 
+        generate a polarized intensity image
+    flux_max : float
+        if not None, normalize the model image so that this is the maximum value.
+    
+    """
+    
+    osamp = nrc.oversample
+    sh_out = (ny*osamp, nx*osamp) if return_oversample else (ny, nx)
+    composite_image = np.zeros(sh_out)
+
+
+    all_rings_finished = False
+    i=1
+    while not all_rings_finished:
+        ring_params = {}
+        suffix = f'_{i}'
+        for pkey in disk_params:
+            if pkey.endswith(suffix):
+                try:
+                    ring_params[pkey.replace(suffix, '')] = disk_params[pkey].value
+                except AttributeError:
+                    ring_params[pkey.replace(suffix, '')] = disk_params[pkey]
+
+        if len(ring_params) == 0:
+            all_rings_finished = True
+        else:
+            F_i = ring_params.pop('F', 1)
+            composite_image += make_grater_disk(nrc, nx, ny, scale_flux=F_i,
+                                                return_oversample=return_oversample, 
+                                                **ring_params)
+
+        i+=1
+
+    return composite_image
+
+
+def make_ptsrc_hduls(nrc, posangs, ptsrc_dict, c_star=None, c_coron=None, use_coeff=False,
+                     diffusion_sigma=None, spectrum=None, sh_pixels=151):
+    """
+    Generates a list of PSF HDULists appropriate for the data loaded in the "spacerdi" object based on point source parameters
+    in ptsrc_dict, the position of the star and mask in each science image, and the position angle(s) of the science data.
+    For science data with N rolls and a ptsrc_dict containing M point sources, this function will generate N*M PSF models 
+    with WebbPSF.
+    ___________
+    Parameters:
+
+    spacerdi : winnie.SpaceRDI
+        A SpaceRDI object with a concatenation loaded and which is prepared for convolution.
+    ptsrc_dict : dict
+        A dictionary containing parameters for one or more point sources. Beginning at i=1, required parameters are
+        "ptsrc_r_i" and "ptsrc_th_i", which provide the (r, theta) position of the ith source from the star in units
+        of arcseconds when oriented north-up with the origin in the lower left corner. Positive dx is to the right of 
+        the star, and positive dy is above the star.
+    spectrum : synphot.spectrum.SourceSpectrum OR list of synphot.spectrum.SourceSpectrum, optional
+        Spectrum to use for generating PSFs. If a single spectrum, this spectrum will be used for all targets. 
+        If a list of spectra, length should match the number of candidates in ptsrc_dict. If None, an M5V spectrum
+        is assumed (the latest spectral type available in the Castelli & Kurucz 2004
+        catalog). 
+    fov_pixels : int, optional
+        The number of pixels per axis at detector sampling for each PSF model
+        
+    ________
+    Returns:
+    
+    ptsrc_hduls : list
+        A list which contains, for each roll of the science data, a list containing an astropy.io.fits.hdu.hdulist.HDUList PSF model 
+        for each set of point source parameters in ptsrc_dict. 
+        E.g., for data with two rolls and ptsrc_dict containing three sources, len(ptsrc_hduls)==2 and len(ptsrc_hduls[0])==3,
+        with ptsrc_hduls[1][0] being the PSF model HDUList for the 1st point source in the 2nd roll.
+
+    """
+    from webbpsf_ext.coords import xy_rot, xy_to_rtheta, rtheta_to_xy
+    from webbpsf_ext.spectra import companion_spec
+
+    # Check if sh_pixels is an integer
+    if not isinstance(sh_pixels, int):
+        sh_pixels = np.asarray(sh_pixels)
+
+    pixscale = nrc.pixelscale
+
+    ptsrc_hduls = []
+    itervals = posangs if spectrum is None else tqdm(posangs, desc='Position Angles')
+    for posang in itervals:
+        j = 0
+        i = 1
+        all_ptsrcs_finished = False
+        ptsrc_hdul_roll = fits.HDUList()
+        while not all_ptsrcs_finished:
+            if f'ptsrc_r_{i}' not in ptsrc_dict:
+                all_ptsrcs_finished = True
+            else:
+                dxy_asec_northup = np.array(rtheta_to_xy(ptsrc_dict[f'ptsrc_r_{i+1}'], ptsrc_dict[f'ptsrc_th_{i+1}']))
+                # Observed offset relative to star
+                dxy_asec = dxy_asec_northup if posang==0 else np.array(xy_rot(*dxy_asec_northup, -posang))
+
+                if (c_star is not None) and (c_coron is not None):
+                    # Position of source relative to star
+                    xy_pix = c_star[j] + dxy_asec / pixscale
+                    # Offset from coronagrph center 
+                    dxy_coron_pix = xy_pix - c_coron[j]
+                    # Offset from coronagraph center in arcsec
+                    dxy_asec = dxy_coron_pix * pixscale
+
+                # Create a source spectrum
+                if spectrum is None:
+                    renorm_args = (1, 'counts', nrc.bandpass)
+                    sp = companion_spec(nrc.bandpass, renorm_args=renorm_args)
+                    # sp = nrc.planet_spec(**nrc.planets[0])
+                elif isinstance(spectrum, list):
+                    sp = spectrum[i-1]
+                else:
+                    sp = spectrum
+
+                # Create an off-axis PSF centered in image
+                r, th = xy_to_rtheta(dxy_asec[0], dxy_asec[1])
+                psf = nrc.gen_offset_psf(r, th, source=sp, return_oversample=True, use_coeff=use_coeff, 
+                                         diffusion_sigma=diffusion_sigma, normalize='exit_pupil')
+
+                psf = crop_image(psf, sh_pixels*nrc.oversample)
+
+                if i==1:
+                    hdu = fits.PrimaryHDU(psf)
+                else:
+                    hdu = fits.ImageHDU(psf)
+                hdu.header['PIXELSCL'] = nrc.pixelscale / nrc.oversample
+                hdu.header['OVERSAMP'] = nrc.oversample
+                ptsrc_hdul_roll.append(hdu)
+            i += 1
+        ptsrc_hduls.append(ptsrc_hdul_roll)
+        j += 1
+    return ptsrc_hduls
 
 class NumpyArrayEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -1692,7 +1947,8 @@ class nrc_analyze():
         self.psf_corr_dict = load_psf_correction(self.filter, self.apname, verbose=verbose)
         self.psf_corr_over = self.psf_corr_dict.get('psf_scale_data', None)
 
-    def generate_obs_dict(self, indir=None, file_type='calints.fits', combine_same_dithers=True):
+    def generate_obs_dict(self, indir=None, file_type='calints.fits', 
+                          combine_same_dithers=True, **kwargs):
         """Generate dictionary of observations"""
         if indir is None:
             if 'cal' in file_type or 'i2d' in file_type:
@@ -1709,8 +1965,8 @@ class nrc_analyze():
             del obs_dict
 
         for oid in self.obsids:
-            obs_dict = read_sgd_files(indir, self.pid, oid, self.filter, self.sca,
-                                      file_type=file_type, combine_same_dithers=combine_same_dithers)
+            obs_dict = read_sgd_files(indir, self.pid, oid, self.filter, self.sca, file_type=file_type, 
+                                      combine_same_dithers=combine_same_dithers, **kwargs)
 
             if len(obs_dict)==0:
                 raise FileNotFoundError(f'No {file_type} files found for PID {self.pid}, Obs {oid}, Filter {self.filter}, SCA {self.sca}')
@@ -1721,7 +1977,7 @@ class nrc_analyze():
         if self.ref_objs is not None:
             for ref_obj in self.ref_objs:
                 ref_obj.generate_obs_dict(indir=indir, file_type=file_type, 
-                                          combine_same_dithers=combine_same_dithers)
+                                          combine_same_dithers=combine_same_dithers, **kwargs)
 
     def _flag_bad_pixels(self, imarr, dqarr, nsig_spatial=10, nsig_temporal=10, ntemporal_limit=10, niter=3):
         """Flag bad pixels in a single image or stack of images
@@ -2193,6 +2449,7 @@ class nrc_analyze():
                 if self.is_sim:
                     xy_idl = self.expected_pos(frame='idl')
                 else:
+                    # Get the position of the star for generating the PSF
                     find_func = get_com if use_com else get_expected_loc
                     res = load_cropped_files(save_dir, files, xysub=15, bgsub=False, find_func=find_func)
                     xyind_arr = res[2].reshape([ndither,-1])
@@ -2360,9 +2617,12 @@ class nrc_analyze():
                     else:
                         imsub_arr[i] = data_sim[:, y1:y2, x1:x2].reshape(data_shape)
 
+            # print(imsub_arr.shape, dqsub_arr.shape, xyind_arr.shape, bp_masks.shape)
+            # print(ndither)
             if imsub_arr.shape[0] != ndither:
-                nint = imsub_arr.shape[0] // ndither
                 ny, nx = imsub_arr.shape[-2:]
+                imsub_arr = imsub_arr.reshape([-1, ny, nx])
+                nint = imsub_arr.shape[0] // ndither
                 sh_orig = (ndither, nint, ny, nx)
                 # Reshape to expected shapes
                 imsub_arr = imsub_arr.reshape(sh_orig)
@@ -2541,8 +2801,8 @@ class nrc_analyze():
         # Call this same function in the reference objects
         if self.ref_objs is not None:
             for ref_obj in self.ref_objs:
-                ref_obj.get_star_positions(xysub=xysub, bgsub=bgsub, use_com=use_com,
-                                           med_dithers=med_dithers, ideal_sgd=ideal_sgd, gs_sgd=gs_sgd, 
+                ref_obj.get_star_positions(xysub=xysub, bgsub=bgsub, use_com=use_com,  med_dithers=med_dithers, 
+                                           ideal_sgd=ideal_sgd, gs_sgd=gs_sgd, gauss_fit=gauss_fit,
                                            save=save, force=force)
 
     def _update_mask_offsets(self, do_c_coron=True, do_xy_mask_offset=True):
@@ -2585,6 +2845,7 @@ class nrc_analyze():
         else:
             self.xy_mask_offset = np.zeros_like(self.xy_loc_ind)
             self.c_coron = None
+            return
 
         # Update nrc.pointing_info
         if self.nrc is not None:
@@ -2627,7 +2888,7 @@ class nrc_analyze():
         odd_shape : bool
             If True, then pad to odd dimensions. Otherwise, pad to even dimensions.
         xysub : int
-            Size of subarray to use for PSF fitting
+            Size of subarray to extract. If None, then use full image size plus some padding.
         xyloc0 : tuple
             Use this as the center crop location for all images. 
             If None, then determined automatically based on nearest pixel.
@@ -2999,14 +3260,17 @@ class nrc_analyze():
             # Ensure subsize is odd
             subsize = subsize + 1 if subsize % 2 == 0 else subsize
 
+        ny, nx = obs_dict[self.obsids[0]][0]['data'].shape
+        size_str = f'_{nx}x{ny}'
+
         # Saved file
         save_dir = os.path.dirname(obs_dict[self.obsids[0]][0]['file'])
-        save_str0 = '_obs' + '.'.join([str(obs) for obs in self.obsids])
+        save_str0 = '_obs' + '.'.join([str(obs) for obs in self.obsids]) + size_str
         save_str1 = '_lsqdiff' if lsq_diff else ''
         save_str2 = '_sim' if self.is_sim else ''
         save_str3 = '_idealsgd' if ideal_sgd and self.is_sgd else ''
-        save_str = f'_{method}_{interp}_sub{subsize}_osamp{oversample}_gstd{gstd_pix}_irad{inner_rad}_orad{outer_rad}{save_str1}{save_str2}{save_str3}'
-        save_file = f'star_positions_{self.filter}{save_str0}{save_str}_{self._file_type}.json'
+        save_str123 = f'_{method}_{interp}_sub{subsize}_osamp{oversample}_gstd{gstd_pix}_irad{inner_rad}_orad{outer_rad}{save_str1}{save_str2}{save_str3}'
+        save_file = f'star_positions_{self.filter}{save_str0}{save_str123}_{self._file_type}.json'
         save_path = os.path.join(save_dir, save_file)
         if os.path.exists(save_path) and (force==False):
             _log.info(f"Loading dither positions from {save_path}")
@@ -3571,7 +3835,7 @@ class nrc_analyze():
         xyshift_aligned = np.zeros_like(self.xyshift)
         for oid in self.obsids:
             odict = self.obs_dict[oid]
-            for k in tqdm(odict.keys(), desc=f'Centering Obs {oid}', leave=False):
+            for k in tqdm(odict.keys(), desc=f'Centering Obs {oid}', leave=True):
                 # Images reduced to 2D
                 im = odict[k]['data'].copy()
                 if len(im.shape)==3 and med_dithers:
@@ -3725,33 +3989,46 @@ class nrc_analyze():
                 nz_good = np.sum(~np.isnan(var_data), axis=0)
                 var_data = np.nansum(var_data, axis=0) / nz_good**2
 
+                # Fill in NaNs with max value
+                var_data[np.isnan(var_data)] = np.nanmax(var_data)
+
             # Expand and shift data
-            var_data = crop_image(var_data, (ny,nx), fill_val=np.nan)
             xsh, ysh = odict['xy_shift_total_aligned']
             rebin = kwargs.get('rebin', 1)
-            order = kwargs.get('order', 3)
             gstd_pix = kwargs.get('gstd_pix', None)
             return_oversample = kwargs.get('return_oversample', False)
-            var_data = image_shift_with_nans(var_data, xsh, ysh, oversample=rebin, order=order, 
-                                             shift_method='fshift', interp='linear', gstd_pix=gstd_pix,
-                                             return_oversample=return_oversample, 
-                                             preserve_nans=True, pad=True, total=total)
+            var_data = fractional_image_shift(var_data, xsh, ysh, method='fshift', interp='linear',
+                                              oversample=rebin, gstd_pix=gstd_pix, pad=False,
+                                              return_oversample=return_oversample, total=total)
+
+            boundary_mask = np.ones_like(var_data)
+            boundary_mask = fractional_image_shift(boundary_mask, xsh, ysh, method='fshift', interp='linear',
+                                                   oversample=rebin, gstd_pix=gstd_pix, pad=True, cval=0,
+                                                   return_oversample=return_oversample, total=False)
+            out_of_bounds = boundary_mask < 0.5
+            var_data[out_of_bounds] = np.nan
+            var_data = crop_image(var_data, (ny,nx), fill_val=np.nan)
 
             hdul[extname].data = var_data
 
         # Expand and shift AREA extension
         if 'AREA' in hdul:
-            area_data = crop_image(hdul['AREA'].data, (ny,nx), fill_val=np.nan)
             xsh, ysh = odict['xy_shift_total_aligned']
             rebin = kwargs.get('rebin', 1)
-            order = kwargs.get('order', 3)
+            # order = kwargs.get('order', 3)
             gstd_pix = kwargs.get('gstd_pix', None)
-            return_oversample = kwargs.get('return_oversample', False)
-            area_data = image_shift_with_nans(area_data, xsh, ysh, oversample=rebin, order=order, 
-                                              shift_method='fourier', gstd_pix=gstd_pix,
-                                              return_oversample=return_oversample, 
-                                              preserve_nans=True, pad=True, total=False)
-            
+            return_oversample = kwargs.get('return_oversample', False)            
+            area_data = fractional_image_shift(hdul['AREA'].data, xsh, ysh, method='fourier',
+                                               oversample=rebin, gstd_pix=gstd_pix, pad=False,
+                                               return_oversample=return_oversample, total=False)
+            boundary_mask = np.ones_like(hdul['AREA'].data)
+            boundary_mask = fractional_image_shift(boundary_mask, xsh, ysh, method='fshift', interp='linear',
+                                                   oversample=rebin, gstd_pix=gstd_pix, pad=True, cval=0,
+                                                   return_oversample=return_oversample, total=False)
+            out_of_bounds = boundary_mask < 0.5
+            area_data[out_of_bounds] = np.nan
+            area_data = crop_image(area_data, (ny,nx), fill_val=np.nan)
+
             hdul['AREA'].data = area_data
 
         # Update SCI, ERR, and DQ extensions
@@ -4608,6 +4885,8 @@ class nrc_rdi():
         self._offsets_sci = None
 
         self._imcube_css = None
+        self._ptsrc_hduls = None
+        self._ptsrc_dict = None
 
         self._posangs_sci = None
         
@@ -5055,10 +5334,11 @@ class nrc_rdi():
 
     def gen_psf_models(self, xysize=65, diffusion_sigma=None,
                        psf_scale_over=None, exclude_psf_scaling=False,
-                       gstd_pix=0):
+                       gstd_pix=0, return_psfs=False):
         """Create PSF models for PSF convolution
         
-        Saves oversampled and detector sampled PSFs to self.psfs_over and self.psfs_det.
+        If return_psfs=True, returns the oversmapled and detector sampled PSFs. Otherwise,
+        saves oversampled and detector sampled PSFs to self.psfs_over and self.psfs_det.
         """
 
         nrc_obs = self.nrc_obs
@@ -5090,11 +5370,15 @@ class nrc_rdi():
                                       kipc=nrc_obs.kipc, kppc=nrc_obs.kppc, no_offset=True,
                                       psf_scale_over=psf_scale_over, gstd_pix=gstd_pix)
         
-        self.psfs_over = psfs_over
-        self.psfs_det = psfs_det
+        if return_psfs:
+            return psfs_over, psfs_det
+        else:
+            self.psfs_over = psfs_over
+            self.psfs_det = psfs_det
 
     def run_rdi(self, save_products=False, return_res_only=False,
-                forward_model=False, collapse_rolls=True, derotate=True,
+                forward_model=False, fwd_model_disk=True, fwd_model_ptsrc=True,
+                collapse_rolls=True, derotate=True,
                 prop_err=True, pad_before_derot=False, 
                 use_gpu=False, ncores=-2, show_progress=False, **extra_rdi_settings):
         
@@ -5114,24 +5398,30 @@ class nrc_rdi():
                 """)
 
         output_ext = copy(self.output_ext)
+        reduc_label = copy(self.reduc_label)
         if forward_model:
             if (self.rdi_settings.get('coeffs_in', None) is not None) or \
                     (extra_rdi_settings.get('coeffs_in', None) is not None):
                 raise ValueError("""
                     Forward modeling with run_rdi is not valid when using fixed
                     RDI coefficients. For classical RDI, the output from the
-                    derotate_and_combine_cssmodel method is likely more
+                    derotate_and_combine_circumstellar_model method is likely more
                     appropriate.
                     """)
-            if self.imcube_css is None:
-                raise ValueError("""
+            if ((self.imcube_css is None) and (fwd_model_disk)) and ((self._ptsrc_hduls is None) and (fwd_model_ptsrc)):
+                _log.warning("""
                     Prior to executing "run_rdi" with forward_model=True you
-                    must first set a circumstellar model using the
-                    set_circumstellar_model method.
+                    should first set a circumstellar or point source model using the
+                    set_circumstellar_model and/or make_ptsrc_hduls methods.
                     """)
-            imcube_sci = self.imcube_css
+            imcube_sci = np.zeros_like(self.imcube_sci)
+            if (self.imcube_css is not None) and fwd_model_disk:
+                imcube_sci += self.imcube_css
+            if (self._ptsrc_hduls is not None) and fwd_model_ptsrc:
+                imcube_sci += self.make_nptsrc_model_cube(self._ptsrc_dict)
             prop_err = False # Never propagate error when forward modeling
             output_ext = output_ext + '_fwdmod'
+            reduc_label = f'FM {reduc_label}'
         else:
             imcube_sci = self.imcube_sci
         
@@ -5227,7 +5517,7 @@ class nrc_rdi():
                                      residuals_err_der=residuals_err_der,
                                      coeffs=coeffs, c_derot=cent_der, 
                                      collapse_rolls=collapse_rolls, 
-                                     output_ext=output_ext)
+                                     output_ext=output_ext, reduc_label=reduc_label)
         
         return res
 
@@ -5365,12 +5655,13 @@ class nrc_rdi():
     def _package_products(self, residuals, residuals_err=None, 
                           residuals_der=None, residuals_err_der=None,
                           coeffs=None, c_derot=None, collapse_rolls=True, 
-                          prop_err=None, output_ext=None):
+                          prop_err=None, output_ext=None, reduc_label=None):
 
         from winnie.utils import median_combine, rotate_image
         from webbpsf_ext.image_manip import rotate_offset
 
         output_ext = self.output_ext if output_ext is None else output_ext
+        reduc_label = self.reduc_label if reduc_label is None else reduc_label
 
         prop_err = False if residuals_err is None else True
         derotate = False if residuals_der is None else True
@@ -5386,7 +5677,8 @@ class nrc_rdi():
             'residuals_der': residuals_der, 'residuals_err_der': residuals_err_der,
             'c_star_out': c_derot, 'star_cens': self.star_cens,
             'roll_angles': np.unique(self.angles), 'angles': self.angles, 
-            'output_ext': output_ext, 'prop_err': prop_err, 'derotated': derotate,
+            'prop_err': prop_err, 'derotated': derotate,
+            'output_ext': output_ext, 'reduc_label': reduc_label, 
             'pixelscale': self.nrc.pixelscale, 
         }
         
@@ -5522,6 +5814,10 @@ class nrc_rdi():
             print('No reference data loaded.\n')
 
         print(f'RDI Settings:')
+        try:
+            print(f'Mode: {self.reduc_label}')
+        except:
+            print('No mode set (self.reduc_label is not set).')
         for key in self.rdi_settings:
             if isinstance(self.rdi_settings[key], np.ndarray):
                 desc = f'{type(self.rdi_settings[key])} of shape {self.rdi_settings[key].shape}'
@@ -5609,7 +5905,8 @@ class nrc_rdi():
         self.fixed_rdi_settings = settings
         self.rdi_settings.update(self.fixed_rdi_settings)
 
-    def set_presets(self, presets={}, output_ext='psfsub', verbose=False):
+    def set_presets(self, presets={}, output_ext='psfsub',
+                    reduc_label='Custom RDI (Winnie)', verbose=False):
         """
         Generic method to quickly assign a set of arguments to use for
         winnie.rdi.rdi_residuals, while also setting the extension for saved
@@ -5619,10 +5916,12 @@ class nrc_rdi():
         self.output_ext = output_ext
         self.rdi_settings = presets
         self.rdi_settings.update(self.fixed_rdi_settings)
+        self.reduc_label = reduc_label
+        self._check_smoothed_nans()
         if verbose:
             self.report_current_config()
 
-    def rdi_presets(self, output_ext='rdi_psfsub', verbose=False):
+    def rdi_presets(self, output_ext='rdi_psfsub', reduc_label='RDI (Winnie)', verbose=False):
         """
         Set presets to perform a standard RDI reduction.
 
@@ -5631,10 +5930,12 @@ class nrc_rdi():
             output_ext (str, optional): Output file extension for FITS
                 products. Defaults to 'rdi_psfsub'.
         """
-        self.set_presets(presets={}, output_ext=output_ext, verbose=verbose)
+        self.set_presets(presets={}, output_ext=output_ext, 
+                         reduc_label=reduc_label, verbose=verbose)
 
     def hpfrdi_presets(self, filter_size=None, filter_size_adj=1, 
-                       output_ext='hpfrdi_psfsub', verbose=False):
+                       output_ext='hpfrdi_psfsub', reduc_label='HPFRDI (Winnie)', 
+                       verbose=False):
         """
         Set presets for High-Pass Filtering RDI (HPFRDI), in which coefficients
         are computed by comparing high-pass filtered science and reference
@@ -5662,24 +5963,13 @@ class nrc_rdi():
         presets['opt_smoothing_fn'] = high_pass_filter_sequence
         presets['opt_smoothing_kwargs'] = dict(filtersize=filter_size_adj*filter_size)
 
-        # See if there's any NaNs in our optzones after filtering is applied. 
-        # If so, add zero_nans=True to our settings to avoid a crash.
-        sci_filt = high_pass_filter_sequence(self.imcube_sci, filter_size)
-        if isinstance(self.imcube_ref, (list,tuple)):
-            ref_filt = np.concatenate([high_pass_filter_sequence(im, 2) for im in self.imcube_ref], axis=0)
-        else:
-            ref_filt = high_pass_filter_sequence(self.imcube_ref, filter_size)
+        self.set_presets(presets=presets, output_ext=output_ext, 
+                         reduc_label=reduc_label, verbose=verbose)
 
-        allopt = np.any(self.optzones, axis=0)
-        nans = np.any([*np.isnan(sci_filt[..., allopt]), *np.isnan(ref_filt[..., allopt])])
-        if nans:
-            presets['zero_nans'] = True
-        self.set_presets(presets=presets, output_ext=output_ext, verbose=verbose)
-
-        del sci_filt, ref_filt
+        # del sci_filt, ref_filt
 
     
-    def mcrdi_presets(self, output_ext='mcrdi_psfsub', verbose=False):
+    def mcrdi_presets(self, output_ext='mcrdi_psfsub', reduc_label='MCRDI (Winnie)', verbose=False):
         """
         Set presets for Model Constrained RDI (MCRDI), in which coefficients
         are computed by comparing reference data to science data from which an
@@ -5694,16 +5984,22 @@ class nrc_rdi():
             ValueError: If a circumstellar model has not been set using the
                 set_circumstellar_model method.
         """
-        if self.imcube_css is None:
+        if (self.imcube_css is None) and (self._ptsrc_hduls is None):
             raise ValueError(
                 """
                 Prior to executing mcrdi_presets,
-                you must first set a circumstellar model using 
-                set_circumstellar_model.
+                you must first set a circumstellar or point source model using 
+                set_circumstellar_model or make_ptsrc_hduls.
                 """)
+        
+        imcube = np.zeros_like(self.imcube_sci)
+        if self.imcube_css is not None:
+            imcube += self.imcube_css
+        if self._ptsrc_hduls is not None:
+            imcube += self.make_nptsrc_model_cube(self._ptsrc_dict)
 
-        self.set_presets(presets={'hcube_css': self.imcube_css[:, np.newaxis]},
-                         output_ext=output_ext, verbose=verbose)
+        self.set_presets(presets={'hcube_css': imcube[:, np.newaxis]},
+                         output_ext=output_ext, reduc_label=reduc_label, verbose=verbose)
 
     def set_circumstellar_model(self, model_cube=None, raw_model=None, raw_model_osamp=None,
                                 ncores=-2, use_gpu=False):
@@ -5712,7 +6008,6 @@ class nrc_rdi():
         (e.g., RDI forward modeling or MCRDI.) 
         """
 
-        from vip_hci.preproc import cube_derotate
         from webbpsf_ext.image_manip import rotate_offset
         from winnie.utils import rotate_hypercube
 
@@ -5758,6 +6053,10 @@ class nrc_rdi():
 
             # Rebin to detector sampling
             model_cube = frebin(model_cube, scale=1/osamp, total=False)
+            if self.nrc_obs.kipc is not None:
+                model_cube = add_ipc(model_cube, kernel=self.nrc_obs.kipc)
+            if self.nrc_obs.kppc is not None:
+                model_cube = add_ppc(model_cube, kernel=self.nrc_obs.kppc, nchans=1)
 
             # Throw a warning if model cube and science data have different even/odd shapes
             modely_is_even = model_cube.shape[-2] % 2 == 0
@@ -5774,7 +6073,7 @@ class nrc_rdi():
 
     def circumstellar_model_rescale(self, return_scale=False, sig=None, mask=None, 
                                     hpf=False, filter_size=None, filter_size_adj=1,
-                                    image_rdi=None):
+                                    image_rdi=None, fmrdi_ptsrc_im=None):
         """
         Rescale the circumstellar model to match the median flux of the science
         data. This is useful for forward modeling in RDI, where the model
@@ -5795,7 +6094,9 @@ class nrc_rdi():
         presets_prev = copy(self.rdi_settings)
 
         if hpf:
-            self.hpfrdi_presets(verbose=False, filter_size=filter_size, filter_size_adj=filter_size_adj)
+            self.hpfrdi_presets(verbose=False, 
+                                filter_size=filter_size, 
+                                filter_size_adj=filter_size_adj)
         else:
             self.rdi_presets(verbose=False)
 
@@ -5810,8 +6111,12 @@ class nrc_rdi():
             sig = rdi_res.err
 
         # Foward model circumstellar disk model
-        fmrdi_res = self.run_rdi(forward_model=True, collapse_rolls=False)
+        fmrdi_res = self.run_rdi(forward_model=True, fwd_model_ptsrc=False, collapse_rolls=False)
+
+        # Subtract point source model image from RDI image
         image_rdi = crop_image(image_rdi, fmrdi_res.im.shape)
+        if fmrdi_ptsrc_im is not None:
+            image_rdi = image_rdi - crop_image(fmrdi_ptsrc_im, fmrdi_res.im.shape)
 
         footprint = np.array([[0,1,0], [1,1,1], [0,1,0]])
         args = median_filter_sequence(np.array([image_rdi, fmrdi_res.im]), 
@@ -5828,6 +6133,7 @@ class nrc_rdi():
 
     def derotate_and_combine_circumstellar_model(self, 
                                                  pad_before_derot=False,
+                                                 include_ptsrc=True,
                                                  collapse_rolls=True,
                                                  output_ext='cssmodel', 
                                                  save_products=False,
@@ -5838,7 +6144,7 @@ class nrc_rdi():
         run_rdi. If a circumstellar model is not set, this method will raise a
         ValueError.
         """
-        if self.imcube_css is None:
+        if (self.imcube_css is None) and (self._ptsrc_hduls is None and include_ptsrc):
             raise ValueError(
                 """
                 Prior to executing derotate_and_combine_circumstellar_model, you must
@@ -5852,7 +6158,11 @@ class nrc_rdi():
             _log.error("`pad_before_derot` is not yet correctly implemented for derotation. Setting to False.")
             pad_before_derot = False
         
-        csscube = self.imcube_css
+        csscube = np.zeros_like(self.imcube_sci)
+        if self.imcube_css is not None:
+            csscube += self.imcube_css
+        if self._ptsrc_hduls is not None and include_ptsrc:
+            csscube += self.make_nptsrc_model_cube(self._ptsrc_dict)
         cent = self.star_cens
 
         # Set up rotation function
@@ -5903,6 +6213,200 @@ class nrc_rdi():
                       SpaceKLIP database object.
                       """)
 
+
+    def make_ptsrc_hduls(self, ptsrc_dict, spectrum=None, diffusion_sigma=None):
+        """
+        Generates a series of point sources offset from the star. Results are stored in a list of HDULists.
+        The ptsrc_dict input provides the offset position of the companions assuming North is up. 
+        For science data with N rolls and dithers along with a ptsrc_dict containing M point sources, 
+        this function will generate N*M PSF models.
+                
+        Parameters
+        ----------
+        ptsrc_dict : dict
+            A dictionary containing parameters for one or more point sources. Beginning at i=1, 
+            required parameters are "ptsrc_r_i" and "ptsrc_th_i", which provide the (r,theta) 
+            position of the ith source from the star in units of arcseconds when oriented north-up 
+            with the origin in the lower left corner. Positive dx is to the right of the star, 
+            and positive dy is above the star.
+
+        Keyword Arguments
+        -----------------
+        spectrum : synphot.spectrum.SourceSpectrum OR list of synphot.spectrum.SourceSpectrum, optional
+            Spectrum to use for generating PSFs. If a single spectrum, this spectrum will be used for 
+            all targets. If a list of spectra, length should match the number of candidates in ptsrc_dict.  
+        fov_pixels : int, optional
+            The number of pixels per axis at detector sampling for each PSF model
+        diffusion_sigma : float, optional
+            Sigma value for Gaussian diffusion kernel. 
+            If None, self.nrc_obs.best_diffusion is applied. 
+
+        Returns
+        -------
+        ptsrc_hduls : list
+            A list which contains, for each position of the science data, an HDUList of the PSF models 
+            for each set of point source parameters in ptsrc_dict. 
+
+        """
+        from webbpsf_ext.coords import xy_rot
+
+        nrc = self.nrc
+        osamp = nrc.oversample
+
+        ny, nx = self.imcube_sci.shape[-2:] # self._im_shape_orig
+        nx_over = nx * osamp
+        ny_over = ny * osamp
+
+        # Create new companions PSFs using obs_hci class
+        try:
+            c_coron = self.c_coron_sci
+        except:
+            c_coron = None
+        c_star = self.star_cens
+        if (spectrum is not None) or (c_coron is not None):
+            diffusion_sigma = self.nrc_obs.best_diffusion if diffusion_sigma is None else diffusion_sigma
+            ptsrc_hduls = make_ptsrc_hduls(nrc, self.angles, ptsrc_dict, c_star=c_star, c_coron=c_coron,
+                                           diffusion_sigma=diffusion_sigma, spectrum=spectrum, sh_pixels=self._im_shape_orig)
+        else:
+            # Use pre-generated PSFs for imaging or generic spectrum
+            ptsrc_hduls = []
+            for psf in tqdm(self.psfs_over, desc='Pointings'):
+                i = 1
+                all_ptsrcs_finished = False
+                ptsrc_hdul_roll = fits.HDUList()
+                while not all_ptsrcs_finished:
+                    if f'ptsrc_r_{i}' not in ptsrc_dict:
+                        all_ptsrcs_finished = True
+                    else:
+                        # Expand or crop PSF to image size
+                        psf_full = crop_image(psf, (ny_over, nx_over))
+
+                        if i==1:
+                            hdu = fits.PrimaryHDU(psf_full)
+                        else:
+                            hdu = fits.ImageHDU(psf_full)
+                        hdu.header['PIXELSCL'] = nrc.pixelscale / nrc.oversample
+                        hdu.header['OVERSAMP'] = nrc.oversample
+                        ptsrc_hdul_roll.append(hdu)
+                    i += 1
+                ptsrc_hduls.append(ptsrc_hdul_roll)
+        
+        self._ptsrc_hduls = ptsrc_hduls
+        self._ptsrc_dict = ptsrc_dict
+
+
+    def make_nptsrc_model_cube(self, ptsrc_dict=None, full_frame=False):
+        """ Shift and combine point source models into a cube for each position 
+        
+        Final image is de-rotated to observed angle ('sci' orientation).
+        """
+
+        from webbpsf_ext.coords import xy_rot, rtheta_to_xy
+        from webbpsf_ext.utils import pix_ang_size
+
+        if self._ptsrc_hduls is None:
+            _log.error("No point source HDULs have been generated. Run self.make_ptsrc_hduls() first.")
+            return
+
+        posangs = self.angles
+
+        nrc_obs = self.nrc_obs
+        nrc = self.nrc
+
+        # Create list of point source HDULs for each position angle / dither
+        ptsrc_hduls = self._ptsrc_hduls
+        if ptsrc_dict is not None:
+            self._ptsrc_dict = ptsrc_dict
+
+        # inst_ext = spacerdi.convolver.inst_webbpsfext
+        # imcube = np.zeros_like(self._imcube_sci)
+        imcube = np.zeros_like(self._imcube_sci) if full_frame else np.zeros_like(self.imcube_sci)
+        for j, posang in enumerate(posangs):
+            try:
+                c_coron = self.c_coron_sci[j]
+            except:
+                c_coron = None
+
+            hdul_sources = ptsrc_hduls[j] # Different point sources for a given roll
+            for i, hdu in enumerate(hdul_sources):
+                pixscale = nrc.pixelscale
+                pixscale_over = hdu.header['PIXELSCL']
+                osamp = hdu.header['OVERSAMP']
+
+                dxy_asec_northup = np.array(rtheta_to_xy(ptsrc_dict[f'ptsrc_r_{i+1}'], ptsrc_dict[f'ptsrc_th_{i+1}']))
+                xy_asec = dxy_asec_northup if posang==0 else np.array(xy_rot(*dxy_asec_northup, -posang))
+                # Offsets from star in oversampled pixel
+                delx_over, dely_over = xy_asec / pixscale_over
+
+                psf = hdu.data.copy()
+                try:
+                    # Sometimes fourier shift fails if the source is too close to the edge
+                    psf = fractional_image_shift(psf, delx_over, dely_over, method='fourier', pad=True)
+                except ValueError:
+                    psf = fractional_image_shift(psf, delx_over, dely_over, 
+                                                 method='fshift', interp='linear', pad=True)
+
+                # Rescale off-axis coron PSF
+                if c_coron is not None:
+                    from webbpsf_ext.webbpsf_ext_core import _nrc_coron_rescale
+                    # Offset from coronagrph center in detector pixels
+                    xy_pix = xy_asec / pixscale + self.star_cens[j]
+                    dxy_coron_pix = xy_pix - c_coron
+                    dxy_coron_asec = dxy_coron_pix * pixscale
+
+                    # We assue that completely off-axis PSF is summed to 1.0
+                    psf_off = _nrc_coron_rescale(nrc, psf, (0,5), 'idl')
+                    psf_off_sum = psf_off.sum()
+                    # Normalize by off-axis PSF to only account for transmission mask attenuation
+                    psf = _nrc_coron_rescale(nrc, psf, dxy_coron_asec, 'idl')
+                    psf /= psf_off_sum
+
+                # Scale by flux in terms of mJy
+                flux = ptsrc_dict[f'ptsrc_flux_{i+1}']
+                sh_over = np.array(imcube.shape[-2:]) * osamp
+                im = crop_image(psf*flux, sh_over, fill_val=0)
+
+                if osamp != 1:
+                    im = frebin(im, scale=1./osamp, total=True)
+                imcube[j] += im
+
+        # Apply IPC/PPC
+        if nrc_obs.kipc is not None:
+            imcube = add_ipc(imcube, kernel=nrc_obs.kipc)
+        if nrc_obs.kppc is not None:
+            imcube = add_ppc(imcube, kernel=nrc_obs.kppc, nchans=1)
+
+        # Convert mJy/pixel to MJy/sr
+        imcube /= (1e9 * pix_ang_size(nrc.siaf_ap))
+        if full_frame:
+            imcube = np.where(np.isnan(self._imcube_sci), np.nan, imcube)
+        else:
+            imcube = np.where(np.isnan(self.imcube_sci), np.nan, imcube)
+
+        return imcube
+
+    def _check_smoothed_nans(self):
+        """
+        If we're using smoothing during optimization and zero_nans isn't
+        already set to True, see if there's any NaNs in our optzones after smoothing. 
+        If so, add zero_nans=True to our settings to avoid all-NaN results.
+        """
+        if 'opt_smoothing_fn' in self.rdi_settings and not self.rdi_settings.get('zero_nans', False):
+            sm_fn = self.rdi_settings['opt_smoothing_fn']
+            sm_kw = self.rdi_settings.get('opt_smoothing_kwargs', {})
+
+            sci_filt = sm_fn(self.imcube_sci, **sm_kw)
+            if isinstance(self.imcube_ref, (list,tuple)):
+                ref_filt = np.concatenate([sm_fn(im, **sm_kw) for im in self.imcube_ref], axis=0)
+            else:
+                ref_filt = sm_fn(self.imcube_ref, **sm_kw)
+
+            allopt = np.any(self.optzones, axis=0)
+            nans = np.any([*np.isnan(sci_filt[..., allopt]), *np.isnan(ref_filt[..., allopt])])
+            if nans: 
+                self.rdi_settings['zero_nans'] = True
+
+            del sci_filt, ref_filt
 
 # Convert dictionary keys to a class attribute
 class nrc_rdi_results:
@@ -6105,26 +6609,243 @@ def model_rescale_factor(A, B, sig=None, mask=None):
         The scaling factor to multiply the model (B) by to achieve the minimum chi^2
         for measurements (A) having the given uncertainties (sig).
     """
+
     if np.shape(A) != np.shape(B):
         raise ValueError("A and B must be arrays of the same shape!")
+
+    if mask is None:
+        mask = np.ones_like(A, dtype=bool)
+    elif np.shape(mask)[-2:] != np.shape(A)[-2:]:
+        raise ValueError("If provided, mask's shape must match the final axes of A, B, and sig!")
+
+    # Make sure to exclude any NaNs in A and B
+    mask &= ~np.isnan(A) & ~np.isnan(B) 
+
     if sig is not None:
         if np.shape(A) != np.shape(sig):
             raise ValueError("A, B, and sig must be arrays of the same shape if sig is specified!")
+        # Exclue NaNs and 0s in sig
+        mask &= ~np.isnan(sig) & (sig>0)
     else:
         sig = 1
-    if mask is None:
-        c = np.nansum(A * B / (sig ** 2)) / np.nansum((B ** 2) / (sig ** 2))
-    elif np.shape(mask)[-2:] != np.shape(A)[-2:]:
-        raise ValueError("If provided, mask's shape must match the final axes of A, B, and sig!")
-    else:
-        Amsk, Bmsk = A[..., mask], B[..., mask]
-        if np.ndim(sig) != 0:
-            Smsk = sig[..., mask]
-        else:
-            Smsk = sig
-        c = np.nansum(Amsk * Bmsk / (Smsk ** 2)) / np.nansum((Bmsk ** 2) / (Smsk ** 2))
-    return c
 
+    Amsk, Bmsk = A[..., mask], B[..., mask]
+    if np.ndim(sig) != 0:
+        Smsk = sig[..., mask]
+    else:
+        Smsk = sig
+    return np.sum(Amsk * Bmsk / (Smsk ** 2)) / np.sum((Bmsk ** 2) / (Smsk ** 2))
+
+
+def obj_fn_grater(p, rdi_res, ndb, roi, nrc=None, rmax_accuracy=None, halfNbSlices=25, 
+                  err_weighting=False, return_soln=False, q_clip=None, lsq_sfac=True,
+                  hpf=True, filter_size=2, match_roll_sub=False, image_to_fit=None,
+                  gstd_pix=None, ptsrc_hduls=None, ptsrc_gen_kwargs={}, **kws):
+    """    
+    To be able to keep the outward-facing parameters for point sources in terms of real flux units without adding 
+    a parameter for disk brightness (which we scale post-facto when lsq_sfac==True), we have to track the point 
+    source model separately up to the disk scaling calculation.
+
+    Parameters
+    ----------
+    p: lmfit.parameter.Parameters
+        LMFit parameters object containing at least: r0_1, h0_1, ain_1, aout_1, pa_1, incl_1, g1_1, g2_1, wg1_1
+        
+    rdi_res: winnie.space.SpaceReduction
+        An RDI reduction of the data using the current settings in 'wdb', the Winnie SpaceRDI object;
+        the forward-modeled disk image will be compared to rdi_reduc.im
+        
+    wdb: winnie.space.SpaceRDI
+        The Winnie SpaceRDI object that was used to generate rdi_reduc
+        
+    roi: numpy.ndarray
+        Boolean 'region of interest' array having the same shape as rdi_reduc.im that indicates which
+        pixels should be included in the goodness of fit evaluation.
+                
+    err_weighting: bool
+        If err_weighting is True, the array stored in rdi_reduc.err is used to weight the residuals.
+        Unless manually changed, rdi_reduc.err is the propagated pixel uncertainty map based on the ERR
+        FITS extension. Currently, these arrays are not accurate (because they neglect the noise reduction 
+        from SpaceKLIP's use of psuedo reference pixels). This could be useful if you have significant small
+        separation stellar residuals that are affecting your disk model fit.
+        
+    rmax_accuracy: float
+        The largest separation (in au) at which to calculate the disk model. If None, defaults to the edge
+        of the FOV.
+        
+    halfNbSlices: int
+        The number of planar slices to compute above and below the disk midplane when generating the raw 
+        disk model.
+        
+    return_soln: bool
+        If True, rather than returning a residual array, returns the forward modeled image and some other items
+        
+    q_clip: tuple or list or numpy.ndarray
+        If not None, q_clip gives a lower and upper quantile bound for the residuals. Any values outside the 
+        quantile range are clipped when evaluating goodness of fit. Can be useful for data with significant 
+        artifacts within the region of interest (e.g., poor reference match, uncorrected hot pixels, etc). 
+        E.g., q_clip = [5,95] will compute goodness of fit using only the inner 5th-95%ile of the distribution 
+        of residual pixel values in your region of interest.
+    
+    lsq_sfac: bool
+        If True, least-squares renormalize the brightness of the forward modeled disk image to match the data
+        within the region of interest (and considering the uncertainties when err_weighting is True). 
+        This should nearly always be True.
+
+    image_to_fit : numpy.ndarray
+        If not None, then attempt to fit the model to this image rather than the RDI residual image.
+
+    ptsrc_hduls : list
+        A list which contains, for each roll of the science data, a list containing an HDUList PSF model 
+        for each set of point source parameters in ptsrc_dict. E.g., for data with two rolls and ptsrc_dict containing three sources,
+        len(ptsrc_hduls)==2 and len(ptsrc_hduls[0])==3, with ptsrc_hduls[1][0] being the PSF model HDUList for the 1st point source 
+        in the 2nd roll. If None, a list will be generated using generate_ptsrc_hduls and any additional keyword arguments specified
+        by ptsrc_gen_kwargs.
+
+    ptsrc_gen_kwargs: dict
+        Dictionary containing any keyword arguments to be used by generate_ptsrc_hduls when ptsrc_hduls is None.
+
+    """
+    from copy import deepcopy
+
+    pdict = p.valuesdict() 
+
+    match_roll_sub = False if image_to_fit is not None else match_roll_sub
+    err_weighting = False if image_to_fit is not None else err_weighting
+    sig = rdi_res.err if err_weighting else None
+
+    if roi is None:
+        roi = np.ones_like(rdi_res.im, dtype=bool)
+
+    # Extract point source parameters
+    ptsrc_dict = {}
+    for par in p:
+        if par.startswith('ptsrc_'):
+            ptsrc_dict[par] = pdict.pop(par)
+
+    if len(ptsrc_dict) > 0:
+        ptsrc_components = True
+        
+        # Set ptsrc_hduls
+        if ptsrc_hduls is not None:
+            ndb._ptsrc_hduls = ptsrc_hduls
+        if ndb._ptsrc_hduls is None:
+            spectrum = ptsrc_gen_kwargs.get('spectrum')
+            diffusion_sigma = ptsrc_gen_kwargs.get('diffusion_sigma')
+            ndb.make_ptsrc_hduls(ptsrc_dict, spectrum=spectrum, diffusion_sigma=diffusion_sigma)
+
+        # Forward model point sources
+        ndb._ptsrc_dict = ptsrc_dict
+        ptsrc_model = ndb.make_nptsrc_model_cube(ptsrc_dict)
+        fmrdi_ptsrc = ndb.run_rdi(forward_model=True, fwd_model_disk=False, fwd_model_ptsrc=True,
+                                  save_products=False, collapse_rolls=return_soln)
+        fmrdi_ptsrc_im = fmrdi_ptsrc.im
+    else:
+        ptsrc_components = False
+        ptsrc_model = None
+        fmrdi_ptsrc = None
+        fmrdi_ptsrc_im = None
+
+    # Generate the raw model oriented north-up
+    # We generate a detector-sampled raw model, and then subpixelate it before PSF convolution
+    # You could alter this to generate an oversampled model quite easily, but in my experience the
+    # only difference is runtime.
+    nrc = ndb.nrc_obs.nrc if nrc is None else nrc
+    ny, nx = ndb.imcube_sci.shape[-2:]
+    # nx, ny = np.array([nrc.det_info['xpix'], nrc.det_info['ypix']]) // 2 + 1
+    try:
+        raw_model = make_grater_disk_nring(nrc=nrc, nx=nx, ny=ny, return_oversample=True,
+                                        rmax_accuracy=rmax_accuracy, halfNbSlices=halfNbSlices, 
+                                        flux_max=None, **pdict)
+    except:
+        raw_model = None
+    
+    if (raw_model is None) or np.all(raw_model == 0):
+        disk_components = False
+        ndb.set_circumstellar_model(model_cube=np.zeros_like(ndb._imcube_sci))
+    else:
+        disk_components = True
+        # Convolve the model with the PSF and set to ndb._imcube_css
+        ndb.set_circumstellar_model(raw_model=raw_model, raw_model_osamp=nrc.oversample)
+
+    # Rescale convolved model inside ndb (ndb._imcube_css) and return scale factor
+    # Pass fmrdi_ptsrc_im to subtract from RDI images
+    image_rdi = rdi_res.im if image_to_fit is None else image_to_fit
+    if disk_components and lsq_sfac:
+        sfac = ndb.circumstellar_model_rescale(return_scale=True, sig=sig, mask=roi, 
+                                               hpf=hpf, filter_size=filter_size,
+                                               image_rdi=image_rdi, fmrdi_ptsrc_im=fmrdi_ptsrc_im)
+    else:
+        sfac = 1
+
+    # Run RDI on the model to get the forward-modeled result of disk only
+    collapse_rolls = True if match_roll_sub or return_soln else False
+    fmrdi_disk = ndb.run_rdi(forward_model=True, collapse_rolls=collapse_rolls, 
+                             fwd_model_disk=True, fwd_model_ptsrc=False)
+    # Forward model disk + point sources
+    if ptsrc_components:
+        fmrdi_res = ndb.run_rdi(forward_model=True, collapse_rolls=collapse_rolls, 
+                                fwd_model_disk=True, fwd_model_ptsrc=True)
+    else:
+        fmrdi_res = deepcopy(fmrdi_disk)
+    
+    if return_soln:
+        if disk_components:
+            raw_model_out = raw_model*sfac
+            disk_model = ndb._imcube_css.copy()
+        else:
+            raw_model_out = None
+            disk_model = None
+
+        # if ptsrc_components:
+        #     ndb._imcube_css += ptsrc_model
+
+        return sfac, raw_model_out, disk_model, ptsrc_model, fmrdi_res, fmrdi_disk, fmrdi_ptsrc, ndb
+        # return sfac, raw_model*sfac, fmrdi_res, ndb
+
+    # Compute residuals after subtracting model from data
+    res = image_rdi - fmrdi_res.im
+    
+    if sig is not None:
+        res /= sig
+
+    if (gstd_pix is not None) and (gstd_pix > 0):
+        res = image_shift_with_nans(res, 0, 0, gstd_pix=gstd_pix, oversample=4, order=3, preserve_nans=True)
+
+    res = res[roi]
+    
+    if q_clip is None:
+        res = np.abs(res)
+    else:
+        low,upp = np.nanpercentile(res, q_clip)
+        ind_keep = (res >= low) & (res <= upp)
+        res = np.abs(res[ind_keep])
+
+    if match_roll_sub:
+        res2 = rdi_res.roll_sub - fmrdi_res.roll_sub
+        res3 = rdi_res.roll_sub_abs - fmrdi_res.roll_sub_abs
+
+        if (gstd_pix is not None) and (gstd_pix > 0):
+            res2 = image_shift_with_nans(res2, 0, 0, gstd_pix=gstd_pix, oversample=4, order=3, preserve_nans=True)
+
+        res2 = res2[roi]
+        res3 = res3[roi]
+
+        if q_clip is None:
+            res2 = np.abs(res2)
+            res3 = np.abs(res3)
+        else:
+            res2 = res2[ind_keep]
+            res3 = res3[ind_keep]
+        #     low,upp = np.nanpercentile(res2, q_clip)
+        #     res2 = np.abs(res2[(res2 >= low) & (res2 <= upp)])
+        #     low,upp = np.nanpercentile(res3, q_clip)
+        #     res3 = np.abs(res3[(res3 >= low) & (res3 <= upp)])
+
+        # res = np.concatenate([res, res2, res3])
+        res = np.concatenate([res, res2])
+        
+    return res
 
 def fgs_to_nrc_sgd_offset(pid, obsid, filt, pix_offset=False, med_dithers=False):
     """Retrieve NIRCam SGD offsets from FGS guide star data
