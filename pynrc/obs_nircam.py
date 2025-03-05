@@ -143,7 +143,8 @@ class nrc_hci(NIRCam):
 
     def gen_offset_psf(self, offset_r, offset_theta, sp=None, return_oversample=False, 
         wfe_drift=None, use_coeff=True, coron_rescale=True, use_cmask=False, 
-        recenter=True, diffusion_sigma=None, psf_corr_over=None, **kwargs):
+        recenter=True, diffusion_sigma=None, psf_corr_over=None,
+        **kwargs):
         """Create a PSF offset from center of mask
 
         NOTE: The resulting PSF is still in the center of the output image, but
@@ -205,6 +206,8 @@ class nrc_hci(NIRCam):
 
         # print(coords, 'idl')
         if use_coeff:
+            if self.psf_coeff is None:
+                raise ValueError('PSF coefficients have not been generated. Use `gen_psf_coeff` method first.')
             psf = self.calc_psf_from_coeff(sp=sp, return_oversample=return_oversample, 
                 wfe_drift=wfe_drift, coord_vals=coords, coord_frame='idl', 
                 coron_rescale=coron_rescale, **kwargs)
@@ -966,8 +969,8 @@ class obs_hci(nrc_hci):
 
 
     def gen_planets_image(self, PA_offset=0, xyoff_asec=(0,0), use_cmask=True, 
-        wfe_drift=None, use_coeff=True, return_oversample=False, 
-        shift_method=None, interp=None, quiet=True, **kwargs):
+        sp=None, wfe_drift=None, use_coeff=True, return_oversample=False, 
+        shift_method=None, interp=None, quiet=True, use_ap_info=None, **kwargs):
         """Create image of just planets.
 
         Use info stored in self.planets to create a noiseless slope image
@@ -983,11 +986,14 @@ class obs_hci(nrc_hci):
             This should be -1 times telescope V3 PA.
         xyoff_asec : tuple
             Offsets (dx,dy) specified in arcsec. These are meant to be
-            for minor shifts, use as SGD. Bar offsets are accounted
+            for minor shifts, such as SGD. Bar offsets are accounted
             for automatically. 
         use_cmask : bool
             Use the coronagraphic mask image to determine if any planet is
             getting obscurred by a corongraphic mask feature. Default: True.
+        sp : :class:`webbpsf_ext.synphot_ext.Spectrum`
+            Specify the spectrum of the planet to be used. If None, then
+            uses info stored in self.planets.
         wfe_drift : float
             WFE drift value (in nm RMS). Not usually a concern for companion
             PSFs, so default is 0.
@@ -1050,16 +1056,18 @@ class obs_hci(nrc_hci):
             # Generate Image
 
             # Create slope image (postage stamp) of planet
-            sp = self.planet_spec(**pl)
+            source = kwargs.get('source', None)
+            if (sp is None) and (source is None):
+                sp = self.planet_spec(**pl)
 
             # Location relative to star
             plx_asec, ply_asec = pl['xyoff_asec']
 
-            # Add in PA offset
+            # Add in PA offset to get planet position in observed frame
             if PA_offset!=0:
                 plx_asec, ply_asec = xy_rot(plx_asec, ply_asec, PA_offset)
 
-            print(f'Planet offset ({plx_asec:.4f}, {ply_asec:.4f}) asec')
+            # print(f'Planet offset ({plx_asec:.4f}, {ply_asec:.4f}) asec')
 
             # bar offsets are added inside calc_psf_from_coeff
             xoff_idl, yoff_idl = (plx_asec + offx_asec, ply_asec + offy_asec)
@@ -1073,7 +1081,8 @@ class obs_hci(nrc_hci):
 
             # Determine final shift amounts to mask location
             # Shift to position relative to center of image
-            if (('FULL' in self.det_info['wind_mode']) and (self.image_mask is not None)) or self._use_ap_info:
+            use_ap_info = self._use_ap_info if use_ap_info is None else use_ap_info
+            if (('FULL' in self.det_info['wind_mode']) and (self.image_mask is not None)) or use_ap_info:
                 xcen, ycen = (self.siaf_ap.XSciRef - 1, self.siaf_ap.YSciRef - 1)
                 delx_pix = (xcen - (xpix/2. - 0.5))  # 'sci' pixel shifts
                 dely_pix = (ycen - (ypix/2. - 0.5))  # 'sci' pixel shifts
@@ -1119,10 +1128,10 @@ class obs_hci(nrc_hci):
             try:
                 # Sometimes fourier shift fails if the source is too close to the edge
                 psf_planet = fractional_image_shift(psf_planet, delx_over, dely_over, 
-                                                    method=shift_method, interp=interp, **kwargs)
+                                                    method=shift_method, interp=interp, pad=True, **kwargs)
             except ValueError:
                 psf_planet = fractional_image_shift(psf_planet, delx_over, dely_over, 
-                                                    method='fshift', interp='linear', **kwargs)
+                                                    method='fshift', interp='linear', pad=True, **kwargs)
 
 
             # Add to image
@@ -1141,7 +1150,7 @@ class obs_hci(nrc_hci):
     def gen_disk_image(self, PA_offset=0, xyoff_asec=(0,0), use_cmask=True, 
         return_oversample=False, diffusion_sigma=None, psf_corr_over=None, 
         apply_distortions=None, xypix=None, shift_method=None, interp=None, 
-        **kwargs):
+        use_ap_info=None, **kwargs):
         """Create image of just disk.
 
         Generate a (noiseless) convolved image of the disk 
@@ -1199,7 +1208,8 @@ class obs_hci(nrc_hci):
         # Determine final shift amounts to location along bar
         # Shift to position relative to center of image
         xcen_det, ycen_det = get_im_cen(np.zeros([ypix,xpix]))
-        if (('FULL' in self.det_info['wind_mode']) and (self.image_mask is not None)) or self._use_ap_info:
+        use_ap_info = self._use_ap_info if use_ap_info is None else use_ap_info
+        if (('FULL' in self.det_info['wind_mode']) and (self.image_mask is not None)) or use_ap_info:
             xref, yref = (self.siaf_ap.XSciRef - 1, self.siaf_ap.YSciRef - 1)
             # Offset relative to center of image
             delx_pix = xref - xcen_det  # 'sci' pixel shifts
@@ -1359,7 +1369,7 @@ class obs_hci(nrc_hci):
         wfe_drift0=0, wfe_ref_drift=None, wfe_roll_drift=None, 
         shift_method=None, interp=None, apply_distortions=None, 
         diffusion_sigma=None, kipc=None, kppc=None, psf_corr_over=None, 
-        **kwargs):
+        use_ap_info=None, **kwargs):
         """Create slope image of observation
         
         Beware that stellar position (centered on a pixel) will likely not
@@ -1535,7 +1545,8 @@ class obs_hci(nrc_hci):
 
         # Get center positions of detector image and equivalent position of star position
         xcen_det, ycen_det = get_im_cen(np.zeros([ypix,xpix]))
-        if (('FULL' in self.det_info['wind_mode']) and (self.image_mask is not None)) or self._use_ap_info:
+        use_ap_info = self._use_ap_info if use_ap_info is None else use_ap_info
+        if (('FULL' in self.det_info['wind_mode']) and (self.image_mask is not None)) or use_ap_info:
             xref, yref = (self.siaf_ap.XSciRef - 1, self.siaf_ap.YSciRef - 1)
             # SIAF Offset relative to center of image
             delx_pix = xref - xcen_det  # 'sci' orientation shifts
@@ -1609,6 +1620,7 @@ class obs_hci(nrc_hci):
         kwargs2['psf_corr_over'] = psf_corr_over
         kwargs2['shift_method'] = shift_method
         kwargs2['interp'] = interp
+        kwargs2['use_ap_info'] = use_ap_info
         # Companions
         if no_planets:
             im_pl = 0
@@ -1777,7 +1789,7 @@ class obs_hci(nrc_hci):
         no_ref=False, opt_diff=False, ref_scale_all=False, 
         wfe_drift0=0, wfe_ref_drift=None, wfe_roll_drift=None, 
         xyoff_roll1=None, xyoff_roll2=None, xyoff_ref=None, 
-        interp=None, do_sat=False, sat_val=0.95, **kwargs):
+        interp=None, do_sat=False, sat_val=0.95, use_ap_info=None, **kwargs):
         """Make roll-subtracted image.
 
         Create a final roll-subtracted slope image based on current observation
@@ -1955,7 +1967,9 @@ class obs_hci(nrc_hci):
         ###################################
 
         # Shift to position relative to center of image
-        if (('FULL' in self.det_info['wind_mode']) and (self.image_mask is not None)) or self._use_ap_info:
+        use_ap_info = self._use_ap_info if use_ap_info is None else use_ap_info
+        kwargs['use_ap_info'] = use_ap_info
+        if (('FULL' in self.det_info['wind_mode']) and (self.image_mask is not None)) or use_ap_info:
             xcen, ycen = (self.siaf_ap.XSciRef - 1, self.siaf_ap.YSciRef - 1)
             delx_pix = (xcen - (xpix/2. - 0.5))  # 'sci' pixel shifts
             dely_pix = (ycen - (ypix/2. - 0.5))  # 'sci' pixel shifts
