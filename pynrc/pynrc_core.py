@@ -1454,8 +1454,7 @@ class NIRCam(NIRCam_ext):
         self.psf_offset_to_center = xyoff_psf
         # print(f"PSF offset to center: {xyoff_psf[0]:.3f}, {xyoff_psf[1]:.3f}")
 
-    def recenter_psf(self, psf, sampling=1, 
-                     shift_func=fourier_imshift, interp='cubic', **kwargs):
+    def recenter_psf(self, psf, sampling=1, shift_func=fourier_imshift, interp='cubic', **kwargs):
         """Recenter PSF to array center"""
 
         xsh_to_cen, ysh_to_cen = self.psf_offset_to_center * sampling
