@@ -870,7 +870,7 @@ def _gen_nrc_class(filt, apname, date, fov_pix, oversample, autogen_coeffs=False
         retry_limit = 5
         while retries < retry_limit:
             try:
-                print(date)
+                # print(date)
                 nrc.load_wss_opd_by_date(date=date, choice=opd_choice, plot=False, verbose=False)
                 break
             except:
@@ -5783,6 +5783,7 @@ class nrc_rdi():
 
         optzones, subzones = build_annular_rdi_zones(nx, ny, (xcen,ycen), r_opt=r_opt, r_sub=r_sub, pxscale=pixelscale)
         self.set_zones(optzones, subzones, exclude_opt_nans=exclude_opt_nans)
+        self._check_smoothed_nans()
 
 
     def report_current_config(self, show_plots=False):
@@ -6711,6 +6712,7 @@ def obj_fn_grater(p, rdi_res, ndb, roi, nrc=None, rmax_accuracy=None, halfNbSlic
     pdict = p.valuesdict() 
 
     match_roll_sub = False if image_to_fit is not None else match_roll_sub
+    match_roll_sub_only = False if match_roll_sub==False else match_roll_sub_only
     err_weighting = False if image_to_fit is not None else err_weighting
     sig = rdi_res.err if err_weighting else None
 
@@ -6809,11 +6811,14 @@ def obj_fn_grater(p, rdi_res, ndb, roi, nrc=None, rmax_accuracy=None, halfNbSlic
     if sig is not None:
         res /= sig
 
-    if (gstd_pix is not None) and (gstd_pix > 0):
-        res = image_shift_with_nans(res, 0, 0, gstd_pix=gstd_pix, oversample=4, order=3, preserve_nans=True)
-
+    if ((gstd_pix is not None) and (gstd_pix > 0)) and (match_roll_sub_only==False):
+        res = image_shift_with_nans(res, 0, 0, gstd_pix=gstd_pix, 
+                                    oversample=4, order=3, preserve_nans=True)
+    
+    # Select region of interest
     res = res[roi]
     
+    # Clip residuals?
     if q_clip is None:
         res = np.abs(res)
     else:
@@ -6823,27 +6828,36 @@ def obj_fn_grater(p, rdi_res, ndb, roi, nrc=None, rmax_accuracy=None, halfNbSlic
 
     if match_roll_sub:
         res2 = rdi_res.roll_sub - fmrdi_res.roll_sub
-        res3 = rdi_res.roll_sub_abs - fmrdi_res.roll_sub_abs
+        # res3 = rdi_res.roll_sub_abs - fmrdi_res.roll_sub_abs
 
         if (gstd_pix is not None) and (gstd_pix > 0):
-            res2 = image_shift_with_nans(res2, 0, 0, gstd_pix=gstd_pix, oversample=4, order=3, preserve_nans=True)
+            res2 = image_shift_with_nans(res2, 0, 0, gstd_pix=gstd_pix, 
+                                         oversample=4, order=3, preserve_nans=True)
+            # res3 = image_shift_with_nans(res3, 0, 0, gstd_pix=gstd_pix, 
+            #                              oversample=4, order=3, preserve_nans=True)
 
+        # Select region of interest
         res2 = res2[roi]
-        res3 = res3[roi]
+        # res3 = res3[roi]
 
+        # Clip residuals?
         if q_clip is None:
             res2 = np.abs(res2)
-            res3 = np.abs(res3)
+            # res3 = np.abs(res3)
         else:
-            res2 = res2[ind_keep]
-            res3 = res3[ind_keep]
-        #     low,upp = np.nanpercentile(res2, q_clip)
-        #     res2 = np.abs(res2[(res2 >= low) & (res2 <= upp)])
-        #     low,upp = np.nanpercentile(res3, q_clip)
-        #     res3 = np.abs(res3[(res3 >= low) & (res3 <= upp)])
+            low,upp = np.nanpercentile(res2, q_clip)
+            ind_keep = (res2 >= low) & (res2 <= upp)
+            res2 = np.abs(res2[ind_keep])
 
-        # res = np.concatenate([res, res2, res3])
-        res = np.concatenate([res, res2])
+            # low,upp = np.nanpercentile(res3, q_clip)
+            # ind_keep = (res3 >= low) & (res3 <= upp)
+            # res3 = np.abs(res3[ind_keep])
+
+        if match_roll_sub_only:
+            return res2
+        else:
+            # res = np.concatenate([res, res2, res3])
+            res = np.concatenate([res, res2])
         
     return res
 
