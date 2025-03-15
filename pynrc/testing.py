@@ -1,6 +1,6 @@
 # from .nrc_utils import *
 import numpy as np
-from .nrc_utils import webbpsf, poppy, read_filter
+from .nrc_utils import stpsf, poppy, read_filter
 from .logging_utils import setup_logging
 from .pynrc_core import NIRCam
 from .opds import opd_default
@@ -9,7 +9,7 @@ def perform_benchmarks(filter='F430M', pupil=None, mask=None, module='A',
                        fov_pix=33, oversample=4, include_si_wfe=True, 
                        include_ote_field_dependence=True, include_distortions=True,
                        use_legendre=True, force=False, save=True, 
-                       do_webbpsf=True, do_webbpsf_only=False, return_nrc=False,
+                       do_stpsf=True, do_stpsf_only=False, return_nrc=False,
                        use_mp=None, nproc=None, **kwargs):
     
     import datetime, time
@@ -40,8 +40,8 @@ def perform_benchmarks(filter='F430M', pupil=None, mask=None, module='A',
     setup_logging('WARN', verbose=False)
     
     tdict = {
-        'webbpsf_init': None,
-        'webbpsf_psf': None,
+        'stpsf_init': None,
+        'stpsf_psf': None,
         'pynrc_coeff': None,
         'pynrc_drift': None,
         'pynrc_field': None,
@@ -57,19 +57,19 @@ def perform_benchmarks(filter='F430M', pupil=None, mask=None, module='A',
         poppy.conf.n_processes = nproc
 
     ####
-    # WebbPSF timings
+    # STPSF timings
     ####
-    if do_webbpsf or do_webbpsf_only:
+    if do_stpsf or do_stpsf_only:
         # Initialization overheads
         tarr = []
         for i in range(5):
             t0 = time.time()
-            inst = webbpsf.NIRCam()
+            inst = stpsf.NIRCam()
             inst.detector = 'NRCA5'
             t1 = time.time()
             tarr.append(t1-t0)
-        tdict['webbpsf_init'] = dt = np.mean(tarr)
-        time_string = 'Took {:.2f} seconds to init WebbPSF'.format(dt)
+        tdict['stpsf_init'] = dt = np.mean(tarr)
+        time_string = 'Took {:.2f} seconds to init STPSF'.format(dt)
         print(time_string)    
 
         # PSF Generation
@@ -81,11 +81,11 @@ def perform_benchmarks(filter='F430M', pupil=None, mask=None, module='A',
             t1 = time.time()
             dt = t1-t0
             tarr.append(dt)
-        tdict['webbpsf_psf'] = dt = np.mean(tarr)
-        time_string = 'Took {:.2f} seconds to generate WebbPSF PSF'.format(dt)
+        tdict['stpsf_psf'] = dt = np.mean(tarr)
+        time_string = 'Took {:.2f} seconds to generate STPSF PSF'.format(dt)
         print(time_string)    
 
-    if do_webbpsf_only and (not return_nrc):
+    if do_stpsf_only and (not return_nrc):
         return tdict
     
     ####
@@ -95,7 +95,7 @@ def perform_benchmarks(filter='F430M', pupil=None, mask=None, module='A',
     nrc = NIRCam(filter=filter, **kwargs)
     t1 = time.time()
     
-    if do_webbpsf_only and return_nrc:
+    if do_stpsf_only and return_nrc:
         return nrc
 
     tdict['pynrc_coeff'] = dt = t1-t0

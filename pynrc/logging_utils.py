@@ -1,7 +1,7 @@
 import sys
 from webbpsf_ext.logging_utils import setup_logging as setup_logging_wext
 
-import webbpsf, poppy, webbpsf_ext
+import stpsf, poppy, webbpsf_ext
 from . import conf
 
 import logging
@@ -40,7 +40,7 @@ def restart_logging(verbose=True):
     """
 
     level = str(conf.logging_level).upper()
-    lognames = ['pynrc', 'webbpsf', 'poppy']
+    lognames = ['pynrc', 'stpsf', 'poppy']
 
     root_logger = logging.getLogger()
     root_logger.handlers = []
@@ -100,15 +100,15 @@ def setup_logging(level='INFO', filename=None, verbose=True):
     """Setup Logging
     
     Allows selection of logging detail and output locations
-    (screen and/or file). Shamelessly stolen from WebbPSF utils.py.
+    (screen and/or file). Shamelessly stolen from STPSF utils.py.
 
     This is a convenience wrapper to Python's built-in logging package.
     By default, this sets up log messages to be written to the screen, 
     but the user can also request logging to a file.
 
-    Editing the WebbPSF config file to set `autoconfigure_logging = True`
+    Editing the STPSF config file to set `autoconfigure_logging = True`
     (and any of the logging settings you wish to persist) instructs
-    WebbPSF to apply your settings on import. (This is not
+    STPSF to apply your settings on import. (This is not
     done by default in case you have configured `logging` yourself
     and don't wish to overwrite your configuration.)
 

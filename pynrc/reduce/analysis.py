@@ -14,7 +14,7 @@ from webbpsf_ext import robust
 from webbpsf_ext.analysis_tools import ipc_info, ppc_info
 from webbpsf_ext.imreg_tools import read_sgd_files, get_files, get_coron_apname
 
-from webbpsf.utils import get_webbpsf_data_path
+from stpsf.utils import get_stpsf_data_path
 
 from ..nrc_utils import get_one_siaf, get_detname
 
@@ -814,7 +814,7 @@ def get_cached_opd_file(date, choice='before'):
     """Grab cached OPD file based on date"""
     from astropy.time import Time
 
-    opd_dir = os.path.join(get_webbpsf_data_path(), 'MAST_JWST_WSS_OPDs')
+    opd_dir = os.path.join(get_stpsf_data_path(), 'MAST_JWST_WSS_OPDs')
     opd_files = np.array([f for f in os.listdir(opd_dir) if '.fits' in f])
     dates = []
     for f in opd_files:
@@ -874,7 +874,7 @@ def _gen_nrc_class(filt, apname, date, fov_pix, oversample, autogen_coeffs=False
                 nrc.load_wss_opd_by_date(date=date, choice=opd_choice, plot=False, verbose=False)
                 break
             except:
-                opd_dir = os.path.join(get_webbpsf_data_path(), 'MAST_JWST_WSS_OPDs')
+                opd_dir = os.path.join(get_stpsf_data_path(), 'MAST_JWST_WSS_OPDs')
                 fname = get_cached_opd_file(date, choice=opd_choice)
                 fpath = os.path.join(opd_dir, fname)
                 nrc.load_wss_opd(fpath, plot=False, verbose=False)
@@ -915,7 +915,7 @@ def _gen_nrc_class(filt, apname, date, fov_pix, oversample, autogen_coeffs=False
 
     nrc._update_bg_class(fov_bg_match=True)
 
-    # Update default webbpsf detector position (sci coords) to correspond 
+    # Update default stpsf detector position (sci coords) to correspond 
     # to requested aperture reference point
     ap_full = nrc_siaf[nrc.aperturename]
     xsci_full, ysci_full = ap_full.det_to_sci(ap.XDetRef, ap.YDetRef)
@@ -1606,7 +1606,7 @@ def make_ptsrc_hduls(nrc, posangs, ptsrc_dict, c_star=None, c_coron=None, use_co
     Generates a list of PSF HDULists appropriate for the data loaded in the "spacerdi" object based on point source parameters
     in ptsrc_dict, the position of the star and mask in each science image, and the position angle(s) of the science data.
     For science data with N rolls and a ptsrc_dict containing M point sources, this function will generate N*M PSF models 
-    with WebbPSF.
+    with STPSF.
     ___________
     Parameters:
 

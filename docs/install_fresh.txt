@@ -22,7 +22,7 @@ Assume anaconda python >3.8 installation on Linux/Mac
       Maybe use "pip install --no-deps -e ."??
    Branch to use: develop
 
-3. webbpsf - https://github.com/spacetelescope/webbpsf
+3. stpsf - https://github.com/spacetelescope/stpsf
    Download source directly from github. Navigate to directory, 
    then use pip's -e option to create an editable installation:
       "pip install -e ."
@@ -30,11 +30,11 @@ Assume anaconda python >3.8 installation on Linux/Mac
    Note: This also install photutils via pip if not already installed
    Branch to use: develop
 
-3a. webbpsf-data files - https://stsci.box.com/shared/static/34o0keicz2iujyilg4uz617va46ks6u9.gz
-   Download WebbPSF data files into "webbpsf-data" directory.
-   Set the environment variable $WEBBPSF_PATH to point to that directory.
+3a. stpsf-data files - https://stsci.box.com/shared/static/kqfolg2bfzqc4mjkgmujo06d3iaymahv.gz
+   Download STPSF data files into "stpsf-data" directory.
+   Set the environment variable $STPSF_PATH to point to that directory.
    For example, in .bashrc shell file, add:  
-      export WEBBPSF_PATH='$HOME/data/webbpsf-data/'
+      export STPSF_PATH='$HOME/data/stpsf-data/'
    
 4. jwst-backgrounds - https://github.com/spacetelescope/jwst_backgrounds
    Install healpy: conda install healpy

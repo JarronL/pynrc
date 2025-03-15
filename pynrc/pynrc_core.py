@@ -425,7 +425,7 @@ class NIRCam(NIRCam_ext):
             Odd number place the PSF on the center of the pixel,
             whereas an even number centers it on the "crosshairs."
         oversample : int
-            Factor to oversample during WebbPSF calculations.
+            Factor to oversample during STPSF calculations.
             Default 2 for coronagraphy and 4 otherwise.
         include_si_wfe : bool
             Include SI WFE measurements? Default=True.
@@ -861,7 +861,7 @@ class NIRCam(NIRCam_ext):
             Odd number place the PSF on the center of the pixel,
             whereas an even number centers it on the "crosshairs."
         oversample : int
-            Factor to oversample during WebbPSF calculations.
+            Factor to oversample during STPSF calculations.
             Default 2 for coronagraphy and 4 otherwise.
         include_si_wfe : bool
             Include SI WFE measurements? Default=True.
@@ -1360,8 +1360,8 @@ class NIRCam(NIRCam_ext):
         self.siaf_ap = siaf_ap
 
         # Update detector position to default of aperture
-        ap_webbpsf = self.siaf[self.aperturename]
-        self.detector_position = ap_webbpsf.det_to_sci(siaf_ap.XDetRef, siaf_ap.YDetRef)
+        ap_stpsf = self.siaf[self.aperturename]
+        self.detector_position = ap_stpsf.det_to_sci(siaf_ap.XDetRef, siaf_ap.YDetRef)
 
 
     def calc_psf_from_coeff(self, sp=None, return_oversample=True, return_hdul=True,
@@ -1399,7 +1399,7 @@ class NIRCam(NIRCam_ext):
         #     cvals_sci = self.siaf_ap.convert(coord_vals[0], coord_vals[1], coord_frame, 'sci')
         #     print(f'sci coords: {cvals_sci} (convert from {coord_frame})')
 
-        _log.info("Calculating PSF from WebbPSF parent function")
+        _log.info("Calculating PSF from STPSF parent function")
         log_prev = conf.logging_level
         setup_logging('WARN', verbose=False)
 
@@ -2274,7 +2274,7 @@ class NIRCam(NIRCam_ext):
             Option to also return coordinate values in desired frame 
             ('det', 'sci', 'tel', 'idl'). Output is then xvals, yvals, hdul_psfs.
         use_coeff : bool
-            If True, uses `calc_psf_from_coeff`, other WebbPSF's built-in `calc_psf`.
+            If True, uses `calc_psf_from_coeff`, other STPSF's built-in `calc_psf`.
 
         Keyword Args
         ============
@@ -2762,7 +2762,7 @@ def saturation_limits(inst, psf_coeff=None, psf_coeff_hdr=None, sp=None, bp_lim=
     ==========
 
     inst : NIRCam class
-        pynrc or webbpsf_ext or webbpsf
+        pynrc or webbpsf_ext or stpsf
     psf_coeff : ndarray
         A cube of polynomial coefficients for generating PSFs. This is generally 
         oversampled with a shape (fov_pix*oversamp, fov_pix*oversamp, deg).
@@ -3122,7 +3122,7 @@ def sensitivities(inst, psf_coeff=None, psf_coeff_hdr=None, sp=None, units=None,
     if coron_obs: 
         fzodi_pix *= 0.19
 
-    # The number of pixels to span spatially for WebbPSF calculations
+    # The number of pixels to span spatially for STPSF calculations
     fov_pix    = psf_coeff_hdr['FOVPIX']
     oversample = psf_coeff_hdr['OSAMP']
 

@@ -2,13 +2,13 @@ from astropy.table import Table, join
 from astropy.io import fits
 from scipy.interpolate import griddata, RegularGridInterpolator
 
-import pynrc, webbpsf, os
-#inst = webbpsf.NIRCam()
+import pynrc, stpsf, os
+#inst = stpsf.NIRCam()
 
 outdir = pynrc.conf.path + 'opd_mod/'
 
 # Read in measured SI Zernike data
-data_dir = webbpsf.utils.get_webbpsf_data_path() + '/'
+data_dir = stpsf.utils.get_stpsf_data_path() + '/'
 zernike_file = data_dir + 'si_zernikes_isim_cv3.fits'
 
 # Read in Zemax Zernike data to remove edge effects

@@ -124,7 +124,7 @@ def create_level1b_FITS(sim_config, detname=None, apname=None, filter=None, visi
     params_targets = sim_config['params_targets']
 
     # PSF information
-    kwargs_nrc = sim_config['params_webbpsf']
+    kwargs_nrc = sim_config['params_stpsf']
     kwargs_psf = sim_config['params_psfconv']
     kwargs_wfedrift = sim_config.get('params_wfedrift')
     large_grid = sim_config['large_grid']
@@ -793,7 +793,7 @@ def sources_to_slope(source_table, nircam_obj, obs_params, tel_pointing,
         Sampling of output PSF relative to detector sampling. If `hdul_psfs` is 
         specified, then the 'OSAMP' header keyword takes precedence.
     use_coeff : bool
-        If True, uses ``calc_psf_from_coeff``, other WebbPSF's built-in ``calc_psf``.
+        If True, uses ``calc_psf_from_coeff``, other STPSF's built-in ``calc_psf``.
         Coefficients are much faster. Default is True.
     """
 
@@ -952,7 +952,7 @@ def sources_to_level1b(source_table, nircam_obj, obs_params, tel_pointing,
         Sampling of output PSF relative to detector sampling. If `hdul_psfs` is 
         specified, then the 'OSAMP' header keyword takes precedence.
     use_coeff : bool
-        If True, uses `calc_psf_from_coeff`, other WebbPSF's built-in `calc_psf`.
+        If True, uses `calc_psf_from_coeff`, other STPSF's built-in `calc_psf`.
         Coefficients are much faster
 
     Ramp Gen Keywords
@@ -1433,9 +1433,9 @@ def gen_wfe_drift(obs_input, case='BOL', iec_period=300, slew_init=10, rand_seed
         Output name (path) to save plot figure.
     """
 
-    import webbpsf
+    import stpsf
     from webbpsf_ext.opds import OTE_WFE_Drift_Model
-    from webbpsf.utils import get_webbpsf_data_path
+    from stpsf.utils import get_stpsf_data_path
     from ..opds import opd_default, opd_dir, pupil_file
 
     def plot_wfe(figname=None):
@@ -1548,8 +1548,8 @@ def gen_wfe_drift(obs_input, case='BOL', iec_period=300, slew_init=10, rand_seed
 
     # Data directories
     # OPD directory defined above
-    webbpsf_path = get_webbpsf_data_path()
-    pupil_dir    = webbpsf_path
+    stpsf_path = get_stpsf_data_path()
+    pupil_dir    = stpsf_path
 
     # Pupil and OPD file path names
     opd_file, opd_index = opd_default

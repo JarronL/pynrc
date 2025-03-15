@@ -70,8 +70,9 @@ napoleon_use_rtype = False
 
 # Add mappings
 intersphinx_mapping = {
-    'webbpsf': ('https://webbpsf.readthedocs.io/en/latest', None),
+    'stpsf': ('https://stpsf.readthedocs.io/en/latest', None),
     'synphot': ('https://synphot.readthedocs.io/en/latest/', None),
+    'stsynphot': ('https://stsynphot.readthedocs.io/en/latest/', None),
 }
 
 # Add any paths that contain templates here, relative to this directory.

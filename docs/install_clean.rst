@@ -76,26 +76,26 @@ You should now be able to successfully ``import synphot`` and ``import stsynphot
 
 -------------------------------------
 
-.. _install_webbpsf:
+.. _install_stspf:
 
-Installing WebbPSF
+Installing STPSF
 ====================
 
-The easiest way to install WebbPSF without inducing package conflicts is to install some of its main dependencies, then WebbPSF using the ``--no-deps`` flag. In this particular example, we use a combination of ``conda`` and ``pip``, because of minor issues installing ``photutils`` dependencies. 
+The easiest way to install STPSF without inducing package conflicts is to install some of its main dependencies, then STPSF using the ``--no-deps`` flag. In this particular example, we use a combination of ``conda`` and ``pip``, because of minor issues installing ``photutils`` dependencies. 
 
 .. code-block:: sh
 
     $ pip install photutils 
     $ pip install pysiaf poppy
-    $ pip install webbpsf
+    $ pip install stspf
 
-This will install WebbPSF without installing its dependencies, which should mostly be already installed. 
+This will install STPSF without installing its dependencies, which should mostly be already installed. 
 
-WebbPSF Data Files
+STPSF Data Files
 --------------------------
 
-You will also need to download and install `WebbPSF data files 
-<https://webbpsf.readthedocs.io/en/stable/installation.html#installing-the-required-data-files>`_  [approx. 70 MB]. Follow the same procedure as with the **stsynphot** data files, setting the ``WEBBPSF_PATH`` environment variable to point towards your ``webbpsf-data`` directory.
+You will also need to download and install `STPSF data files 
+<https://stpsf.readthedocs.io/en/latest/installation.html#installing-the-required-data-files>`_  [approx. 70 MB]. Follow the same procedure as with the **stsynphot** data files, setting the ``STPSF_PATH`` environment variable to point towards your ``stpsf-data`` directory.
 
 
 Matplotlib Backends
@@ -272,6 +272,6 @@ In the end, you should have a number of environment variables in your ``.bashrc`
    export CRDS_PATH='$HOME/data/crds_cache/'
    export CRDS_SERVER_URL='https://jwst-crds.stsci.edu'
    export PYSYN_CDBS='$HOME/data/cdbs/'
-   export WEBBPSF_PATH='$HOME/data/webbpsf-data/'
+   export STPSF_PATH='$HOME/data/stpsf-data/'
    export WEBBPSF_EXT_PATH='$HOME/data/webbpsf_ext_data/'
    export PYNRC_DATA='$HOME/data/pynrc_data/'

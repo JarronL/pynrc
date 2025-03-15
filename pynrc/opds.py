@@ -9,7 +9,7 @@ pupil_file  = 'jwst_pupil_RevW_npix1024.fits.gz'
 # The following won't work on readthedocs compilation
 on_rtd = os.environ.get('READTHEDOCS') == 'True'
 if not on_rtd:
-    from webbpsf.utils import get_webbpsf_data_path
+    from stpsf.utils import get_stpsf_data_path
     from webbpsf_ext.utils import check_fitsgz
 
     # Set up initial OPD file info
@@ -24,9 +24,9 @@ if not on_rtd:
     # If a NIRCam-specific OPD file, grab from NIRCam OPD directory,
     # otherwise OPD file will be found in main webbpsf-data directory.
     if 'NIRCam' in opd_file:
-        opd_dir = os.path.join(get_webbpsf_data_path(),'NIRCam','OPD')
+        opd_dir = os.path.join(get_stpsf_data_path(),'NIRCam','OPD')
     else:
-        opd_dir = get_webbpsf_data_path()
+        opd_dir = get_stpsf_data_path()
 
 else:
     opd_dir = ''

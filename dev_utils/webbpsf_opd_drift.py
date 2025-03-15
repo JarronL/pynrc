@@ -1,5 +1,5 @@
 """
-Module for evolving WebbPSF OPDs
+Module for evolving STPSF OPDs
 
 Written by Jarron Leisenring (University of Arizona)
 """
@@ -23,14 +23,14 @@ matplotlib.rcParams['image.cmap'] = cmap_pri if cmap_pri in plt.colormaps() else
 
 
 import os
-import webbpsf, scipy
+import stpsf, scipy
 from astropy.io import fits
 import astropy.units as u
 
-from webbpsf.opds import OTE_Linear_Model_WSS
+from stpsf.opds import OTE_Linear_Model_WSS
 
 import logging
-_log = logging.getLogger('webbpsf')
+_log = logging.getLogger('stpsf')
 
 class OTE_WFE_Drift_Model(OTE_Linear_Model_WSS):
     """
@@ -513,9 +513,9 @@ class OTE_WFE_Drift_Model(OTE_Linear_Model_WSS):
             _log.warning('Must specify `return_wfe_amps` and/or `return_dopd_fin`')
             return
 
-        log_prev = webbpsf.conf.logging_level
+        log_prev = stpsf.conf.logging_level
         if 'WARN' not in log_prev:
-            webbpsf.setup_logging('WARN')
+            stpsf.setup_logging('WARN')
 
         # Indices where slews occur
         islew = np.where(slew_angles[1:] - slew_angles[:-1] != 0)[0] + 1
@@ -576,7 +576,7 @@ class OTE_WFE_Drift_Model(OTE_Linear_Model_WSS):
             
 
         if 'WARN' not in log_prev:
-            webbpsf.setup_logging(log_prev)
+            stpsf.setup_logging(log_prev)
 
         # Calculate RMS values on final delta OPDs
         if return_wfe_amps:

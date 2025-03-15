@@ -5,7 +5,7 @@ import numpy as np
 
 import pynrc
 from pynrc import nrc_utils
-from pynrc.nrc_utils import webbpsf, poppy, offset_bar
+from pynrc.nrc_utils import stpsf, poppy, offset_bar
 
 import astropy.io.fits as fits
 import multiprocessing as mp
@@ -23,7 +23,7 @@ class OPD_extract(object):
     
     For a given JWST OPD image and header, extract the Zernike/Hexike 
     components for the overall pupil and each mirror segment. Makes
-    use of functions in webbpsf.
+    use of functions in stpsf.
     
     Parameters
     ----------
@@ -506,7 +506,7 @@ def get_psf(opd, header, filter='F410M', mask=None, pupil=None,
     hdu.header = header.copy()
     opd_hdulist = fits.HDUList([hdu])    
 
-    nc = webbpsf.NIRCam()
+    nc = stpsf.NIRCam()
     nc.pupilopd   = opd_hdulist 
     nc.filter     = filter
     nc.image_mask = mask
@@ -695,11 +695,11 @@ def get_contrast_old(psf0,psf1,psf2):
     #psf_diff[1].data = (psf1[1].data - psf2[1].data)
 
     # Radial noise profiles of PSF difference
-    #rr0, stds0 = webbpsf.radial_profile(psf_diff, ext=0, stddev=True)
-    #rr1, stds1 = webbpsf.radial_profile(psf_diff, ext=1, stddev=True)
+    #rr0, stds0 = stpsf.radial_profile(psf_diff, ext=0, stddev=True)
+    #rr1, stds1 = stpsf.radial_profile(psf_diff, ext=1, stddev=True)
 
     ## Total planet signal at a radius of 0.5"
-    #rr_psf0, mn_psf0, ee_psf0 = webbpsf.radial_profile(psf0, ext=0, EE=True)
+    #rr_psf0, mn_psf0, ee_psf0 = stpsf.radial_profile(psf0, ext=0, EE=True)
     #rad_asec = 0.5
     #npix = np.pi * (rad_asec / psf0[0].header['PIXELSCL'])**2
     ## Get the encircled energy of planet at radius
@@ -741,7 +741,7 @@ def get_contrast(speckle_noise_image, planet_psf):
     xcen = header['NAXIS1'] / 2.0 + xoff
     ycen = header['NAXIS2'] / 2.0 + yoff
 
-    #rr0, stds0 = webbpsf.radial_profile(speckle_noise_image, ext=ext, center=(xcen,ycen))
+    #rr0, stds0 = stpsf.radial_profile(speckle_noise_image, ext=ext, center=(xcen,ycen))
     rho = dist_image(data, pixscale=pixelscale, center=(xcen,ycen))
     binsize = pixelscale
     bins = np.arange(rho.min(), rho.max() + binsize, binsize)
@@ -750,7 +750,7 @@ def get_contrast(speckle_noise_image, planet_psf):
     stds0 = binned_statistic(rho, data, func=np.mean, bins=bins)
     contrast = stds0 / np.max(planet_psf[0].data)
 
-    #rr1, stds1 = webbpsf.radial_profile(psf_diff, ext=1)
+    #rr1, stds1 = stpsf.radial_profile(psf_diff, ext=1)
 
 
     return rr0, contrast
@@ -834,7 +834,7 @@ def opd_drift_nogood(opd, drift, nterms=8, defocus_frac=0.8):
     Returns
     --------
     HDUList :
-        Returns an HDUList, which can be passed to webbpsf
+        Returns an HDUList, which can be passed to stpsf
     """
 
 
@@ -918,7 +918,7 @@ def _opd_drift_nogood(opd, header, drift, nterms=8, defocus_frac=0.8):
     Returns
     --------
     HDUList :
-        Returns an HDUList, which can be passed to webbpsf
+        Returns an HDUList, which can be passed to stpsf
     """
 
 
@@ -989,7 +989,7 @@ def read_opd_file(opd_file, opd_path=None, header=True):
     """
     
     if opd_path is None:
-        data_path = webbpsf.utils.get_webbpsf_data_path() + '/'
+        data_path = stpsf.utils.get_stpsf_data_path() + '/'
         opd_path = data_path + 'NIRCam/OPD/'
         
     return fits.getdata(opd_path + opd_file, header=header)

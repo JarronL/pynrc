@@ -62,7 +62,7 @@ import logging
 _log = logging.getLogger('pynrc')
 
 ###########################################################################
-#    WebbPSF
+#    STPSF
 ###########################################################################
 
 try:
@@ -72,13 +72,13 @@ except ImportError:
     raise ImportError('webbpsf_ext is not installed. pyNRC depends on its inclusion.')
 
 # Some useful functions for displaying and measuring PSFs
-import webbpsf, poppy
+import stpsf, poppy
 from poppy import (radial_profile, measure_radial, measure_fwhm, measure_ee)
 from poppy import (measure_sharpness, measure_centroid) #, measure_strehl)
 
 # The following won't work on readthedocs compilation
 if not on_rtd:
-    # Grab WebbPSF assumed pixel scales
+    # Grab STPSF assumed pixel scales
     log_prev = conf.logging_level
     setup_logging('WARN', verbose=False)
     nc_temp = webbpsf_ext.NIRCam_ext()
@@ -1518,7 +1518,7 @@ def offset_bar(filt, mask):
     else:
         r, theta = (0.0, 0.0)
 
-    # Want th_bar to be -90 so that r matches webbpsf
+    # Want th_bar to be -90 so that r matches stpsf
     if theta>0: 
         r  = -1 * r
         theta = -1 * theta
@@ -1536,17 +1536,17 @@ def segment_pupil_opd(hdu, segment_name, npix=1024):
     Returns both the pupil mask and OPD image as separate HDULists.
     """
     
-    from webbpsf.webbpsf_core import segname, one_segment_pupil
-    webbpsf_data_path = webbpsf.utils.get_webbpsf_data_path()
+    from stpsf.stpsf_core import segname, one_segment_pupil
+    stpsf_data_path = stpsf.utils.get_stpsf_data_path()
 
     # Pupil and segment information
-    # pupil_file = os.path.join(webbpsf_data_path, "jwst_pupil_RevW_npix1024.fits.gz")
+    # pupil_file = os.path.join(stpsf_data_path, "jwst_pupil_RevW_npix1024.fits.gz")
 
     # get the master pupil file, which may or may not be gzipped
-    pupil_file = os.path.join(webbpsf_data_path, f"jwst_pupil_RevW_npix{npix}.fits")
+    pupil_file = os.path.join(stpsf_data_path, f"jwst_pupil_RevW_npix{npix}.fits")
     if not os.path.exists(pupil_file):
         # try with .gz
-        pupil_file = os.path.join(webbpsf_data_path, f"jwst_pupil_RevW_npix{npix}.fits.gz")
+        pupil_file = os.path.join(stpsf_data_path, f"jwst_pupil_RevW_npix{npix}.fits.gz")
     pupil_hdul = fits.open(pupil_file)
 
     if segment_name.upper()=='ALL':

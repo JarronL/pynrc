@@ -174,7 +174,7 @@ class nrc_hci(NIRCam):
         return_oversample : bool
             Return either the pixel-sampled or oversampled PSF.
         use_coeff : bool
-            If True, uses `calc_psf_from_coeff`, other WebbPSF's built-in `calc_psf`.
+            If True, uses `calc_psf_from_coeff`, other STPSF's built-in `calc_psf`.
         coron_rescale : bool
             Rescale total flux of off-axis coronagraphic PSF to better match 
             analytic prediction when source overlaps coronagraphic occulting 
@@ -998,7 +998,7 @@ class obs_hci(nrc_hci):
             WFE drift value (in nm RMS). Not usually a concern for companion
             PSFs, so default is 0.
         use_coeff : bool
-            If True, uses `calc_psf_from_coeff`, otherwise use WebbPSF's 
+            If True, uses `calc_psf_from_coeff`, otherwise use STPSF's 
             built-in `calc_psf` for stellar sources.
         return_oversample : bool
             Return either the detector pixel-sampled or oversampled image.
@@ -1026,7 +1026,7 @@ class obs_hci(nrc_hci):
             Default: None.
         psf_corr_over : ndarray
             Oversampled PSF correction factor. This is used to better match
-            WebbPSF PSFs to observed PSFs. Default: None.
+            STPSF PSFs to observed PSFs. Default: None.
         """
         if len(self.planets)==0:
             _log.info("No planet info at self.planets")
@@ -1445,7 +1445,7 @@ class obs_hci(nrc_hci):
             If set to True, use total signal for noise estimate,
             otherwise MULTIACCUM equation is used.
         use_coeff : bool
-            If True, uses `calc_psf_from_coeff`, other WebbPSF's built-in `calc_psf`
+            If True, uses `calc_psf_from_coeff`, other STPSF's built-in `calc_psf`
             for stellar sources.
         """
 
@@ -1859,7 +1859,7 @@ class obs_hci(nrc_hci):
         exclude_noise : bool
             Don't add random Gaussian noise (detector+photon)
         use_coeff : bool
-            If True, uses `calc_psf_from_coeff`, other WebbPSF's built-in `calc_psf`
+            If True, uses `calc_psf_from_coeff`, other STPSF's built-in `calc_psf`
             for stellar sources.
         psf_corr_over : ndarray
             PSF correction factor for oversampled PSF. Used to better match simulated

@@ -19,6 +19,6 @@ dependencies:
         - synphot>=1.2
         - stsynphot>=1.2
         - poppy>=1.1.0
-        - webbpsf>=1.2.0
+        - stpsf>=2.0.0
         - jwst>=1.10
-        - webbpsf_ext>=1.2.0
+        - webbpsf_ext>=2.0.0

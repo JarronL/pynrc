@@ -1,6 +1,11 @@
 Revision History
 ================
 
+v2.0.0 (Mar 14, 2025)
+----------------------
+
+ - Switch over from WebbPSF to STPSF.
+
 v1.3.2 (Oct 7, 2024)
 ----------------------
 

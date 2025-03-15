@@ -1104,7 +1104,7 @@ def plot_hdulist(hdulist, ext=0, xr=None, yr=None, ax=None, return_ax=False,
     cmap=None, scale='linear', vmin=None, vmax=None, axes_color='white',
     half_pix_shift=False, cb_label='Counts/sec', **kwargs):
 
-    from webbpsf import display_psf
+    from stpsf import display_psf
 
     if ax is None:
         fig, ax = plt.subplots()
