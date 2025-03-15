@@ -7,5 +7,5 @@ authors:
 title: "pyNRC: Python ETC and Simulator for JWST NIRCam"
 version: v2.0.0
 doi: 10.5281/zenodo.5829552
-date-released: 2024-09-05
+date-released: 2025-03-15
 url: "https://github.com/JarronL/pynrc"

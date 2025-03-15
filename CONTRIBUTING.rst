@@ -132,51 +132,33 @@ A reminder for the maintainers on how to deploy. First, make sure the following 
 
 
 1. Add entries to HISTORY.rst. Make sure all your changes are committed to git.
-2. Update version using ``bump2version``, which automatically updates ``pynrc.version``. Usage: ``bump2version [options] part [file]``, where "part" is either major, minor, or patch (e.g., major.minor.patch). See https://github.com/c4urself/bump2version for more details. For instance, ``bump2version minor`` will update from 1.0.5 to 1.1.0
+2. Update CITATION.cff file with release date (``bump2version`` will update version info).
+3. Update version using ``bump2version``, which automatically updates ``pynrc.version``. Usage: ``bump2version [options] part [file]``, where "part" is either major, minor, or patch (e.g., major.minor.patch). See https://github.com/c4urself/bump2version for more details. For instance, ``bump2version minor`` will update from 1.0.5 to 1.1.0
 
    .. code-block:: sh
 
       $ bump2version [major | minor | patch]
 
-3. Generate documentation locally:
+4. Generate documentation locally:
 
    .. code-block:: sh
 
       $ make docs
 
-4. Push all updates to github and make sure readthedocs generates correctly before actually submitting the release.
-5. Package a distribution and test upload the release to TestPyPI:
+5. Push all updates to github and make sure readthedocs generates correctly before actually submitting the release.
+6. Package a distribution and test upload the release to TestPyPI:
    
    .. code-block:: sh
 
       $ make release-test
 
-6. If everything works without a hitch, then upload the release to PyPI:
+7. If everything works without a hitch, then upload the release to PyPI:
 
    .. code-block:: sh
 
       $ make release
     
    This command also tags the release on github. Make sure to have the command line token handy to enter as the requested password. Double-check ``stable`` release of readthedocs.
-   
-.. todo::
-
-      7. Release code to ``conda-forge``. If you already have a conda-forge  feedstock forked to your own GitHub account, first edit ``recipe/meta.yaml`` to update the version, hash, etc. To calculate the sha256 hash, run:
-   
-         .. code-block:: sh
-
-            openssl dgst -sha256 path/to/package_name-0.1.1.tar.gz
-   
-         Then, commit and push the yaml file to GitHub:
-   
-         .. code-block:: sh
-
-            git pull upstream master
-            git add --all
-            git commit -m 'version bump to v0.1.1'
-            git push -u origin master
-   
-         Finally, issue a pull request to conda-forge.
        
 8. At end of all this, double-check the build environments at https://readthedocs.org/projects/pynrc/builds/. For whatever reason, it is common for there to be an OSError and the build to fail. Resetting the environment at https://readthedocs.org/projects/pynrc/versions/ tends to fix this issue. Build times take about 5 minutes.
        
