@@ -558,7 +558,9 @@ class NIRCam(NIRCam_ext):
 
         # Initialize PSF offset to center of image
         # Calculate PSF offset from center if _nrc_bg coefficients are available
-        if self._nrc_bg.psf_coeff is not None:
+        if self.is_grism:
+            self.psf_offset_to_center = None
+        elif self._nrc_bg.psf_coeff is not None:
             self.calc_psf_offset_from_center(use_coeff=True)
         else:
             self.calc_psf_offset_from_center(use_coeff=False)
@@ -1457,10 +1459,14 @@ class NIRCam(NIRCam_ext):
     def recenter_psf(self, psf, sampling=1, shift_func=fourier_imshift, interp='cubic', **kwargs):
         """Recenter PSF to array center"""
 
+        if self.psf_offset_to_center is None:
+            _log.warning('psf_offset_to_center is not defined. No shift applied.')
+            return psf
+
         xsh_to_cen, ysh_to_cen = self.psf_offset_to_center * sampling
         kwargs['interp'] = interp
 
-        # print(f"Recentering PSF: ({xsh_to_cen/sampling:.3f}, {ysh_to_cen/sampling:.3f}) pixels")
+        _log.debug(f"Recentering PSF: ({xsh_to_cen/sampling:.3f}, {ysh_to_cen/sampling:.3f}) pixels")
 
         return shift_func(psf, xsh_to_cen, ysh_to_cen, **kwargs)
 
