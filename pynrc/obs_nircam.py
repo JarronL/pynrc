@@ -232,11 +232,12 @@ class nrc_hci(NIRCam):
             cmask = self.mask_images['DETSAMP']
             # 1. For the FULL TA masks, we want offsets relative to the mask reference point
             # 2. For all others, we want reference points relative to the 20"x20" coronagraphic field 
-            if 'TAMASK' in apname:
-                siaf_ap_relative = self.siaf_ap 
-            else:
-                si_mask_apname = self._psf_coeff_mod.get('si_mask_apname')
-                siaf_ap_relative = self.siaf[si_mask_apname]
+            # TODO: This doesn't seem to be used anymore?
+            # if 'TAMASK' in apname:
+            #     siaf_ap_relative = self.siaf_ap 
+            # else:
+            #     si_mask_apname = self._psf_coeff_mod.get('si_mask_apname')
+            #     siaf_ap_relative = self.siaf[si_mask_apname]
 
             # If we're use_ap_info is True, then the cmask image is setup to be w.r.t.
             # the SIAF aperture. But if False, then cmask image is centered at middle of mask.
@@ -2512,39 +2513,52 @@ class obs_hci(nrc_hci):
             # No reference image subtraction; pure roll subtraction
             # Generate 2 PSFs separated by roll angle to find self-subtracted PSF peak
 
-            off_vals = []
-            max_vals = []
-            rvals_pix = np.insert(np.arange(1,xpix/2,5), 0, 0.1)
-            interp = 'linear' #if ('FULL' in self.det_info['wind_mode']) else 'cubic'
-            for roff_pix in rvals_pix:
-                roff_asec = roff_pix * pixscale
-                psf1 = self.gen_offset_psf(roff_asec, 0, return_oversample=False, 
-                                           coron_rescale=True, diffusion_sigma=df_sig,
-                                           psf_corr_over=psf_corr_over)
-                psf2 = self.gen_offset_psf(roff_asec, roll_angle, return_oversample=False, 
-                                           coron_rescale=True, diffusion_sigma=df_sig,
-                                           psf_corr_over=psf_corr_over)
+            # Store PSF max for later retrieval
+            try:
+                psf_sums_dict = self._psf_sums
+            except AttributeError:
+                psf_sums_dict = {}
+                self._psf_sums = psf_sums_dict
 
-                psf1 = fshift(psf1, delx=0, dely=roff_pix, pad=False, interp=interp)
-                xoff, yoff = xy_rot(0, roff_pix, 10)
-                psf2 = fshift(psf2, delx=xoff, dely=yoff, pad=False, interp=interp)
+            psf_max = psf_sums_dict.get('psf_max_rollsub', None)
+            if psf_max is None:
 
-                diff = psf1 - psf2
-                maxv = np.max(diff)
+                off_vals = []
+                max_vals = []
+                rvals_pix = np.insert(np.arange(1,xpix/2,5), 0, 0.1)
+                interp = 'linear' #if ('FULL' in self.det_info['wind_mode']) else 'cubic'
+                for roff_pix in rvals_pix:
+                    roff_asec = roff_pix * pixscale
+                    psf1 = self.gen_offset_psf(roff_asec, 0, return_oversample=False, 
+                                            coron_rescale=True, diffusion_sigma=df_sig,
+                                            psf_corr_over=psf_corr_over)
+                    psf2 = self.gen_offset_psf(roff_asec, roll_angle, return_oversample=False, 
+                                            coron_rescale=True, diffusion_sigma=df_sig,
+                                            psf_corr_over=psf_corr_over)
 
-                off_vals.append(roff_pix)
-                max_vals.append(maxv)
-                if maxv >= 0.95*psf1.max():
-                    off_vals = off_vals + [roff_pix+5, xpix/2]
-                    max_vals = max_vals + [psf1.max(), psf1.max()]
-                    break
+                    psf1 = fshift(psf1, delx=0, dely=roff_pix, pad=False, interp=interp)
+                    xoff, yoff = xy_rot(0, roff_pix, 10)
+                    psf2 = fshift(psf2, delx=xoff, dely=yoff, pad=False, interp=interp)
 
-            max_vals = np.array(max_vals)
-            off_asec = np.array(off_vals) * pixscale
+                    diff = psf1 - psf2
+                    maxv = np.max(diff)
 
-            # Interpolate in log space
-            psf_max_log = np.interp(rr, off_asec, np.log10(max_vals))
-            psf_max = 10**psf_max_log
+                    off_vals.append(roff_pix)
+                    max_vals.append(maxv)
+                    if maxv >= 0.95*psf1.max():
+                        off_vals = off_vals + [roff_pix+5, xpix/2]
+                        max_vals = max_vals + [psf1.max(), psf1.max()]
+                        break
+
+                max_vals = np.array(max_vals)
+                off_asec = np.array(off_vals) * pixscale
+
+                # Interpolate in log space
+                psf_max_log = np.interp(rr, off_asec, np.log10(max_vals))
+                psf_max = 10**psf_max_log
+
+                # Store in dictionary
+                psf_sums_dict['psf_max_rollsub'] = psf_max
 
         elif not self.is_coron: # Direct imaging
             psf = self.gen_offset_psf(0, 0, return_oversample=False, 
