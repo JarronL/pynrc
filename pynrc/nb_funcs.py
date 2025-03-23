@@ -483,7 +483,7 @@ def do_gen_hdus(obs_dict, filt_keys, wfe_ref_drift, wfe_roll_drift,
 def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True, 
                   charge_migration=True, niter=5, satmax=1, corners=True,
                   plot=True, xylim=2.5, return_fig_axes=False, return_more=False,
-                  **kwargs):
+                  wfe_ref_drift=0, **kwargs):
 
     """Only for obs.hci classes
 
@@ -500,6 +500,9 @@ def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True,
     return_more : bool
         Return additional information (sat_rad, sci_levels2_max, ref_levels2_max)? 
         Default is False.
+    wfe_ref_drift : float
+        WFE drift for reference PSF. Default is 0. Mostly here to keep warnings
+        in case wfe_drift coeffs are not generated.
     """
 
     # Charge migration keywords
@@ -507,6 +510,7 @@ def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True,
     kwargs['niter'] = niter
     kwargs['satmax'] = satmax
     kwargs['corners'] = corners
+    kwargs['wfe_ref_drift'] = wfe_ref_drift
     
     ng_max_sci = obs.Detector.multiaccum.ngroup if ng_max is None else ng_max
     ng_max_ref = obs.Detector_ref.multiaccum.ngroup if ng_max is None else ng_max
