@@ -3495,7 +3495,7 @@ class nrc_analyze():
         diam = 5.2 if self.is_coron else 6.5
 
         # Averge pixel scale
-        pixscale = 0.5 * (self.nrc.siaf_ap.XSciScale + self.nrc.siaf_ap.YSciScale)
+        pixscale = self.pixelscale()
 
         # Get telescope resolution in arcsec
         res_asec = 206265 * self.nrc.bandpass.pivot().to_value('m') / diam
