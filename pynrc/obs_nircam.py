@@ -663,7 +663,7 @@ class obs_hci(nrc_hci):
             # Updates ref detector window size
             self.gen_ref_det()
 
-    def update_detectors_ref(self, **kwargs):
+    def update_detectors_ref(self, verbose=False, **kwargs):
         """
         An easy-to-identify shortcut to `gen_ref_det`, because I 
         keep forgetting to run it to independently of `update_detectors`.
@@ -699,9 +699,9 @@ class obs_hci(nrc_hci):
         nr2 : int
             Number of reset frames for subsequent ramps.
         """
-        self.gen_ref_det(**kwargs)
+        self.gen_ref_det(verbose=verbose, **kwargs)
 
-    def gen_ref_det(self, **kwargs):
+    def gen_ref_det(self, verbose=False, **kwargs):
         """
         Function to generate and update Reference Detector class.
         Used to keep track of detector and multiaccum config,
@@ -738,6 +738,27 @@ class obs_hci(nrc_hci):
         _ = kw1.pop('detector', None)
         kw2 = self.Detector_ref.multiaccum.to_dict()
         self._det_info_ref = merge_dicts(kw1,kw2)
+
+        if verbose:
+            print('New Ramp Settings')
+            keys = ['read_mode', 'nf', 'nd2', 'ngroup', 'nint']
+            for k in keys:
+                v = self._det_info_ref[k]
+                if isinstance(v,float): print("{:<9} : {:>8.0f}".format(k, v))
+                else: print("  {:<10} : {:>8}".format(k, v))
+
+            print('New Detector Settings')
+            keys = ['wind_mode', 'xpix', 'ypix', 'x0', 'y0']
+            for k in keys:
+                v = self._det_info_ref[k]
+                if isinstance(v,float): print("{:<9} : {:>8.0f}".format(k, v))
+                else: print("  {:<10} : {:>8}".format(k, v))
+    
+            print('New Ramp Times')
+            ma = self.Detector_ref.times_to_dict()
+            keys = ['t_group', 't_frame', 't_int', 't_int_tot1', 't_int_tot2', 't_exp', 't_acq']
+            for k in keys:
+                print('  {:<10} : {:>8.3f}'.format(k, ma[k]))
 
 
     def gen_disk_psfs(self, wfe_drift=0, force=False, use_coeff=True, recenter=True,
