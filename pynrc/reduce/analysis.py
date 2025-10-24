@@ -1223,6 +1223,17 @@ def stellar_arguments(name, votdir='../votables/', fname=None, **kwargs):
             'sptype': 'G5V', 'Teff': 5689, 'metallicity': +0.07, 'log_g': 4.5,
             'Av': 0.0, 'mag_val': 5.53, 'bp': bp_k, 
         },
+        'HD61005' : {
+            'name': 'HD 61005', 'fname': 'HD61005.vot',
+            'dist': 36.45, 'age': 30, 'sptype': 'G8V', 
+            'Teff': 5598, 'metallicity': +0.00, 'log_g': 4.5,
+            'Av': 0.0, 'mag_val': 5.54, 'bp': bp_k, 
+        },
+        'HD56161' : {
+            'name': 'HD 56161', 'fname': 'HD56161.vot',
+            'sptype': 'G5IV', 'Teff': 5337, 'metallicity': +0.0, 'log_g': 4.3,
+            'Av': 0.0, 'mag_val': 4.9, 'bp': bp_k, 
+        },
         'P330E' : { # G. Rieke et al. 2024
             'name': 'GSPC P330-E', 'fname': 'P330-E.vot',
             'sptype': 'G5V', 'Teff': 5850, 'metallicity': -0.23, 'log_g': 4.4,
@@ -1774,7 +1785,7 @@ class nrc_analyze():
         self.psf_corr_dict = {} # PSF correction factor info
         self.psf_corr_over = None
 
-        # Various location offserts
+        # Various location offsets
         self.xy_loc_ind = None
         self.xyshift = None
         self.xy_mask_offset = None
@@ -2489,13 +2500,14 @@ class nrc_analyze():
             self.psfs_over = psfs_over
             self.xyoff_psfs_over = xyoff_psfs_over
 
-        psfs_over = crop_image(self.psfs_over, xysub*osamp, pad=True,fill_val=0)
+        psfs_over = crop_image(self.psfs_over, xysub*osamp, pad=True, fill_val=0)
         xyoff_psfs_over = self.xyoff_psfs_over
 
         return psfs_over, xyoff_psfs_over
 
     def get_star_positions(self, xysub=65, rin=None, bgsub=False, use_com=True, gauss_fit=False,
-                           med_dithers=True, ideal_sgd=False, gs_sgd=True, save=True, force=False, **kwargs):
+                           med_dithers=True, ideal_sgd=False, gs_sgd=True, hpf_filt_size=None,
+                           save=True, force=False, **kwargs):
         """Find the offset between the expected and actual position
         
         Updates self.xy_loc_ind, self.xyshift, and self.xy_mask_offset
@@ -2510,7 +2522,7 @@ class nrc_analyze():
             If True, then subtract the background from the cropped image.
             The background region is defined as r>0.7*xysub/2.
         use_com : bool
-            Use center of mass algorithm to first find star position. 
+            Use center of mass algorithm to first find star position for cropping. 
             Otherwise, use expected location.
         gauss_fit : bool
             Fit a 2D Gaussian to the cropped image to find the star position.
@@ -2522,6 +2534,8 @@ class nrc_analyze():
             Use the ideal SGD offsets when determining star positions.
         gs_sgd : bool
             Use the FGS guidestar info for SGD data. Mutually exclusive with `ideal_sgd`.
+        hpf_filt_size : float
+            Size of the high-pass filter kernel in pixels for finding best alignment.
         save : bool
             Save the star positions to a file
         force : bool
@@ -2530,9 +2544,6 @@ class nrc_analyze():
         from webbpsf_ext.imreg_tools import find_pix_offsets, load_cropped_files
         from webbpsf_ext.imreg_tools import get_com, get_expected_loc, get_sgd_offsets
         from webbpsf_ext.image_manip import bp_fix
-
-        if ideal_sgd and gs_sgd:
-            raise ValueError("Cannot set both `ideal_sgd` and `gs_sgd` to True.")
 
         def saved_path_name(save_dir): 
             # Saved file
@@ -2543,8 +2554,9 @@ class nrc_analyze():
             if self.is_sgd and ideal_sgd: save_str4 = '_idealsgd'
             elif self.is_sgd and gs_sgd:  save_str4 = '_gssgd'
             else:  save_str4 = ''
-            save_str5 = '_sim' if self.is_sim else ''
-            save_file = f'star_positions_{self.filter}{save_str0}{save_str1}{save_str2}{save_str3}{save_str4}{save_str5}_{self._file_type}.json'
+            save_str5 = f'_hpf{hpf_filt_size}' if hpf_filt_size is not None else ''
+            save_str6 = '_sim' if self.is_sim else ''
+            save_file = f'star_positions_{self.filter}{save_str0}{save_str1}{save_str2}{save_str3}{save_str4}{save_str5}{save_str6}_{self._file_type}.json'
             save_path = os.path.join(save_dir, save_file)
             return save_path
 
@@ -2557,16 +2569,25 @@ class nrc_analyze():
             self.xy_loc_ind = np.array(data['xy_loc_ind'])
             self.xyshift = np.array(data['xyshift'])
 
+        if ideal_sgd and gs_sgd:
+            raise ValueError("Cannot set both `ideal_sgd` and `gs_sgd` to True.")
+
         # Don't use gaussian fitting for coronagraphic observations
         if self.is_coron and gauss_fit:
             _log.warning("Coronagraphic observations should not use Gaussian fitting. Setting gauss_fit=False.")
             gauss_fit = False
+
+        # No high-pass filtering for gaussian fitting
+        if gauss_fit and (hpf_filt_size is not None):
+            _log.warning("Gaussian fitting does not use high-pass filtering. Setting hpf_filt_size=None.")
+            hpf_filt_size = None
 
         # Check if generate_obs_dict has been run
         if len(self.obs_dict)==0:
             raise ValueError("Run generate_obs_dict() first.")
         obs_dict = self.obs_dict
 
+        # Check if star positions have already been found
         if (self.xy_loc_ind is not None) and (force==False):
             _log.info("Star positions already found. Set force=True to re-run.")
             return
@@ -2723,7 +2744,7 @@ class nrc_analyze():
                     xysh_pix = find_pix_offsets(imsub, psf_over, psf_osamp=osamp, rin=rin, xylim_pix=xylim_pix,
                                                 kipc=self.kipc, kppc=self.kppc, diffusion_sigma=self.best_diffusion,
                                                 psf_corr_image=self.psf_corr_over, bpmask_arr=bpmask, phase=False,
-                                                **kwargs)
+                                                hpf_filt_size=hpf_filt_size, **kwargs)
                     
                     # xysh_pix is the shift necessary to move a perfectly centered PSF to the star location
                     # Add to the subarray center to get the star location
@@ -3175,11 +3196,12 @@ class nrc_analyze():
         return imarr, bparr
     
 
-    def get_dither_offsets(self, method='fourier', interp='lanczos', 
+    def get_dither_offsets(self, #method='fourier', interp='lanczos', 
                            oversample=4, order=3, rescale_pix=True, gstd_pix=None, 
                            subsize=None, inner_rad=None, outer_rad=32, 
                            xylim_pix=(-2,2), dxy_coarse=0.1, dxy_fine=0.005,
-                           lsq_diff=True, return_results=False, save=True, force=False, 
+                           lsq_diff=True, hpf_filt_size=None,
+                           return_results=False, save=True, force=False, 
                            ideal_sgd=True, verbose=False, **kwargs):
         """Find the position offsets between dithered images via LSQ minimization
 
@@ -3192,6 +3214,28 @@ class nrc_analyze():
         Updates self.xyshift and self.xy_loc_ind with the new shift values optimized
         for PSF subtraction.
 
+        Parameters
+        ----------
+        oversample : int
+            Factor to oversample PSFs and data images for cross correlation and LSQ comparison.
+        order : int
+            The order of the spline interpolation for `zrebin` function, Default is 3. 
+            Only used if oversample>1. If order=0, then `frebin` is used. Only used on the
+            science data, not the PSFs.
+        rescale_pix : bool
+            If True, then the pixel values are rescaled to ensure that
+            the total flux is conserved. This is only used if oversample>1.
+            Zoom does not preserve flux within a set of oversampled pixels.
+        gstd_pix : float
+            Standard deviation of Gaussian kernel for smoothing images before shifting.
+        ideal_sgd : bool
+            If True, then assume the relative dither positions are already correct.
+            That is, when we perform the initial `get_star_positions`, we provided either
+            the `ideal_sgd=True` or `gs_sgd=True` keyword argument.
+        lsq_diff : bool
+            If True, then use LSQ minimization for finding offsets. Otherwise, use cross-correlation.
+        hpf_filt_size : float
+            Size of the high-pass filter kernel in pixels for finding best alignment.
         """
         from webbpsf_ext.maths import round_int
         from skimage.filters import window as sk_window
@@ -3221,7 +3265,8 @@ class nrc_analyze():
                     bpmask = bp1 | bp2
                     xysh_best = find_pix_offsets(im1, im2_over, psf_osamp=oversample, bpmask_arr=bpmask, 
                                                  crop=subsize, rin=inner_rad, xcorr=xcorr, lsq_diff=lsq_diff,
-                                                 xylim_pix=xylim_pix, dxy_coarse=dxy_coarse, dxy_fine=dxy_fine)
+                                                 xylim_pix=xylim_pix, dxy_coarse=dxy_coarse, dxy_fine=dxy_fine,
+                                                 hpf_filt_size=hpf_filt_size)
                     shift_matrix[i,j] = xysh_best
 
             # Assume reference has better absolute positioning than science data
@@ -3243,7 +3288,7 @@ class nrc_analyze():
 
         obs_dict = self.obs_dict
 
-        # Check if coronagrpahic observations
+        # Check if coronagraphic observations
         if inner_rad is None:
             inner_rad=10 if self.is_coron else 0
 
@@ -3263,14 +3308,20 @@ class nrc_analyze():
         ny, nx = obs_dict[self.obsids[0]][0]['data'].shape
         size_str = f'_{nx}x{ny}'
 
+        # Check if oversample and order are valid
+        if oversample <= 1:
+            order = 0
+
         # Saved file
         save_dir = os.path.dirname(obs_dict[self.obsids[0]][0]['file'])
         save_str0 = '_obs' + '.'.join([str(obs) for obs in self.obsids]) + size_str
         save_str1 = '_lsqdiff' if lsq_diff else ''
         save_str2 = '_sim' if self.is_sim else ''
         save_str3 = '_idealsgd' if ideal_sgd and self.is_sgd else ''
-        save_str123 = f'_{method}_{interp}_sub{subsize}_osamp{oversample}_gstd{gstd_pix}_irad{inner_rad}_orad{outer_rad}{save_str1}{save_str2}{save_str3}'
-        save_file = f'star_positions_{self.filter}{save_str0}{save_str123}_{self._file_type}.json'
+        save_str4 = f'_hpf{hpf_filt_size}' if hpf_filt_size is not None else ''
+        # save_str123 = f'_{method}_{interp}_sub{subsize}_osamp{oversample}_gstd{gstd_pix}_irad{inner_rad}_orad{outer_rad}{save_str1}{save_str2}{save_str3}'
+        save_str1234 = f'_sub{subsize}_osamp{oversample}_order{order}_gstd{gstd_pix}_irad{inner_rad}_orad{outer_rad}{save_str1}{save_str2}{save_str3}{save_str4}'
+        save_file = f'star_positions_{self.filter}{save_str0}{save_str1234}_{self._file_type}.json'
         save_path = os.path.join(save_dir, save_file)
         if os.path.exists(save_path) and (force==False):
             _log.info(f"Loading dither positions from {save_path}")
@@ -3316,7 +3367,8 @@ class nrc_analyze():
                     bpmask = bp1 | bp2
                     xysh_best = find_pix_offsets(im1, im2_over, psf_osamp=oversample, bpmask_arr=bpmask, 
                                                  crop=subsize, rin=inner_rad, xcorr=xcorr, lsq_diff=lsq_diff,
-                                                 xylim_pix=xylim_pix, dxy_coarse=dxy_coarse, dxy_fine=dxy_fine)
+                                                 xylim_pix=xylim_pix, dxy_coarse=dxy_coarse, dxy_fine=dxy_fine,
+                                                 hpf_filt_size=hpf_filt_size)
 
                     # xysh_best = find_best_offset_wrapper(im1, im2, bp1=bp1, bp2=bp2, pixel_binning=rebin,
                     #                                      coarse_limits=coarse_limits, fine_limits=fine_limits,
@@ -3380,7 +3432,8 @@ class nrc_analyze():
         # Call this same function in the reference objects
         if self.ref_objs is not None:
             kwargs_ref = {
-                'method':method, 'interp':interp, 'oversample':oversample, 
+                # 'method':method, 'interp':interp, 
+                'oversample':oversample, 
                 'order':order, 'rescale_pix':rescale_pix, 'gstd_pix':gstd_pix, 
                 'subsize':subsize, 'inner_rad':inner_rad, 'outer_rad':outer_rad, 
                 'xylim_pix':xylim_pix, 'dxy_coarse':dxy_coarse, 'dxy_fine':dxy_fine, 
@@ -3480,6 +3533,8 @@ class nrc_analyze():
             of the NIRCam detector.
         threshold : float
             Fractional threshold above which to measure the FWHM. Default is 0.1.
+        gfit : bool
+            Fit a Gaussian to the PSF instead of measuring the FWHM directly.
         plot : bool
             Plot the radial profile of the PSF image if provided.
         """
@@ -4122,7 +4177,7 @@ class nrc_analyze():
             Force PSF to be recalculated.
         imall : ndarray, optional
             Combined data array to use for fitting. If None, then use data from obs_dict.
-            If these data are not aligned, then update `data_key` to 'data'.
+            If these data are not aligned, then set keyword `data_key`='data'.
         bpall : ndarray, optional
             Bad pixel mask to use for fitting. If None, then use bad pixel mask from obs_dict,
             or set bad pixel mask based on NaNs in `imall`.
@@ -4191,7 +4246,13 @@ class nrc_analyze():
             bpall = np.isnan(imall) if bpall is None else bpall
 
         # Oversampled PSFs centered in array; no diffusion, IPC, or PPC has been applied
-        psfs_over, _ = self.simulate_psfs(65, diffusion_sigma=0, force=force_psf)
+        psf_size = 65
+        if psf_size < subsize:
+            psf_size = subsize + 5
+            # Ensure odd
+            if np.mod(psf_size,2)==0:
+                psf_size += 1
+        psfs_over, _ = self.simulate_psfs(psf_size, diffusion_sigma=0, force=force_psf)
 
         # Use averages for psf fitting
         if use_mean and ('aligned' in data_key):
@@ -6900,9 +6961,9 @@ def fgs_to_nrc_sgd_offset(pid, obsid, filt, pix_offset=False, med_dithers=False)
     ndith_sgd = len(xoff_sgd)
     if med_dithers and (len(xoff) > ndith_sgd):
         try:
-            temp = xoff.reshape(2,5).T
+            temp = xoff.reshape(2,ndith_sgd).T
             xoff = np.mean(temp - temp[0], axis=1)
-            temp = yoff.reshape(2,5).T
+            temp = yoff.reshape(2,ndith_sgd).T
             yoff = np.mean(temp - temp[0], axis=1)
         except:
             xoff = xoff[:ndith_sgd]
