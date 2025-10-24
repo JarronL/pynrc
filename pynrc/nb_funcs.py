@@ -176,7 +176,7 @@ def disk_rim_model(a_asec, b_asec, pa=0, sig_asec=0.1, flux_frac=0.5,
 def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None, 
             wind_mode='WINDOW', subsize=None, fov_pix=None, verbose=False, narrow=False,
             model_dir=None, large_grid=True, sgd_type=None, slew_std=0, fsm_std=0, 
-            quiet=False, **kwargs):
+            wfe_coeff=True, wfe_mask=True, quiet=False, **kwargs):
     """
     For a given WFE drift and series of filters, create a list of 
     NIRCam observations.
@@ -268,9 +268,11 @@ def obs_wfe(wfe_ref_drift, filt_list, sp_sci, dist, sp_ref=None, args_disk=None,
             nproc = 1
         obs.gen_psf_coeff(nproc=nproc)
         # Enable WFE drift
-        obs.gen_wfedrift_coeff(nproc=nproc)
+        if wfe_coeff:
+            obs.gen_wfedrift_coeff(nproc=nproc)
         # Enable mask-dependent
-        obs.gen_wfemask_coeff(large_grid=large_grid, nproc=nproc)
+        if wfe_mask:
+            obs.gen_wfemask_coeff(large_grid=large_grid, nproc=nproc)
         # Calculate PSF offset to center
         obs.calc_psf_offset_from_center()
 
@@ -628,8 +630,8 @@ def do_sat_levels(obs, satval=0.95, ng_min=2, ng_max=None, verbose=True,
         axes[0].imshow(sat_mask1, extent=extent)
         axes[1].imshow(sat_mask2, extent=extent)
 
-        axes[0].set_title('{} Saturation (NGROUP=2)'.format(sp.name))
-        axes[1].set_title('{} Saturation (NGROUP={})'.format(sp.name, ng_max_sci))
+        axes[0].set_title(f'{sp.name} Saturation (NGROUP={ng_min})')
+        axes[1].set_title(f'{sp.name} Saturation (NGROUP={ng_max_sci})')
 
         for ax in axes:
             ax.set_xlabel('Arcsec')
@@ -738,6 +740,58 @@ def average_slopes(hdulist):
 ###########################################
 # Plotting images and contrast curves
 ###########################################
+
+def sensitivity_to_mjup(mag_sens, filt, dist=10, age=100,
+                        linder_models=True, file=None, **kwargs):
+    """Convert sensitivity to mass limits in Jupiter masses
+    
+    Parameters
+    ----------
+    mag_sens : array-like
+        Sensitivity limits in Vega magnitudes. Assumes absolute magnitudes
+        unless `dist` is set to something other than 10 pc.
+    filt : str
+        NIRCam or MIRI filter name.
+
+    Keyword Args
+    ------------
+    dist : float
+        Distance in parsecs. Default is 10.
+    age : float
+        Age of the stellar system in Myr. Default is 100.
+    linder_models : bool
+        Use BEX models from Linder et al (2019) instead of AMES COND models? 
+        Default is True.
+    file : string
+        Location and name of COND or Linder isochrone file.
+    extrapolate : bool
+        Extrapolate to mass limits outside of Linder model range? 
+        Uses COND for upper range, and low-order polynomial fit in
+        log-space for lower range. Default is True.
+    """
+
+    from webbpsf_ext.spectra import linder_table, linder_filter
+    from webbpsf_ext.spectra import cond_table, cond_filter
+
+    if linder_models:
+        # Grab Linder model data
+        tbl = linder_table(file=file)
+        mass_data, mag_data = linder_filter(tbl, filt, age, dist=dist, **kwargs)
+    else:
+        # Grab COND model data
+        tbl = cond_table(age=age, file=file)
+        mass_data, mag_data = cond_filter(tbl, filt, dist=dist, **kwargs)
+
+    # Interpolate in log space
+    isort = np.argsort(mag_data)
+    xv, yv = mag_data[isort], np.log10(mass_data[isort])
+    xint = mag_sens
+    yint = np.interp(xint, xv, yv)
+    # Choose the lowest mass value brighter than the given mag limits
+    yvals = np.array([np.min(yint[xint<=xv]) for xv in xint])
+    yvals = 10**yvals
+
+    return yvals
     
 def plot_contrasts_mjup(curves, nsig, wfe_list, obs=None, sat_rad=None, age=100,
     ax=None, colors=None, xr=[0,10], yr=None, file=None, linder_models=True,
@@ -803,6 +857,10 @@ def plot_contrasts_mjup(curves, nsig, wfe_list, obs=None, sat_rad=None, age=100,
         tbl = cond_table(age=age, file=file)
         mass_data, mag_data = cond_filter(tbl, filt, module=mod, dist=dist)
 
+    # Flip curves so that largest WFE drift is plotted first
+    curves = curves[::-1]
+    wfe_list = wfe_list[::-1]
+
     # Plot the data
     isort = np.argsort(mag_data)
     for j, wfe_ref_drift in enumerate(wfe_list):
@@ -853,7 +911,8 @@ def plot_contrasts_mjup(curves, nsig, wfe_list, obs=None, sat_rad=None, age=100,
 
 
 def plot_contrasts(curves, nsig, wfe_list, obs=None, sat_rad=None, ax=None,
-    colors=None, xr=[0,10], yr=[25,5], units=None, set_ylog=None, return_axes=False):
+    colors=None, xr=[0,10], yr=[25,5], units=None, 
+    set_ylog=None, ytwin=True, return_axes=False):
     """Plot contrast curves
 
     Plot a series of contrast curves for corresponding WFE drifts.
@@ -881,9 +940,12 @@ def plot_contrasts(curves, nsig, wfe_list, obs=None, sat_rad=None, ax=None,
         curve is excluded from the plot
     units : str
         Units for sensitivity limits. Default is 'vegamag'.
+        Any other unit requires `obs` to be set to perform conversion.
     set_ylog : bool
         Set y-axis to log scale? Default is False for magnitudes
         and True for all others.
+    ytwin : bool
+        Plot opposing y-axes in contrast units. Requires `obs` to be set.
     ax : matplotlib.axes
         Axes on which to plot curves.
     colors : None, array-like
@@ -908,7 +970,8 @@ def plot_contrasts(curves, nsig, wfe_list, obs=None, sat_rad=None, ax=None,
         
     delta_str = '$\Delta$'
     for j in range(len(wfe_list)): #for j, wfe_ref_drift in enumerate(wfe_list):
-        rr, contrast, mag_sens = curves[j]
+        index = wfe_list.index(wfe_list[j])
+        rr, contrast, mag_sens = curves[index]
         xvals = rr[rr>sat_rad]
         mag_vals = mag_sens[rr>sat_rad]
 
@@ -951,7 +1014,7 @@ def plot_contrasts(curves, nsig, wfe_list, obs=None, sat_rad=None, ax=None,
     ax.set_xlabel('Separation (arcsec)')
 
     # Plot opposing axes in alternate units
-    if obs is not None:
+    if (obs is not None) and ytwin:
         yr1 = np.array(ax.get_ylim())
         if units=='vegamag':
             yr2 = 10**((obs.star_flux('vegamag') - yr1) / 2.5)
@@ -1156,7 +1219,7 @@ def plot_hdulist(hdulist, ext=0, xr=None, yr=None, ax=None, return_ax=False,
 
     ax.xaxis.get_major_locator().set_params(nbins=9, steps=[1, 2, 5, 10])
     ax.yaxis.get_major_locator().set_params(nbins=9, steps=[1, 2, 5, 10])
-    
+
     if return_ax:
         return ax
 
@@ -1359,11 +1422,14 @@ def do_plot_contrasts2(key1, key2, curves_all, nsig, obs_dict, wfe_list, age, sa
     c3 = plt.cm.Purples_r(lin_vals)
     c4 = plt.cm.Greens_r(lin_vals)
 
+    # Flip wfe_list so that largest WFE drift is plotted first
+    wfe_list = wfe_list[::-1]
+
     # Left plot (5-sigma sensitivities)
     ax = axes[0]
 
     k = key1
-    curves = curves_all[k]
+    curves = curves_all[k][::-1]
     obs = obs_dict[k]
     sat_rad = None if sat_dict is None else sat_dict[k]
     ax, ax2, ax3 = plot_contrasts(curves, nsig, wfe_list, obs=obs, sat_rad=sat_rad,
@@ -1372,7 +1438,7 @@ def do_plot_contrasts2(key1, key2, curves_all, nsig, obs_dict, wfe_list, age, sa
 
     if key2 is not None:
         k = key2
-        curves = curves_all[k] if curves_all2 is None else curves_all2[k]
+        curves = curves_all[k][::-1] if curves_all2 is None else curves_all2[k][::-1]
         obs = None
         sat_rad = None if sat_dict is None else sat_dict[k]
         plot_contrasts(curves, nsig, wfe_list, obs=obs, sat_rad=sat_rad, 
@@ -1387,7 +1453,7 @@ def do_plot_contrasts2(key1, key2, curves_all, nsig, obs_dict, wfe_list, age, sa
     # Right plot (Converted to MJup/MEarth)
     ax = axes[1]
     k = key1
-    curves = curves_all[k]
+    curves = curves_all[k][::-1]
     obs = obs_dict[k]
     sat_rad = None if sat_dict is None else sat_dict[k]
     ax, ax2, ax3 = plot_contrasts_mjup(curves, nsig, wfe_list, obs=obs, age=age, sat_rad=sat_rad, 
@@ -1397,7 +1463,7 @@ def do_plot_contrasts2(key1, key2, curves_all, nsig, obs_dict, wfe_list, age, sa
     
     if key2 is not None:
         k = key2
-        curves = curves_all[k] if curves_all2 is None else curves_all2[k]
+        curves = curves_all[k][::-1] if curves_all2 is None else curves_all2[k][::-1]
         obs = obs_dict[k]
         sat_rad = None if sat_dict is None else sat_dict[k]
         plot_contrasts_mjup(curves, nsig, wfe_list, obs=obs, age=age, sat_rad=sat_rad, 
