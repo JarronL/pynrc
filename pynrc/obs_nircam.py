@@ -204,21 +204,27 @@ class nrc_hci(NIRCam):
             kwargs['siaf_ap'] = self.siaf_ap
             use_cmask = True
 
+        # Always return oversample if recentering
+        if recenter and (not return_oversample):
+            return_osamp_temp = True
+        else:
+            return_osamp_temp = return_oversample
+
         # print(coords, 'idl')
         if use_coeff:
             if self.psf_coeff is None:
                 raise ValueError('PSF coefficients have not been generated. Use `gen_psf_coeff` method first.')
-            psf = self.calc_psf_from_coeff(sp=sp, return_oversample=return_oversample, 
-                wfe_drift=wfe_drift, coord_vals=coords, coord_frame='idl', 
-                coron_rescale=coron_rescale, **kwargs)
+            psf = self.calc_psf_from_coeff(sp=sp, return_oversample=return_osamp_temp, 
+                                           wfe_drift=wfe_drift, coord_vals=coords, coord_frame='idl', 
+                                           coron_rescale=coron_rescale, **kwargs)
         else:
-            psf = self.calc_psf(sp=sp, return_oversample=return_oversample, 
-                wfe_drift=wfe_drift, coord_vals=coords, coord_frame='idl', **kwargs)
+            psf = self.calc_psf(sp=sp, return_oversample=return_osamp_temp, 
+                                wfe_drift=wfe_drift, coord_vals=coords, coord_frame='idl', **kwargs)
 
         # Recenter PSF?
-        osamp = self.oversample if return_oversample else 1
         if recenter:
-            psf = self.recenter_psf(psf, sampling=osamp)
+            psf = self.recenter_psf(psf, sampling=self.oversample)
+            psf = frebin(psf, scale=1/self.oversample) if not return_oversample else psf
 
         # Begin coronagraphic mask attenuation
         # Skipped if not coronagraphic
@@ -226,10 +232,12 @@ class nrc_hci(NIRCam):
         # Determine if any throughput loss due to coronagraphic mask
         # artifacts, such as the mask holder or ND squares.
         # If ND_acq=True, then PSFs already included ND throughput in bandpass.
-        if use_cmask and self.is_coron and (not self.ND_acq):
+        if use_cmask and self.is_coron and (not self.ND_acq) and use_coeff:
+
+            # Location of PSF in image
             delx_asec, dely_asec = coords
 
-            cmask = self.mask_images['DETSAMP']
+            cmask_det = self.mask_images['DETSAMP']
             # 1. For the FULL TA masks, we want offsets relative to the mask reference point
             # 2. For all others, we want reference points relative to the 20"x20" coronagraphic field 
             # TODO: This doesn't seem to be used anymore?
@@ -246,13 +254,13 @@ class nrc_hci(NIRCam):
                 xsci, ysci = np.array(xy_sci).astype('int')
             else:
                 # Otherwise assumed mask is in center of subarray 
-                xcen, ycen = get_im_cen(cmask)
+                xcen, ycen = get_im_cen(cmask_det)
                 delx_pix, dely_pix = np.array([delx_asec + self.bar_offset, dely_asec]) / self.pixelscale
                 xsci, ysci = np.array([xcen+delx_pix, ycen+dely_pix]).astype('int')
 
-            # Extract a 3x3 region to average
-            cmask_sub = cmask[ysci-3:ysci+3,xsci-3:xsci+3]
-            trans = np.mean(cmask_sub)
+            # Extract a 5x5 region to average from the cmask
+            cmask_sub = cmask_det[ysci-2:ysci+3,xsci-2:xsci+3]
+            trans = 0 if len(cmask_sub)==0 else np.mean(cmask_sub)
 
             # First, anything in a region around the circular mask should have trans=1
             if ( (np.sqrt(delx_asec**2 + dely_asec**2) < 4.5) and 
@@ -279,6 +287,7 @@ class nrc_hci(NIRCam):
 
         # Apply diffusion
         if (diffusion_sigma is not None) and (diffusion_sigma>0):
+            osamp = self.oversample if return_oversample else 1
             psf = apply_pixel_diffusion(psf, diffusion_sigma*osamp)
 
         # Apply PSF correction factor
@@ -865,7 +874,8 @@ class obs_hci(nrc_hci):
         See `spectra.companion_spec()` function for more details.
         """
 
-        sp = companion_spec(self.bandpass, dist=self.distance, **kwargs)
+        dist = self.distance if (kwargs.get('dist') is None) else kwargs.pop('dist')
+        sp = companion_spec(self.bandpass, dist=dist, **kwargs)
         return sp
 
     @property
@@ -879,7 +889,7 @@ class obs_hci(nrc_hci):
         except: pass
         self._planets = []
 
-    def add_planet(self, model='SB12', atmo='hy3s', mass=10, age=100, entropy=10,
+    def add_planet(self, name=None, model='SB12', atmo='hy3s', mass=10, age=100, entropy=10,
         xy=None, rtheta=None, runits='AU', Av=0, renorm_args=None, sptype=None,
         accr=False, mmdot=None, mdot=None, accr_rin=2, truncated=False, **kwargs):
         """Insert a planet into observation.
@@ -980,12 +990,12 @@ class obs_hci(nrc_hci):
         # X and Y pixel offsets from center of image
         # Dictionary of planet info
         if sptype is None:
-            d = {'model':model, 'atmo':atmo, 'mass':mass, 'age':age,
+            d = {'name': name, 'model': model, 'atmo': atmo, 'mass': mass, 'age': age,
                  'entropy':entropy, 'Av':Av, 'renorm_args':renorm_args,
                  'accr':accr, 'mmdot':mmdot, 'mdot':mdot, 'accr_rin':accr_rin,
                  'truncated':truncated, 'xyoff_asec':(xoff_asec, yoff_asec)}
         else:
-            d = {'model':model, 'sptype':sptype, 'Av':Av,
+            d = {'name': name, 'model':model, 'sptype':sptype, 'Av':Av,
                  'renorm_args':renorm_args, 'xyoff_asec':(xoff_asec, yoff_asec)}
         self._planets.append(d)
 
@@ -1076,11 +1086,12 @@ class obs_hci(nrc_hci):
 
             ##################################
             # Generate Image
-
             # Create slope image (postage stamp) of planet
+
             source = kwargs.get('source', None)
-            if (sp is None) and (source is None):
-                sp = self.planet_spec(**pl)
+            # Skip sp creation if source is provided because it gets passed 
+            # directly to gen_offset_psf using kwargs
+            sp2 = self.planet_spec(**pl) if (sp is None) and (source is None) else sp
 
             # Location relative to star
             plx_asec, ply_asec = pl['xyoff_asec']
@@ -1094,7 +1105,7 @@ class obs_hci(nrc_hci):
             # bar offsets are added inside calc_psf_from_coeff
             xoff_idl, yoff_idl = (plx_asec + offx_asec, ply_asec + offy_asec)
             r, th = xy_to_rtheta(xoff_idl, yoff_idl)
-            psf_planet = self.gen_offset_psf(r, th, sp=sp, return_oversample=True, 
+            psf_planet = self.gen_offset_psf(r, th, sp=sp2, return_oversample=True, 
                                              use_coeff=use_coeff, wfe_drift=wfe_drift, 
                                              use_cmask=use_cmask, **kwargs)
 
@@ -1146,18 +1157,28 @@ class obs_hci(nrc_hci):
                 shift_method = 'fshift' if ('FULL' in self.det_info['wind_mode']) else 'fourier'
             if interp is None:
                 interp = 'linear' if ('FULL' in self.det_info['wind_mode']) else 'cubic'
-            psf_planet = crop_image(psf_planet, (ypix_over, xpix_over))
             try:
                 # Sometimes fourier shift fails if the source is too close to the edge
-                psf_planet = fractional_image_shift(psf_planet, delx_over, dely_over, 
-                                                    method=shift_method, interp=interp, pad=True, **kwargs)
-            except ValueError:
-                psf_planet = fractional_image_shift(psf_planet, delx_over, dely_over, 
-                                                    method='fshift', interp='linear', pad=True, **kwargs)
+                psf_planet = image_shift_with_nans(psf_planet, xshift=delx_over, yshift=dely_over,
+                                                   shift_method=shift_method, interp=interp, 
+                                                   pad=True, return_padded=True, cval=0, **kwargs)
 
+                # psf_planet = fractional_image_shift(psf_planet, delx_over, dely_over, 
+                #                                     method=shift_method, interp=interp, pad=True, **kwargs)
+            except ValueError:
+                psf_planet = image_shift_with_nans(psf_planet, xshift=delx_over, yshift=dely_over,
+                                                   shift_method='fshift', interp='linear', 
+                                                   pad=True, return_padded=True, cval=0, **kwargs)
+                # psf_planet = fractional_image_shift(psf_planet, delx_over, dely_over, 
+                #                                     method='fshift', interp='linear', pad=True, **kwargs)
+
+            psf_planet = crop_image(psf_planet, (ypix_over, xpix_over))
+
+            # Remove any NaNs or negative values
+            psf_planet[np.isnan(psf_planet)] = 0
+            psf_planet[psf_planet<0] = 0
 
             # Add to image
-            psf_planet[np.isnan(psf_planet)] = 0
             image_over += psf_planet
 
         # Remove any negative numbers
@@ -1455,7 +1476,7 @@ class obs_hci(nrc_hci):
         ------------
         use_cmask : bool
             Use the coronagraphic mask image to attenuate planet or disk that
-            is obscurred by a corongraphic mask feature. (Default=False)
+            is obscurred by a corongraphic mask feature. (Default=True)
         ra : float
             Right ascension in decimal degrees
         dec : float
@@ -1648,7 +1669,7 @@ class obs_hci(nrc_hci):
             im_pl = 0
         else:
             _log.info('  gen_slope_image: Creating companion image...')
-            im_pl = self.gen_planets_image(**kwargs2)
+            im_pl = self.gen_planets_image(wfe_drift=wfe_drift0, **kwargs2)
 
         # Extended disk structures
         if no_disk:
@@ -2014,6 +2035,7 @@ class obs_hci(nrc_hci):
         # Perform shift and create slope image
         if interp is None:
             interp = 'linear' if ('FULL' in self.det_info['wind_mode']) else 'cubic'
+        # print('Roll1...', PA1, xyoff_asec1, interp)
         im_roll1 = self.gen_slope_image(PA=PA1, xyoff_asec=xyoff_asec1, im_star=im_star, 
                                         return_oversample=True, interp=interp, **kwargs)
 
@@ -2042,6 +2064,7 @@ class obs_hci(nrc_hci):
                 im_star2 = im_star
             else:
                 im_star2 = None
+            # print('Roll2...', PA2, xyoff_asec2, interp)
             im_roll2 = self.gen_slope_image(PA=PA2, xyoff_asec=xyoff_asec2, im_star=im_star2, do_roll2=True, 
                                             wfe_drift0=wfe_drift0, wfe_roll_drift=wfe_roll_drift, 
                                             return_oversample=True, interp=interp, **kwargs)
@@ -2113,8 +2136,8 @@ class obs_hci(nrc_hci):
             roll_names = ['ROLL1', 'ROLL2']
             pa_vals = [PA1, PA2]
             for ii, im in enumerate([im_roll1_sh, im_roll2_sh]):
-                hdu = fits.ImageHDU(im)
-                hdu.header['EXTNAME'] = (roll_names[ii])
+                hdu = fits.ImageHDU(im, name=roll_names[ii])
+                # hdu.header['EXTNAME'] = (roll_names[ii])
                 hdu.header['OVERSAMP'] = (osamp_out, 'Oversample compared to detector pixels')
                 hdu.header['OSAMP'] =    (osamp_out, 'Oversample compared to detector pixels')
                 hdu.header['PIXELSCL'] = (pixscale_out, 'Image pixel scale (asec/pix)')
@@ -2158,12 +2181,14 @@ class obs_hci(nrc_hci):
 
         # Create Reference slope image
         # Essentially just adds image shifts and noise
+        # print('Ref...', 0, xyoff_asec_ref, interp)
         im_ref = self.gen_slope_image(PA=0, xyoff_asec=xyoff_asec_ref, im_star=im_star_ref, 
-                                      do_ref=True, return_oversample=True, interp=interp, **kwargs)
+                                        do_ref=True, return_oversample=True, interp=interp, **kwargs)
 
         # Determine reference star scale factor
         scale1 = scale_ref_image(im_star_sub, im_ref_sub)
-        _log.debug('scale1: {0:.3f}'.format(scale1))
+        _log.debug(f'scale1: {scale1:.3f}')
+        # print(f'scale1: {scale1:.3f}')
         # print('scale1: {0:.3f}'.format(scale1), im_star_sub.sum(), im_ref_sub.sum())
         # if oversample>1:
         #     kernel = Gaussian2DKernel(0.5*oversample)
@@ -2232,6 +2257,7 @@ class obs_hci(nrc_hci):
 
 
             # Create Roll2 slope image
+            # print('Roll2...', PA2, xyoff_asec2, interp)
             im_roll2 = self.gen_slope_image(PA=PA2, xyoff_asec=xyoff_asec2, im_star=im_star2, 
                                             do_roll2=True, return_oversample=True, interp=interp, **kwargs)
 
@@ -2248,7 +2274,8 @@ class obs_hci(nrc_hci):
 
             # Subtract reference star from Roll 2
             scale2 = scale_ref_image(im_star2_sub, im_ref_sub)
-            _log.debug('scale2: {0:.3f}'.format(scale2))
+            _log.debug(f'scale2: {scale2:.3f}')
+            # print(f'scale2: {scale2:.3f}')
             # print('scale2: {0:.3f}'.format(scale2), im_star2_sub.sum(), im_ref_sub.sum())
             # if oversample>1:
             #     kernel = Gaussian2DKernel(0.5*oversample)
@@ -2368,8 +2395,8 @@ class obs_hci(nrc_hci):
         hdulist = fits.HDUList([hdu])
 
         # Add Roll1
-        hdu = fits.ImageHDU(im_roll1)
-        hdu.header['EXTNAME'] = ('ROLL1')
+        hdu = fits.ImageHDU(im_roll1, name='ROLL1')
+        # hdu.header['EXTNAME'] = ('ROLL1')
         hdu.header['OVERSAMP'] = (osamp_out, 'Oversample compared to detector pixels')
         hdu.header['OSAMP'] =    (osamp_out, 'Oversample compared to detector pixels')
         hdu.header['PIXELSCL'] = (pixscale_out, 'Image pixel scale (asec/pix)')
@@ -2382,14 +2409,15 @@ class obs_hci(nrc_hci):
         hdu.header['PA']       = (PA1, "Position angle (deg)")
         hdu.header['DX_ASEC']  = (xyoff_asec1[0], 'Pointing offset in x-ideal (asec)')
         hdu.header['DY_ASEC']  = (xyoff_asec1[1], 'Pointing offset in y-ideal (asec)')
+        hdu.header['SCALEREF'] = (scale1, 'Reference star scale factor')
         hdulist.append(hdu)
 
         # Add Roll2
         try:
             if not return_oversample:
                 im_roll2 = frebin(im_roll2, scale=1/oversample)
-            hdu = fits.ImageHDU(im_roll2)
-            hdu.header['EXTNAME'] = ('ROLL2')
+            hdu = fits.ImageHDU(im_roll2, name='ROLL2')
+            # hdu.header['EXTNAME'] = ('ROLL2')
             hdu.header['OVERSAMP'] = (osamp_out, 'Oversample compared to detector pixels')
             hdu.header['OSAMP']    = (osamp_out, 'Oversample compared to detector pixels')
             hdu.header['PIXELSCL'] = (pixscale_out, 'Image pixel scale (asec/pix)')
@@ -2402,6 +2430,7 @@ class obs_hci(nrc_hci):
             hdu.header['PA']       = (PA2, "Position angle (deg)")
             hdu.header['DX_ASEC']  = (xyoff_asec2[0], 'Pointing offset in x-ideal (asec)')
             hdu.header['DY_ASEC']  = (xyoff_asec2[1], 'Pointing offset in y-ideal (asec)')
+            hdu.header['SCALEREF'] = (scale2, 'Reference star scale factor')
             hdulist.append(hdu)
         except:
             pass
@@ -2410,8 +2439,8 @@ class obs_hci(nrc_hci):
         try:
             if not return_oversample:
                 im_ref = frebin(im_ref, scale=1/oversample)
-            hdu = fits.ImageHDU(im_ref)
-            hdu.header['EXTNAME'] = ('REF')
+            hdu = fits.ImageHDU(im_ref, name='REF')
+            # hdu.header['EXTNAME'] = ('REF')
             hdu.header['OVERSAMP'] = (osamp_out, 'Oversample compared to detector pixels')
             hdu.header['OSAMP']    = (osamp_out, 'Oversample compared to detector pixels')
             hdu.header['PIXELSCL'] = (pixscale_out, 'Image pixel scale (asec/pix)')
@@ -2529,6 +2558,9 @@ class obs_hci(nrc_hci):
         df_sig = kwargs.get('diffusion_sigma', None)
         psf_corr_over = kwargs.get('psf_corr_over', None)
 
+        use_coeff = kwargs.get('use_coeff', True)
+        use_cmask = kwargs.get('use_cmask', True)
+
         # Normalize by psf max value
         if no_ref:
             # No reference image subtraction; pure roll subtraction
@@ -2552,10 +2584,12 @@ class obs_hci(nrc_hci):
                     roff_asec = roff_pix * pixscale
                     psf1 = self.gen_offset_psf(roff_asec, 0, return_oversample=False, 
                                             coron_rescale=True, diffusion_sigma=df_sig,
-                                            psf_corr_over=psf_corr_over)
+                                            psf_corr_over=psf_corr_over,
+                                            use_coeff=use_coeff, use_cmask=use_cmask)
                     psf2 = self.gen_offset_psf(roff_asec, roll_angle, return_oversample=False, 
                                             coron_rescale=True, diffusion_sigma=df_sig,
-                                            psf_corr_over=psf_corr_over)
+                                            psf_corr_over=psf_corr_over,
+                                            use_coeff=use_coeff, use_cmask=use_cmask)
 
                     psf1 = fshift(psf1, delx=0, dely=roff_pix, pad=False, interp=interp)
                     xoff, yoff = xy_rot(0, roff_pix, 10)
@@ -2583,7 +2617,9 @@ class obs_hci(nrc_hci):
 
         elif not self.is_coron: # Direct imaging
             psf = self.gen_offset_psf(0, 0, return_oversample=False, 
-                                      diffusion_sigma=df_sig, psf_corr_over=psf_corr_over)
+                                      diffusion_sigma=df_sig, 
+                                      psf_corr_over=psf_corr_over,
+                                      use_coeff=use_coeff)
             psf_max = psf.max()
 
         elif self.image_mask[-1]=='R': # Round masks
@@ -2602,7 +2638,7 @@ class obs_hci(nrc_hci):
             try:
                 _ = self._psf_sums['psf_off_max']
             except:
-                _ = _nrc_coron_psf_sums(self, (0,0), 'idl')
+                _ = _nrc_coron_psf_sums(self, (0,0), 'idl', use_coeff=use_coeff)
             psf_off_max = self._psf_sums['psf_off_max']
             psf_cen_max = self._psf_sums['psf_cen_max']
 
@@ -2895,7 +2931,6 @@ def gen_coron_mask(self):
 
     Output images are in 'sci' coordinates.
     """
-    mask = self.image_mask
     pupil = self.pupil_mask
     oversample = self.oversample
 
@@ -2910,7 +2945,7 @@ def gen_coron_mask(self):
 
         # im_det  = build_mask_detid(detid, oversample=1, pupil=pupil)
         im_over = build_mask_detid(detid, oversample=oversample, 
-                                    pupil=pupil, filter=self.filter)
+                                   pupil=pupil, filter=self.filter)
         # Convert to det coords and crop
         # im_det  = sci_to_det(im_det, detid)
         im_over = sci_to_det(im_over, detid)
@@ -2924,6 +2959,7 @@ def gen_coron_mask(self):
         im_over = im_over[iy1:iy2, ix1:ix2]
 
         # Revert to sci coords
+        # TODO: Extent seems off by 1 pixel; Check if DETSAMP mask image is 0 or 1 indexed
         mask_dict['DETSAMP'] = det_to_sci(im_det, detid)
         mask_dict['OVERSAMP'] = det_to_sci(im_over, detid)
 
