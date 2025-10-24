@@ -7,6 +7,11 @@ JWST Installation Notes
 0.1 New environment with full anaconda packages installed:
 	- conda create --name jwst_env python=3.11 anaconda
 
+0.2 Better/faster conda environment solver (libmamba):
+	- conda install -n base conda-libmamba-solver
+	- conda config --set solver libmamba
+	- only works for conda>=23.10
+
 Note: May want to perform "pip cache purge" first in order to get latest versions from pypi
 
 1. pysiaf
@@ -17,21 +22,22 @@ Note: May want to perform "pip cache purge" first in order to get latest version
 
 3. stpsf: develop branch
 	- Install from GitHub "pip install -e ."
-	- Installs photutils-1.10 synphot-1.3
+	- Installs photutils-2.2 synphot-1.6 astroquery-0.4.10
 
 4. jwst-background: main branch
+	- Install healpy: conda install healpy
 	- Install from GitHub "pip install -e ."
-	- Installs healpy-1.16.1
+	- Installs healpy-1.18.1
 
 5. jwst pipeline
 	- pip install asdf
 	- pip install stcal stdatamodels stpipe crds
 	- Install from GitHub "pip install -e ."
-	- Successfully installed BayesicFitting-3.0.1 asdf-astropy-0.2.2 asdf-coordinates-schemas-0.1.0 asdf-wcs-schemas-0.1.1 certifi-2022.5.18.1 drizzle-1.13.6 gwcs-0.18.2 jwst-1.7.3.dev15+gd5f9a3f9 spherical-geometry-1.2.22 stsci.image-2.3.5 stsci.imagestats-1.6.3 stsci.stimage-0.2.5 tweakwcs-0.8.0 wiimatch-0.3.1
+	- Successfully installed BayesicFitting-3.0.1 asdf-astropy-0.2.2 asdf-coordinates-schemas-0.1.0 asdf-wcs-schemas-0.1.1 certifi-2022.5.18.1 drizzle-1.13.6 gwcs-0.18.2 spherical-geometry-1.2.22 stsci.image-2.3.5 stsci.imagestats-1.6.3 stsci.stimage-0.2.5 tweakwcs-0.8.0 wiimatch-0.3.1
 	
 6. webbpsf_ext: develop branch
 	- Install from GitHub "pip install -e ."
-	- Installs pysynphot-2.0.0
+	- Installs stsynphot-1.4.0
 
 7. pynrc: develop branch
 	- Install from GitHub "pip install -e ."
@@ -39,9 +45,10 @@ Note: May want to perform "pip cache purge" first in order to get latest version
 
 8. pyklip: jwst branch
 	- Install from GitHub "pip install -e ."
-	- Installs corner-2.2.1 emcee-3.1.3
+	- Installs corner-2.2.3 emcee-3.1.6
 
 9. spaceKLIP: some dev branch
+	- Install mocapy (https://github.com/jgagneastro/mocapy.git) separately, modify setup.py such that it removes the strict version requirements
 	- Install from GitHub "pip install -e ."
 	
 10. jwst_mast_query 
@@ -58,4 +65,21 @@ Documentation (RTD) stuff:
 	conda install sphinx_rtd_theme --no-deps
 	conda install nbsphinx --no-deps
 
+
+astropy>=6.0.1
+astroquery>=0.4.7
+jwst>=1.14.0
+matplotlib>=3.7.1
+numpy<2
+synphot>=1.4.0
+stsynphot>=1.3.0
+scipy>=1.13.0
+stsci.stimage>=0.2.9
+stpsf>=2.1.0
+webbpsf_ext>=2.0.0
+pyklip>=2.7.1
+ipywidgets>=8.1.5
+lmfit>1.2.2
+tqdm
+mocapy @ git+https://github.com/jgagneastro/mocapy.git
 
