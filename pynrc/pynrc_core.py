@@ -357,7 +357,8 @@ class NIRCam(NIRCam_ext):
     """
 
     def __init__(self, filter=None, pupil_mask=None, image_mask=None, 
-                 ND_acq=False, detector=None, apname=None, autogen_coeffs=True, **kwargs):
+                 ND_acq=False, detector=None, apname=None, 
+                 autogen_coeffs=True, calc_psf_offset=True, **kwargs):
 
         """ Init Function
 
@@ -378,6 +379,8 @@ class NIRCam(NIRCam_ext):
         apname : str
             Pass specific SIAF aperture name, which will update pupil mask, image mask,
             and detector subarray information.
+        apername : str
+            Alternate spelling of `apname`.
         autogen_coeffs : bool
             Automatically generate base PSF coefficients. Equivalent to performing
             ``self.gen_psf_coeff()``. Default: True
@@ -528,6 +531,12 @@ class NIRCam(NIRCam_ext):
 
         super().__init__(filter=filter, pupil_mask=pupil_mask, image_mask=image_mask, **kwargs)
 
+        apername = kwargs.get('apername')
+        if (apname is not None) and (apername is not None):
+            raise ValueError('Cannot specify both apname and apername. They are the same parameter.')
+        elif apername is not None:
+            apname = apername
+
         if apname is None:
             if detector is not None:
                 self.detector = detector
@@ -558,20 +567,21 @@ class NIRCam(NIRCam_ext):
 
         # Initialize PSF offset to center of image
         # Calculate PSF offset from center if _nrc_bg coefficients are available
-        if self.is_grism:
-            self.psf_offset_to_center = None
-        elif self._nrc_bg.psf_coeff is not None:
-            self.calc_psf_offset_from_center(use_coeff=True)
-        else:
-            self.calc_psf_offset_from_center(use_coeff=False)
-            # self.psf_offset_to_center = np.array([0,0])
+        if calc_psf_offset:
+            if self.is_grism:
+                self.psf_offset_to_center = None
+            elif self._nrc_bg.psf_coeff is not None:
+                self.calc_psf_offset_from_center(use_coeff=True)
+            else:
+                self.calc_psf_offset_from_center(use_coeff=False)
+                # self.psf_offset_to_center = np.array([0,0])
 
         # Check aperture info is consistent if not explicitly specified
         # TODO: This might fail because self.Detector has not yet been initialized??
         try:
             ap_name_rec = self.get_siaf_apname()
         except AttributeError:
-            raise AttributeError(f'Detector might not be initialized bececause {apname} is not valid.')
+            raise AttributeError(f'Detector might not be initialized because apname={apname} is not valid.')
 
         if ((apname is None) and (ap_name_rec != self.aperturename) and
             not (('FULL' in self.aperturename) and ('TAMASK' in self.aperturename))):
@@ -1076,18 +1086,23 @@ class NIRCam(NIRCam_ext):
         # else:
         detid = self.Detector.detid
         wind_mode = self.Detector.wind_mode
+        xpix, ypix = (self.det_info['xpix'], self.det_info['ypix'])
 
         is_lyot = self.is_lyot
         is_coron = self.is_coron
         is_grism = self.is_grism
 
-        pupil_mask = self.pupil_mask
-        if self.channel=='long' or self.channel=='LW':
-            channel = 'LW'
+        # TODO: These checks may be redundant (look at webbpsf_ext)
+        if self.pupil_mask == 'MASKRND':
+            pupil_mask = 'CIRCLYOT'
+        elif self.pupil_mask == 'MASKBAR':
+            pupil_mask = 'WEDGELYOT'
         else:
-            channel = 'SW'
+            pupil_mask = self.pupil_mask
 
-        # Time series filters
+        channel = 'LW' if (self.channel=='long' or self.channel=='LW') else 'SW'
+
+        # Grism time series filters
         ts_filters = ['F277W','F356W','F444W','F322W2']
         # Coronagraphic bar filters
         swb_filters = ['F182M','F187N','F210M','F212N','F200W']
@@ -1096,26 +1111,62 @@ class NIRCam(NIRCam_ext):
             'F356W','F410M','F430M','F460M','F480M','F444W'
         ]
 
-        # Coronagraphy
-        if is_coron:
-            wstr = 'FULL_' if wind_mode=='FULL' else ''
-            key = 'NRC{}_{}{}'.format(detid,wstr,self.image_mask)
-            if ('LWB' in self.image_mask) and (self.module=='A') and (self.filter in lwb_filters):
-                key = key + '_{}'.format(self.filter)
-            elif ('SWB' in self.image_mask) and (self.module=='A') and (self.filter in swb_filters):
-                key = key + '_{}'.format(self.filter)
+        apnames = self.siaf_ap_names
 
-            # NRCA5_MASKLWB and NRCA4_MASKLWB have been replaced with 400x256 subarrays
-            if ('NRCA5_MASKLWB' in key) or ('NRCA4_MASKLWB' in key):
-                key = key.replace('_MASK', '_400X256_MASK')
+        # Normal imaging
+        if (self.image_mask is None) and (self.pupil_mask is None):
+            if wind_mode=='FULL':
+                key = f'NRC{detid}_FULL'
+            elif wind_mode=='WINDOW':
+                # Default to point-source subarrays
+                key = f'NRC{detid}_SUB{xpix}P'
+                # Avoid NRCA arrays, which are not flight apertures
+                key = key.replace('NRCA','NRCB')
+                # if SW, first test NRCB1
+                if channel=='SW':
+                    key = f'NRCB1_SUB{xpix}P'
 
-            if wind_mode=='STRIPE':
+                # If aperture doesn't exist, try extended source subarrays
+                if key not in apnames:
+                    key = f'NRC{detid}_SUB{xpix}'
+
+                # Check TA apertures
+                if (key not in apnames) and (xpix==32 and ypix==32):
+                    if detid=='B5' and self.filter=='F335M':
+                        key = f'NRC{detid}_TASIMG32'
+                    elif detid=='B5' and self.filter=='F405N':
+                        key = f'NRC{detid}_TASIMG32_F405N'
+                    if detid=='A5' and self.filter=='F335M':
+                        key = f'NRC{detid}_TAGRISMTS32'
+                    elif detid=='A5' and self.filter=='F405N':
+                        key = f'NRC{detid}_TAGRISMTS32_F405N'
+                    elif detid=='A5' and self.filter=='F322W2':
+                        key = f'NRC{detid}_TAGRISMTS_SCI_F322W2'
+                    elif detid=='A5' and self.filter=='F444W':
+                        key = f'NRC{detid}_TAGRISMTS_SCI_F444W'
+            else:
                 key = None
 
+        # Coronagraphy
+        elif is_coron:
+            if wind_mode=='STRIPE':
+                key = None
+            else:
+                wstr = 'FULL_' if wind_mode=='FULL' else ''
+                key = f'NRC{detid}_{wstr}{self.image_mask}'
+                if ('LWB' in self.image_mask) and (self.module=='A') and (self.filter in lwb_filters):
+                    key = f'{key}_{self.filter}'
+                elif ('SWB' in self.image_mask) and (self.module=='A') and (self.filter in swb_filters):
+                    key = f'{key}_{self.filter}'
+
+                # NRCA5_MASKLWB and NRCA4_MASKLWB have been replaced with 400x256 subarrays
+                if ('NRCA5_MASKLWB' in key) or ('NRCA4_MASKLWB' in key):
+                    key = key.replace('_MASK', '_400X256_MASK')
+
         # Just Lyot stop without masks, assuming TA aperture
-        elif is_lyot: #and self.ND_acq:
+        elif is_lyot:
             tastr = 'TA' if self.ND_acq else 'FSTA'
-            key = 'NRC{}_{}'.format(detid,tastr)
+            key = f'NRC{detid}_{tastr}'
             if ('CIRC' in pupil_mask) and ('SW' in channel):
                 key = key + 'MASK210R'
             elif ('CIRC' in pupil_mask) and ('LW' in channel):
@@ -1124,53 +1175,63 @@ class NIRCam(NIRCam_ext):
                 key = key + 'MASKSWB'
             elif ('WEDGE' in pupil_mask) and ('LW' in channel):
                 key = key + 'MASKLWB'
+
         # Time series grisms
         elif is_grism and ('GRISMR' in pupil_mask) and (self.filter in ts_filters):
             if wind_mode=='FULL':
                 key = f'NRC{detid}_GRISM_{self.filter}'
             elif wind_mode=='STRIPE':
-                key = 'NRC{}_GRISM{}_{}'.format(detid,self.det_info['ypix'],self.filter)
+                key = f'NRC{detid}_GRISM{ypix}_{self.filter}'
             else:
                 key = None
+
         # SW Time Series with LW grism
         elif wind_mode=='STRIPE':
-            key = 'NRC{}_GRISMTS{:.0f}'.format(detid,self.det_info['ypix'])
+            key = f'NRC{detid}_GRISMTS{ypix}'
+
         # WFSS
         # TODO: WFSS SIAF apertures no longer support 'sci' and 'det' coordinates
         # These apertures are not useful
         elif is_grism and (wind_mode=='FULL'):
-            key = 'NRC{}_FULL_{}'.format(detid, pupil_mask)
+            # key = f'NRC{detid}_FULL_{pupil_mask}'
             _log.warning('WFSS SIAF apertures are currently unsupported')
-        # Subarrays
-        elif wind_mode=='WINDOW':
-            key = 'NRC{}_SUB{}P'.format(detid,self.det_info['xpix'])
-            if key not in self.siaf_ap_names:
-                key = 'NRC{}_TAPSIMG{}'.format(detid,self.det_info['xpix'])
-            if key not in self.siaf_ap_names:
-                key = 'NRC{}_TAGRISMTS{}'.format(detid,self.det_info['xpix'])
-            if key not in self.siaf_ap_names:
-                key = 'NRC{}_TAGRISMTS_SCI_{}'.format(detid,self.filter)
-            if key not in self.siaf_ap_names:
-                key = 'NRC{}_SUB{}'.format(detid,self.det_info['xpix'])
-        # Full frame generic
-        elif wind_mode=='FULL':
-            key = 'NRC{}_FULL'.format(detid)
+            key = f'NRC{detid}_FULL'
+
+        # # Subarrays
+        # elif wind_mode=='WINDOW':
+        #     key = f'NRC{detid}_SUB{xpix}P'
+        #     if key not in self.siaf_ap_names:
+        #         key = f'NRC{detid}_TAPSIMG{xpix}'
+        #     if key not in self.siaf_ap_names:
+        #         key = f'NRC{detid}_TAGRISMTS{xpix}'
+        #     if key not in self.siaf_ap_names:
+        #         key = f'NRC{detid}_TAGRISMTS_SCI_{self.filter}'
+        #     if key not in self.siaf_ap_names:
+        #         key = f'NRC{detid}_SUB{xpix}'
+        # # Full frame generic
+        # elif wind_mode=='FULL':
+        #     key = f'NRC{detid}_FULL'
+
         else:
             key = None
 
         # Check if key exists
-        if key in self.siaf_ap_names:
-            _log.info('Suggested SIAF aperture name: {}'.format(key))
+        if key is None:
+            _log.warning('Could not suggest a SIAF aperture with current settings')
+            return None
+        elif key in self.siaf_ap_names:
+            _log.info(f'Suggested SIAF aperture name: {key}')
             return key
         else:
-            _log.warning("Suggested SIAF aperture name '{}' is not defined".format(key))
+            _log.warning(f"Suggested aperture name '{key}' does not exist in SIAF.")
             return None
 
     def get_subarray_name(self, apname=None):
         """Get JWST NIRCam subarray name"""
 
         if apname is None:
-            apname = self.get_siaf_apname()
+            # apname = self.get_siaf_apname()
+            apname = self.siaf_ap.AperName
 
         pupil_mask = self.pupil_mask
         image_mask = self.image_mask 
@@ -1359,11 +1420,12 @@ class NIRCam(NIRCam_ext):
         self.update_detectors(**kwargs)
 
         # Update aperture
-        self.siaf_ap = siaf_ap
+        self.aperturename = siaf_ap.AperName
+        # self.siaf_ap = siaf_ap
 
-        # Update detector position to default of aperture
-        ap_stpsf = self.siaf[self.aperturename]
-        self.detector_position = ap_stpsf.det_to_sci(siaf_ap.XDetRef, siaf_ap.YDetRef)
+        # # Update detector position to default of aperture
+        # ap_stpsf = self.siaf[self.aperturename]
+        # self.detector_position = ap_stpsf.det_to_sci(siaf_ap.XDetRef, siaf_ap.YDetRef)
 
 
     def calc_psf_from_coeff(self, sp=None, return_oversample=True, return_hdul=True,
@@ -1776,7 +1838,7 @@ class NIRCam(NIRCam_ext):
         """
     
         # Dark image
-        if self.is_dark:
+        if self.is_dark or (zfact is not None and zfact==0):
             return 0
 
         bp = self.bandpass
@@ -1840,7 +1902,7 @@ class NIRCam(NIRCam_ext):
         xpix, ypix = (self.det_info['xpix'], self.det_info['ypix'])
 
         # Dark image
-        if self.is_dark:
+        if self.is_dark or (zfact is not None and zfact==0):
             return np.zeros([ypix,xpix])
 
         bp = self.bandpass
